@@ -1,8 +1,10 @@
 import { useState, useMemo } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +40,8 @@ import { format, formatDistanceToNow } from "date-fns";
 export default function TimeClockManagerPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
+  const [activeTab, setActiveTab] = useState("live");
   
   // Filter state
   const [activeSearchTerm, setActiveSearchTerm] = useState("");
@@ -428,40 +432,60 @@ export default function TimeClockManagerPage() {
           </Card>
         </div>
 
-        <Tabs defaultValue="live" className="space-y-6">
-          <TabsList data-testid="tabs-manager">
-            <TabsTrigger value="live" data-testid="tab-live">
-              <Users className="w-4 h-4 mr-2" />
-              Live Monitoring
-            </TabsTrigger>
-            <TabsTrigger value="approvals" data-testid="tab-approvals">
-              <CheckCircle className="w-4 h-4 mr-2" />
-              Shift Approvals
-              {pendingShifts.length > 0 && (
-                <Badge variant="destructive" className="ml-2" data-testid="badge-pending-count">
-                  {pendingShifts.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="time-entries" data-testid="tab-time-entries">
-              <FileText className="w-4 h-4 mr-2" />
-              Time Entry Approvals
-              {pendingEntries.length > 0 && (
-                <Badge variant="destructive" className="ml-2" data-testid="badge-entry-count">
-                  {pendingEntries.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="overtime" data-testid="tab-overtime">
-              <Timer className="w-4 h-4 mr-2" />
-              OT Requests
-              {pendingOtRequests.length > 0 && (
-                <Badge variant="destructive" className="ml-2" data-testid="badge-ot-count">
-                  {pendingOtRequests.length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          {isMobile ? (
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger className="mb-2" data-testid="select-manager-tab">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="live">Live Monitoring</SelectItem>
+                <SelectItem value="approvals">
+                  Shift Approvals{pendingShifts.length > 0 ? ` (${pendingShifts.length})` : ""}
+                </SelectItem>
+                <SelectItem value="time-entries">
+                  Time Entry Approvals{pendingEntries.length > 0 ? ` (${pendingEntries.length})` : ""}
+                </SelectItem>
+                <SelectItem value="overtime">
+                  OT Requests{pendingOtRequests.length > 0 ? ` (${pendingOtRequests.length})` : ""}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <TabsList data-testid="tabs-manager">
+              <TabsTrigger value="live" data-testid="tab-live">
+                <Users className="w-4 h-4 mr-2" />
+                Live Monitoring
+              </TabsTrigger>
+              <TabsTrigger value="approvals" data-testid="tab-approvals">
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Shift Approvals
+                {pendingShifts.length > 0 && (
+                  <Badge variant="destructive" className="ml-2" data-testid="badge-pending-count">
+                    {pendingShifts.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="time-entries" data-testid="tab-time-entries">
+                <FileText className="w-4 h-4 mr-2" />
+                Time Entry Approvals
+                {pendingEntries.length > 0 && (
+                  <Badge variant="destructive" className="ml-2" data-testid="badge-entry-count">
+                    {pendingEntries.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="overtime" data-testid="tab-overtime">
+                <Timer className="w-4 h-4 mr-2" />
+                OT Requests
+                {pendingOtRequests.length > 0 && (
+                  <Badge variant="destructive" className="ml-2" data-testid="badge-ot-count">
+                    {pendingOtRequests.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+          )}
 
           {/* Live Monitoring Tab */}
           <TabsContent value="live" data-testid="content-live">
