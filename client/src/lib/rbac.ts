@@ -767,12 +767,6 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/reports",
-      label: "Reports",
-      testId: "nav-reports",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
-    },
-    {
       href: "/my-kpis",
       label: "My KPIs",
       testId: "nav-my-kpis",

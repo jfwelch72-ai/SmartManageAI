@@ -66,14 +66,19 @@ function fmtInt(n: number): string {
   return n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-export default function ReportsPage() {
+interface ReportsPageProps {
+  embeddedProjectId?: string;
+}
+
+export default function ReportsPage({ embeddedProjectId }: ReportsPageProps = {}) {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const [selectedReport, setSelectedReport] = useState<ReportId>("takeoff-quantity");
   const [takeoffOpen, setTakeoffOpen] = useState(true);
   const [estimateOpen, setEstimateOpen] = useState(true);
   const [expanded, setExpanded] = useState(false);
-  const [projectFilter, setProjectFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>(embeddedProjectId || "all");
+  const isEmbedded = !!embeddedProjectId;
 
   const { data: projectsData } = useQuery<any>({
     queryKey: ["/api/projects"],
@@ -112,7 +117,7 @@ export default function ReportsPage() {
   };
 
   const handleReset = () => {
-    setProjectFilter("all");
+    if (!isEmbedded) setProjectFilter("all");
     setExpanded(false);
   };
 
@@ -195,6 +200,7 @@ export default function ReportsPage() {
                 <ChevronsUpDown className="h-4 w-4 mr-1" />
                 {expanded ? "Collapse" : "Expand"}
               </Button>
+              {!isEmbedded && (
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className={isMobile ? "flex-1" : ""} data-testid="button-data-filters">
@@ -220,6 +226,7 @@ export default function ReportsPage() {
                   </div>
                 </PopoverContent>
               </Popover>
+              )}
               <Button variant="outline" size="sm" onClick={handleReset} className={isMobile ? "flex-1" : ""} data-testid="button-reset">
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Reset

@@ -27,13 +27,14 @@ import { useAuth } from "@/hooks/use-auth";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import LibraryPanel from "@/components/LibraryPanel";
+import ReportsPage from "@/pages/reports";
 
 interface PlansTabProps {
   projectCode: string;
   project: any;
 }
 
-type SubTab = "plans" | "addenda" | "libraries";
+type SubTab = "plans" | "addenda" | "libraries" | "reports";
 
 interface DocGroup {
   name: string;
@@ -276,6 +277,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
         >
           Libraries
         </Button>
+        <Button
+          variant={subTab === "reports" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setSubTab("reports")}
+          data-testid="tab-reports"
+        >
+          Reports
+        </Button>
       </div>
 
       {subTab === "addenda" && project && (
@@ -291,6 +300,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       {subTab === "libraries" && project && (
         <div className="flex-1 min-h-0">
           <LibraryPanel projectId={project.id} />
+        </div>
+      )}
+
+      {subTab === "reports" && project && (
+        <div className="flex-1 min-h-0 overflow-auto">
+          <ReportsPage embeddedProjectId={String(project.id)} />
         </div>
       )}
 
