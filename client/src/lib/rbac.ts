@@ -364,6 +364,9 @@ export const RoutePermissions = {
 
   // KPI Management (ADMIN, MANAGER, SUPERINTENDENT, HUSTLER, HR_MANAGER)
   KPI_MANAGEMENT: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" || role === "HR_MANAGER",
+
+  // Reports (ADMIN, MANAGER, ESTIMATOR, SUPERINTENDENT)
+  REPORTS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
 };
 
 /**
@@ -762,6 +765,12 @@ export const NavigationConfig = {
       label: "Calculator",
       testId: "nav-calculator",
       visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
+      href: "/reports",
+      label: "Reports",
+      testId: "nav-reports",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
     },
     {
       href: "/my-kpis",

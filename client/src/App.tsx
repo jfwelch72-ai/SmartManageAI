@@ -109,6 +109,7 @@ import AuditLogsPage from "@/pages/audit-logs";
 import EnterpriseSettingsPage from "@/pages/enterprise-settings";
 import MyKpisPage from "@/pages/my-kpis";
 import KpiManagementPage from "@/pages/kpi-management";
+import ReportsPage from "@/pages/reports";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -282,6 +283,7 @@ function Router() {
       <Route path="/my-kpis" component={() => <ProtectedRoute component={MyKpisPage} />} />
       <Route path="/kpi-management" component={() => <ProtectedRoute component={KpiManagementPage} permission={RoutePermissions.KPI_MANAGEMENT} />} />
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
+      <Route path="/reports" component={() => <ProtectedRoute component={ReportsPage} permission={RoutePermissions.REPORTS} />} />
       <Route path="/manage-workers/:id" component={() => <ProtectedRoute component={WorkerDetailPage} permission={RoutePermissions.MANAGE_WORKERS} />} />
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} />} />

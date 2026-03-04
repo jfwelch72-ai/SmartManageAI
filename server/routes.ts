@@ -143,6 +143,7 @@ import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
 import mobileSyncRoutes from "./mobileSyncRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
+import reportRoutes from "./reportRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -439,6 +440,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Mobile & Offline Sync Routes
   app.use(mobileSyncRoutes);
+
+  // Reports Routes (Takeoff & Estimate Reports)
+  app.use(reportRoutes);
 
   // Marketing Document PDF
   const marketingPdfRoute = (await import("./marketingPdfRoute")).default;
