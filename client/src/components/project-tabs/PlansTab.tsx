@@ -250,7 +250,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   };
 
   return (
-      <div className="flex flex-col h-[calc(100vh-200px)]">
+      <div className="flex flex-col h-[calc(100vh-200px)] mb-[50px]">
       <div className="border-b flex items-center gap-1 px-2 py-1 bg-card shrink-0">
         <Button
           variant={subTab === "plans" ? "default" : "ghost"}

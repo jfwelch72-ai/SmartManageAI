@@ -1803,7 +1803,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   return (
     <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative overflow-hidden">
       {/* Left Toolbar - vertical on desktop, hidden on mobile (shown as bottom bar instead) */}
-      <div className="hidden sm:flex w-20 bg-card border-r flex-col items-center py-4 gap-2 overflow-y-auto scrollbar-hide shrink-0">
+      <div className="hidden sm:flex w-20 bg-card border-r flex-col items-center py-2 gap-1 overflow-y-auto scrollbar-hide shrink-0">
         {TOOL_CONFIG.map((tool, idx) => {
           const Icon = tool.icon;
           const showSeparator = tool.id === "linear_with_drop";
