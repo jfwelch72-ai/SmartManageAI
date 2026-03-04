@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -164,11 +164,11 @@ function LienWaiversTab({ projects, sovs }: { projects: Project[]; sovs: SOV[] }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <Shield className="h-5 w-5" /> Lien Waivers
         </h2>
-        <Button onClick={() => setShowCreate(true)} data-testid="button-create-lien-waiver">
+        <Button onClick={() => setShowCreate(true)} data-testid="button-create-lien-waiver" className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" /> New Waiver
         </Button>
       </div>
@@ -178,66 +178,117 @@ function LienWaiversTab({ projects, sovs }: { projects: Project[]; sovs: SOV[] }
       ) : waivers.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">No lien waivers yet</CardContent></Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Recipient</TableHead>
-                  <TableHead>Through Date</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {waivers.map((w: any) => (
-                  <TableRow key={w.id} data-testid={`row-waiver-${w.id}`}>
-                    <TableCell>
-                      <span className="font-medium">{w.projectName}</span>
-                      {w.projectCode && <span className="text-xs text-muted-foreground ml-1">({w.projectCode})</span>}
-                    </TableCell>
-                    <TableCell><Badge variant="outline">{waiverTypeLabel(w.waiverType)}</Badge></TableCell>
-                    <TableCell>
-                      <span>{w.recipientName}</span>
-                      {w.recipientCompany && <span className="text-xs text-muted-foreground block">{w.recipientCompany}</span>}
-                    </TableCell>
-                    <TableCell>{w.throughDate ? format(new Date(w.throughDate), "MMM d, yyyy") : "—"}</TableCell>
-                    <TableCell className="text-right font-medium">${parseFloat(w.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                    <TableCell><Badge className={statusColor(w.status)}>{w.status}</Badge></TableCell>
-                    <TableCell className="text-right">
-                      {nextStatus(w.status) && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => updateStatusMutation.mutate({ id: w.id, status: nextStatus(w.status)! })}
-                          disabled={updateStatusMutation.isPending}
-                          data-testid={`button-advance-waiver-${w.id}`}
-                        >
-                          {nextStatus(w.status) === "SENT" ? "Mark Sent" : nextStatus(w.status) === "RECEIVED" ? "Mark Received" : "Approve"}
-                        </Button>
-                      )}
-                      {w.status === "RECEIVED" && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="ml-1"
-                          onClick={() => updateStatusMutation.mutate({ id: w.id, status: "REJECTED" })}
-                          disabled={updateStatusMutation.isPending}
-                          data-testid={`button-reject-waiver-${w.id}`}
-                        >
-                          Reject
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <>
+          <div className="hidden md:block">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Recipient</TableHead>
+                      <TableHead>Through Date</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {waivers.map((w: any) => (
+                      <TableRow key={w.id} data-testid={`row-waiver-${w.id}`}>
+                        <TableCell>
+                          <span className="font-medium">{w.projectName}</span>
+                          {w.projectCode && <span className="text-xs text-muted-foreground ml-1">({w.projectCode})</span>}
+                        </TableCell>
+                        <TableCell><Badge variant="outline">{waiverTypeLabel(w.waiverType)}</Badge></TableCell>
+                        <TableCell>
+                          <span>{w.recipientName}</span>
+                          {w.recipientCompany && <span className="text-xs text-muted-foreground block">{w.recipientCompany}</span>}
+                        </TableCell>
+                        <TableCell>{w.throughDate ? format(new Date(w.throughDate), "MMM d, yyyy") : "—"}</TableCell>
+                        <TableCell className="text-right font-medium">${parseFloat(w.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                        <TableCell><Badge className={statusColor(w.status)}>{w.status}</Badge></TableCell>
+                        <TableCell className="text-right">
+                          {nextStatus(w.status) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateStatusMutation.mutate({ id: w.id, status: nextStatus(w.status)! })}
+                              disabled={updateStatusMutation.isPending}
+                              data-testid={`button-advance-waiver-${w.id}`}
+                            >
+                              {nextStatus(w.status) === "SENT" ? "Mark Sent" : nextStatus(w.status) === "RECEIVED" ? "Mark Received" : "Approve"}
+                            </Button>
+                          )}
+                          {w.status === "RECEIVED" && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="ml-1"
+                              onClick={() => updateStatusMutation.mutate({ id: w.id, status: "REJECTED" })}
+                              disabled={updateStatusMutation.isPending}
+                              data-testid={`button-reject-waiver-${w.id}`}
+                            >
+                              Reject
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="md:hidden space-y-3">
+            {waivers.map((w: any) => (
+              <div key={w.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-waiver-${w.id}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">{w.recipientName}</p>
+                    {w.recipientCompany && <p className="text-xs text-muted-foreground">{w.recipientCompany}</p>}
+                    <p className="text-xs text-muted-foreground truncate">{w.projectName}</p>
+                  </div>
+                  <Badge className={`${statusColor(w.status)} text-xs flex-shrink-0`}>{w.status}</Badge>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline" className="text-xs">{waiverTypeLabel(w.waiverType)}</Badge>
+                  <span className="text-xs text-muted-foreground">{w.throughDate ? format(new Date(w.throughDate), "MMM d, yyyy") : "—"}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <p className="font-mono font-semibold text-sm">${parseFloat(w.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                  <div className="flex gap-1.5">
+                    {nextStatus(w.status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => updateStatusMutation.mutate({ id: w.id, status: nextStatus(w.status)! })}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid={`button-advance-waiver-m-${w.id}`}
+                      >
+                        {nextStatus(w.status) === "SENT" ? "Send" : nextStatus(w.status) === "RECEIVED" ? "Received" : "Approve"}
+                      </Button>
+                    )}
+                    {w.status === "RECEIVED" && (
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => updateStatusMutation.mutate({ id: w.id, status: "REJECTED" })}
+                        disabled={updateStatusMutation.isPending}
+                        data-testid={`button-reject-waiver-m-${w.id}`}
+                      >
+                        Reject
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
@@ -372,11 +423,11 @@ function PaymentsTab({ sovs }: { sovs: SOV[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <CreditCard className="h-5 w-5" /> Partial Payments
         </h2>
-        <Button onClick={() => setShowCreate(true)} data-testid="button-record-payment">
+        <Button onClick={() => setShowCreate(true)} data-testid="button-record-payment" className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" /> Record Payment
         </Button>
       </div>
@@ -386,46 +437,86 @@ function PaymentsTab({ sovs }: { sovs: SOV[] }) {
       ) : payments.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">No payments recorded yet</CardContent></Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>SOV / Project</TableHead>
-                  <TableHead className="text-center">Payment #</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Method</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {payments.map((p: any) => {
-                  const bal = getSOVBalance(p.sovId, p.totalEarnedLessRetainage);
-                  return (
-                    <TableRow key={p.id} data-testid={`row-payment-${p.id}`}>
-                      <TableCell>
-                        <span className="font-medium">{p.sovNumber}</span>
-                        <span className="text-xs text-muted-foreground block">{p.projectName}</span>
-                      </TableCell>
-                      <TableCell className="text-center">#{p.paymentNumber}</TableCell>
-                      <TableCell className="text-right font-medium text-emerald-600">${parseFloat(p.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                      <TableCell>{p.paymentDate ? format(new Date(p.paymentDate), "MMM d, yyyy") : "—"}</TableCell>
-                      <TableCell><Badge variant="outline">{methodLabel(p.paymentMethod)}</Badge></TableCell>
-                      <TableCell className="text-muted-foreground">{p.referenceNumber || "—"}</TableCell>
-                      <TableCell className="text-right">
-                        <span className={bal.remaining > 0.01 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
-                          ${bal.remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </span>
-                      </TableCell>
+        <>
+          <div className="hidden md:block">
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>SOV / Project</TableHead>
+                      <TableHead className="text-center">Payment #</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Balance</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {payments.map((p: any) => {
+                      const bal = getSOVBalance(p.sovId, p.totalEarnedLessRetainage);
+                      return (
+                        <TableRow key={p.id} data-testid={`row-payment-${p.id}`}>
+                          <TableCell>
+                            <span className="font-medium">{p.sovNumber}</span>
+                            <span className="text-xs text-muted-foreground block">{p.projectName}</span>
+                          </TableCell>
+                          <TableCell className="text-center">#{p.paymentNumber}</TableCell>
+                          <TableCell className="text-right font-medium text-emerald-600">${parseFloat(p.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                          <TableCell>{p.paymentDate ? format(new Date(p.paymentDate), "MMM d, yyyy") : "—"}</TableCell>
+                          <TableCell><Badge variant="outline">{methodLabel(p.paymentMethod)}</Badge></TableCell>
+                          <TableCell className="text-muted-foreground">{p.referenceNumber || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <span className={bal.remaining > 0.01 ? "text-amber-600 font-medium" : "text-emerald-600 font-medium"}>
+                              ${bal.remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+          <div className="md:hidden space-y-3">
+            {payments.map((p: any) => {
+              const bal = getSOVBalance(p.sovId, p.totalEarnedLessRetainage);
+              return (
+                <div key={p.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-payment-${p.id}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm">{p.sovNumber}</p>
+                      <p className="text-xs text-muted-foreground truncate">{p.projectName}</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <Badge variant="outline" className="text-xs">#{p.paymentNumber}</Badge>
+                      <Badge variant="outline" className="text-xs">{methodLabel(p.paymentMethod)}</Badge>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>
+                      <span className="text-muted-foreground">Amount</span>
+                      <p className="font-mono font-semibold text-emerald-600">${parseFloat(p.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Date</span>
+                      <p className="font-medium">{p.paymentDate ? format(new Date(p.paymentDate), "MMM d, yy") : "—"}</p>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Balance</span>
+                      <p className={`font-mono font-semibold ${bal.remaining > 0.01 ? "text-amber-600" : "text-emerald-600"}`}>
+                        ${bal.remaining.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                  {p.referenceNumber && <p className="text-xs text-muted-foreground">Ref: {p.referenceNumber}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
@@ -521,120 +612,209 @@ function COTieOutTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <GitCompare className="h-5 w-5" /> Change Order SOV Tie-Out
         </h2>
-        <div className="flex items-center gap-3">
-          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-xs">
             <CheckCircle2 className="h-3 w-3 mr-1" /> {reconciledCount} Reconciled
           </Badge>
           {discrepancyCount > 0 && (
-            <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+            <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 text-xs">
               <AlertTriangle className="h-3 w-3 mr-1" /> {discrepancyCount} Discrepancies
             </Badge>
           )}
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project</TableHead>
-                <TableHead className="text-right">Contract Value</TableHead>
-                <TableHead className="text-right">Approved COs</TableHead>
-                <TableHead className="text-right">Expected SOV Total</TableHead>
-                <TableHead className="text-right">Actual SOV Total</TableHead>
-                <TableHead className="text-right">Variance</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reconciliation.map((r: any) => (
-                <>
-                  <TableRow
-                    key={r.projectId}
-                    className="cursor-pointer hover:bg-muted/30"
-                    onClick={() => setExpandedProject(expandedProject === r.projectId ? null : r.projectId)}
-                    data-testid={`row-tieout-${r.projectId}`}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        {expandedProject === r.projectId ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        <span className="font-medium">{r.projectName}</span>
-                        {r.projectCode && <span className="text-xs text-muted-foreground">({r.projectCode})</span>}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">${r.contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                    <TableCell className="text-right">
-                      ${r.approvedCOTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      <span className="text-xs text-muted-foreground ml-1">({r.changeOrderCount} COs)</span>
-                    </TableCell>
-                    <TableCell className="text-right">${r.expectedSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                    <TableCell className="text-right">${r.actualSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
-                    <TableCell className="text-right">
-                      <span className={Math.abs(r.variance) < 0.01 ? "text-muted-foreground" : r.variance > 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
-                        {r.variance >= 0 ? "+" : ""}${r.variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      {r.isReconciled ? (
-                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
-                          <CheckCircle2 className="h-3 w-3 mr-1" /> Reconciled
-                        </Badge>
-                      ) : (
-                        <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                          <AlertTriangle className="h-3 w-3 mr-1" /> Discrepancy
-                        </Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                  {expandedProject === r.projectId && (
-                    <TableRow key={`${r.projectId}-detail`}>
-                      <TableCell colSpan={7} className="bg-muted/20 p-4">
-                        <div className="grid grid-cols-2 gap-6">
-                          <div>
-                            <h4 className="text-sm font-semibold mb-2">Approved Change Orders ({r.changeOrderCount})</h4>
-                            {r.changeOrders.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">No approved COs</p>
-                            ) : (
-                              <div className="space-y-1">
-                                {r.changeOrders.map((co: any) => (
-                                  <div key={co.id} className="flex justify-between text-sm py-1 border-b last:border-0">
-                                    <span>{co.changeOrderNumber}: {co.description}</span>
-                                    <span className="font-medium">${parseFloat(co.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-semibold mb-2">SOV Records ({r.sovCount})</h4>
-                            {r.sovs.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">No SOVs found</p>
-                            ) : (
-                              <div className="space-y-1">
-                                {r.sovs.map((sov: any) => (
-                                  <div key={sov.id} className="flex justify-between text-sm py-1 border-b last:border-0">
-                                    <span>{sov.sovNumber}: {sov.title}</span>
-                                    <span className="font-medium">${parseFloat(sov.totalScheduledValue || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+      <div className="hidden md:block">
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead className="text-right">Contract Value</TableHead>
+                  <TableHead className="text-right">Approved COs</TableHead>
+                  <TableHead className="text-right">Expected SOV Total</TableHead>
+                  <TableHead className="text-right">Actual SOV Total</TableHead>
+                  <TableHead className="text-right">Variance</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {reconciliation.map((r: any) => (
+                  <Fragment key={r.projectId}>
+                    <TableRow
+                      className="cursor-pointer hover:bg-muted/30"
+                      onClick={() => setExpandedProject(expandedProject === r.projectId ? null : r.projectId)}
+                      data-testid={`row-tieout-${r.projectId}`}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {expandedProject === r.projectId ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          <span className="font-medium">{r.projectName}</span>
+                          {r.projectCode && <span className="text-xs text-muted-foreground">({r.projectCode})</span>}
                         </div>
                       </TableCell>
+                      <TableCell className="text-right">${r.contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="text-right">
+                        ${r.approvedCOTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        <span className="text-xs text-muted-foreground ml-1">({r.changeOrderCount} COs)</span>
+                      </TableCell>
+                      <TableCell className="text-right">${r.expectedSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="text-right">${r.actualSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</TableCell>
+                      <TableCell className="text-right">
+                        <span className={Math.abs(r.variance) < 0.01 ? "text-muted-foreground" : r.variance > 0 ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>
+                          {r.variance >= 0 ? "+" : ""}${r.variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {r.isReconciled ? (
+                          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+                            <CheckCircle2 className="h-3 w-3 mr-1" /> Reconciled
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
+                            <AlertTriangle className="h-3 w-3 mr-1" /> Discrepancy
+                          </Badge>
+                        )}
+                      </TableCell>
                     </TableRow>
+                    {expandedProject === r.projectId && (
+                      <TableRow key={`${r.projectId}-detail`}>
+                        <TableCell colSpan={7} className="bg-muted/20 p-4">
+                          <div className="grid grid-cols-2 gap-6">
+                            <div>
+                              <h4 className="text-sm font-semibold mb-2">Approved Change Orders ({r.changeOrderCount})</h4>
+                              {r.changeOrders.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No approved COs</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {r.changeOrders.map((co: any) => (
+                                    <div key={co.id} className="flex justify-between text-sm py-1 border-b last:border-0">
+                                      <span>{co.changeOrderNumber}: {co.description}</span>
+                                      <span className="font-medium">${parseFloat(co.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold mb-2">SOV Records ({r.sovCount})</h4>
+                              {r.sovs.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No SOVs found</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {r.sovs.map((sov: any) => (
+                                    <div key={sov.id} className="flex justify-between text-sm py-1 border-b last:border-0">
+                                      <span>{sov.sovNumber}: {sov.title}</span>
+                                      <span className="font-medium">${parseFloat(sov.totalScheduledValue || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="md:hidden space-y-3">
+        {reconciliation.map((r: any) => (
+          <div
+            key={r.projectId}
+            className="border rounded-lg overflow-hidden"
+            data-testid={`card-tieout-${r.projectId}`}
+          >
+            <div
+              className="p-3 cursor-pointer"
+              onClick={() => setExpandedProject(expandedProject === r.projectId ? null : r.projectId)}
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {expandedProject === r.projectId ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">{r.projectName}</p>
+                    {r.projectCode && <p className="text-xs text-muted-foreground">({r.projectCode})</p>}
+                  </div>
+                </div>
+                {r.isReconciled ? (
+                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200 text-xs flex-shrink-0">
+                    <CheckCircle2 className="h-3 w-3 mr-1" /> OK
+                  </Badge>
+                ) : (
+                  <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 text-xs flex-shrink-0">
+                    <AlertTriangle className="h-3 w-3 mr-1" /> Discrepancy
+                  </Badge>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs pl-6">
+                <div>
+                  <span className="text-muted-foreground">Contract</span>
+                  <p className="font-mono font-medium">${r.contractValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">COs ({r.changeOrderCount})</span>
+                  <p className="font-mono font-medium">${r.approvedCOTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Actual SOV</span>
+                  <p className="font-mono font-medium">${r.actualSovTotal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Variance</span>
+                  <p className={`font-mono font-medium ${Math.abs(r.variance) < 0.01 ? "text-muted-foreground" : r.variance > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {r.variance >= 0 ? "+" : ""}${r.variance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </div>
+            {expandedProject === r.projectId && (
+              <div className="border-t bg-muted/20 p-3 space-y-3">
+                <div>
+                  <h4 className="text-xs font-semibold mb-1.5">Approved Change Orders ({r.changeOrderCount})</h4>
+                  {r.changeOrders.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No approved COs</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {r.changeOrders.map((co: any) => (
+                        <div key={co.id} className="flex justify-between text-xs py-1 border-b last:border-0">
+                          <span className="truncate mr-2">{co.changeOrderNumber}: {co.description}</span>
+                          <span className="font-mono font-medium flex-shrink-0">${parseFloat(co.amount || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold mb-1.5">SOV Records ({r.sovCount})</h4>
+                  {r.sovs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No SOVs found</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {r.sovs.map((sov: any) => (
+                        <div key={sov.id} className="flex justify-between text-xs py-1 border-b last:border-0">
+                          <span className="truncate mr-2">{sov.sovNumber}: {sov.title}</span>
+                          <span className="font-mono font-medium flex-shrink-0">${parseFloat(sov.totalScheduledValue || "0").toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -913,19 +1093,19 @@ export default function ScheduleOfValuesPage() {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className="p-4 sm:p-8 space-y-4 sm:space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <FileSpreadsheet className="h-8 w-8 text-primary" />
+          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+            <FileSpreadsheet className="h-7 w-7 sm:h-8 sm:w-8 text-primary" />
             Schedule of Values
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-sm sm:text-base text-muted-foreground mt-1">
             Manage billing schedules, payments, lien waivers, and change order reconciliation
           </p>
         </div>
         {canEdit && mainTab === "pay-apps" && (
-          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-sov">
+          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-sov" className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Create SOV
           </Button>
@@ -933,69 +1113,69 @@ export default function ScheduleOfValuesPage() {
       </div>
 
       <Tabs value={mainTab} onValueChange={setMainTab}>
-        <TabsList data-testid="tabs-main-sov">
-          <TabsTrigger value="pay-apps" data-testid="tab-pay-apps">
-            <FileSpreadsheet className="h-4 w-4 mr-1.5" /> Pay Apps
+        <TabsList className="w-full" data-testid="tabs-main-sov">
+          <TabsTrigger value="pay-apps" className="flex-1 text-xs sm:text-sm" data-testid="tab-pay-apps">
+            <FileSpreadsheet className="h-4 w-4 mr-1 sm:mr-1.5" /> <span className="hidden sm:inline">Pay Apps</span><span className="sm:hidden">Pay Apps</span>
           </TabsTrigger>
-          <TabsTrigger value="lien-waivers" data-testid="tab-lien-waivers">
-            <Shield className="h-4 w-4 mr-1.5" /> Lien Waivers
+          <TabsTrigger value="lien-waivers" className="flex-1 text-xs sm:text-sm" data-testid="tab-lien-waivers">
+            <Shield className="h-4 w-4 mr-1 sm:mr-1.5" /> <span className="hidden sm:inline">Lien Waivers</span><span className="sm:hidden">Waivers</span>
           </TabsTrigger>
-          <TabsTrigger value="payments" data-testid="tab-payments">
-            <CreditCard className="h-4 w-4 mr-1.5" /> Payments
+          <TabsTrigger value="payments" className="flex-1 text-xs sm:text-sm" data-testid="tab-payments">
+            <CreditCard className="h-4 w-4 mr-1 sm:mr-1.5" /> <span>Payments</span>
           </TabsTrigger>
-          <TabsTrigger value="co-tieout" data-testid="tab-co-tieout">
-            <GitCompare className="h-4 w-4 mr-1.5" /> CO Tie-Out
+          <TabsTrigger value="co-tieout" className="flex-1 text-xs sm:text-sm" data-testid="tab-co-tieout">
+            <GitCompare className="h-4 w-4 mr-1 sm:mr-1.5" /> <span className="hidden sm:inline">CO Tie-Out</span><span className="sm:hidden">CO</span>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="pay-apps" className="mt-6 space-y-6">
+        <TabsContent value="pay-apps" className="mt-4 sm:mt-6 space-y-4 sm:space-y-6">
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <FileSpreadsheet className="h-4 w-4" />
+          <CardHeader className="pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+              <FileSpreadsheet className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Total SOVs
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{sovs.length}</div>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold">{sovs.length}</div>
           </CardContent>
         </Card>
         
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Clock className="h-4 w-4" />
+          <CardHeader className="pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+              <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Draft
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{draftSOVs.length}</div>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold">{draftSOVs.length}</div>
           </CardContent>
         </Card>
         
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4" />
-              Pending Approval
+          <CardHeader className="pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              Pending
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{pendingSOVs.length}</div>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold">{pendingSOVs.length}</div>
           </CardContent>
         </Card>
         
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              Approved/Submitted
+          <CardHeader className="pb-1 sm:pb-2 p-3 sm:p-6">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground flex items-center gap-1.5 sm:gap-2">
+              <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              Approved
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{approvedSOVs.length}</div>
+          <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+            <div className="text-xl sm:text-2xl font-bold">{approvedSOVs.length}</div>
           </CardContent>
         </Card>
       </div>
@@ -1031,31 +1211,31 @@ export default function ScheduleOfValuesPage() {
                 ).map(sov => (
                   <Collapsible key={sov.id} open={expandedItems.has(sov.id)}>
                     <Card>
-                      <CardContent className="py-4">
-                        <div className="flex items-center justify-between gap-4">
+                      <CardContent className="py-3 sm:py-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
                           <CollapsibleTrigger 
-                            className="flex items-center gap-4 cursor-pointer flex-1"
+                            className="flex items-center gap-2 sm:gap-4 cursor-pointer flex-1"
                             onClick={() => toggleExpanded(sov.id)}
                           >
                             {expandedItems.has(sov.id) ? (
-                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                              <ChevronDown className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                             ) : (
-                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                              <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                             )}
-                            <div className="text-left">
-                              <h3 className="font-medium">{sov.sovNumber} - {sov.title}</h3>
-                              <p className="text-sm text-muted-foreground">
+                            <div className="text-left min-w-0">
+                              <h3 className="font-medium text-sm sm:text-base truncate">{sov.sovNumber} - {sov.title}</h3>
+                              <p className="text-xs sm:text-sm text-muted-foreground truncate">
                                 {sov.projectCode} - {sov.projectName}
                               </p>
                             </div>
                           </CollapsibleTrigger>
-                          <div className="flex items-center gap-3 flex-shrink-0 flex-wrap">
+                          <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 flex-wrap pl-7 sm:pl-0">
                             {getStatusBadge(sov.status)}
-                            <Badge variant="outline">
+                            <Badge variant="outline" className="text-xs">
                               <Percent className="h-3 w-3 mr-1" />
                               {formatPercent(sov.overallPercentComplete)}
                             </Badge>
-                            <Badge variant="secondary">
+                            <Badge variant="secondary" className="text-xs">
                               <DollarSign className="h-3 w-3 mr-1" />
                               {formatCurrency(sov.totalScheduledValue)}
                             </Badge>
@@ -1064,37 +1244,63 @@ export default function ScheduleOfValuesPage() {
                               variant="outline" 
                               onClick={() => openDetailDialog(sov)}
                               data-testid={`button-view-sov-${sov.id}`}
+                              className="h-7 sm:h-8"
                             >
-                              <Eye className="h-4 w-4 mr-1" />
-                              View
+                              <Eye className="h-4 w-4 sm:mr-1" />
+                              <span className="hidden sm:inline">View</span>
                             </Button>
                           </div>
                         </div>
                       </CardContent>
                       <CollapsibleContent>
-                        <div className="px-6 pb-4 border-t pt-4">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-16">#</TableHead>
-                                <TableHead>Description</TableHead>
-                                <TableHead className="text-right">Scheduled Value</TableHead>
-                                <TableHead className="text-right">% Complete</TableHead>
-                                <TableHead className="text-right">Balance</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {sov.lineItems?.map(item => (
-                                <TableRow key={item.id}>
-                                  <TableCell>{item.itemNumber}</TableCell>
-                                  <TableCell>{item.description}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(item.scheduledValue)}</TableCell>
-                                  <TableCell className="text-right">{formatPercent(item.percentComplete)}</TableCell>
-                                  <TableCell className="text-right">{formatCurrency(item.balanceToFinish)}</TableCell>
+                        <div className="px-3 sm:px-6 pb-4 border-t pt-4">
+                          <div className="hidden sm:block">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-16">#</TableHead>
+                                  <TableHead>Description</TableHead>
+                                  <TableHead className="text-right">Scheduled Value</TableHead>
+                                  <TableHead className="text-right">% Complete</TableHead>
+                                  <TableHead className="text-right">Balance</TableHead>
                                 </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
+                              </TableHeader>
+                              <TableBody>
+                                {sov.lineItems?.map(item => (
+                                  <TableRow key={item.id}>
+                                    <TableCell>{item.itemNumber}</TableCell>
+                                    <TableCell>{item.description}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(item.scheduledValue)}</TableCell>
+                                    <TableCell className="text-right">{formatPercent(item.percentComplete)}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(item.balanceToFinish)}</TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                          <div className="sm:hidden space-y-2">
+                            {sov.lineItems?.map(item => (
+                              <div key={item.id} className="border rounded-lg p-2.5 space-y-1" data-testid={`card-line-item-${item.id}`}>
+                                <div className="flex items-start justify-between gap-2">
+                                  <p className="text-sm font-medium">#{item.itemNumber} {item.description}</p>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                  <div>
+                                    <span className="text-muted-foreground">Value</span>
+                                    <p className="font-mono font-medium">{formatCurrency(item.scheduledValue)}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Complete</span>
+                                    <p className="font-mono font-medium">{formatPercent(item.percentComplete)}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Balance</span>
+                                    <p className="font-mono font-medium">{formatCurrency(item.balanceToFinish)}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </CollapsibleContent>
                     </Card>
