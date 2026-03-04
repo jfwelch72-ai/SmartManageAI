@@ -120,11 +120,11 @@ export default function ScopeLibraryPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+    <div className="container mx-auto p-4 sm:p-6 max-w-6xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-2">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-scope-library-title">
-            <BookOpen className="h-6 w-6" />
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2" data-testid="text-scope-library-title">
+            <BookOpen className="h-5 w-5 sm:h-6 sm:w-6" />
             Scope Library
           </h1>
           {tradeType && (
@@ -151,21 +151,21 @@ export default function ScopeLibraryPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-6">
-          <TabsTrigger value="scopes" className="flex items-center gap-2" data-testid="tab-scopes">
-            <Layers className="h-4 w-4" />
+        <TabsList className="flex w-full overflow-x-auto whitespace-nowrap mb-6">
+          <TabsTrigger value="scopes" className="flex items-center gap-1.5 text-xs sm:text-sm sm:gap-2" data-testid="tab-scopes">
+            <Layers className="h-4 w-4 shrink-0" />
             Scopes
-            <Badge variant="secondary" className="ml-1">{filteredScopes.length}</Badge>
+            <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-xs">{filteredScopes.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="components" className="flex items-center gap-2" data-testid="tab-components">
-            <Package className="h-4 w-4" />
+          <TabsTrigger value="components" className="flex items-center gap-1.5 text-xs sm:text-sm sm:gap-2" data-testid="tab-components">
+            <Package className="h-4 w-4 shrink-0" />
             Components
-            <Badge variant="secondary" className="ml-1">{filteredComponents.length}</Badge>
+            <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-xs">{filteredComponents.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="materials" className="flex items-center gap-2" data-testid="tab-materials">
-            <Wrench className="h-4 w-4" />
+          <TabsTrigger value="materials" className="flex items-center gap-1.5 text-xs sm:text-sm sm:gap-2" data-testid="tab-materials">
+            <Wrench className="h-4 w-4 shrink-0" />
             Materials
-            <Badge variant="secondary" className="ml-1">{filteredMaterials.length}</Badge>
+            <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-xs">{filteredMaterials.length}</Badge>
           </TabsTrigger>
         </TabsList>
 
