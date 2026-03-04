@@ -20,7 +20,7 @@ import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
-import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, Plus, CheckCircle, XCircle, Clock, Upload, DollarSign, Edit, AlertTriangle, Download, Eye, FileText, Trash2, ChevronDown, ChevronRight, Package, Users, Ruler, CalendarCheck, ExternalLink, Truck, Wrench, Send, Undo2, Settings2, Link2, CloudRain, HelpCircle, FileCheck, LayoutDashboard, ListChecks, FileEdit, Bot, NotebookPen, Camera, Calculator, ShoppingCart, Receipt, Info, Banknote, HardHat } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { useLocation, useRoute } from "wouter";
@@ -1970,13 +1970,20 @@ export default function ProjectDetailPage() {
 
           {/* Desktop tabs - hidden on mobile, flex wrap on larger screens */}
           <TabsList className="hidden md:flex flex-wrap gap-1 h-auto w-full justify-start p-1">
-            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-            <TabsTrigger value="scope" data-testid="tab-scope">Scope & Progress</TabsTrigger>
+            <TabsTrigger value="overview" data-testid="tab-overview">
+              <LayoutDashboard className="h-4 w-4 mr-1" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="scope" data-testid="tab-scope">
+              <ListChecks className="h-4 w-4 mr-1" />
+              Scope & Progress
+            </TabsTrigger>
             <TabsTrigger value="materials" data-testid="tab-materials">
               <Package className="h-4 w-4 mr-1" />
               Materials
             </TabsTrigger>
             <TabsTrigger value="change-orders" data-testid="tab-change-orders">
+              <FileEdit className="h-4 w-4 mr-1" />
               Change Orders
               {changeOrders.filter(co => co.status === "SUBMITTED").length > 0 && (
                 <Badge className="ml-2" variant="secondary">
@@ -1998,6 +2005,7 @@ export default function ProjectDetailPage() {
             </TabsTrigger>
             {hasManagementAccess(user?.role) && (
               <TabsTrigger value="jobsite-ai" data-testid="tab-jobsite-ai">
+                <Bot className="h-4 w-4 mr-1" />
                 AI Jobsite
               </TabsTrigger>
             )}
@@ -2007,30 +2015,63 @@ export default function ProjectDetailPage() {
                 Email
               </TabsTrigger>
             )}
-            <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">Daily Notes</TabsTrigger>
-            <TabsTrigger value="media" data-testid="tab-media">Photos & Videos</TabsTrigger>
+            <TabsTrigger value="daily-notes" data-testid="tab-daily-notes">
+              <NotebookPen className="h-4 w-4 mr-1" />
+              Daily Notes
+            </TabsTrigger>
+            <TabsTrigger value="media" data-testid="tab-media">
+              <Camera className="h-4 w-4 mr-1" />
+              Photos & Videos
+            </TabsTrigger>
             {FeaturePermissions.VIEW_ESTIMATES_TAB(user?.role) && (
-              <TabsTrigger value="estimate" data-testid="tab-estimate">Estimate</TabsTrigger>
+              <TabsTrigger value="estimate" data-testid="tab-estimate">
+                <Calculator className="h-4 w-4 mr-1" />
+                Estimate
+              </TabsTrigger>
             )}
             {FeaturePermissions.VIEW_PROCUREMENT_TAB(user?.role) && (
-              <TabsTrigger value="procurement" data-testid="tab-procurement">Procurement</TabsTrigger>
+              <TabsTrigger value="procurement" data-testid="tab-procurement">
+                <ShoppingCart className="h-4 w-4 mr-1" />
+                Procurement
+              </TabsTrigger>
             )}
-            <TabsTrigger value="plans" data-testid="tab-plans">Plans & Takeoff</TabsTrigger>
+            <TabsTrigger value="plans" data-testid="tab-plans">
+              <Ruler className="h-4 w-4 mr-1" />
+              Plans & Takeoff
+            </TabsTrigger>
             {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
-              <TabsTrigger value="time" data-testid="tab-time">Time & T&M</TabsTrigger>
+              <TabsTrigger value="time" data-testid="tab-time">
+                <Clock className="h-4 w-4 mr-1" />
+                Time & T&M
+              </TabsTrigger>
             )}
             {FeaturePermissions.VIEW_TIME_ENTRIES_TAB(user?.role) && (
-              <TabsTrigger value="labor" data-testid="tab-labor">Labor</TabsTrigger>
+              <TabsTrigger value="labor" data-testid="tab-labor">
+                <HardHat className="h-4 w-4 mr-1" />
+                Labor
+              </TabsTrigger>
             )}
             {FeaturePermissions.VIEW_RECEIPTS_TAB(user?.role) && (
-              <TabsTrigger value="receipts" data-testid="tab-receipts">Receipts</TabsTrigger>
+              <TabsTrigger value="receipts" data-testid="tab-receipts">
+                <Receipt className="h-4 w-4 mr-1" />
+                Receipts
+              </TabsTrigger>
             )}
             {FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(user?.role) && (
-              <TabsTrigger value="subcontractors" data-testid="tab-subcontractors">Subcontractors</TabsTrigger>
+              <TabsTrigger value="subcontractors" data-testid="tab-subcontractors">
+                <Users className="h-4 w-4 mr-1" />
+                Subcontractors
+              </TabsTrigger>
             )}
-            <TabsTrigger value="job-info" data-testid="tab-job-info">Job Info</TabsTrigger>
+            <TabsTrigger value="job-info" data-testid="tab-job-info">
+              <Info className="h-4 w-4 mr-1" />
+              Job Info
+            </TabsTrigger>
             {hasManagementAccess(user?.role) && (
-              <TabsTrigger value="payroll" data-testid="tab-payroll">Payroll</TabsTrigger>
+              <TabsTrigger value="payroll" data-testid="tab-payroll">
+                <Banknote className="h-4 w-4 mr-1" />
+                Payroll
+              </TabsTrigger>
             )}
             {FeaturePermissions.VIEW_EQUIPMENT(user?.role) && (
               <TabsTrigger value="equipment" data-testid="tab-equipment">
