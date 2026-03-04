@@ -229,6 +229,208 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
   }
 });
 
+router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+  try {
+    const bodySchema = z.object({
+      url: z.string().url(),
+      title: z.string().min(1).max(255),
+      type: z.string().default("OTHER"),
+      projectId: z.string().min(1),
+    });
+
+    const parseResult = bodySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: "Invalid input", details: parseResult.error.errors });
+      return;
+    }
+
+    const { url, title, type, projectId } = parseResult.data;
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      res.status(400).json({ error: "Invalid URL format" });
+      return;
+    }
+
+    if (parsedUrl.protocol !== "https:") {
+      res.status(400).json({ error: "Only HTTPS URLs are allowed" });
+      return;
+    }
+
+    const hostname = parsedUrl.hostname;
+    const isPrivateHostname = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|localhost|::1|\[::1\]|169\.254\.)/.test(hostname)
+      || hostname === "localhost"
+      || hostname.endsWith(".local")
+      || hostname.endsWith(".internal");
+    if (isPrivateHostname) {
+      res.status(400).json({ error: "URLs pointing to private/internal networks are not allowed" });
+      return;
+    }
+
+    const dns = await import("dns");
+    const { promisify } = await import("util");
+    const dnsResolve = promisify(dns.resolve4);
+    try {
+      const ips = await dnsResolve(hostname);
+      const isPrivateResolved = ips.some((ip: string) =>
+        /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|169\.254\.)/.test(ip)
+      );
+      if (isPrivateResolved) {
+        res.status(400).json({ error: "URL resolves to a private/internal IP address" });
+        return;
+      }
+    } catch {
+      res.status(400).json({ error: "Unable to resolve hostname" });
+      return;
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const ALLOWED_CONTENT_TYPES = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "image/svg+xml",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "application/msword",
+      "application/vnd.ms-excel",
+      "text/plain",
+      "text/csv",
+    ];
+
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    const FETCH_TIMEOUT_MS = 30000;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        signal: controller.signal,
+        headers: { "User-Agent": "SmartManageAI-DocumentFetcher/1.0" },
+        redirect: "manual",
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeout);
+      if (fetchErr.name === "AbortError") {
+        res.status(408).json({ error: "Request timed out while fetching the URL (30s limit)" });
+        return;
+      }
+      res.status(400).json({ error: `Failed to fetch URL: ${fetchErr.message}` });
+      return;
+    }
+    clearTimeout(timeout);
+
+    if (response.status >= 300 && response.status < 400) {
+      res.status(400).json({ error: "URL redirected. Redirects are not allowed for security. Please provide the final direct URL." });
+      return;
+    }
+
+    if (!response.ok) {
+      res.status(400).json({ error: `URL returned HTTP ${response.status}` });
+      return;
+    }
+
+    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+    if (!ALLOWED_CONTENT_TYPES.includes(contentType)) {
+      res.status(400).json({ error: `Content type '${contentType}' is not allowed. Allowed types: PDF, images, Office documents, text/csv.` });
+      return;
+    }
+
+    const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
+    if (contentLength > MAX_FILE_SIZE) {
+      res.status(400).json({ error: `File size exceeds the 100MB limit` });
+      return;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const fileBuffer = Buffer.from(arrayBuffer);
+
+    if (fileBuffer.length > MAX_FILE_SIZE) {
+      res.status(400).json({ error: `Downloaded file size exceeds the 100MB limit` });
+      return;
+    }
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+
+    const signedUploadUrl = await objectStorageService.getObjectEntityUploadURL(req.user!.organizationId!);
+
+    const uploadResponse = await fetch(signedUploadUrl, {
+      method: "PUT",
+      body: fileBuffer,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Length": String(fileBuffer.length),
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      res.status(500).json({ error: "Failed to upload file to object storage" });
+      return;
+    }
+
+    const uploadedUrl = signedUploadUrl.split("?")[0];
+
+    const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
+      uploadedUrl,
+      {
+        owner: req.user!.id,
+        organizationId: req.user!.organizationId!,
+        visibility: "private",
+      }
+    );
+
+    const ext = parsedUrl.pathname.split("/").pop()?.split(".").pop() || "";
+    const fileName = title + (ext ? `.${ext}` : "");
+
+    const [newDoc] = await db.insert(planDocuments).values([{
+      projectId,
+      type: type as any,
+      title,
+      fileName,
+      fileUrl: uploadedUrl,
+      objectKey,
+      fileSize: fileBuffer.length,
+      mimeType: contentType,
+      uploadedById: req.user!.id,
+    }]).returning();
+
+    await db.insert(filePermissions).values([{
+      fileId: newDoc.id,
+      fileType: "DOCUMENT",
+      userId: req.user!.id,
+      grantedById: req.user!.id,
+    }]);
+
+    await logCreate(req, "plan_document", newDoc.id, {
+      source: "url",
+      sourceUrl: url,
+      title,
+      projectId,
+      fileSize: fileBuffer.length,
+      mimeType: contentType,
+    });
+
+    res.status(201).json(newDoc);
+  } catch (error: any) {
+    console.error("Create document from URL error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { documentId } = req.params;

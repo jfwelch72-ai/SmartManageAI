@@ -4,6 +4,10 @@ import { googleProvider } from "./google";
 import { microsoftProvider } from "./microsoft";
 import { esignProvider } from "./esign";
 import { zapierProvider } from "./zapier";
+import { dropboxProvider } from "./dropbox/provider";
+import { gdriveProvider } from "./gdrive/provider";
+import { onedriveProvider } from "./onedrive/provider";
+import { boxProvider } from "./box/provider";
 
 export function registerAllProviders() {
   registerProvider(qboProvider);
@@ -11,4 +15,8 @@ export function registerAllProviders() {
   registerProvider(microsoftProvider);
   registerProvider(esignProvider);
   registerProvider(zapierProvider);
+  registerProvider(dropboxProvider);
+  registerProvider(gdriveProvider);
+  registerProvider(onedriveProvider);
+  registerProvider(boxProvider);
 }

@@ -2,20 +2,17 @@ import { useState, useMemo, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ObjectUploader } from "@/components/ObjectUploader";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
+import { UploadSourcePicker } from "@/components/UploadSourcePicker";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy
 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -204,12 +201,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     const fileName = uploadedFile.name;
     const fileSize = uploadedFile.size;
     const mimeType = uploadedFile.type;
+    const meta = result._uploadMeta || {};
 
     try {
       await apiRequest("POST", "/api/documents", {
         projectId: project?.id,
-        title: documentTitle,
-        type: documentType,
+        title: meta.title || documentTitle || fileName,
+        type: meta.type || documentType,
         fileUrl,
         fileName,
         fileSize,
@@ -334,74 +332,26 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       data-testid="input-search-documents"
                     />
                   </div>
-                  <Dialog open={showDocumentDialog} onOpenChange={setShowDocumentDialog}>
-                    <DialogTrigger asChild>
-                          <Button size="icon" variant="default" className="h-8 w-8 shrink-0" data-testid="button-upload-document" title="Upload Document">
-                            <Upload className="w-4 h-4" />
-                          </Button>
-                    </DialogTrigger>
-                    <DialogContent data-testid="dialog-upload-document">
-                      <DialogHeader>
-                        <DialogTitle>Upload Document</DialogTitle>
-                        <DialogDescription>Fill in the details below and then select a file to upload.</DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-4">
-                        <div>
-                          <Label htmlFor="document-title">Title</Label>
-                          <Input
-                            id="document-title"
-                            value={documentTitle}
-                            onChange={(e) => setDocumentTitle(e.target.value)}
-                            placeholder="Enter document title..."
-                            data-testid="input-document-title"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="document-type">Type</Label>
-                          <Select
-                            value={documentType}
-                            onValueChange={(value: "PLANS" | "SPECS" | "TAKEOFF" | "OTHER") => setDocumentType(value)}
-                          >
-                            <SelectTrigger id="document-type" data-testid="select-document-type">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="PLANS">Plans</SelectItem>
-                              <SelectItem value="SPECS">Specifications</SelectItem>
-                              <SelectItem value="TAKEOFF">Takeoff</SelectItem>
-                              <SelectItem value="OTHER">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <DialogFooter>
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            setShowDocumentDialog(false);
-                            setDocumentTitle("");
-                            setDocumentType("OTHER");
-                          }}
-                          data-testid="button-cancel-document"
-                        >
-                          Cancel
-                        </Button>
-                        <ObjectUploader
-                          maxNumberOfFiles={1}
-                          maxFileSize={104857600}
-                          onGetUploadParameters={onGetUploadParameters}
-                          onComplete={(result) => {
-                            setIsUploadingDocument(true);
-                            handleDocumentUploadComplete(result);
-                          }}
-                          buttonVariant="default"
-                          testId="button-select-document-file"
-                        >
-                          {isUploadingDocument ? "Uploading..." : "Select File"}
-                        </ObjectUploader>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
+                  <Button
+                    size="icon"
+                    variant="default"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => setShowDocumentDialog(true)}
+                    data-testid="button-upload-document"
+                    title="Upload Document"
+                  >
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                  <UploadSourcePicker
+                    open={showDocumentDialog}
+                    onOpenChange={setShowDocumentDialog}
+                    onGetUploadParameters={onGetUploadParameters}
+                    onComplete={(result) => {
+                      setIsUploadingDocument(true);
+                      handleDocumentUploadComplete(result);
+                    }}
+                    projectId={project!.id}
+                  />
                 </div>
               </div>
 
