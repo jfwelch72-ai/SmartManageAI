@@ -297,7 +297,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       {subTab === "plans" && project && (
         <div className="flex flex-1 min-h-0 relative">
           {!leftPanelCollapsed && (
-            <div className="absolute inset-0 z-20 md:relative md:inset-auto w-full md:w-64 bg-card border-r flex flex-col shrink-0">
+            <div className="absolute inset-0 z-20 md:relative md:inset-auto md:h-full w-full md:w-64 bg-card border-r flex flex-col shrink-0">
               <div className="p-2 border-b space-y-2">
                 <div className="flex items-center gap-1">
                   <Button
