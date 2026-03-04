@@ -898,18 +898,16 @@ export default function CostRatesPage() {
                       {users.map((u) => (
                         <div key={u.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-employee-${u.id}`}>
                           <div className="flex items-start justify-between gap-2">
-                            <div>
+                            <div className="min-w-0">
                               <p className="font-medium text-sm">{u.firstName} {u.lastName}</p>
                               <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                              <Badge variant="secondary" className="text-xs mt-1">{u.role}</Badge>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-xs">{u.role}</Badge>
-                              {canEdit && (
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => handleEditRate(u)} data-testid={`button-edit-rate-m-${u.id}`}>
-                                  <Edit className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
-                            </div>
+                            {canEdit && (
+                              <Button size="sm" variant="outline" className="h-8 w-8 p-0 shrink-0" onClick={() => handleEditRate(u)} data-testid={`button-edit-rate-m-${u.id}`}>
+                                <Edit className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                           </div>
                           <div className="grid grid-cols-2 gap-2 text-xs">
                             <div>
