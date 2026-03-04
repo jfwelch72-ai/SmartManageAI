@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -772,6 +774,7 @@ function InvitationDetailView({ invitationId }: { invitationId: string }) {
 
 export default function BidInboxPage() {
   const params = useParams<{ id: string }>();
+  const isMobile = useIsMobile();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   
   if (params.id) {
@@ -799,7 +802,7 @@ export default function BidInboxPage() {
         </div>
       </div>
       
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
         <Card className="cursor-pointer hover-elevate" onClick={() => setStatusFilter("PENDING")} data-testid="card-stat-pending">
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
@@ -836,12 +839,26 @@ export default function BidInboxPage() {
       </div>
       
       <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-        <TabsList>
-          <TabsTrigger value="all" data-testid="tab-all">All ({invitations.length})</TabsTrigger>
-          <TabsTrigger value="PENDING" data-testid="tab-pending">Pending ({pendingCount})</TabsTrigger>
-          <TabsTrigger value="RESPONDED" data-testid="tab-responded">Responded ({respondedCount})</TabsTrigger>
-          <TabsTrigger value="DECLINED" data-testid="tab-declined">Declined ({declinedCount})</TabsTrigger>
-        </TabsList>
+        {isMobile ? (
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger data-testid="select-bid-inbox-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All ({invitations.length})</SelectItem>
+              <SelectItem value="PENDING">Pending ({pendingCount})</SelectItem>
+              <SelectItem value="RESPONDED">Responded ({respondedCount})</SelectItem>
+              <SelectItem value="DECLINED">Declined ({declinedCount})</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <TabsList>
+            <TabsTrigger value="all" data-testid="tab-all">All ({invitations.length})</TabsTrigger>
+            <TabsTrigger value="PENDING" data-testid="tab-pending">Pending ({pendingCount})</TabsTrigger>
+            <TabsTrigger value="RESPONDED" data-testid="tab-responded">Responded ({respondedCount})</TabsTrigger>
+            <TabsTrigger value="DECLINED" data-testid="tab-declined">Declined ({declinedCount})</TabsTrigger>
+          </TabsList>
+        )}
       </Tabs>
       
       {isLoading ? (
