@@ -1638,52 +1638,73 @@ export default function WebsiteBuilderPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="flex overflow-x-auto gap-1 w-full h-auto" data-testid="tabs-website-sections">
-          <TabsTrigger value="setup" className="flex items-center gap-1" data-testid="tab-setup">
-            <Settings className="h-4 w-4" />
-            <span className="hidden sm:inline">Setup</span>
-          </TabsTrigger>
-          <TabsTrigger value="layout" className="flex items-center gap-1" data-testid="tab-layout">
-            <LayoutTemplate className="h-4 w-4" />
-            <span className="hidden sm:inline">Layout</span>
-          </TabsTrigger>
-          <TabsTrigger value="pages" className="flex items-center gap-1" data-testid="tab-pages">
-            <Layout className="h-4 w-4" />
-            <span className="hidden sm:inline">Pages</span>
-          </TabsTrigger>
-          <TabsTrigger value="blog" className="flex items-center gap-1" data-testid="tab-blog">
-            <BookOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Blog</span>
-          </TabsTrigger>
-          <TabsTrigger value="media" className="flex items-center gap-1" data-testid="tab-media">
-            <Image className="h-4 w-4" />
-            <span className="hidden sm:inline">Media</span>
-          </TabsTrigger>
-          <TabsTrigger value="gallery" className="flex items-center gap-1" data-testid="tab-gallery">
-            <FolderOpen className="h-4 w-4" />
-            <span className="hidden sm:inline">Gallery</span>
-          </TabsTrigger>
-          <TabsTrigger value="social" className="flex items-center gap-1" data-testid="tab-social">
-            <Share2 className="h-4 w-4" />
-            <span className="hidden sm:inline">Social</span>
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-1" data-testid="tab-analytics">
-            <BarChart3 className="h-4 w-4" />
-            <span className="hidden sm:inline">Analytics</span>
-          </TabsTrigger>
-          <TabsTrigger value="leads" className="flex items-center gap-1" data-testid="tab-leads">
-            <Mail className="h-4 w-4" />
-            <span className="hidden sm:inline">Leads</span>
-          </TabsTrigger>
-          <TabsTrigger value="preview" className="flex items-center gap-1" data-testid="tab-preview">
-            <Eye className="h-4 w-4" />
-            <span className="hidden sm:inline">Preview</span>
-          </TabsTrigger>
-          <TabsTrigger value="publishing" className="flex items-center gap-1" data-testid="tab-publishing">
-            <Upload className="h-4 w-4" />
-            <span className="hidden sm:inline">Publishing</span>
-          </TabsTrigger>
-        </TabsList>
+        {isMobile ? (
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="mb-2" data-testid="select-website-tab">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="setup">Setup</SelectItem>
+              <SelectItem value="layout">Layout</SelectItem>
+              <SelectItem value="pages">Pages</SelectItem>
+              <SelectItem value="blog">Blog</SelectItem>
+              <SelectItem value="media">Media</SelectItem>
+              <SelectItem value="gallery">Gallery</SelectItem>
+              <SelectItem value="social">Social</SelectItem>
+              <SelectItem value="analytics">Analytics</SelectItem>
+              <SelectItem value="leads">Leads</SelectItem>
+              <SelectItem value="preview">Preview</SelectItem>
+              <SelectItem value="publishing">Publishing</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <TabsList className="flex overflow-x-auto gap-1 w-full h-auto" data-testid="tabs-website-sections">
+            <TabsTrigger value="setup" className="flex items-center gap-1" data-testid="tab-setup">
+              <Settings className="h-4 w-4" />
+              Setup
+            </TabsTrigger>
+            <TabsTrigger value="layout" className="flex items-center gap-1" data-testid="tab-layout">
+              <LayoutTemplate className="h-4 w-4" />
+              Layout
+            </TabsTrigger>
+            <TabsTrigger value="pages" className="flex items-center gap-1" data-testid="tab-pages">
+              <Layout className="h-4 w-4" />
+              Pages
+            </TabsTrigger>
+            <TabsTrigger value="blog" className="flex items-center gap-1" data-testid="tab-blog">
+              <BookOpen className="h-4 w-4" />
+              Blog
+            </TabsTrigger>
+            <TabsTrigger value="media" className="flex items-center gap-1" data-testid="tab-media">
+              <Image className="h-4 w-4" />
+              Media
+            </TabsTrigger>
+            <TabsTrigger value="gallery" className="flex items-center gap-1" data-testid="tab-gallery">
+              <FolderOpen className="h-4 w-4" />
+              Gallery
+            </TabsTrigger>
+            <TabsTrigger value="social" className="flex items-center gap-1" data-testid="tab-social">
+              <Share2 className="h-4 w-4" />
+              Social
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center gap-1" data-testid="tab-analytics">
+              <BarChart3 className="h-4 w-4" />
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger value="leads" className="flex items-center gap-1" data-testid="tab-leads">
+              <Mail className="h-4 w-4" />
+              Leads
+            </TabsTrigger>
+            <TabsTrigger value="preview" className="flex items-center gap-1" data-testid="tab-preview">
+              <Eye className="h-4 w-4" />
+              Preview
+            </TabsTrigger>
+            <TabsTrigger value="publishing" className="flex items-center gap-1" data-testid="tab-publishing">
+              <Upload className="h-4 w-4" />
+              Publishing
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="setup" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
