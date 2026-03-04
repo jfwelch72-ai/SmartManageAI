@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -1339,34 +1340,59 @@ function AnalyticsTab() {
 
 export default function ManageWorkersPage() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const isAdmin = user?.role === "ADMIN";
   const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
   const canManageWorkers = isAdmin || isManager;
   const canViewAnalytics = isAdmin || isManager;
+  const defaultTab = canManageWorkers ? "workers" : "ratings";
+  const [activeTab, setActiveTab] = useState(defaultTab);
+
+  const tabOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [];
+    if (canManageWorkers) opts.push({ value: "workers", label: "Workers" });
+    opts.push({ value: "ratings", label: "Ratings" });
+    opts.push({ value: "rewards", label: "Rewards" });
+    if (canViewAnalytics) opts.push({ value: "analytics", label: "Analytics" });
+    return opts;
+  }, [canManageWorkers, canViewAnalytics]);
 
   if (!user) return <div className="p-6 space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /></div>;
 
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 md:px-6 py-6 md:py-8">
-        <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
           <div className="flex items-center gap-3">
-            <Users className="h-6 w-6 text-muted-foreground" />
+            <Users className="h-6 w-6 text-muted-foreground shrink-0" />
             <div>
-              <h1 className="text-2xl font-bold" data-testid="text-page-title">Workforce Management</h1>
-              <p className="text-muted-foreground mt-1">Manage your team, track performance, and recognize achievements</p>
+              <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-page-title">Workforce Management</h1>
+              <p className="text-sm text-muted-foreground mt-1">Manage your team, track performance, and recognize achievements</p>
             </div>
           </div>
           {isAdmin && <ManageCriteriaDialog />}
         </div>
 
-        <Tabs defaultValue={canManageWorkers ? "workers" : "ratings"} className="space-y-6">
-          <TabsList className="overflow-x-auto whitespace-nowrap" data-testid="workforce-tabs">
-            {canManageWorkers && <TabsTrigger value="workers" data-testid="tab-workers"><Users className="w-4 h-4 mr-1.5" />Workers</TabsTrigger>}
-            <TabsTrigger value="ratings" data-testid="tab-ratings"><Star className="w-4 h-4 mr-1.5" />Ratings</TabsTrigger>
-            <TabsTrigger value="rewards" data-testid="tab-rewards"><Gift className="w-4 h-4 mr-1.5" />Rewards</TabsTrigger>
-            {canViewAnalytics && <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>}
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          {isMobile ? (
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger data-testid="select-workforce-tab">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {tabOptions.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <TabsList data-testid="workforce-tabs">
+              {canManageWorkers && <TabsTrigger value="workers" data-testid="tab-workers"><Users className="w-4 h-4 mr-1.5" />Workers</TabsTrigger>}
+              <TabsTrigger value="ratings" data-testid="tab-ratings"><Star className="w-4 h-4 mr-1.5" />Ratings</TabsTrigger>
+              <TabsTrigger value="rewards" data-testid="tab-rewards"><Gift className="w-4 h-4 mr-1.5" />Rewards</TabsTrigger>
+              {canViewAnalytics && <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>}
+            </TabsList>
+          )}
           {canManageWorkers && <TabsContent value="workers"><WorkersTab /></TabsContent>}
           <TabsContent value="ratings"><RatingTab /></TabsContent>
           <TabsContent value="rewards"><RewardsTab /></TabsContent>

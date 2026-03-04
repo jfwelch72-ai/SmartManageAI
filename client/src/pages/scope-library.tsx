@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, BookOpen, Layers, Package, ChevronDown, ChevronRight, Wrench } from "lucide-react";
 
 export default function ScopeLibraryPage() {
@@ -151,23 +152,36 @@ export default function ScopeLibraryPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex w-full overflow-x-auto whitespace-nowrap mb-6">
-          <TabsTrigger value="scopes" className="flex items-center gap-1.5 text-xs sm:text-sm sm:gap-2" data-testid="tab-scopes">
-            <Layers className="h-4 w-4 shrink-0" />
-            Scopes
-            <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-xs">{filteredScopes.length}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="components" className="flex items-center gap-1.5 text-xs sm:text-sm sm:gap-2" data-testid="tab-components">
-            <Package className="h-4 w-4 shrink-0" />
-            Components
-            <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-xs">{filteredComponents.length}</Badge>
-          </TabsTrigger>
-          <TabsTrigger value="materials" className="flex items-center gap-1.5 text-xs sm:text-sm sm:gap-2" data-testid="tab-materials">
-            <Wrench className="h-4 w-4 shrink-0" />
-            Materials
-            <Badge variant="secondary" className="ml-0.5 sm:ml-1 text-xs">{filteredMaterials.length}</Badge>
-          </TabsTrigger>
-        </TabsList>
+        {isMobile ? (
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="mb-4" data-testid="select-scope-tab">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="scopes">Scopes ({filteredScopes.length})</SelectItem>
+              <SelectItem value="components">Components ({filteredComponents.length})</SelectItem>
+              <SelectItem value="materials">Materials ({filteredMaterials.length})</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <TabsList className="mb-6">
+            <TabsTrigger value="scopes" className="flex items-center gap-2" data-testid="tab-scopes">
+              <Layers className="h-4 w-4" />
+              Scopes
+              <Badge variant="secondary" className="ml-1">{filteredScopes.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="components" className="flex items-center gap-2" data-testid="tab-components">
+              <Package className="h-4 w-4" />
+              Components
+              <Badge variant="secondary" className="ml-1">{filteredComponents.length}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="materials" className="flex items-center gap-2" data-testid="tab-materials">
+              <Wrench className="h-4 w-4" />
+              Materials
+              <Badge variant="secondary" className="ml-1">{filteredMaterials.length}</Badge>
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="scopes">
           {scopesByTrade.length === 0 ? (
