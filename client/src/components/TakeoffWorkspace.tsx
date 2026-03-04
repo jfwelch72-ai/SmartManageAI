@@ -2425,113 +2425,163 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             const Icon = tool.icon;
             return (
               <Fragment key={tool.id}>
-                <Button
-                  variant={activeTool === tool.id ? tool.color as any : "ghost"}
-                  size="icon"
-                  onClick={() => handleToolSelect(tool.id as Tool)}
-                  data-testid={`button-tool-mobile-${tool.id}`}
-                  className="h-8 w-8 shrink-0"
-                >
-                  <Icon className="w-4 h-4" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={activeTool === tool.id ? tool.color as any : "ghost"}
+                      size="icon"
+                      onClick={() => handleToolSelect(tool.id as Tool)}
+                      data-testid={`button-tool-mobile-${tool.id}`}
+                      className="h-8 w-8 shrink-0"
+                    >
+                      <Icon className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">{tool.label}</TooltipContent>
+                </Tooltip>
                 {tool.id === "pan" && (
                   <>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
-                      data-testid="button-zoom-in-mobile"
-                      className="h-8 w-8 shrink-0"
-                    >
-                      <ZoomIn className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
-                      data-testid="button-zoom-out-mobile"
-                      className="h-8 w-8 shrink-0"
-                    >
-                      <ZoomOut className="w-4 h-4" />
-                    </Button>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setStageScale(prev => Math.min(prev * 1.2, 10))}
+                          data-testid="button-zoom-in-mobile"
+                          className="h-8 w-8 shrink-0"
+                        >
+                          <ZoomIn className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Zoom In</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setStageScale(prev => Math.max(prev / 1.2, 0.1))}
+                          data-testid="button-zoom-out-mobile"
+                          className="h-8 w-8 shrink-0"
+                        >
+                          <ZoomOut className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top">Zoom Out</TooltipContent>
+                    </Tooltip>
                   </>
                 )}
               </Fragment>
             );
           })}
           <Separator orientation="vertical" className="h-6 mx-0.5" />
-          <Button
-            variant={selectedMeasurementId ? "destructive" : "ghost"}
-            size="icon"
-            onClick={() => {
-              const m = measurements.find(m => m.id === selectedMeasurementId);
-              if (m) deleteMeasurementMutation.mutate(m);
-            }}
-            disabled={!selectedMeasurementId || deleteMeasurementMutation.isPending}
-            data-testid="button-clear-selected-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <Eraser className="w-4 h-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={selectedMeasurementId ? "destructive" : "ghost"}
+                size="icon"
+                onClick={() => {
+                  const m = measurements.find(m => m.id === selectedMeasurementId);
+                  if (m) deleteMeasurementMutation.mutate(m);
+                }}
+                disabled={!selectedMeasurementId || deleteMeasurementMutation.isPending}
+                data-testid="button-clear-selected-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <Eraser className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Delete Selected</TooltipContent>
+          </Tooltip>
           <Separator orientation="vertical" className="h-6 mx-0.5" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => takeoffHistory.undo()}
-            disabled={!takeoffHistory.canUndo || takeoffHistory.isPending}
-            data-testid="button-undo-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <Undo2 className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => takeoffHistory.redo()}
-            disabled={!takeoffHistory.canRedo || takeoffHistory.isPending}
-            data-testid="button-redo-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <Redo2 className="w-4 h-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => takeoffHistory.undo()}
+                disabled={!takeoffHistory.canUndo || takeoffHistory.isPending}
+                data-testid="button-undo-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <Undo2 className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Undo</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => takeoffHistory.redo()}
+                disabled={!takeoffHistory.canRedo || takeoffHistory.isPending}
+                data-testid="button-redo-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <Redo2 className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Redo</TooltipContent>
+          </Tooltip>
           <Separator orientation="vertical" className="h-6 mx-0.5" />
-          <Button
-            variant={snapEnabled ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setSnapEnabled(!snapEnabled)}
-            data-testid="button-toggle-snap-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <Magnet className="w-4 h-4" />
-          </Button>
-          <Button
-            variant={orthoLock ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setOrthoLock(!orthoLock)}
-            data-testid="button-toggle-ortho-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <CornerDownRight className="w-4 h-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={snapEnabled ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setSnapEnabled(!snapEnabled)}
+                data-testid="button-toggle-snap-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <Magnet className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Toggle Snap</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={orthoLock ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setOrthoLock(!orthoLock)}
+                data-testid="button-toggle-ortho-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <CornerDownRight className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Toggle Ortho Lock</TooltipContent>
+          </Tooltip>
           <Separator orientation="vertical" className="h-6 mx-0.5" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setUploadDialogOpen(true)}
-            data-testid="button-upload-plan-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <Upload className="w-4 h-4" />
-          </Button>
-          <Button
-            variant={aiPanelOpen ? "secondary" : "ghost"}
-            size="icon"
-            onClick={() => setAiPanelOpen(!aiPanelOpen)}
-            data-testid="button-ai-takeoff-mobile"
-            className="h-8 w-8 shrink-0"
-          >
-            <Sparkles className="w-4 h-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setUploadDialogOpen(true)}
+                data-testid="button-upload-plan-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <Upload className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Upload Plan</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={aiPanelOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setAiPanelOpen(!aiPanelOpen)}
+                data-testid="button-ai-takeoff-mobile"
+                className="h-8 w-8 shrink-0"
+              >
+                <Sparkles className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">AI Auto-Takeoff</TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
