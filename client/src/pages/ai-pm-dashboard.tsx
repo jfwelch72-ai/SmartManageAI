@@ -132,7 +132,7 @@ export default function AIPMDashboard() {
           Back
         </Button>
 
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
           <div>
             <h1 className="text-3xl font-bold flex items-center gap-2">
               <Bot className="h-8 w-8 text-primary" />

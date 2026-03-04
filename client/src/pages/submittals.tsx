@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -110,6 +111,7 @@ interface RFI {
 export default function SubmittalsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("all");
   const [filterProject, setFilterProject] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -527,6 +529,31 @@ export default function SubmittalsPage() {
                   No submittals found
                 </CardContent>
               </Card>
+            ) : isMobile ? (
+              <div className="space-y-3">
+                {submittals.map(s => (
+                  <Card key={s.id} data-testid={`card-submittal-${s.id}`} className="hover-elevate" onClick={() => openDetailDialog(s)}>
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-medium" data-testid={`text-submittal-number-${s.id}`}>{s.submittalNumber}</span>
+                        {getStatusBadge(s.status)}
+                      </div>
+                      <p className="text-sm" data-testid={`text-submittal-subject-${s.id}`}>{s.subject}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {getTypeBadge(s.submittalType)}
+                        {getPhaseBadge(s.phase)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {s.project?.code} - {s.project?.name}
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span>Rev {s.revision}</span>
+                        <span>{s.dateSubmitted ? format(new Date(s.dateSubmitted), "MMM d, yyyy") : "Not submitted"}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             ) : (
               <Card>
                 <CardContent className="p-0">

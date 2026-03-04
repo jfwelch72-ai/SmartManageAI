@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -102,6 +103,7 @@ const STATUS_FILTERS = [
 export default function UsersPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   
   // Filter state
   const [searchTerm, setSearchTerm] = useState("");
@@ -305,7 +307,7 @@ export default function UsersPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div>
             <h1 className="text-3xl font-bold" data-testid="text-page-title">User Management</h1>
             <p className="text-muted-foreground">Manage user accounts and permissions</p>
@@ -504,6 +506,42 @@ export default function UsersPage() {
                     {searchTerm || roleFilter !== "ALL" || statusFilter !== "ALL" ? "No users match your filters" : "No users found"}
                   </div>
                 ) : (
+                  isMobile ? (
+                    <div className="space-y-3">
+                      {filteredUsers.map((u) => (
+                        <Card key={u.id} data-testid={`row-user-${u.id}`}>
+                          <CardContent className="p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-2 flex-wrap">
+                              <div>
+                                <div className="font-medium" data-testid={`text-name-${u.id}`}>{u.firstName} {u.lastName}</div>
+                                <div className="text-sm text-muted-foreground" data-testid={`text-email-${u.id}`}>{u.email}</div>
+                                <div className="text-sm text-muted-foreground" data-testid={`text-phone-${u.id}`}>{u.phone || "—"}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={u.isActive ? "default" : "secondary"} data-testid={`badge-status-${u.id}`}>
+                                  {u.isActive ? "Active" : "Inactive"}
+                                </Badge>
+                                <Switch checked={u.isActive} onCheckedChange={() => handleToggleActive(u.id, u.isActive)} disabled={updateUserMutation.isPending} data-testid={`switch-active-${u.id}`} />
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-xs text-muted-foreground">Role</Label>
+                              <Select value={u.role} onValueChange={(newRole) => handleRoleChange(u.id, newRole)} disabled={updateUserMutation.isPending}>
+                                <SelectTrigger data-testid={`select-role-${u.id}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {Object.entries(ROLE_LABELS).map(([value, label]) => (
+                                    <SelectItem key={value} value={value}>{label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto -mx-4 sm:mx-0">
                     <Table className="min-w-[700px]">
                       <TableHeader>
@@ -547,6 +585,7 @@ export default function UsersPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  )
                 )}
               </CardContent>
             </Card>
@@ -576,6 +615,66 @@ export default function UsersPage() {
                 ) : usersWithPermissions.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">No users found</div>
                 ) : (
+                  isMobile ? (
+                    <div className="space-y-3">
+                      {usersWithPermissions.map((u) => {
+                        const isAdmin = u.role === "ADMIN" || u.role === "SUPER_ADMIN";
+                        return (
+                          <Card key={u.id} data-testid={`row-permission-${u.id}`}>
+                            <CardContent className="p-4 space-y-3">
+                              <div className="flex items-start justify-between gap-2 flex-wrap">
+                                <div>
+                                  <div className="font-medium" data-testid={`text-perm-name-${u.id}`}>{u.firstName} {u.lastName}</div>
+                                  <div className="text-sm text-muted-foreground" data-testid={`text-perm-email-${u.id}`}>{u.email}</div>
+                                </div>
+                                <Badge variant={ROLE_COLORS[u.role] || "secondary"}>
+                                  {ROLE_LABELS[u.role] || u.role}
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-sm">
+                                  <Layout className="w-4 h-4 text-muted-foreground" />
+                                  Dashboard Layout
+                                </div>
+                                {isAdmin ? (
+                                  <div className="flex items-center gap-2">
+                                    <Switch checked={true} disabled />
+                                    <span className="text-xs text-muted-foreground">Always</span>
+                                  </div>
+                                ) : (
+                                  <Switch
+                                    checked={u.canCustomizeDashboard || false}
+                                    onCheckedChange={() => handleToggleDashboardPermission(u.id, u.canCustomizeDashboard || false, u)}
+                                    disabled={updatePermissionsMutation.isPending}
+                                    data-testid={`switch-dashboard-${u.id}`}
+                                  />
+                                )}
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 text-sm">
+                                  <Palette className="w-4 h-4 text-muted-foreground" />
+                                  Color Scheme
+                                </div>
+                                {isAdmin ? (
+                                  <div className="flex items-center gap-2">
+                                    <Switch checked={true} disabled />
+                                    <span className="text-xs text-muted-foreground">Always</span>
+                                  </div>
+                                ) : (
+                                  <Switch
+                                    checked={u.canCustomizeColorScheme || false}
+                                    onCheckedChange={() => handleToggleColorSchemePermission(u.id, u.canCustomizeColorScheme || false, u)}
+                                    disabled={updatePermissionsMutation.isPending}
+                                    data-testid={`switch-colorscheme-${u.id}`}
+                                  />
+                                )}
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto -mx-4 sm:mx-0">
                     <Table className="min-w-[600px]">
                       <TableHeader>
@@ -652,6 +751,7 @@ export default function UsersPage() {
                       </TableBody>
                     </Table>
                   </div>
+                  )
                 )}
               </CardContent>
             </Card>

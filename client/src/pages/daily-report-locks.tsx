@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,7 @@ interface LockWithRelations extends DailyReportLock {
 export default function DailyReportLocksPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [projectFilter, setProjectFilter] = useState<string>("ALL");
@@ -273,30 +275,100 @@ export default function DailyReportLocksPage() {
         </CardContent>
       </Card>
 
-      {/* Locks Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project</TableHead>
-                <TableHead>Report Date</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Locked By</TableHead>
-                <TableHead>Locked At</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredLocks.length === 0 ? (
+      {/* Locks Table / Mobile Cards */}
+      {filteredLocks.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            No daily report locks found
+          </CardContent>
+        </Card>
+      ) : isMobile ? (
+        <div className="space-y-3">
+          {filteredLocks.map((lock) => (
+            <Card key={lock.id} data-testid={`card-lock-${lock.id}`}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium" data-testid={`text-lock-project-${lock.id}`}>
+                      {lock.project?.code} - {lock.project?.name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {lock.reportDate ? format(new Date(lock.reportDate), "MM/dd/yyyy") : "-"}
+                    </p>
+                  </div>
+                  {getStatusBadge(lock.status)}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Locked By</span>
+                    <p>{lock.lockedBy ? `${lock.lockedBy.firstName} ${lock.lockedBy.lastName}` : "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Locked At</span>
+                    <p>{lock.lockedAt ? format(new Date(lock.lockedAt), "MM/dd/yyyy HH:mm") : "-"}</p>
+                  </div>
+                </div>
+                {lock.lockReason && (
+                  <div className="text-sm">
+                    <span className="text-muted-foreground">Reason</span>
+                    <p className="line-clamp-2">{lock.lockReason}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {lock.status === "LOCKED" && canManageLocks && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => unlockMutation.mutate(lock.id)}
+                      disabled={unlockMutation.isPending}
+                      data-testid={`button-unlock-${lock.id}`}
+                    >
+                      <Unlock className="w-4 h-4 mr-1" />
+                      Unlock
+                    </Button>
+                  )}
+                  {lock.status === "LOCKED" && canSupervisorLock && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedLock(lock);
+                        setIsSupervisorLockOpen(true);
+                      }}
+                      data-testid={`button-supervisor-lock-${lock.id}`}
+                    >
+                      <Shield className="w-4 h-4 mr-1" />
+                      Escalate
+                    </Button>
+                  )}
+                  {lock.status === "SUPERVISOR_LOCKED" && (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  )}
+                  {lock.status === "UNLOCKED" && (
+                    <span className="text-muted-foreground text-sm">Editable</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    No daily report locks found
-                  </TableCell>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Report Date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Locked By</TableHead>
+                  <TableHead>Locked At</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ) : (
-                filteredLocks.map((lock) => (
+              </TableHeader>
+              <TableBody>
+                {filteredLocks.map((lock) => (
                   <TableRow key={lock.id} data-testid={`row-lock-${lock.id}`}>
                     <TableCell>
                       {lock.project?.code} - {lock.project?.name}
@@ -353,12 +425,12 @@ export default function DailyReportLocksPage() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Create Lock Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

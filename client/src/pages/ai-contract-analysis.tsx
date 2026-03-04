@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,7 @@ interface ContractDocumentAnalysis {
 export default function AIContractAnalysisPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("recent");
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -378,81 +380,145 @@ export default function AIContractAnalysisPage() {
         </TabsContent>
 
         <TabsContent value="contracts" className="mt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Document</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Analyzed</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {isMobile ? (
+            <div className="space-y-3">
               {analyses.filter(a => a.documentType === "CONTRACT").map(analysis => (
-                <TableRow key={analysis.id}>
-                  <TableCell className="font-medium">{analysis.fileName}</TableCell>
-                  <TableCell>{analysis.projectCode}</TableCell>
-                  <TableCell>{getStatusBadge(analysis.analysisStatus)}</TableCell>
-                  <TableCell>
-                    {analysis.analyzedAt 
-                      ? format(new Date(analysis.analyzedAt), "MMM d, yyyy")
-                      : "—"
-                    }
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => openResultDialog(analysis)}
-                      data-testid={`button-view-contract-table-${analysis.id}`}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <Card key={analysis.id} className="hover-elevate cursor-pointer" onClick={() => openResultDialog(analysis)} data-testid={`card-contract-${analysis.id}`}>
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium text-sm truncate">{analysis.fileName}</p>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={(e) => { e.stopPropagation(); openResultDialog(analysis); }}
+                        data-testid={`button-view-contract-table-${analysis.id}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{analysis.projectCode}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStatusBadge(analysis.analysisStatus)}
+                      <span className="text-xs text-muted-foreground">
+                        {analysis.analyzedAt 
+                          ? format(new Date(analysis.analyzedAt), "MMM d, yyyy")
+                          : "Not analyzed"
+                        }
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Document</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Analyzed</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analyses.filter(a => a.documentType === "CONTRACT").map(analysis => (
+                  <TableRow key={analysis.id}>
+                    <TableCell className="font-medium">{analysis.fileName}</TableCell>
+                    <TableCell>{analysis.projectCode}</TableCell>
+                    <TableCell>{getStatusBadge(analysis.analysisStatus)}</TableCell>
+                    <TableCell>
+                      {analysis.analyzedAt 
+                        ? format(new Date(analysis.analyzedAt), "MMM d, yyyy")
+                        : "—"
+                      }
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => openResultDialog(analysis)}
+                        data-testid={`button-view-contract-table-${analysis.id}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
 
         <TabsContent value="awards" className="mt-6">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Document</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Analyzed</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {isMobile ? (
+            <div className="space-y-3">
               {analyses.filter(a => a.documentType === "AWARD_LETTER").map(analysis => (
-                <TableRow key={analysis.id}>
-                  <TableCell className="font-medium">{analysis.fileName}</TableCell>
-                  <TableCell>{analysis.projectCode}</TableCell>
-                  <TableCell>{getStatusBadge(analysis.analysisStatus)}</TableCell>
-                  <TableCell>
-                    {analysis.analyzedAt 
-                      ? format(new Date(analysis.analyzedAt), "MMM d, yyyy")
-                      : "—"
-                    }
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      onClick={() => openResultDialog(analysis)}
-                      data-testid={`button-view-award-${analysis.id}`}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                <Card key={analysis.id} className="hover-elevate cursor-pointer" onClick={() => openResultDialog(analysis)} data-testid={`card-award-${analysis.id}`}>
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-medium text-sm truncate">{analysis.fileName}</p>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={(e) => { e.stopPropagation(); openResultDialog(analysis); }}
+                        data-testid={`button-view-award-${analysis.id}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{analysis.projectCode}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {getStatusBadge(analysis.analysisStatus)}
+                      <span className="text-xs text-muted-foreground">
+                        {analysis.analyzedAt 
+                          ? format(new Date(analysis.analyzedAt), "MMM d, yyyy")
+                          : "Not analyzed"
+                        }
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Document</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Analyzed</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {analyses.filter(a => a.documentType === "AWARD_LETTER").map(analysis => (
+                  <TableRow key={analysis.id}>
+                    <TableCell className="font-medium">{analysis.fileName}</TableCell>
+                    <TableCell>{analysis.projectCode}</TableCell>
+                    <TableCell>{getStatusBadge(analysis.analysisStatus)}</TableCell>
+                    <TableCell>
+                      {analysis.analyzedAt 
+                        ? format(new Date(analysis.analyzedAt), "MMM d, yyyy")
+                        : "—"
+                      }
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        onClick={() => openResultDialog(analysis)}
+                        data-testid={`button-view-award-${analysis.id}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </TabsContent>
       </Tabs>
 

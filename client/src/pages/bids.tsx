@@ -391,14 +391,14 @@ export default function BidsPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-foreground mb-1">Bid Board</h1>
             <p className="text-sm text-muted-foreground">
               Track opportunities and bids in progress
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <AIAnalysisButton module="BIDS" />
             {canEditBids(user?.role) && (
               <DropdownMenu>

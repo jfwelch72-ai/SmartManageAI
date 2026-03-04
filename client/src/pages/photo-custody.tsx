@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ interface RecordWithRelations extends PhotoCustodyRecord {
 export default function PhotoCustodyPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("ALL");
   const [projectFilter, setProjectFilter] = useState<string>("ALL");
@@ -280,30 +282,77 @@ export default function PhotoCustodyPage() {
         </CardContent>
       </Card>
 
-      {/* Records Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>File Name</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Action</TableHead>
-                <TableHead>By</TableHead>
-                <TableHead>Timestamp</TableHead>
-                <TableHead>Linked Claim</TableHead>
-                <TableHead className="text-right">Details</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRecords.length === 0 ? (
+      {/* Records Table / Mobile Cards */}
+      {filteredRecords.length === 0 ? (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            No custody records found
+          </CardContent>
+        </Card>
+      ) : isMobile ? (
+        <div className="space-y-3">
+          {filteredRecords.map((record) => (
+            <Card key={record.id} data-testid={`card-record-${record.id}`}>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-mono text-sm break-all" data-testid={`text-filename-${record.id}`}>
+                    {record.photoFileName}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      setSelectedRecord(record);
+                      setIsDetailOpen(true);
+                    }}
+                    data-testid={`button-view-record-${record.id}`}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {getActionBadge(record.action)}
+                  {record.linkedClaim && (
+                    <Badge variant="outline" className="text-purple-600 border-purple-600">
+                      {record.linkedClaim.claimNumber}
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Project</span>
+                    <p>{record.project?.code || "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">By</span>
+                    <p>{record.actionBy ? `${record.actionBy.firstName} ${record.actionBy.lastName}` : "-"}</p>
+                  </div>
+                </div>
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Timestamp</span>
+                  <p>{record.actionAt ? format(new Date(record.actionAt), "MM/dd/yyyy HH:mm:ss") : "-"}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    No custody records found
-                  </TableCell>
+                  <TableHead>File Name</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>By</TableHead>
+                  <TableHead>Timestamp</TableHead>
+                  <TableHead>Linked Claim</TableHead>
+                  <TableHead className="text-right">Details</TableHead>
                 </TableRow>
-              ) : (
-                filteredRecords.map((record) => (
+              </TableHeader>
+              <TableBody>
+                {filteredRecords.map((record) => (
                   <TableRow key={record.id} data-testid={`row-record-${record.id}`}>
                     <TableCell className="font-mono text-sm max-w-[200px] truncate">
                       {record.photoFileName}
@@ -341,12 +390,12 @@ export default function PhotoCustodyPage() {
                       </Button>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Detail Dialog */}
       <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>

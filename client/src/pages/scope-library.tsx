@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useLibraryData, type Scope, type ComponentWithVariants, type MaterialFamily } from "@/hooks/use-library-data";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { Search, BookOpen, Layers, Package, ChevronDown, ChevronRight, Wrench } 
 
 export default function ScopeLibraryPage() {
   const { trades, scopes, components, materials, materialGroups, tradeType, isLoading } = useLibraryData();
+  const isMobile = useIsMobile();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("scopes");
   const [expandedTrades, setExpandedTrades] = useState<Set<string>>(new Set());
@@ -197,6 +199,28 @@ export default function ScopeLibraryPage() {
                     </CardHeader>
                     {isExpanded && (
                       <CardContent>
+                        {isMobile ? (
+                          <div className="space-y-3">
+                            {group.scopes.map(scope => (
+                              <div key={scope.scope_id} className="p-3 rounded-md border space-y-2" data-testid={`row-scope-${scope.scope_id}`}>
+                                <div className="font-medium">{scope.scope_name}</div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge variant="outline">{scope.category}</Badge>
+                                  <Badge variant="secondary">{scope.uom}</Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {scope.material_families.length > 0 ? (
+                                    scope.material_families.map(mf => (
+                                      <Badge key={mf} variant="outline" className="text-xs">{mf}</Badge>
+                                    ))
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">No materials</span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
@@ -233,6 +257,7 @@ export default function ScopeLibraryPage() {
                             </tbody>
                           </table>
                         </div>
+                        )}
                       </CardContent>
                     )}
                   </Card>
@@ -353,6 +378,30 @@ export default function ScopeLibraryPage() {
                     </CardHeader>
                     {isExpanded && (
                       <CardContent>
+                        {isMobile ? (
+                          <div className="space-y-3">
+                            {items.map(mat => (
+                              <div key={mat.material_family_id} className="p-3 rounded-md border space-y-2" data-testid={`row-material-${mat.material_family_id}`}>
+                                <div className="flex items-start justify-between gap-2 flex-wrap">
+                                  <span className="font-medium">{mat.display_name}</span>
+                                  <Badge variant="secondary">{mat.canonical_uom}</Badge>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {mat.attributes.length > 0 ? (
+                                    mat.attributes.map(attr => (
+                                      <Badge key={attr} variant="outline" className="text-xs">{attr}</Badge>
+                                    ))
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">No attributes</span>
+                                  )}
+                                </div>
+                                {mat.notes && (
+                                  <div className="text-muted-foreground text-xs">{mat.notes}</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <thead>
@@ -387,6 +436,7 @@ export default function ScopeLibraryPage() {
                             </tbody>
                           </table>
                         </div>
+                        )}
                       </CardContent>
                     )}
                   </Card>

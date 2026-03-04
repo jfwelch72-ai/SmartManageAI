@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -87,6 +88,7 @@ const DOCUMENT_TYPES = [
 export default function TransmittalsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const [filterProject, setFilterProject] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
@@ -429,55 +431,82 @@ export default function TransmittalsPage() {
             <p className="text-muted-foreground">Create a transmittal to distribute documents to subcontractors</p>
           </CardContent>
         </Card>
-      ) : (
-        <Card>
-          <Table data-testid="table-transmittals">
-            <TableHeader>
-              <TableRow>
-                <TableHead>TX #</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead>Project</TableHead>
-                <TableHead>Document Type</TableHead>
-                <TableHead>Revision</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date Sent</TableHead>
-                <TableHead>Recipients</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transmittals.map(tx => (
-                <TableRow key={tx.id} data-testid={`row-transmittal-${tx.id}`}>
-                  <TableCell className="font-medium" data-testid={`text-tx-number-${tx.id}`}>{tx.transmittalNumber}</TableCell>
-                  <TableCell data-testid={`text-tx-subject-${tx.id}`}>{tx.subject}</TableCell>
-                  <TableCell data-testid={`text-tx-project-${tx.id}`}>{tx.project?.code} - {tx.project?.name}</TableCell>
-                  <TableCell data-testid={`text-tx-doctype-${tx.id}`}>{tx.documentType || "-"}</TableCell>
-                  <TableCell data-testid={`text-tx-revision-${tx.id}`}>{tx.revisionNumber || "-"}</TableCell>
-                  <TableCell data-testid={`status-tx-${tx.id}`}>{getStatusBadge(tx.status)}</TableCell>
-                  <TableCell data-testid={`text-tx-date-${tx.id}`}>{tx.dateSent ? format(new Date(tx.dateSent), "MMM d, yyyy") : "-"}</TableCell>
-                  <TableCell>
+      ) : isMobile ? (
+          <div className="space-y-3" data-testid="list-transmittals-mobile">
+            {transmittals.map(tx => (
+              <Card key={tx.id} data-testid={`card-transmittal-${tx.id}`} className="hover-elevate" onClick={() => openDetailDialog(tx)}>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-medium" data-testid={`text-tx-number-${tx.id}`}>{tx.transmittalNumber}</span>
+                    <span data-testid={`status-tx-${tx.id}`}>{getStatusBadge(tx.status)}</span>
+                  </div>
+                  <p className="text-sm font-medium" data-testid={`text-tx-subject-${tx.id}`}>{tx.subject}</p>
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-sm text-muted-foreground">
+                    <span data-testid={`text-tx-project-${tx.id}`}>{tx.project?.code} - {tx.project?.name}</span>
+                    <span data-testid={`text-tx-doctype-${tx.id}`}>{tx.documentType || "-"}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="text-sm text-muted-foreground" data-testid={`text-tx-date-${tx.id}`}>
+                      {tx.dateSent ? format(new Date(tx.dateSent), "MMM d, yyyy") : "Not sent"}
+                    </span>
                     <Badge variant="outline" data-testid={`badge-recipients-${tx.id}`}>
                       <Users className="h-3 w-3 mr-1" />
                       {tx.recipientCount ?? tx.recipients?.length ?? 0}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => openDetailDialog(tx)}
-                      data-testid={`button-view-transmittal-${tx.id}`}
-                    >
-                      <Eye className="h-4 w-4 mr-1" />
-                      View
-                    </Button>
-                  </TableCell>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card>
+            <Table data-testid="table-transmittals">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>TX #</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Document Type</TableHead>
+                  <TableHead>Revision</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date Sent</TableHead>
+                  <TableHead>Recipients</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
+              </TableHeader>
+              <TableBody>
+                {transmittals.map(tx => (
+                  <TableRow key={tx.id} data-testid={`row-transmittal-${tx.id}`}>
+                    <TableCell className="font-medium" data-testid={`text-tx-number-${tx.id}`}>{tx.transmittalNumber}</TableCell>
+                    <TableCell data-testid={`text-tx-subject-${tx.id}`}>{tx.subject}</TableCell>
+                    <TableCell data-testid={`text-tx-project-${tx.id}`}>{tx.project?.code} - {tx.project?.name}</TableCell>
+                    <TableCell data-testid={`text-tx-doctype-${tx.id}`}>{tx.documentType || "-"}</TableCell>
+                    <TableCell data-testid={`text-tx-revision-${tx.id}`}>{tx.revisionNumber || "-"}</TableCell>
+                    <TableCell data-testid={`status-tx-${tx.id}`}>{getStatusBadge(tx.status)}</TableCell>
+                    <TableCell data-testid={`text-tx-date-${tx.id}`}>{tx.dateSent ? format(new Date(tx.dateSent), "MMM d, yyyy") : "-"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" data-testid={`badge-recipients-${tx.id}`}>
+                        <Users className="h-3 w-3 mr-1" />
+                        {tx.recipientCount ?? tx.recipients?.length ?? 0}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openDetailDialog(tx)}
+                        data-testid={`button-view-transmittal-${tx.id}`}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-lg">

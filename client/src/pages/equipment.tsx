@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { apiRequest } from "@/lib/queryClient";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -82,6 +83,7 @@ export default function EquipmentPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const isMobile = useIsMobile();
   
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -207,12 +209,12 @@ export default function EquipmentPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div>
             <h1 className="text-3xl font-bold" data-testid="text-page-title">Equipment & Tools</h1>
             <p className="text-muted-foreground">Manage your equipment fleet and track availability</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <AIAnalysisButton module="EQUIPMENT" />
             {canManageEquipment && (
               <Button 
@@ -331,86 +333,157 @@ export default function EquipmentPage() {
               <div className="py-8 text-center text-muted-foreground">
                 No equipment found. {canManageEquipment && "Click 'Add Equipment' to create one."}
               </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Equipment</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Hours</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead className="w-[80px]"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {equipmentList.map((eq) => {
-                      const TypeIcon = TYPE_ICONS[eq.type] || Settings2;
-                      return (
-                        <TableRow 
-                          key={eq.id} 
-                          className="cursor-pointer hover-elevate"
-                          onClick={() => navigate(`/equipment/${eq.equipmentCode}`)}
-                          data-testid={`row-equipment-${eq.id}`}
-                        >
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 rounded-md bg-muted">
+            ) : isMobile ? (
+                <div className="space-y-3">
+                  {equipmentList.map((eq) => {
+                    const TypeIcon = TYPE_ICONS[eq.type] || Settings2;
+                    return (
+                      <Card
+                        key={eq.id}
+                        className="cursor-pointer hover-elevate"
+                        onClick={() => navigate(`/equipment/${eq.equipmentCode}`)}
+                        data-testid={`card-equipment-${eq.id}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="p-2 rounded-md bg-muted shrink-0">
                                 <TypeIcon className="h-4 w-4" />
                               </div>
-                              <div>
-                                <p className="font-medium">{eq.name}</p>
-                                <p className="text-sm text-muted-foreground">
+                              <div className="min-w-0">
+                                <p className="font-medium truncate">{eq.name}</p>
+                                <p className="text-sm text-muted-foreground truncate">
                                   {eq.equipmentCode} {eq.make && eq.model && `• ${eq.make} ${eq.model}`}
                                 </p>
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell>{getTypeLabel(eq.type)}</TableCell>
-                          <TableCell>
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`button-menu-${eq.id}`}>
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => navigate(`/equipment/${eq.equipmentCode}`)}>
+                                    View Details
+                                  </DropdownMenuItem>
+                                  {canDeleteEquipment && (
+                                    <DropdownMenuItem
+                                      onClick={() => handleDelete(eq)}
+                                      className="text-destructive"
+                                    >
+                                      Delete
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
                             <Badge className={getStatusBadge(eq.status)}>
                               {getStatusLabel(eq.status)}
                             </Badge>
-                          </TableCell>
-                          <TableCell>
+                            <Badge variant="outline">{getTypeLabel(eq.type)}</Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
                             <div className="flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-muted-foreground" />
+                              <Clock className="h-3 w-3" />
                               <span>{eq.currentHours || "0"} hrs</span>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            {eq.currentLocation || eq.homeLocation || "-"}
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" data-testid={`button-menu-${eq.id}`}>
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => navigate(`/equipment/${eq.equipmentCode}`)}>
-                                  View Details
-                                </DropdownMenuItem>
-                                {canDeleteEquipment && (
-                                  <DropdownMenuItem 
-                                    onClick={() => handleDelete(eq)}
-                                    className="text-destructive"
-                                  >
-                                    Delete
+                            {(eq.currentLocation || eq.homeLocation) && (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                <span>{eq.currentLocation || eq.homeLocation}</span>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Equipment</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Hours</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead className="w-[80px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {equipmentList.map((eq) => {
+                        const TypeIcon = TYPE_ICONS[eq.type] || Settings2;
+                        return (
+                          <TableRow 
+                            key={eq.id} 
+                            className="cursor-pointer hover-elevate"
+                            onClick={() => navigate(`/equipment/${eq.equipmentCode}`)}
+                            data-testid={`row-equipment-${eq.id}`}
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-md bg-muted">
+                                  <TypeIcon className="h-4 w-4" />
+                                </div>
+                                <div>
+                                  <p className="font-medium">{eq.name}</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {eq.equipmentCode} {eq.make && eq.model && `• ${eq.make} ${eq.model}`}
+                                  </p>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{getTypeLabel(eq.type)}</TableCell>
+                            <TableCell>
+                              <Badge className={getStatusBadge(eq.status)}>
+                                {getStatusLabel(eq.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Clock className="h-3 w-3 text-muted-foreground" />
+                                <span>{eq.currentHours || "0"} hrs</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {eq.currentLocation || eq.homeLocation || "-"}
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" data-testid={`button-menu-${eq.id}`}>
+                                    <MoreVertical className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => navigate(`/equipment/${eq.equipmentCode}`)}>
+                                    View Details
                                   </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+                                  {canDeleteEquipment && (
+                                    <DropdownMenuItem 
+                                      onClick={() => handleDelete(eq)}
+                                      className="text-destructive"
+                                    >
+                                      Delete
+                                    </DropdownMenuItem>
+                                  )}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )
+            }
           </CardContent>
         </Card>
       </main>

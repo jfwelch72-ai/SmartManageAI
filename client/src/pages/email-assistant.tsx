@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   Mail,
@@ -200,7 +201,9 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function EmailAssistantPage() {
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [selectedThread, setSelectedThread] = useState<EmailThread | null>(null);
+  const [mobileView, setMobileView] = useState<"list" | "overview">("list");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterClassification, setFilterClassification] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("OPEN");
@@ -416,7 +419,7 @@ export default function EmailAssistantPage() {
   return (
     <div className="flex flex-col h-full" data-testid="page-email-assistant">
       <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6 py-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <Mail className="w-6 h-6 text-primary" />
             <div>
@@ -426,7 +429,7 @@ export default function EmailAssistantPage() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -812,7 +815,36 @@ export default function EmailAssistantPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        <div className="w-80 border-r flex flex-col">
+        {isMobile && selectedThread ? (
+          <ThreadDetailView
+            thread={selectedThread}
+            onClose={() => setSelectedThread(null)}
+          />
+        ) : (
+          <>
+        <div className={`${isMobile ? "flex-1" : "w-80"} border-r flex flex-col`}>
+          {isMobile && (
+            <div className="flex border-b">
+              <button
+                onClick={() => setMobileView("list")}
+                className={`flex-1 py-2.5 text-sm font-medium text-center transition-colors ${mobileView === "list" ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"}`}
+                data-testid="button-mobile-inbox"
+              >
+                <Inbox className="w-4 h-4 inline-block mr-1.5" />
+                Inbox
+              </button>
+              <button
+                onClick={() => setMobileView("overview")}
+                className={`flex-1 py-2.5 text-sm font-medium text-center transition-colors ${mobileView === "overview" ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"}`}
+                data-testid="button-mobile-overview"
+              >
+                <LayoutList className="w-4 h-4 inline-block mr-1.5" />
+                Overview
+              </button>
+            </div>
+          )}
+          {(!isMobile || mobileView === "list") && (
+          <>
           <div className="p-4 border-b space-y-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -903,8 +935,159 @@ export default function EmailAssistantPage() {
               </div>
             )}
           </ScrollArea>
+          </>
+          )}
+          {isMobile && mobileView === "overview" && (
+            <div className="flex-1 flex flex-col overflow-auto">
+              <Tabs defaultValue="overview" className="flex-1 flex flex-col">
+                <TabsList className="mx-4 mt-4 self-start">
+                  <TabsTrigger value="overview" data-testid="tab-mobile-overview">Overview</TabsTrigger>
+                  <TabsTrigger value="tasks" data-testid="tab-mobile-tasks">Tasks</TabsTrigger>
+                </TabsList>
+                <TabsContent value="overview" className="flex-1 p-4 overflow-auto">
+                  <div className="grid gap-4 grid-cols-1">
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Inbox className="w-4 h-4" />
+                          Inbox Summary
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Total Threads</span>
+                            <span className="font-medium">{threads?.length || 0}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Unread</span>
+                            <span className="font-medium text-primary">
+                              {threads?.reduce((sum, t) => sum + t.unreadCount, 0) || 0}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Linked Accounts</span>
+                            <span className="font-medium">{accounts?.length || 0}</span>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4" />
+                          Pending Tasks
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        {tasksLoading ? (
+                          <div className="space-y-2">
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                          </div>
+                        ) : tasks && tasks.length > 0 ? (
+                          <div className="space-y-2">
+                            {tasks.slice(0, 5).map((task) => (
+                              <div key={task.id} className="flex items-center justify-between p-2 rounded border">
+                                <span className="text-sm line-clamp-1">{task.title}</span>
+                                <PriorityBadge priority={task.priority} />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground text-center py-4">
+                            No pending tasks
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Sparkles className="w-4 h-4" />
+                          AI Insights
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex gap-4">
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setSummaryType("daily");
+                              dailySummaryMutation.mutate();
+                            }}
+                            disabled={isSummaryLoading}
+                            className="flex-1"
+                            data-testid="button-mobile-daily-summary"
+                          >
+                            {dailySummaryMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Calendar className="w-4 h-4 mr-2" />
+                            )}
+                            Daily
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setSummaryType("weekly");
+                              weeklySummaryMutation.mutate();
+                            }}
+                            disabled={isSummaryLoading}
+                            className="flex-1"
+                            data-testid="button-mobile-weekly-summary"
+                          >
+                            {weeklySummaryMutation.isPending ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <LayoutList className="w-4 h-4 mr-2" />
+                            )}
+                            Weekly
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+                <TabsContent value="tasks" className="flex-1 p-4 overflow-auto">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5" />
+                        Email-Generated Tasks
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {tasksLoading ? (
+                        <div className="space-y-3">
+                          {Array.from({ length: 3 }).map((_, i) => (
+                            <Skeleton key={i} className="h-16 w-full" />
+                          ))}
+                        </div>
+                      ) : tasks && tasks.length > 0 ? (
+                        <div className="space-y-3">
+                          {tasks.map((task) => (
+                            <TaskCard key={task.id} task={task} />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <CheckCircle2 className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                          <p>No tasks from emails yet</p>
+                          <p className="text-sm mt-1">
+                            AI will create tasks when it detects action items in your emails
+                          </p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+            </div>
+          )}
         </div>
 
+        {!isMobile && (
         <div className="flex-1 flex flex-col">
           {selectedThread ? (
             <ThreadDetailView
@@ -1100,6 +1283,9 @@ export default function EmailAssistantPage() {
             </div>
           )}
         </div>
+        )}
+          </>
+        )}
       </div>
 
       <Sheet open={showSummarySheet} onOpenChange={setShowSummarySheet}>
@@ -1210,14 +1396,14 @@ function ThreadDetailView({ thread, onClose }: { thread: EmailThread; onClose: (
 
   return (
     <div className="flex-1 flex flex-col">
-      <div className="border-b p-4 flex items-center justify-between">
+      <div className="border-b p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onClose} data-testid="button-close-thread">
             <ChevronRight className="w-4 h-4 rotate-180" />
           </Button>
           <div>
             <h2 className="font-medium">{thread.subject}</h2>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
               <ClassificationBadge classification={thread.primaryClassification} />
               <span className="text-xs text-muted-foreground">
                 {thread.messageCount} messages
@@ -1225,7 +1411,7 @@ function ThreadDetailView({ thread, onClose }: { thread: EmailThread; onClose: (
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap ml-12 sm:ml-0">
           <Button
             variant="outline"
             size="sm"
@@ -1336,9 +1522,9 @@ function MessageCard({ message }: { message: EmailMessage }) {
   return (
     <Card data-testid={`message-card-${message.id}`}>
       <CardHeader className="pb-2">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col sm:flex-row items-start justify-between gap-2">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
               <User className="w-5 h-5 text-muted-foreground" />
             </div>
             <div>
@@ -1350,7 +1536,7 @@ function MessageCard({ message }: { message: EmailMessage }) {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <ClassificationBadge classification={message.classification} />
             {message.hasAttachments && (
               <Badge variant="outline" className="gap-1">
@@ -1365,7 +1551,7 @@ function MessageCard({ message }: { message: EmailMessage }) {
         <p className="text-sm text-muted-foreground whitespace-pre-wrap">
           {message.bodyText || message.snippet || "(No content)"}
         </p>
-        <div className="flex items-center gap-2 mt-4">
+        <div className="flex items-center gap-2 mt-4 flex-wrap">
           <Button
             variant="outline"
             size="sm"

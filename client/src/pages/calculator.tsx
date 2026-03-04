@@ -111,7 +111,7 @@ export default function CalculatorPage() {
         </div>
 
         <div className="md:hidden mb-4" data-testid="mobile-category-tabs">
-          <div className="flex overflow-x-auto gap-2 pb-2 -mx-4 px-4 scrollbar-none">
+          <div className="flex overflow-x-auto whitespace-nowrap gap-2 pb-2 -mx-4 px-4 scrollbar-none">
             {categories.map((cat) => {
               const Icon = cat.icon;
               const isActive = effectiveCategory === cat.id;

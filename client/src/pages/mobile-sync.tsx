@@ -58,12 +58,12 @@ export default function MobileSyncPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-page-title">Mobile & Offline V2</h1>
             <p className="text-muted-foreground">Device sync, offline capabilities, and conflict resolution</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Badge variant={isOnline ? "default" : "destructive"} className="flex items-center gap-1" data-testid="badge-connection-status">
               {isOnline ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
               {isOnline ? "Online" : "Offline"}

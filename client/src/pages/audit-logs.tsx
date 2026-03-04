@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Download, Search, Shield, Activity, FileText, Clock, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { FeatureGate } from "@/components/FeatureGate";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 interface AuditStats {
   actionStats: { action: string; count: number }[];
@@ -40,6 +41,7 @@ const ENTITY_TYPES = ["users", "projects", "bids", "estimates", "change_orders",
 const ACTION_TYPES = ["CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT"];
 
 export default function AuditLogsPage() {
+  const isMobile = useIsMobile();
   const [entityType, setEntityType] = useState<string>("all");
   const [action, setAction] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -256,6 +258,42 @@ export default function AuditLogsPage() {
             </div>
           ) : (
             <>
+              {isMobile ? (
+                <div className="space-y-3 p-3">
+                  {searchData.logs.map((entry) => (
+                    <Card key={entry.id} data-testid={`row-audit-${entry.id}`}>
+                      <CardContent className="p-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="outline" data-testid={`badge-action-${entry.id}`}>
+                            {entry.action}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground" data-testid={`text-timestamp-${entry.id}`}>
+                            {new Date(entry.createdAt).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="text-sm font-medium" data-testid={`text-user-${entry.id}`}>
+                          {entry.userEmail || "System"}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Entity Type</p>
+                            <p data-testid={`text-entity-type-${entry.id}`}>{entry.entityType || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Entity ID</p>
+                            <p className="font-mono text-xs truncate" data-testid={`text-entity-id-${entry.id}`}>{entry.entityId || "—"}</p>
+                          </div>
+                        </div>
+                        {entry.ipAddress && (
+                          <p className="text-xs text-muted-foreground" data-testid={`text-ip-${entry.id}`}>
+                            IP: {entry.ipAddress}
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="table-audit-logs">
                   <thead>
@@ -296,6 +334,7 @@ export default function AuditLogsPage() {
                   </tbody>
                 </table>
               </div>
+              )}
               {pagination && pagination.totalPages > 1 && (
                 <div className="flex flex-wrap items-center justify-between gap-3 p-3 border-t">
                   <p className="text-sm text-muted-foreground" data-testid="text-pagination-info">

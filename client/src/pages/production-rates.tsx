@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -135,6 +136,7 @@ type PageTab = "benchmarks" | "cost-analytics";
 
 export default function ProductionRatesPage() {
   const { user, logout, organizationName } = useAuth();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState<PageTab>("benchmarks");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
@@ -418,7 +420,53 @@ export default function ProductionRatesPage() {
                       Daily progress entries from field workers will appear here
                     </p>
                   </div>
-                ) : (
+                ) : isMobile ? (
+                    <div className="space-y-3">
+                      {filteredRates.map((rate, index) => (
+                        <Card key={`${rate.description}-${rate.unit}`} data-testid={`row-rate-${index}`}>
+                          <CardContent className="p-4 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="font-medium text-sm" title={rate.description}>{rate.description}</span>
+                              <Badge variant="secondary">{rate.unit}</Badge>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Avg/Day:</span>{" "}
+                                <span className="font-semibold">{rate.avgPerDay.toLocaleString()}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Min/Max:</span>{" "}
+                                <span>{rate.minPerDay.toLocaleString()} - {rate.maxPerDay.toLocaleString()}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Total Qty:</span>{" "}
+                                <span>{rate.totalQuantity.toLocaleString()}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Days:</span>{" "}
+                                <span>{rate.totalDays}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Projects:</span>{" "}
+                                <span>{rate.totalProjects}</span>
+                              </div>
+                            </div>
+                            <div className="flex justify-end">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleViewDetails(rate)}
+                                data-testid={`button-view-details-${index}`}
+                              >
+                                <Info className="w-4 h-4 mr-1" />
+                                Details
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -643,7 +691,43 @@ export default function ProductionRatesPage() {
                           Production data with labor hours and costs will appear here when time clock shifts are approved
                         </p>
                       </div>
-                    ) : (
+                    ) : isMobile ? (
+                        <div className="space-y-3">
+                          {filteredCostMetrics.map((metric, index) => (
+                            <Card key={`${metric.description}-${metric.unit}`} data-testid={`row-cost-${index}`}>
+                              <CardContent className="p-4 space-y-2">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="font-medium text-sm" title={metric.description}>{metric.description}</span>
+                                  <Badge variant="secondary">{metric.unit}</Badge>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Labor/Unit:</span>{" "}
+                                    <span className="font-semibold">{formatCurrency(metric.avgLaborCostPerUnit)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Material/Unit:</span>{" "}
+                                    <span>{formatCurrency(metric.avgMaterialCostPerUnit)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Profit/Unit:</span>{" "}
+                                    <span className={`font-semibold ${metric.avgProfitPerUnit !== null && metric.avgProfitPerUnit < 0 ? 'text-destructive' : 'text-green-600'}`}>
+                                      {metric.avgProfitPerUnit !== null ? formatCurrency(metric.avgProfitPerUnit) : "N/A"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Total Qty:</span>{" "}
+                                    <span>{metric.totalQuantity.toLocaleString()}</span>
+                                  </div>
+                                </div>
+                                <div className="flex justify-end">
+                                  {getConfidenceBadge(metric.confidence)}
+                                </div>
+                              </CardContent>
+                            </Card>
+                          ))}
+                        </div>
+                      ) : (
                       <div className="overflow-x-auto">
                         <Table>
                           <TableHeader>

@@ -2663,12 +2663,12 @@ export default function WebsiteBodyComponents({ config, onChange, title, descrip
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-3">
+      <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 space-y-0 pb-3">
         <div>
           <CardTitle className="text-base">{title || "Body Components"}</CardTitle>
           <CardDescription>{description || "Add and configure page sections. Drag to reorder. All components support responsive desktop/mobile views."}</CardDescription>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
           <div className="flex items-center gap-1 p-1 border rounded-md">
             <Button
               size="sm"

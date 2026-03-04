@@ -666,12 +666,12 @@ export default function BidNetworkPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Bid Network</h1>
           <p className="text-muted-foreground">Manage bid solicitations to subcontractors</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <NetworkSettingsDialog />
           {canSend ? (
             <CreateBidRequestDialog onSuccess={() => refetch()} />

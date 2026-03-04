@@ -646,7 +646,7 @@ export default function CompanySettings() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-6" data-testid="tabs-company-settings">
+        <TabsList className="flex w-full overflow-x-auto whitespace-nowrap" data-testid="tabs-company-settings">
           <TabsTrigger value="trade" data-testid="tab-trade">
             <Wrench className="h-4 w-4 mr-2" />
             Trade

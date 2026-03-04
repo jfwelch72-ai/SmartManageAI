@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ interface CrewMember {
 
 export default function CrewsPage() {
   const { user, logout, organizationName } = useAuth();
+  const isMobile = useIsMobile();
   const { toast } = useToast();
 
   // Filter state
@@ -511,7 +513,65 @@ export default function CrewsPage() {
                   <div className="p-8 text-center text-muted-foreground">
                     {hasCrewFilters ? "No crews match your filters" : "No crews found"}
                   </div>
-                ) : (
+                ) : isMobile ? (
+                    <div className="space-y-3 p-4">
+                      {filteredCrews.map((crew) => (
+                        <Card key={crew.id} data-testid={`crew-row-${crew.id}`}>
+                          <CardContent className="p-4 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="font-medium">{crew.name}</span>
+                              {crew.isActive ? (
+                                <Badge className="bg-green-500 hover:bg-green-600">Active</Badge>
+                              ) : (
+                                <Badge variant="secondary">Inactive</Badge>
+                              )}
+                            </div>
+                            <div className="text-sm space-y-1">
+                              <div>
+                                <span className="text-muted-foreground">Lead:</span>{" "}
+                                <span>{crew.lead ? `${crew.lead.firstName} ${crew.lead.lastName}` : "-"}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Members:</span>{" "}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-auto p-0"
+                                  onClick={() => handleViewMembers(crew)}
+                                  data-testid={`button-view-members-${crew.id}`}
+                                >
+                                  {crew.memberCount} members
+                                </Button>
+                              </div>
+                              {crew.description && (
+                                <div className="text-muted-foreground truncate">{crew.description}</div>
+                              )}
+                            </div>
+                            <div className="flex gap-2 justify-end">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEditCrew(crew)}
+                                data-testid={`button-edit-crew-${crew.id}`}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              {user.role === "ADMIN" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteCrewMutation.mutate(crew.id)}
+                                  data-testid={`button-delete-crew-${crew.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              )}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
                   <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -678,7 +738,37 @@ export default function CrewsPage() {
                   <div className="p-8 text-center text-muted-foreground">
                     {hasSkillFilters ? "No skills match your filters" : "No skills found"}
                   </div>
-                ) : (
+                ) : isMobile ? (
+                    <div className="space-y-3 p-4">
+                      {filteredSkills.map((skill) => (
+                        <Card key={skill.id} data-testid={`skill-row-${skill.id}`}>
+                          <CardContent className="p-4 space-y-2">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="font-medium">{skill.name}</span>
+                              {skill.category ? (
+                                <Badge variant="outline">{skill.category}</Badge>
+                              ) : null}
+                            </div>
+                            {skill.description && (
+                              <p className="text-sm text-muted-foreground">{skill.description}</p>
+                            )}
+                            {user.role === "ADMIN" && (
+                              <div className="flex justify-end">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteSkillMutation.mutate(skill.id)}
+                                  data-testid={`button-delete-skill-${skill.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>

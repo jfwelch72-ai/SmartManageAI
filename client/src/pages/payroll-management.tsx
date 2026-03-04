@@ -3,6 +3,7 @@ import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -114,6 +115,7 @@ const STATUS_LABELS: Record<string, string> = {
 export default function PayrollManagementPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const searchString = useSearch();
   const urlTab = useMemo(() => new URLSearchParams(searchString).get("tab"), [searchString]);
   const [activeTab, setActiveTab] = useState(urlTab || "overview");
@@ -233,7 +235,7 @@ export default function PayrollManagementPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-payroll-title">Payroll Management</h1>
           <p className="text-muted-foreground text-sm">Manage pay runs, time entries, and labor costs</p>
@@ -245,7 +247,7 @@ export default function PayrollManagementPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+        <TabsList className="flex w-full max-w-2xl overflow-x-auto whitespace-nowrap">
           <TabsTrigger value="overview" data-testid="tab-overview">
             <TrendingUp className="w-4 h-4 mr-1.5" />
             Overview
@@ -358,6 +360,40 @@ export default function PayrollManagementPage() {
                       <p className="text-sm">Create your first pay run to get started</p>
                     </div>
                   ) : (
+                    isMobile ? (
+                      <div className="space-y-3">
+                        {overview?.recentPayRuns?.slice(0, 5).map(pr => (
+                          <Card key={pr.id} data-testid={`row-pay-run-${pr.id}`}>
+                            <CardContent className="p-4 space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-medium">Run #{pr.runNumber || "—"}</span>
+                                <Badge className={STATUS_COLORS[pr.status]}>{STATUS_LABELS[pr.status]}</Badge>
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {format(new Date(pr.payPeriodStart + "T00:00:00"), "MMM d")} - {format(new Date(pr.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                              </p>
+                              <div className="grid grid-cols-3 gap-2 text-sm">
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Workers</p>
+                                  <p className="font-medium">{pr.totalWorkers}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Total Hrs</p>
+                                  <p className="font-medium">{formatHours(parseFloat(pr.totalRegularHours) + parseFloat(pr.totalOvertimeHours))}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs text-muted-foreground">Cost</p>
+                                  <p className="font-medium">{formatCurrency(pr.totalLaborCost)}</p>
+                                </div>
+                              </div>
+                              <Button variant="ghost" size="sm" className="w-full" onClick={() => { setSelectedPayRun(pr.id); setDetailDialogOpen(true); }} data-testid={`button-view-run-${pr.id}`}>
+                                View Details
+                              </Button>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    ) : (
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -392,6 +428,7 @@ export default function PayrollManagementPage() {
                         ))}
                       </TableBody>
                     </Table>
+                    )
                   )}
                 </CardContent>
               </Card>
@@ -420,6 +457,35 @@ export default function PayrollManagementPage() {
                   <p>No workers found</p>
                 </div>
               ) : (
+                isMobile ? (
+                  <div className="space-y-3">
+                    {workers?.map(worker => (
+                      <Card key={worker.id} data-testid={`row-worker-${worker.id}`}>
+                        <CardContent className="p-4 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">{worker.firstName} {worker.lastName}</span>
+                            <Badge variant="outline" className="text-xs">{worker.role}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{worker.email}</p>
+                          <div className="grid grid-cols-3 gap-2 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Regular Hrs</p>
+                              <p className="font-medium">{formatHours(worker.totalRegularHours)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">OT Hrs</p>
+                              <p className="font-medium">{parseFloat(worker.totalOvertimeHours) > 0 ? formatHours(worker.totalOvertimeHours) : "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Entries</p>
+                              <p className="font-medium">{worker.totalEntries}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -448,6 +514,7 @@ export default function PayrollManagementPage() {
                     </TableBody>
                   </Table>
                 </div>
+                )
               )}
             </CardContent>
           </Card>
@@ -492,6 +559,71 @@ export default function PayrollManagementPage() {
                   <p className="text-sm">Create a pay run to generate payroll from approved time entries</p>
                 </div>
               ) : (
+                isMobile ? (
+                  <div className="space-y-3">
+                    {filteredPayRuns.map(pr => {
+                      const next = getNextStatus(pr.status);
+                      return (
+                        <Card key={pr.id} data-testid={`row-pay-run-${pr.id}`}>
+                          <CardContent className="p-4 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-medium">Run #{pr.runNumber || "—"}</span>
+                              <Badge className={STATUS_COLORS[pr.status]}>{STATUS_LABELS[pr.status]}</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(pr.payPeriodStart + "T00:00:00"), "MMM d")} - {format(new Date(pr.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                            </p>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Workers</p>
+                                <p className="font-medium">{pr.totalWorkers}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Regular Hrs</p>
+                                <p className="font-medium">{formatHours(pr.totalRegularHours)}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">OT Hrs</p>
+                                <p className="font-medium">{parseFloat(pr.totalOvertimeHours) > 0 ? formatHours(pr.totalOvertimeHours) : "—"}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Total Cost</p>
+                                <p className="font-semibold">{formatCurrency(pr.totalLaborCost)}</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              <Button variant="ghost" size="sm" onClick={() => { setSelectedPayRun(pr.id); setDetailDialogOpen(true); }} data-testid={`button-detail-run-${pr.id}`}>
+                                View
+                              </Button>
+                              {next && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs"
+                                  onClick={() => updateStatusMutation.mutate({ id: pr.id, status: next.status })}
+                                  disabled={updateStatusMutation.isPending}
+                                  data-testid={`button-advance-run-${pr.id}`}
+                                >
+                                  {next.label}
+                                </Button>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => updateStatusMutation.mutate({ id: pr.id, status: "ARCHIVED" })}
+                                disabled={updateStatusMutation.isPending}
+                                data-testid={`button-archive-run-${pr.id}`}
+                                title="Archive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -558,6 +690,7 @@ export default function PayrollManagementPage() {
                     </TableBody>
                   </Table>
                 </div>
+                )
               )}
             </CardContent>
           </Card>
@@ -580,6 +713,44 @@ export default function PayrollManagementPage() {
                   <p className="text-sm">Archived pay runs will appear here</p>
                 </div>
               ) : (
+                isMobile ? (
+                  <div className="space-y-3">
+                    {archivedPayRuns.map(pr => (
+                      <Card key={pr.id} data-testid={`row-archived-run-${pr.id}`}>
+                        <CardContent className="p-4 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">Run #{pr.runNumber || "—"}</span>
+                            <Badge className={STATUS_COLORS["ARCHIVED"]}>{STATUS_LABELS["ARCHIVED"]}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            {format(new Date(pr.payPeriodStart + "T00:00:00"), "MMM d")} - {format(new Date(pr.payPeriodEnd + "T00:00:00"), "MMM d, yyyy")}
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Workers</p>
+                              <p className="font-medium">{pr.totalWorkers}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Regular Hrs</p>
+                              <p className="font-medium">{formatHours(pr.totalRegularHours)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">OT Hrs</p>
+                              <p className="font-medium">{parseFloat(pr.totalOvertimeHours) > 0 ? formatHours(pr.totalOvertimeHours) : "—"}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Total Cost</p>
+                              <p className="font-semibold">{formatCurrency(pr.totalLaborCost)}</p>
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" className="w-full" onClick={() => { setSelectedPayRun(pr.id); setDetailDialogOpen(true); }} data-testid={`button-detail-archived-${pr.id}`}>
+                            View Details
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
                 <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
@@ -618,6 +789,7 @@ export default function PayrollManagementPage() {
                     </TableBody>
                   </Table>
                 </div>
+                )
               )}
             </CardContent>
           </Card>

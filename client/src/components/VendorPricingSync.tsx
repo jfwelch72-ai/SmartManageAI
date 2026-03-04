@@ -258,14 +258,14 @@ export default function VendorPricingSync({ organizationId }: VendorPricingSyncP
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-2xl font-bold">Vendor Pricebooks</h2>
           <p className="text-muted-foreground">
             Manage vendor pricing for accurate estimates
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh-pricebooks">
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh

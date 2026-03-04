@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,6 +72,7 @@ interface ClaimWithRelations extends DelayClaim {
 export default function DelayClaimsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [projectFilter, setProjectFilter] = useState<string>("ALL");
@@ -378,79 +380,128 @@ export default function DelayClaimsPage() {
         </CardContent>
       </Card>
 
-      {/* Claims Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Claim #</TableHead>
-                  <TableHead>Project</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Days</TableHead>
-                  <TableHead>Cost</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Created</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredClaims.length === 0 ? (
+      {/* Claims Table / Mobile Cards */}
+      {isMobile ? (
+        <div className="space-y-3">
+          {filteredClaims.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                No delay claims found
+              </CardContent>
+            </Card>
+          ) : (
+            filteredClaims.map((claim) => (
+              <Card
+                key={claim.id}
+                className="hover-elevate cursor-pointer"
+                data-testid={`card-claim-${claim.id}`}
+                onClick={() => {
+                  setSelectedClaim(claim);
+                  setIsDetailOpen(true);
+                }}
+              >
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="font-mono text-sm font-medium" data-testid={`text-claim-number-${claim.id}`}>
+                      {claim.claimNumber}
+                    </span>
+                    {getStatusBadge(claim.status)}
+                  </div>
+                  <div className="text-sm font-medium">{claim.title}</div>
+                  <div className="text-sm text-muted-foreground">
+                    {claim.project?.code || "-"} {claim.project?.name ? `- ${claim.project.name}` : ""}
+                  </div>
+                  <div className="flex items-center flex-wrap gap-2">
+                    {getClaimTypeBadge(claim.claimType)}
+                    {claim.daysRequested ? (
+                      <span className="text-xs text-muted-foreground">{claim.daysRequested} days</span>
+                    ) : null}
+                    {claim.costRequested ? (
+                      <span className="text-xs text-muted-foreground">{formatCurrency(claim.costRequested)}</span>
+                    ) : null}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {claim.createdAt ? format(new Date(claim.createdAt), "MM/dd/yyyy") : "-"}
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
-                      No delay claims found
-                    </TableCell>
+                    <TableHead>Claim #</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Days</TableHead>
+                    <TableHead>Cost</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ) : (
-                  filteredClaims.map((claim) => (
-                    <TableRow key={claim.id} data-testid={`row-claim-${claim.id}`}>
-                      <TableCell className="font-mono text-sm" data-testid={`text-claim-number-${claim.id}`}>
-                        {claim.claimNumber}
-                      </TableCell>
-                      <TableCell>
-                        {claim.project?.code || "-"}
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        {claim.title}
-                      </TableCell>
-                      <TableCell>
-                        {getClaimTypeBadge(claim.claimType)}
-                      </TableCell>
-                      <TableCell>
-                        {claim.daysRequested ? `${claim.daysRequested} days` : "-"}
-                      </TableCell>
-                      <TableCell>
-                        {formatCurrency(claim.costRequested)}
-                      </TableCell>
-                      <TableCell>
-                        {getStatusBadge(claim.status)}
-                      </TableCell>
-                      <TableCell>
-                        {claim.createdAt ? format(new Date(claim.createdAt), "MM/dd/yyyy") : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedClaim(claim);
-                            setIsDetailOpen(true);
-                          }}
-                          data-testid={`button-view-claim-${claim.id}`}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
+                </TableHeader>
+                <TableBody>
+                  {filteredClaims.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        No delay claims found
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+                  ) : (
+                    filteredClaims.map((claim) => (
+                      <TableRow key={claim.id} data-testid={`row-claim-${claim.id}`}>
+                        <TableCell className="font-mono text-sm" data-testid={`text-claim-number-${claim.id}`}>
+                          {claim.claimNumber}
+                        </TableCell>
+                        <TableCell>
+                          {claim.project?.code || "-"}
+                        </TableCell>
+                        <TableCell className="max-w-[200px] truncate">
+                          {claim.title}
+                        </TableCell>
+                        <TableCell>
+                          {getClaimTypeBadge(claim.claimType)}
+                        </TableCell>
+                        <TableCell>
+                          {claim.daysRequested ? `${claim.daysRequested} days` : "-"}
+                        </TableCell>
+                        <TableCell>
+                          {formatCurrency(claim.costRequested)}
+                        </TableCell>
+                        <TableCell>
+                          {getStatusBadge(claim.status)}
+                        </TableCell>
+                        <TableCell>
+                          {claim.createdAt ? format(new Date(claim.createdAt), "MM/dd/yyyy") : "-"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setSelectedClaim(claim);
+                              setIsDetailOpen(true);
+                            }}
+                            data-testid={`button-view-claim-${claim.id}`}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Create Claim Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>

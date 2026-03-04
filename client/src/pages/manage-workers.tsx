@@ -1361,7 +1361,7 @@ export default function ManageWorkersPage() {
         </div>
 
         <Tabs defaultValue={canManageWorkers ? "workers" : "ratings"} className="space-y-6">
-          <TabsList data-testid="workforce-tabs">
+          <TabsList className="overflow-x-auto whitespace-nowrap" data-testid="workforce-tabs">
             {canManageWorkers && <TabsTrigger value="workers" data-testid="tab-workers"><Users className="w-4 h-4 mr-1.5" />Workers</TabsTrigger>}
             <TabsTrigger value="ratings" data-testid="tab-ratings"><Star className="w-4 h-4 mr-1.5" />Ratings</TabsTrigger>
             <TabsTrigger value="rewards" data-testid="tab-rewards"><Gift className="w-4 h-4 mr-1.5" />Rewards</TabsTrigger>

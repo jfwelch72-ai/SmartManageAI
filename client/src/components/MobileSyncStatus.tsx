@@ -185,14 +185,14 @@ export default function MobileSyncStatus({ userId }: MobileSyncStatusProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h2 className="text-2xl font-bold">Mobile & Offline Sync</h2>
           <p className="text-muted-foreground">
             Manage devices and offline data synchronization
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             {isOnline ? (
               <>

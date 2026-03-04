@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -112,6 +113,7 @@ interface UserItem {
 export default function RFIsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
@@ -603,6 +605,58 @@ export default function RFIsPage() {
           </CardContent>
         </Card>
       ) : (
+        isMobile ? (
+          <div className="space-y-3" data-testid="cards-rfis">
+            {filteredRFIs.map((rfi) => (
+              <Card
+                key={rfi.id}
+                className="cursor-pointer hover-elevate"
+                onClick={() => openDetail(rfi)}
+                data-testid={`card-rfi-${rfi.id}`}
+              >
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-sm" data-testid={`text-rfi-number-${rfi.id}`}>
+                      {rfi.rfiNumber}
+                    </span>
+                    <div className="flex items-center gap-1 flex-wrap justify-end" data-testid={`badge-rfi-status-${rfi.id}`}>
+                      {getPriorityBadge(rfi.priority)}
+                      {getStatusBadge(rfi.status)}
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium truncate" data-testid={`text-rfi-subject-${rfi.id}`}>
+                    {rfi.subject}
+                  </p>
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span data-testid={`text-rfi-project-${rfi.id}`}>
+                      {rfi.project?.code || "—"}
+                    </span>
+                    <span data-testid={`text-rfi-submitted-date-${rfi.id}`}>
+                      {rfi.dateSubmitted ? format(new Date(rfi.dateSubmitted), "MMM d, yyyy") : "—"}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground" data-testid={`text-rfi-submitter-${rfi.id}`}>
+                      {rfi.submittedByName || "—"}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDetail(rfi);
+                      }}
+                      data-testid={`button-view-rfi-${rfi.id}`}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
         <Card>
           <CardContent className="p-0">
             <Table data-testid="table-rfis">
@@ -671,6 +725,7 @@ export default function RFIsPage() {
             </Table>
           </CardContent>
         </Card>
+        )
       )}
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

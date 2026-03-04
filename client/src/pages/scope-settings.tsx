@@ -616,7 +616,7 @@ export default function ScopeSettings() {
 
   return (
     <div className="container mx-auto p-6 max-w-6xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
         <div className="flex items-center gap-4">
           <Link href="/projects">
             <Button variant="ghost" size="icon" data-testid="button-back">
@@ -624,7 +624,7 @@ export default function ScopeSettings() {
             </Button>
           </Link>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-bold flex items-center gap-2">
                 <Settings className="h-6 w-6" />
                 Scope Standardization Settings

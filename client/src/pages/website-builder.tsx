@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useIsMobile } from "@/hooks/use-mobile";
 import WebsitePreviewRenderer from "@/components/website-preview-renderer";
 import WebsiteComponentsTab, {
   type HeaderComponentsConfig,
@@ -927,6 +928,7 @@ function PublishingTab({ website, onPublish, publishPending }: { website: Websit
 export default function WebsiteBuilderPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("setup");
   const [showAIAssistant, setShowAIAssistant] = useState(false);
@@ -1578,7 +1580,7 @@ export default function WebsiteBuilderPage() {
 
   return (
     <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6" data-testid="page-website-builder">
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
             <Globe className="h-6 w-6 text-primary" />
@@ -1588,7 +1590,7 @@ export default function WebsiteBuilderPage() {
             Create and manage your organization's professional website
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {hasWebsite && (
             <>
               <Badge variant={website?.status === "PUBLISHED" ? "default" : "secondary"} data-testid="badge-website-status">
@@ -2368,7 +2370,7 @@ export default function WebsiteBuilderPage() {
         </TabsContent>
 
         <TabsContent value="pages" className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-semibold">Website Pages</h2>
               <p className="text-sm text-muted-foreground">Manage your website's pages and navigation</p>
@@ -2509,6 +2511,47 @@ export default function WebsiteBuilderPage() {
                 </div>
               </CardContent>
             </Card>
+          ) : isMobile ? (
+            <div className="space-y-3">
+              {blogPosts.map((post) => {
+                const p = post as any;
+                const createdAt = post.createdAt || p.created_at;
+                const viewCount = post.viewCount ?? p.view_count ?? 0;
+                const aiGenerated = post.aiGenerated || p.ai_generated;
+                return (
+                  <Card key={post.id} data-testid={`card-blog-${post.id}`}>
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <span className="font-medium text-sm">{post.title}</span>
+                          {aiGenerated && (
+                            <Badge variant="outline" className="text-xs">
+                              <Sparkles className="h-3 w-3 mr-1" />
+                              AI
+                            </Badge>
+                          )}
+                        </div>
+                        <Button variant="ghost" size="icon" onClick={() => handleEditBlog(post)} data-testid={`button-edit-blog-${post.id}`}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge variant={post.status === "PUBLISHED" ? "default" : post.status === "ARCHIVED" ? "secondary" : "outline"}>
+                          {post.status}
+                        </Badge>
+                        {post.category && (
+                          <span className="text-xs text-muted-foreground">{post.category}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{viewCount} views</span>
+                        <span>{createdAt ? format(new Date(createdAt), "MMM d, yyyy") : "-"}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -2908,6 +2951,49 @@ export default function WebsiteBuilderPage() {
                 </p>
               </CardContent>
             </Card>
+          ) : isMobile ? (
+            <div className="space-y-3">
+              {contactSubmissions.map((submission) => {
+                const s = submission as any;
+                const createdAt = submission.createdAt || s.created_at;
+                const responded = submission.responded ?? false;
+                const convertedToCrm = submission.convertedToCrm || s.converted_to_crm;
+                return (
+                  <Card key={submission.id} className={!submission.read ? "border-primary/30" : ""} data-testid={`card-submission-${submission.id}`}>
+                    <CardContent className="p-4 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm">{submission.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{submission.email}</p>
+                        </div>
+                        <Button variant="ghost" size="icon" data-testid={`button-view-submission-${submission.id}`}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {submission.subject && (
+                        <p className="text-sm text-muted-foreground">{submission.subject}</p>
+                      )}
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {!submission.read && (
+                            <Badge variant="secondary">Unread</Badge>
+                          )}
+                          {responded && (
+                            <Badge variant="outline">Responded</Badge>
+                          )}
+                          {convertedToCrm && (
+                            <Badge>CRM</Badge>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          {createdAt ? format(new Date(createdAt), "MMM d, yyyy") : "-"}
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
           ) : (
             <Table>
               <TableHeader>
