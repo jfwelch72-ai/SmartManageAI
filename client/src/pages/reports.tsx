@@ -20,22 +20,30 @@ import {
   Camera,
   Ruler,
   DollarSign,
+  Hash,
+  BarChart3,
+  Layers,
+  List,
+  PieChart,
+  LayoutList,
+  ClipboardList,
+  TrendingDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const TAKEOFF_REPORTS = [
-  { id: "takeoff-quantity", label: "Takeoff Quantity", endpoint: "/api/reports/takeoff/quantity" },
-  { id: "takeoff-summary", label: "Takeoff Summary", endpoint: "/api/reports/takeoff/summary" },
-  { id: "measurements-by-takeoff", label: "Measurements By Takeoff", endpoint: "/api/reports/takeoff/by-takeoff" },
-  { id: "item-list", label: "Item List", endpoint: "/api/reports/takeoff/items" },
-  { id: "item-cost", label: "Item Cost", endpoint: "/api/reports/takeoff/item-cost" },
-  { id: "item-cost-by-type", label: "Item Cost By Type", endpoint: "/api/reports/takeoff/item-cost-by-type" },
-  { id: "item-cost-by-takeoff", label: "Item Cost By Takeoff", endpoint: "/api/reports/takeoff/item-cost-by-takeoff" },
+  { id: "takeoff-quantity", label: "Takeoff Quantity", icon: Hash, endpoint: "/api/reports/takeoff/quantity" },
+  { id: "takeoff-summary", label: "Takeoff Summary", icon: BarChart3, endpoint: "/api/reports/takeoff/summary" },
+  { id: "measurements-by-takeoff", label: "Measurements By Takeoff", icon: Layers, endpoint: "/api/reports/takeoff/by-takeoff" },
+  { id: "item-list", label: "Item List", icon: List, endpoint: "/api/reports/takeoff/items" },
+  { id: "item-cost", label: "Item Cost", icon: DollarSign, endpoint: "/api/reports/takeoff/item-cost" },
+  { id: "item-cost-by-type", label: "Item Cost By Type", icon: PieChart, endpoint: "/api/reports/takeoff/item-cost-by-type" },
+  { id: "item-cost-by-takeoff", label: "Item Cost By Takeoff", icon: LayoutList, endpoint: "/api/reports/takeoff/item-cost-by-takeoff" },
 ] as const;
 
 const ESTIMATE_REPORTS = [
-  { id: "estimate-summary", label: "Estimate Summary", endpoint: "/api/reports/estimates/summary" },
-  { id: "cost-breakdown", label: "Cost Breakdown", endpoint: "/api/reports/estimates/cost-breakdown" },
+  { id: "estimate-summary", label: "Estimate Summary", icon: ClipboardList, endpoint: "/api/reports/estimates/summary" },
+  { id: "cost-breakdown", label: "Cost Breakdown", icon: TrendingDown, endpoint: "/api/reports/estimates/cost-breakdown" },
 ] as const;
 
 type ReportId = typeof TAKEOFF_REPORTS[number]["id"] | typeof ESTIMATE_REPORTS[number]["id"];
@@ -133,11 +141,12 @@ export default function ReportsPage() {
                   <button
                     key={r.id}
                     onClick={() => setSelectedReport(r.id)}
-                    className={`w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    className={`w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
                       selectedReport === r.id ? "bg-primary/10 text-primary font-medium" : "text-foreground/80 hover:bg-muted"
                     }`}
                     data-testid={`nav-report-${r.id}`}
                   >
+                    <r.icon className="h-3.5 w-3.5 flex-shrink-0" />
                     {r.label}
                   </button>
                 ))}
@@ -156,11 +165,12 @@ export default function ReportsPage() {
                   <button
                     key={r.id}
                     onClick={() => setSelectedReport(r.id)}
-                    className={`w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    className={`w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors flex items-center gap-2 ${
                       selectedReport === r.id ? "bg-primary/10 text-primary font-medium" : "text-foreground/80 hover:bg-muted"
                     }`}
                     data-testid={`nav-report-${r.id}`}
                   >
+                    <r.icon className="h-3.5 w-3.5 flex-shrink-0" />
                     {r.label}
                   </button>
                 ))}
@@ -238,9 +248,13 @@ export default function ReportsPage() {
                 {allReports.map((r, i) => {
                   const prevGroup = i > 0 ? allReports[i - 1].group : null;
                   const showGroupLabel = r.group !== prevGroup;
+                  const Icon = r.icon;
                   return (
                     <SelectItem key={r.id} value={r.id}>
-                      {showGroupLabel && i > 0 ? "— " : ""}{r.label}
+                      <span className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 flex-shrink-0" />
+                        {showGroupLabel && i > 0 ? "— " : ""}{r.label}
+                      </span>
                     </SelectItem>
                   );
                 })}
@@ -255,9 +269,17 @@ export default function ReportsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {allReports.map(r => (
-                    <SelectItem key={r.id} value={r.id}>{r.label}</SelectItem>
-                  ))}
+                  {allReports.map(r => {
+                    const Icon = r.icon;
+                    return (
+                      <SelectItem key={r.id} value={r.id}>
+                        <span className="flex items-center gap-2">
+                          <Icon className="h-4 w-4 flex-shrink-0" />
+                          {r.label}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
