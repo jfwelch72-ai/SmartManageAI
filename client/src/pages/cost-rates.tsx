@@ -795,46 +795,51 @@ export default function CostRatesPage() {
 
   const canEdit = user?.role === "ADMIN" || user?.role === "MANAGER";
 
+  const tabOptions = [
+    { value: "employee-rates", label: "Employee Rates", icon: Users },
+    { value: "classifications", label: "Job Classifications", icon: Briefcase },
+    { value: "employee-classifications", label: "Employee Assignments", icon: Users },
+    { value: "prevailing-wage", label: "Prevailing Wage", icon: Building2 },
+    { value: "salary-categories", label: "Salary Categories", icon: DollarSign },
+    { value: "burden-rates", label: "Burden Rates", icon: Calculator },
+    { value: "cost-assignments", label: "Cost Assignments", icon: Users },
+  ];
+
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Labor Cost Rate Management</h1>
-          <p className="text-muted-foreground">
+      <main className="mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-8">
+        <div className="mb-4 sm:mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1 sm:mb-2">Labor Cost Rate Management</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
             Manage employee base rates, job classifications, and prevailing wage rates for projects
           </p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="flex flex-wrap w-full">
-            <TabsTrigger value="employee-rates" className="flex items-center gap-2" data-testid="tab-employee-rates">
-              <Users className="w-4 h-4" />
-              Employee Rates
-            </TabsTrigger>
-            <TabsTrigger value="classifications" className="flex items-center gap-2" data-testid="tab-classifications">
-              <Briefcase className="w-4 h-4" />
-              Job Classifications
-            </TabsTrigger>
-            <TabsTrigger value="employee-classifications" className="flex items-center gap-2" data-testid="tab-employee-classifications">
-              <Users className="w-4 h-4" />
-              Employee Assignments
-            </TabsTrigger>
-            <TabsTrigger value="prevailing-wage" className="flex items-center gap-2" data-testid="tab-prevailing-wage">
-              <Building2 className="w-4 h-4" />
-              Prevailing Wage
-            </TabsTrigger>
-            <TabsTrigger value="salary-categories" className="flex items-center gap-2" data-testid="tab-salary-categories">
-              <DollarSign className="w-4 h-4" />
-              Salary Categories
-            </TabsTrigger>
-            <TabsTrigger value="burden-rates" className="flex items-center gap-2" data-testid="tab-burden-rates">
-              <Calculator className="w-4 h-4" />
-              Burden Rates
-            </TabsTrigger>
-            <TabsTrigger value="cost-assignments" className="flex items-center gap-2" data-testid="tab-cost-assignments">
-              <Users className="w-4 h-4" />
-              Cost Assignments
-            </TabsTrigger>
+          <div className="md:hidden">
+            <Select value={activeTab} onValueChange={setActiveTab}>
+              <SelectTrigger data-testid="select-tab-mobile">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {tabOptions.map((tab) => (
+                  <SelectItem key={tab.value} value={tab.value} data-testid={`tab-mobile-${tab.value}`}>
+                    <span className="flex items-center gap-2">
+                      <tab.icon className="w-4 h-4" />
+                      {tab.label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <TabsList className="hidden md:flex flex-wrap w-full">
+            {tabOptions.map((tab) => (
+              <TabsTrigger key={tab.value} value={tab.value} className="flex items-center gap-2" data-testid={`tab-${tab.value}`}>
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           <TabsContent value="employee-rates">
@@ -852,40 +857,74 @@ export default function CostRatesPage() {
                 {usersLoading ? (
                   <div className="text-center py-8 text-muted-foreground">Loading...</div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Email</TableHead>
-                        <TableHead>Role</TableHead>
-                        <TableHead className="text-right">Regular Rate ($/hr)</TableHead>
-                        <TableHead className="text-right">Overtime Rate ($/hr)</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Role</TableHead>
+                            <TableHead className="text-right">Regular Rate ($/hr)</TableHead>
+                            <TableHead className="text-right">Overtime Rate ($/hr)</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {users.map((u) => (
+                            <TableRow key={u.id} data-testid={`row-employee-${u.id}`}>
+                              <TableCell className="font-medium">{u.firstName} {u.lastName}</TableCell>
+                              <TableCell>{u.email}</TableCell>
+                              <TableCell><Badge variant="secondary">{u.role}</Badge></TableCell>
+                              <TableCell className="text-right font-mono">
+                                {u.costRateRegular ? `$${parseFloat(u.costRateRegular).toFixed(2)}` : <span className="text-muted-foreground">Not set</span>}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {u.costRateOvertime ? `$${parseFloat(u.costRateOvertime).toFixed(2)}` : <span className="text-muted-foreground">Not set</span>}
+                              </TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <Button size="sm" variant="outline" onClick={() => handleEditRate(u)} data-testid={`button-edit-rate-${u.id}`}>
+                                    <Edit className="w-4 h-4" />
+                                  </Button>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {users.map((u) => (
-                        <TableRow key={u.id} data-testid={`row-employee-${u.id}`}>
-                          <TableCell className="font-medium">{u.firstName} {u.lastName}</TableCell>
-                          <TableCell>{u.email}</TableCell>
-                          <TableCell><Badge variant="secondary">{u.role}</Badge></TableCell>
-                          <TableCell className="text-right font-mono">
-                            {u.costRateRegular ? `$${parseFloat(u.costRateRegular).toFixed(2)}` : <span className="text-muted-foreground">Not set</span>}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {u.costRateOvertime ? `$${parseFloat(u.costRateOvertime).toFixed(2)}` : <span className="text-muted-foreground">Not set</span>}
-                          </TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <Button size="sm" variant="outline" onClick={() => handleEditRate(u)} data-testid={`button-edit-rate-${u.id}`}>
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                            </TableCell>
-                          )}
-                        </TableRow>
+                        <div key={u.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-employee-${u.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{u.firstName} {u.lastName}</p>
+                              <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-xs">{u.role}</Badge>
+                              {canEdit && (
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => handleEditRate(u)} data-testid={`button-edit-rate-m-${u.id}`}>
+                                  <Edit className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Regular</span>
+                              <p className="font-mono font-medium">{u.costRateRegular ? `$${parseFloat(u.costRateRegular).toFixed(2)}/hr` : "Not set"}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Overtime</span>
+                              <p className="font-mono font-medium">{u.costRateOvertime ? `$${parseFloat(u.costRateOvertime).toFixed(2)}/hr` : "Not set"}</p>
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -893,7 +932,7 @@ export default function CostRatesPage() {
 
           <TabsContent value="classifications">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Briefcase className="w-5 h-5" />
@@ -904,7 +943,7 @@ export default function CostRatesPage() {
                   </CardDescription>
                 </div>
                 {canEdit && (
-                  <Button onClick={() => openClassificationDialog()} data-testid="button-add-classification">
+                  <Button onClick={() => openClassificationDialog()} data-testid="button-add-classification" className="w-full sm:w-auto">
                     <Plus className="w-4 h-4 mr-2" />
                     Add Classification
                   </Button>
@@ -920,51 +959,93 @@ export default function CostRatesPage() {
                     <p className="text-sm mt-1">Create classifications to standardize labor rates across your organization.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Code</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Default Regular</TableHead>
-                        <TableHead className="text-right">Default OT</TableHead>
-                        <TableHead>Status</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Code</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead className="text-right">Default Regular</TableHead>
+                            <TableHead className="text-right">Default OT</TableHead>
+                            <TableHead>Status</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {classifications.map((c) => (
+                            <TableRow key={c.id} data-testid={`row-classification-${c.id}`}>
+                              <TableCell className="font-medium">{c.name}</TableCell>
+                              <TableCell className="font-mono text-sm">{c.code || "-"}</TableCell>
+                              <TableCell className="max-w-[200px] truncate">{c.description || "-"}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {c.defaultRegularRate ? `$${parseFloat(c.defaultRegularRate).toFixed(2)}` : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {c.defaultOvertimeRate ? `$${parseFloat(c.defaultOvertimeRate).toFixed(2)}` : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={c.isActive ? "default" : "secondary"}>
+                                  {c.isActive ? "Active" : "Inactive"}
+                                </Badge>
+                              </TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => openClassificationDialog(c)} data-testid={`button-edit-class-${c.id}`}>
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => confirmDelete("classification", c.id, c.name)} data-testid={`button-delete-class-${c.id}`}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {classifications.map((c) => (
-                        <TableRow key={c.id} data-testid={`row-classification-${c.id}`}>
-                          <TableCell className="font-medium">{c.name}</TableCell>
-                          <TableCell className="font-mono text-sm">{c.code || "-"}</TableCell>
-                          <TableCell className="max-w-[200px] truncate">{c.description || "-"}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {c.defaultRegularRate ? `$${parseFloat(c.defaultRegularRate).toFixed(2)}` : "-"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {c.defaultOvertimeRate ? `$${parseFloat(c.defaultOvertimeRate).toFixed(2)}` : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={c.isActive ? "default" : "secondary"}>
-                              {c.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => openClassificationDialog(c)} data-testid={`button-edit-class-${c.id}`}>
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => confirmDelete("classification", c.id, c.name)} data-testid={`button-delete-class-${c.id}`}>
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
+                        <div key={c.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-classification-${c.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{c.name}</p>
+                              {c.code && <p className="text-xs font-mono text-muted-foreground">{c.code}</p>}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant={c.isActive ? "default" : "secondary"} className="text-xs">
+                                {c.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                              {canEdit && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => openClassificationDialog(c)} data-testid={`button-edit-class-m-${c.id}`}>
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => confirmDelete("classification", c.id, c.name)} data-testid={`button-delete-class-m-${c.id}`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {c.description && <p className="text-xs text-muted-foreground line-clamp-2">{c.description}</p>}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Regular</span>
+                              <p className="font-mono font-medium">{c.defaultRegularRate ? `$${parseFloat(c.defaultRegularRate).toFixed(2)}/hr` : "-"}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Overtime</span>
+                              <p className="font-mono font-medium">{c.defaultOvertimeRate ? `$${parseFloat(c.defaultOvertimeRate).toFixed(2)}/hr` : "-"}</p>
+                            </div>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -972,7 +1053,7 @@ export default function CostRatesPage() {
 
           <TabsContent value="employee-classifications">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Users className="w-5 h-5" />
@@ -983,7 +1064,7 @@ export default function CostRatesPage() {
                   </CardDescription>
                 </div>
                 {canEdit && (
-                  <Button onClick={() => openEmployeeClassDialog()} data-testid="button-add-emp-class">
+                  <Button onClick={() => openEmployeeClassDialog()} data-testid="button-add-emp-class" className="w-full sm:w-auto">
                     <Plus className="w-4 h-4 mr-2" />
                     Assign Employee
                   </Button>
@@ -999,47 +1080,87 @@ export default function CostRatesPage() {
                     <p className="text-sm mt-1">Assign employees to job classifications to track rates by trade.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Classification</TableHead>
-                        <TableHead className="text-right">Regular Rate</TableHead>
-                        <TableHead className="text-right">OT Rate</TableHead>
-                        <TableHead>Primary</TableHead>
-                        <TableHead>Effective Date</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Employee</TableHead>
+                            <TableHead>Classification</TableHead>
+                            <TableHead className="text-right">Regular Rate</TableHead>
+                            <TableHead className="text-right">OT Rate</TableHead>
+                            <TableHead>Primary</TableHead>
+                            <TableHead>Effective Date</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {employeeClassifications.map((ec) => (
+                            <TableRow key={ec.id} data-testid={`row-emp-class-${ec.id}`}>
+                              <TableCell className="font-medium">
+                                {ec.user ? `${ec.user.firstName} ${ec.user.lastName}` : "Unknown"}
+                              </TableCell>
+                              <TableCell>{ec.classification?.name || "Unknown"}</TableCell>
+                              <TableCell className="text-right font-mono">${parseFloat(ec.regularRate).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-mono">${parseFloat(ec.overtimeRate).toFixed(2)}</TableCell>
+                              <TableCell>
+                                {ec.isPrimary && <Badge>Primary</Badge>}
+                              </TableCell>
+                              <TableCell>{ec.effectiveDate}</TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => openEmployeeClassDialog(ec)} data-testid={`button-edit-emp-class-${ec.id}`}>
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => confirmDelete("employee-class", ec.id, `${ec.user?.firstName || ""} ${ec.user?.lastName || ""} - ${ec.classification?.name || ""}`)} data-testid={`button-delete-emp-class-${ec.id}`}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {employeeClassifications.map((ec) => (
-                        <TableRow key={ec.id} data-testid={`row-emp-class-${ec.id}`}>
-                          <TableCell className="font-medium">
-                            {ec.user ? `${ec.user.firstName} ${ec.user.lastName}` : "Unknown"}
-                          </TableCell>
-                          <TableCell>{ec.classification?.name || "Unknown"}</TableCell>
-                          <TableCell className="text-right font-mono">${parseFloat(ec.regularRate).toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-mono">${parseFloat(ec.overtimeRate).toFixed(2)}</TableCell>
-                          <TableCell>
-                            {ec.isPrimary && <Badge>Primary</Badge>}
-                          </TableCell>
-                          <TableCell>{ec.effectiveDate}</TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => openEmployeeClassDialog(ec)} data-testid={`button-edit-emp-class-${ec.id}`}>
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => confirmDelete("employee-class", ec.id, `${ec.user?.firstName || ""} ${ec.user?.lastName || ""} - ${ec.classification?.name || ""}`)} data-testid={`button-delete-emp-class-${ec.id}`}>
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
+                        <div key={ec.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-emp-class-${ec.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{ec.user ? `${ec.user.firstName} ${ec.user.lastName}` : "Unknown"}</p>
+                              <p className="text-xs text-muted-foreground">{ec.classification?.name || "Unknown"}</p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              {ec.isPrimary && <Badge className="text-xs">Primary</Badge>}
+                              {canEdit && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => openEmployeeClassDialog(ec)} data-testid={`button-edit-emp-class-m-${ec.id}`}>
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => confirmDelete("employee-class", ec.id, `${ec.user?.firstName || ""} ${ec.user?.lastName || ""} - ${ec.classification?.name || ""}`)} data-testid={`button-delete-emp-class-m-${ec.id}`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Regular</span>
+                              <p className="font-mono font-medium">${parseFloat(ec.regularRate).toFixed(2)}/hr</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Overtime</span>
+                              <p className="font-mono font-medium">${parseFloat(ec.overtimeRate).toFixed(2)}/hr</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Effective: {ec.effectiveDate}</p>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1047,7 +1168,7 @@ export default function CostRatesPage() {
 
           <TabsContent value="prevailing-wage">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Building2 className="w-5 h-5" />
@@ -1058,7 +1179,7 @@ export default function CostRatesPage() {
                   </CardDescription>
                 </div>
                 {canEdit && (
-                  <Button onClick={() => openPWRateDialog()} data-testid="button-add-pw-rate">
+                  <Button onClick={() => openPWRateDialog()} data-testid="button-add-pw-rate" className="w-full sm:w-auto">
                     <Plus className="w-4 h-4 mr-2" />
                     Add PW Rate
                   </Button>
@@ -1074,45 +1195,89 @@ export default function CostRatesPage() {
                     <p className="text-sm mt-1">Add rates for public works or government projects that require prevailing wages.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Classification</TableHead>
-                        <TableHead className="text-right">Wage Rate</TableHead>
-                        <TableHead className="text-right">Fringe</TableHead>
-                        <TableHead className="text-right">Total Rate</TableHead>
-                        <TableHead className="text-right">OT Mult</TableHead>
-                        <TableHead>Effective</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Project</TableHead>
+                            <TableHead>Classification</TableHead>
+                            <TableHead className="text-right">Wage Rate</TableHead>
+                            <TableHead className="text-right">Fringe</TableHead>
+                            <TableHead className="text-right">Total Rate</TableHead>
+                            <TableHead className="text-right">OT Mult</TableHead>
+                            <TableHead>Effective</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {prevailingWageRates.map((pw) => (
+                            <TableRow key={pw.id} data-testid={`row-pw-rate-${pw.id}`}>
+                              <TableCell className="font-medium">{pw.project?.name || "Unknown"}</TableCell>
+                              <TableCell>{pw.classification?.name || "Unknown"}</TableCell>
+                              <TableCell className="text-right font-mono">${parseFloat(pw.wageRate).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-mono">${parseFloat(pw.fringeRate).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-mono font-semibold">${parseFloat(pw.totalRate).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-mono">{pw.overtimeMultiplier}x</TableCell>
+                              <TableCell>{pw.effectiveDate}</TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => openPWRateDialog(pw)} data-testid={`button-edit-pw-${pw.id}`}>
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => confirmDelete("pw-rate", pw.id, `${pw.project?.name || ""} - ${pw.classification?.name || ""}`)} data-testid={`button-delete-pw-${pw.id}`}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {prevailingWageRates.map((pw) => (
-                        <TableRow key={pw.id} data-testid={`row-pw-rate-${pw.id}`}>
-                          <TableCell className="font-medium">{pw.project?.name || "Unknown"}</TableCell>
-                          <TableCell>{pw.classification?.name || "Unknown"}</TableCell>
-                          <TableCell className="text-right font-mono">${parseFloat(pw.wageRate).toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-mono">${parseFloat(pw.fringeRate).toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-mono font-semibold">${parseFloat(pw.totalRate).toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-mono">{pw.overtimeMultiplier}x</TableCell>
-                          <TableCell>{pw.effectiveDate}</TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => openPWRateDialog(pw)} data-testid={`button-edit-pw-${pw.id}`}>
-                                  <Edit className="w-4 h-4" />
+                        <div key={pw.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-pw-rate-${pw.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{pw.project?.name || "Unknown"}</p>
+                              <p className="text-xs text-muted-foreground">{pw.classification?.name || "Unknown"}</p>
+                            </div>
+                            {canEdit && (
+                              <div className="flex items-center gap-1.5">
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => openPWRateDialog(pw)} data-testid={`button-edit-pw-m-${pw.id}`}>
+                                  <Edit className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => confirmDelete("pw-rate", pw.id, `${pw.project?.name || ""} - ${pw.classification?.name || ""}`)} data-testid={`button-delete-pw-${pw.id}`}>
-                                  <Trash2 className="w-4 h-4" />
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => confirmDelete("pw-rate", pw.id, `${pw.project?.name || ""} - ${pw.classification?.name || ""}`)} data-testid={`button-delete-pw-m-${pw.id}`}>
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
                               </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Wage</span>
+                              <p className="font-mono font-medium">${parseFloat(pw.wageRate).toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Fringe</span>
+                              <p className="font-mono font-medium">${parseFloat(pw.fringeRate).toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Total</span>
+                              <p className="font-mono font-semibold">${parseFloat(pw.totalRate).toFixed(2)}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>OT: {pw.overtimeMultiplier}x</span>
+                            <span>Effective: {pw.effectiveDate}</span>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1120,7 +1285,7 @@ export default function CostRatesPage() {
 
           <TabsContent value="salary-categories">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <DollarSign className="w-5 h-5" />
@@ -1131,7 +1296,7 @@ export default function CostRatesPage() {
                   </CardDescription>
                 </div>
                 {canEdit && (
-                  <Button onClick={() => openSalaryCatDialog()} data-testid="button-add-salary-cat">
+                  <Button onClick={() => openSalaryCatDialog()} data-testid="button-add-salary-cat" className="w-full sm:w-auto">
                     <Plus className="w-4 h-4 mr-2" />
                     Add Category
                   </Button>
@@ -1147,49 +1312,84 @@ export default function CostRatesPage() {
                     <p className="text-sm mt-1">Create salary categories to standardize annual compensation levels.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead className="text-right">Base Salary</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Effective Date</TableHead>
-                        <TableHead>Status</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead className="text-right">Base Salary</TableHead>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Effective Date</TableHead>
+                            <TableHead>Status</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {salaryCategories.map((sc) => (
+                            <TableRow key={sc.id} data-testid={`row-salary-cat-${sc.id}`}>
+                              <TableCell className="font-medium">{sc.name}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                ${parseFloat(sc.baseAnnualSalary).toLocaleString()}
+                              </TableCell>
+                              <TableCell>
+                                {sc.salaryType ? <Badge variant="secondary">{sc.salaryType}</Badge> : "-"}
+                              </TableCell>
+                              <TableCell>{sc.effectiveDate}</TableCell>
+                              <TableCell>
+                                <Badge variant={sc.isActive ? "default" : "secondary"}>
+                                  {sc.isActive ? "Active" : "Inactive"}
+                                </Badge>
+                              </TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => openSalaryCatDialog(sc)} data-testid={`button-edit-salary-cat-${sc.id}`}>
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => confirmDelete("salary-cat", sc.id, sc.name)} data-testid={`button-delete-salary-cat-${sc.id}`}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {salaryCategories.map((sc) => (
-                        <TableRow key={sc.id} data-testid={`row-salary-cat-${sc.id}`}>
-                          <TableCell className="font-medium">{sc.name}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            ${parseFloat(sc.baseAnnualSalary).toLocaleString()}
-                          </TableCell>
-                          <TableCell>
-                            {sc.salaryType ? <Badge variant="secondary">{sc.salaryType}</Badge> : "-"}
-                          </TableCell>
-                          <TableCell>{sc.effectiveDate}</TableCell>
-                          <TableCell>
-                            <Badge variant={sc.isActive ? "default" : "secondary"}>
-                              {sc.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => openSalaryCatDialog(sc)} data-testid={`button-edit-salary-cat-${sc.id}`}>
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => confirmDelete("salary-cat", sc.id, sc.name)} data-testid={`button-delete-salary-cat-${sc.id}`}>
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
+                        <div key={sc.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-salary-cat-${sc.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{sc.name}</p>
+                              <p className="text-lg font-mono font-semibold">${parseFloat(sc.baseAnnualSalary).toLocaleString()}</p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant={sc.isActive ? "default" : "secondary"} className="text-xs">
+                                {sc.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                              {canEdit && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => openSalaryCatDialog(sc)} data-testid={`button-edit-salary-cat-m-${sc.id}`}>
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => confirmDelete("salary-cat", sc.id, sc.name)} data-testid={`button-delete-salary-cat-m-${sc.id}`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{sc.salaryType || "No type"}</span>
+                            <span>Effective: {sc.effectiveDate}</span>
+                          </div>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1197,7 +1397,7 @@ export default function CostRatesPage() {
 
           <TabsContent value="burden-rates">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Calculator className="w-5 h-5" />
@@ -1208,7 +1408,7 @@ export default function CostRatesPage() {
                   </CardDescription>
                 </div>
                 {canEdit && (
-                  <Button onClick={() => openBurdenDialog()} data-testid="button-add-burden-rate">
+                  <Button onClick={() => openBurdenDialog()} data-testid="button-add-burden-rate" className="w-full sm:w-auto">
                     <Plus className="w-4 h-4 mr-2" />
                     Add Burden Rate
                   </Button>
@@ -1224,56 +1424,96 @@ export default function CostRatesPage() {
                     <p className="text-sm mt-1">Create burden rate profiles to calculate fully burdened employee costs.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead className="text-right">Total Burden %</TableHead>
-                        <TableHead>Component Breakdown</TableHead>
-                        <TableHead className="text-right">Fixed Amount</TableHead>
-                        <TableHead>Status</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead className="text-right">Total Burden %</TableHead>
+                            <TableHead>Component Breakdown</TableHead>
+                            <TableHead className="text-right">Fixed Amount</TableHead>
+                            <TableHead>Status</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {burdenRatesList.map((br) => (
+                            <TableRow key={br.id} data-testid={`row-burden-rate-${br.id}`}>
+                              <TableCell className="font-medium">{br.name}</TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {parseFloat(br.burdenPercentage).toFixed(2)}%
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex flex-wrap gap-1">
+                                  {br.taxesPercent && <Badge variant="secondary">Taxes: {br.taxesPercent}%</Badge>}
+                                  {br.benefitsPercent && <Badge variant="secondary">Benefits: {br.benefitsPercent}%</Badge>}
+                                  {br.insurancePercent && <Badge variant="secondary">Insurance: {br.insurancePercent}%</Badge>}
+                                  {br.overheadPercent && <Badge variant="secondary">Overhead: {br.overheadPercent}%</Badge>}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {br.fixedBurdenAmount ? `$${parseFloat(br.fixedBurdenAmount).toLocaleString()}` : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={br.isActive ? "default" : "secondary"}>
+                                  {br.isActive ? "Active" : "Inactive"}
+                                </Badge>
+                              </TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => openBurdenDialog(br)} data-testid={`button-edit-burden-${br.id}`}>
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => confirmDelete("burden-rate", br.id, br.name)} data-testid={`button-delete-burden-${br.id}`}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {burdenRatesList.map((br) => (
-                        <TableRow key={br.id} data-testid={`row-burden-rate-${br.id}`}>
-                          <TableCell className="font-medium">{br.name}</TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {parseFloat(br.burdenPercentage).toFixed(2)}%
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {br.taxesPercent && <Badge variant="secondary">Taxes: {br.taxesPercent}%</Badge>}
-                              {br.benefitsPercent && <Badge variant="secondary">Benefits: {br.benefitsPercent}%</Badge>}
-                              {br.insurancePercent && <Badge variant="secondary">Insurance: {br.insurancePercent}%</Badge>}
-                              {br.overheadPercent && <Badge variant="secondary">Overhead: {br.overheadPercent}%</Badge>}
+                        <div key={br.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-burden-rate-${br.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{br.name}</p>
+                              <p className="text-lg font-mono font-semibold">{parseFloat(br.burdenPercentage).toFixed(2)}%</p>
                             </div>
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {br.fixedBurdenAmount ? `$${parseFloat(br.fixedBurdenAmount).toLocaleString()}` : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={br.isActive ? "default" : "secondary"}>
-                              {br.isActive ? "Active" : "Inactive"}
-                            </Badge>
-                          </TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => openBurdenDialog(br)} data-testid={`button-edit-burden-${br.id}`}>
-                                  <Edit className="w-4 h-4" />
-                                </Button>
-                                <Button size="sm" variant="outline" onClick={() => confirmDelete("burden-rate", br.id, br.name)} data-testid={`button-delete-burden-${br.id}`}>
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant={br.isActive ? "default" : "secondary"} className="text-xs">
+                                {br.isActive ? "Active" : "Inactive"}
+                              </Badge>
+                              {canEdit && (
+                                <>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => openBurdenDialog(br)} data-testid={`button-edit-burden-m-${br.id}`}>
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => confirmDelete("burden-rate", br.id, br.name)} data-testid={`button-delete-burden-m-${br.id}`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {br.taxesPercent && <Badge variant="secondary" className="text-xs">Taxes: {br.taxesPercent}%</Badge>}
+                            {br.benefitsPercent && <Badge variant="secondary" className="text-xs">Benefits: {br.benefitsPercent}%</Badge>}
+                            {br.insurancePercent && <Badge variant="secondary" className="text-xs">Insurance: {br.insurancePercent}%</Badge>}
+                            {br.overheadPercent && <Badge variant="secondary" className="text-xs">Overhead: {br.overheadPercent}%</Badge>}
+                          </div>
+                          {br.fixedBurdenAmount && (
+                            <p className="text-xs text-muted-foreground">Fixed: ${parseFloat(br.fixedBurdenAmount).toLocaleString()}</p>
                           )}
-                        </TableRow>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -1281,7 +1521,7 @@ export default function CostRatesPage() {
 
           <TabsContent value="cost-assignments">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-4">
+              <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Users className="w-5 h-5" />
@@ -1291,16 +1531,16 @@ export default function CostRatesPage() {
                     Assign employees to salary categories and burden rates to calculate fully burdened costs and derived hourly rates.
                   </CardDescription>
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 w-full sm:w-auto">
                   {canEdit && (
                     <>
-                      <Button variant="outline" onClick={() => recalculateAllMutation.mutate()} disabled={recalculateAllMutation.isPending} data-testid="button-recalculate-all">
+                      <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => recalculateAllMutation.mutate()} disabled={recalculateAllMutation.isPending} data-testid="button-recalculate-all">
                         <RefreshCw className={`w-4 h-4 mr-2 ${recalculateAllMutation.isPending ? "animate-spin" : ""}`} />
-                        Recalculate All
+                        Recalculate
                       </Button>
-                      <Button onClick={() => openCostAssignDialog()} data-testid="button-add-cost-assign">
+                      <Button className="flex-1 sm:flex-none" onClick={() => openCostAssignDialog()} data-testid="button-add-cost-assign">
                         <Plus className="w-4 h-4 mr-2" />
-                        Add Assignment
+                        Add
                       </Button>
                     </>
                   )}
@@ -1316,57 +1556,103 @@ export default function CostRatesPage() {
                     <p className="text-sm mt-1">Create assignments to link employees with salary categories and burden rates.</p>
                   </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Employee</TableHead>
-                        <TableHead>Salary Category</TableHead>
-                        <TableHead>Burden Rate</TableHead>
-                        <TableHead className="text-right">Base Salary</TableHead>
-                        <TableHead className="text-right">Burden %</TableHead>
-                        <TableHead className="text-right">Fully Burdened Cost</TableHead>
-                        <TableHead className="text-right">Hourly Rate</TableHead>
-                        <TableHead>Effective Date</TableHead>
-                        {canEdit && <TableHead className="text-right">Actions</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Employee</TableHead>
+                            <TableHead>Salary Category</TableHead>
+                            <TableHead>Burden Rate</TableHead>
+                            <TableHead className="text-right">Base Salary</TableHead>
+                            <TableHead className="text-right">Burden %</TableHead>
+                            <TableHead className="text-right">Fully Burdened Cost</TableHead>
+                            <TableHead className="text-right">Hourly Rate</TableHead>
+                            <TableHead>Effective Date</TableHead>
+                            {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {costAssignments.map((ca) => (
+                            <TableRow key={ca.id} data-testid={`row-cost-assign-${ca.id}`}>
+                              <TableCell className="font-medium">
+                                {ca.userName ? `${ca.userName} ${ca.userLastName || ""}`.trim() : "Unknown"}
+                              </TableCell>
+                              <TableCell>{ca.salaryName || "Unknown"}</TableCell>
+                              <TableCell>{ca.burdenName || "-"}</TableCell>
+                              <TableCell className="text-right font-mono">
+                                {ca.baseAnnualSalary ? `$${parseFloat(ca.baseAnnualSalary).toLocaleString()}` : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {ca.burdenPercentage ? `${parseFloat(ca.burdenPercentage).toFixed(2)}%` : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {ca.fullyBurdenedCost ? `$${parseFloat(ca.fullyBurdenedCost).toLocaleString()}` : "-"}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {ca.derivedHourlyRate ? `$${parseFloat(ca.derivedHourlyRate).toLocaleString()}` : "-"}
+                              </TableCell>
+                              <TableCell>{ca.effectiveDate}</TableCell>
+                              {canEdit && (
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => openCostAssignDialog(ca)} data-testid={`button-edit-cost-assign-${ca.id}`}>
+                                      <Edit className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => confirmDelete("cost-assign", ca.id, `${ca.userName || ""} ${ca.userLastName || ""}`.trim())} data-testid={`button-delete-cost-assign-${ca.id}`}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <div className="md:hidden space-y-3">
                       {costAssignments.map((ca) => (
-                        <TableRow key={ca.id} data-testid={`row-cost-assign-${ca.id}`}>
-                          <TableCell className="font-medium">
-                            {ca.userName ? `${ca.userName} ${ca.userLastName || ""}`.trim() : "Unknown"}
-                          </TableCell>
-                          <TableCell>{ca.salaryName || "Unknown"}</TableCell>
-                          <TableCell>{ca.burdenName || "-"}</TableCell>
-                          <TableCell className="text-right font-mono">
-                            {ca.baseAnnualSalary ? `$${parseFloat(ca.baseAnnualSalary).toLocaleString()}` : "-"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {ca.burdenPercentage ? `${parseFloat(ca.burdenPercentage).toFixed(2)}%` : "-"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-semibold">
-                            {ca.fullyBurdenedCost ? `$${parseFloat(ca.fullyBurdenedCost).toLocaleString()}` : "-"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {ca.derivedHourlyRate ? `$${parseFloat(ca.derivedHourlyRate).toLocaleString()}` : "-"}
-                          </TableCell>
-                          <TableCell>{ca.effectiveDate}</TableCell>
-                          {canEdit && (
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-2">
-                                <Button size="sm" variant="outline" onClick={() => openCostAssignDialog(ca)} data-testid={`button-edit-cost-assign-${ca.id}`}>
-                                  <Edit className="w-4 h-4" />
+                        <div key={ca.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-cost-assign-${ca.id}`}>
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-medium text-sm">{ca.userName ? `${ca.userName} ${ca.userLastName || ""}`.trim() : "Unknown"}</p>
+                              <p className="text-xs text-muted-foreground">{ca.salaryName || "Unknown"}</p>
+                              {ca.burdenName && <p className="text-xs text-muted-foreground">{ca.burdenName}</p>}
+                            </div>
+                            {canEdit && (
+                              <div className="flex items-center gap-1.5">
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => openCostAssignDialog(ca)} data-testid={`button-edit-cost-assign-m-${ca.id}`}>
+                                  <Edit className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => confirmDelete("cost-assign", ca.id, `${ca.userName || ""} ${ca.userLastName || ""}`.trim())} data-testid={`button-delete-cost-assign-${ca.id}`}>
-                                  <Trash2 className="w-4 h-4" />
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => confirmDelete("cost-assign", ca.id, `${ca.userName || ""} ${ca.userLastName || ""}`.trim())} data-testid={`button-delete-cost-assign-m-${ca.id}`}>
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
                               </div>
-                            </TableCell>
-                          )}
-                        </TableRow>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div>
+                              <span className="text-muted-foreground">Base Salary</span>
+                              <p className="font-mono font-medium">{ca.baseAnnualSalary ? `$${parseFloat(ca.baseAnnualSalary).toLocaleString()}` : "-"}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Burden</span>
+                              <p className="font-mono font-medium">{ca.burdenPercentage ? `${parseFloat(ca.burdenPercentage).toFixed(2)}%` : "-"}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Burdened Cost</span>
+                              <p className="font-mono font-semibold">{ca.fullyBurdenedCost ? `$${parseFloat(ca.fullyBurdenedCost).toLocaleString()}` : "-"}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Hourly Rate</span>
+                              <p className="font-mono font-semibold">{ca.derivedHourlyRate ? `$${parseFloat(ca.derivedHourlyRate).toLocaleString()}/hr` : "-"}</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Effective: {ca.effectiveDate}</p>
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
