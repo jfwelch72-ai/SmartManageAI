@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -641,6 +642,7 @@ function NetworkSettingsDialog() {
 
 export default function BidNetworkPage() {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   
   const requestsUrl = statusFilter !== "all" 
@@ -684,7 +686,7 @@ export default function BidNetworkPage() {
         </div>
       </div>
       
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <Card className="cursor-pointer hover-elevate" onClick={() => setStatusFilter("DRAFT")} data-testid="card-stat-draft">
           <CardContent className="pt-4">
             <div className="flex items-center justify-between">
@@ -732,13 +734,28 @@ export default function BidNetworkPage() {
       </div>
       
       <Tabs value={statusFilter} onValueChange={setStatusFilter}>
-        <TabsList>
-          <TabsTrigger value="all" data-testid="tab-all">All ({requests.length})</TabsTrigger>
-          <TabsTrigger value="DRAFT" data-testid="tab-draft">Draft ({draftCount})</TabsTrigger>
-          <TabsTrigger value="OPEN" data-testid="tab-open">Open ({openCount})</TabsTrigger>
-          <TabsTrigger value="CLOSED" data-testid="tab-closed">Closed ({closedCount})</TabsTrigger>
-          <TabsTrigger value="AWARDED" data-testid="tab-awarded">Awarded ({awardedCount})</TabsTrigger>
-        </TabsList>
+        {isMobile ? (
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger data-testid="select-bid-status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All ({requests.length})</SelectItem>
+              <SelectItem value="DRAFT">Draft ({draftCount})</SelectItem>
+              <SelectItem value="OPEN">Open ({openCount})</SelectItem>
+              <SelectItem value="CLOSED">Closed ({closedCount})</SelectItem>
+              <SelectItem value="AWARDED">Awarded ({awardedCount})</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <TabsList>
+            <TabsTrigger value="all" data-testid="tab-all">All ({requests.length})</TabsTrigger>
+            <TabsTrigger value="DRAFT" data-testid="tab-draft">Draft ({draftCount})</TabsTrigger>
+            <TabsTrigger value="OPEN" data-testid="tab-open">Open ({openCount})</TabsTrigger>
+            <TabsTrigger value="CLOSED" data-testid="tab-closed">Closed ({closedCount})</TabsTrigger>
+            <TabsTrigger value="AWARDED" data-testid="tab-awarded">Awarded ({awardedCount})</TabsTrigger>
+          </TabsList>
+        )}
       </Tabs>
       
       {isLoading ? (
