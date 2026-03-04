@@ -21,7 +21,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -122,8 +124,10 @@ const COMMON_SCALES = {
 };
 
 export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWorkspaceProps) {
+  const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null); // PHASE 2.3a: Track tool that initiated drawing
+  const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
   const takeoffHistory = useTakeoffHistory(selectedSheet);
   const prevSheetRef = useRef<string | null>(null);
@@ -702,6 +706,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   // Track last input type to prevent duplicate events from touch+mouse emulation
   const lastInputTypeRef = useRef<"mouse" | "touch" | null>(null);
   const lastInputTimeRef = useRef<number>(0);
+  const isPinchingRef = useRef(false);
 
   // PHASE 2.1: Mouse/Touch down handler - record position to detect click vs drag
   const handleStageMouseDown = (e: any) => {
@@ -712,6 +717,11 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       e.evt.preventDefault();
       lastInputTypeRef.current = "touch";
       lastInputTimeRef.current = now;
+      if (e.evt.touches && e.evt.touches.length >= 2) {
+        isPinchingRef.current = true;
+        setMouseDownPosition(null);
+        return;
+      }
     } else {
       if (lastInputTypeRef.current === "touch" && now - lastInputTimeRef.current < 500) {
         return;
@@ -1306,6 +1316,83 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
       y: pointer.y - mousePointTo.y * newScale,
     });
   };
+
+  const lastPinchDistRef = useRef<number | null>(null);
+  const lastPinchCenterRef = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchMove = useCallback((e: any) => {
+    const touches = e.evt?.touches;
+    if (!touches || touches.length < 2) {
+      lastPinchDistRef.current = null;
+      lastPinchCenterRef.current = null;
+      if (!isPinchingRef.current) {
+        handleStageMouseMove(e);
+      }
+      return;
+    }
+
+    isPinchingRef.current = true;
+    setMouseDownPosition(null);
+    e.evt.preventDefault();
+
+    const t1 = touches[0];
+    const t2 = touches[1];
+    const dist = Math.sqrt(
+      Math.pow(t2.clientX - t1.clientX, 2) + Math.pow(t2.clientY - t1.clientY, 2)
+    );
+    const center = {
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2,
+    };
+
+    if (lastPinchDistRef.current !== null && lastPinchCenterRef.current !== null) {
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      const container = stage.container().getBoundingClientRect();
+      const stageCenter = {
+        x: center.x - container.left,
+        y: center.y - container.top,
+      };
+
+      const oldScale = stageScale;
+      const scaleFactor = dist / lastPinchDistRef.current;
+      let newScale = oldScale * scaleFactor;
+      newScale = Math.max(0.1, Math.min(10, newScale));
+
+      const mousePointTo = {
+        x: (stageCenter.x - stagePosition.x) / oldScale,
+        y: (stageCenter.y - stagePosition.y) / oldScale,
+      };
+
+      const dx = center.x - lastPinchCenterRef.current.x;
+      const dy = center.y - lastPinchCenterRef.current.y;
+
+      setStageScale(newScale);
+      setStagePosition({
+        x: stageCenter.x - mousePointTo.x * newScale + dx,
+        y: stageCenter.y - mousePointTo.y * newScale + dy,
+      });
+    }
+
+    lastPinchDistRef.current = dist;
+    lastPinchCenterRef.current = center;
+  }, [stageScale, stagePosition, handleStageMouseMove]);
+
+  const handleTouchEnd = useCallback((e: any) => {
+    const touches = e.evt?.touches;
+    if (!touches || touches.length < 2) {
+      lastPinchDistRef.current = null;
+      lastPinchCenterRef.current = null;
+    }
+    if (isPinchingRef.current) {
+      if (!touches || touches.length === 0) {
+        isPinchingRef.current = false;
+      }
+      return;
+    }
+    handleStageMouseUp(e);
+  }, [handleStageMouseUp]);
 
   const completePolygon = () => {
     if (!selectedSheet || !currentSheet?.scalePxPerFoot || drawingPoints.length < 3) {
@@ -2049,8 +2136,8 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               onMouseUp={handleStageMouseUp}
               onMouseMove={handleStageMouseMove}
               onTouchStart={handleStageMouseDown}
-              onTouchEnd={handleStageMouseUp}
-              onTouchMove={handleStageMouseMove}
+              onTouchEnd={handleTouchEnd}
+              onTouchMove={handleTouchMove}
               onDblClick={(e) => {
                 if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
@@ -2152,6 +2239,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         points={[points[0].x, points[0].y, points[1].x, points[1].y]}
                         stroke={baseColor}
                         strokeWidth={isSelected ? 5 : 3}
+                        hitStrokeWidth={isMobile ? 20 : 0}
                         opacity={isSelected ? 1 : 0.8}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
@@ -2165,6 +2253,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         points={flatPoints}
                         stroke={baseColor}
                         strokeWidth={isSelected ? 5 : 3}
+                        hitStrokeWidth={isMobile ? 20 : 0}
                         fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
                         opacity={isSelected ? 1 : 0.8}
                         closed={true}
@@ -2180,6 +2269,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         points={flatPoints}
                         stroke={baseColor}
                         strokeWidth={isSelected ? 5 : 3}
+                        hitStrokeWidth={isMobile ? 20 : 0}
                         fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
                         opacity={isSelected ? 1 : 0.8}
                         closed={true}
@@ -2193,13 +2283,14 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         key={m.id}
                         x={points[0].x}
                         y={points[0].y}
-                        radius={isSelected ? 14 : 12}
+                        radius={isSelected ? (isMobile ? 18 : 14) : (isMobile ? 16 : 12)}
                         fill={baseColor}
                         stroke="white"
                         strokeWidth={isSelected ? 3 : 2}
                         opacity={isSelected ? 1 : 0.8}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
+                        hitStrokeWidth={isMobile ? 15 : 0}
                       />
                     );
                   } else if (m.type === "NOTE" && points.length >= 1) {
@@ -2210,7 +2301,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                           key={`${m.id}-pin`}
                           x={points[0].x}
                           y={points[0].y}
-                          radius={isSelected ? 10 : 8}
+                          radius={isSelected ? (isMobile ? 14 : 10) : (isMobile ? 12 : 8)}
                           fill={baseColor}
                           stroke="white"
                           strokeWidth={isSelected ? 3 : 2}
@@ -2280,10 +2371,10 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                         key={`temp-${i}`}
                         x={point.x}
                         y={point.y}
-                        radius={6}
+                        radius={isMobile ? 10 : 6}
                         fill={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : activeTool === "volume" ? "#ea580c" : "#2563eb"}
                         stroke="white"
-                        strokeWidth={2}
+                        strokeWidth={isMobile ? 3 : 2}
                       />
                     ))}
                     
@@ -2292,9 +2383,9 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                       <Circle
                         x={drawingPoints[0].x}
                         y={drawingPoints[0].y}
-                        radius={10}
+                        radius={isMobile ? 16 : 10}
                         stroke={activeTool === "area" || activeTool === "pitched_area" || activeTool === "surface_area" ? "#16a34a" : "#ea580c"}
-                        strokeWidth={3}
+                        strokeWidth={isMobile ? 4 : 3}
                         fill="transparent"
                         dash={[3, 3]}
                       />
@@ -2402,6 +2493,55 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
                     opacity={0.6}
                   />
                 )}
+
+                {/* Mobile crosshair cursor for precision drawing */}
+                {isMobile && cursorPosition && activeTool !== "select" && activeTool !== "pan" && (
+                  <>
+                    <Line
+                      points={[
+                        cursorPosition.x - 20 / stageScale, cursorPosition.y,
+                        cursorPosition.x - 6 / stageScale, cursorPosition.y,
+                      ]}
+                      stroke="#3b82f6"
+                      strokeWidth={1.5 / stageScale}
+                      opacity={0.7}
+                    />
+                    <Line
+                      points={[
+                        cursorPosition.x + 6 / stageScale, cursorPosition.y,
+                        cursorPosition.x + 20 / stageScale, cursorPosition.y,
+                      ]}
+                      stroke="#3b82f6"
+                      strokeWidth={1.5 / stageScale}
+                      opacity={0.7}
+                    />
+                    <Line
+                      points={[
+                        cursorPosition.x, cursorPosition.y - 20 / stageScale,
+                        cursorPosition.x, cursorPosition.y - 6 / stageScale,
+                      ]}
+                      stroke="#3b82f6"
+                      strokeWidth={1.5 / stageScale}
+                      opacity={0.7}
+                    />
+                    <Line
+                      points={[
+                        cursorPosition.x, cursorPosition.y + 6 / stageScale,
+                        cursorPosition.x, cursorPosition.y + 20 / stageScale,
+                      ]}
+                      stroke="#3b82f6"
+                      strokeWidth={1.5 / stageScale}
+                      opacity={0.7}
+                    />
+                    <Circle
+                      x={cursorPosition.x}
+                      y={cursorPosition.y}
+                      radius={3 / stageScale}
+                      fill="#3b82f6"
+                      opacity={0.5}
+                    />
+                  </>
+                )}
               </Layer>
             </Stage>
           ) : (
@@ -2417,6 +2557,31 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
               </div>
             </div>
           )}
+        </div>
+
+        {/* Mobile Active Tool Indicator */}
+        <div className="sm:hidden bg-card/90 backdrop-blur-sm border-t px-3 py-1 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <span className="text-xs font-medium text-foreground">
+              {TOOL_CONFIG.find(t => t.id === activeTool)?.label || "Select"}
+            </span>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {isDrawing && (activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area")
+              ? `${drawingPoints.length} pts — Double-tap to close`
+              : isDrawing && (activeTool === "linear" || activeTool === "pitched_linear" || activeTool === "linear_with_drop")
+              ? `${drawingPoints.length}/2 pts — Tap to place`
+              : isDrawing && activeTool === "arc"
+              ? `${drawingPoints.length}/3 pts — Tap to place`
+              : activeTool === "calibrate"
+              ? "Tap 2 known-distance points"
+              : activeTool === "pan"
+              ? "Drag to pan • Pinch to zoom"
+              : activeTool === "select"
+              ? "Tap measurement to select"
+              : "Tap to place points"}
+          </span>
         </div>
 
         {/* Mobile Bottom Toolbar */}
@@ -2554,6 +2719,25 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             <TooltipContent side="top">Toggle Ortho Lock</TooltipContent>
           </Tooltip>
           <Separator orientation="vertical" className="h-6 mx-0.5" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={mobileMeasurementsOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setMobileMeasurementsOpen(true)}
+                data-testid="button-measurements-mobile"
+                className="h-8 w-8 shrink-0 relative"
+              >
+                <Layers className="w-4 h-4" />
+                {measurements.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-primary text-primary-foreground text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {measurements.length}
+                  </span>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Measurements ({measurements.length})</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -3560,6 +3744,160 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
           </div>
         </ScrollArea>
       </div>
+
+      {/* Mobile Measurements Sheet */}
+      <Sheet open={mobileMeasurementsOpen} onOpenChange={setMobileMeasurementsOpen}>
+        <SheetContent side="bottom" className="h-[70vh] flex flex-col p-0">
+          <SheetHeader className="px-4 pt-4 pb-2 border-b shrink-0">
+            <SheetTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-primary" />
+                Measurements
+              </span>
+              <Badge variant="secondary">{measurements.length}</Badge>
+            </SheetTitle>
+            <SheetDescription className="sr-only">View and manage takeoff measurements</SheetDescription>
+          </SheetHeader>
+          <ScrollArea className="flex-1">
+            <div className="p-4 space-y-3">
+              {measurements.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No measurements yet. Use the drawing tools to create measurements.
+                </p>
+              ) : (
+                measurements.map((m) => {
+                  const isSelected = selectedMeasurementId === m.id;
+                  return (
+                    <div
+                      key={m.id}
+                      className={cn(
+                        "p-3 rounded-lg bg-muted/50 border transition-colors",
+                        isSelected ? "border-primary ring-1 ring-primary bg-primary/5" : "border-transparent"
+                      )}
+                      onClick={() => {
+                        setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id);
+                      }}
+                      data-testid={`mobile-measurement-item-${m.id}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="font-medium text-sm truncate">{m.label || "Untitled"}</span>
+                          <Badge variant="outline" className="text-[10px] shrink-0">{m.type}</Badge>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMeasurementMutation.mutate(m);
+                          }}
+                          data-testid={`button-mobile-delete-measurement-${m.id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
+                          ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                          : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
+                          ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                          : m.type === "VOLUME" && m.computedVolumeCy
+                          ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+                          : m.type === "COUNT" ? "Count marker"
+                          : m.type === "NOTE" ? "Note"
+                          : ""}
+                      </p>
+                      {isSelected && (
+                        <div className="mt-3 pt-3 border-t space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            {m.computedLengthFt && (
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Length: </span>
+                                <span className="font-medium">{Number(m.computedLengthFt).toFixed(2)} LF</span>
+                              </div>
+                            )}
+                            {m.computedAreaFt2 && (
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Area: </span>
+                                <span className="font-medium">{Number(m.computedAreaFt2).toFixed(2)} SF</span>
+                              </div>
+                            )}
+                            {m.computedVolumeCy && (
+                              <div className="text-xs">
+                                <span className="text-muted-foreground">Volume: </span>
+                                <span className="font-medium">{Number(m.computedVolumeCy).toFixed(2)} CY</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-[10px]">Cost Code</Label>
+                              <Input
+                                placeholder="Cost code..."
+                                defaultValue={(m as any).costCodeId || ""}
+                                onBlur={(e) => {
+                                  const val = e.target.value.trim();
+                                  if (val !== ((m as any).costCodeId || "")) {
+                                    updateMeasurementMutation.mutate({ id: m.id, costCodeId: val || undefined });
+                                  }
+                                }}
+                                className="h-7 text-xs"
+                                data-testid={`mobile-input-cost-code-${m.id}`}
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-[10px]">Unit Cost ($)</Label>
+                              <Input
+                                type="number"
+                                placeholder="0.00"
+                                defaultValue={(m as any).unitCost || ""}
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value) || undefined;
+                                  if (val !== (m as any).unitCost) {
+                                    updateMeasurementMutation.mutate({ id: m.id, unitCost: val });
+                                  }
+                                }}
+                                className="h-7 text-xs"
+                                data-testid={`mobile-input-unit-cost-${m.id}`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+
+              {/* Quick Totals */}
+              {measurements.length > 0 && (
+                <div className="p-3 bg-muted rounded-lg space-y-1">
+                  <h4 className="text-xs font-semibold mb-2">Totals</h4>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Linear:</span>
+                      <span>{(Number.isFinite(aggregatedMeasurements.grandTotals.linearTotal) ? aggregatedMeasurements.grandTotals.linearTotal : 0).toFixed(1)} LF</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Area:</span>
+                      <span>{(Number.isFinite(aggregatedMeasurements.grandTotals.areaTotal) ? aggregatedMeasurements.grandTotals.areaTotal : 0).toFixed(1)} SF</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Volume:</span>
+                      <span>{(Number.isFinite(aggregatedMeasurements.grandTotals.volumeTotal) ? aggregatedMeasurements.grandTotals.volumeTotal : 0).toFixed(1)} CY</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Count:</span>
+                      <span>{aggregatedMeasurements.grandTotals.countTotal}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
 
       {/* Rename Sheet Dialog */}
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
