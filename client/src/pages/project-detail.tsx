@@ -1908,8 +1908,8 @@ export default function ProjectDetailPage() {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          {/* Mobile dropdown - visible only on small screens */}
-          <div className="md:hidden">
+          {/* Mobile dropdown - visible only on small/medium screens */}
+          <div className="lg:hidden">
             <Select value={activeTab} onValueChange={setActiveTab}>
               <SelectTrigger className="w-full" data-testid="select-tab-mobile">
                 <SelectValue placeholder="Select tab" />
@@ -1968,8 +1968,8 @@ export default function ProjectDetailPage() {
             </Select>
           </div>
 
-          {/* Desktop tabs - hidden on mobile, flex wrap on larger screens */}
-          <TabsList className="hidden md:flex flex-wrap gap-1 h-auto w-full justify-start p-1">
+          {/* Desktop tabs - hidden on mobile/tablet, flex wrap on larger screens */}
+          <TabsList className="hidden lg:flex flex-wrap gap-1 h-auto w-full justify-start p-1">
             <TabsTrigger value="overview" data-testid="tab-overview">
               <LayoutDashboard className="h-4 w-4 mr-1" />
               Overview
