@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -153,6 +154,7 @@ const DAYS_OF_WEEK = [
 export default function CompanySettings() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("trade");
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [showHistoryDialog, setShowHistoryDialog] = useState(false);
@@ -646,32 +648,48 @@ export default function CompanySettings() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex w-full overflow-x-auto whitespace-nowrap" data-testid="tabs-company-settings">
-          <TabsTrigger value="trade" data-testid="tab-trade">
-            <Wrench className="h-4 w-4 mr-2" />
-            Trade
-          </TabsTrigger>
-          <TabsTrigger value="branding" data-testid="tab-branding">
-            <Image className="h-4 w-4 mr-2" />
-            Branding
-          </TabsTrigger>
-          <TabsTrigger value="insurance" data-testid="tab-insurance">
-            <Shield className="h-4 w-4 mr-2" />
-            Insurance
-          </TabsTrigger>
-          <TabsTrigger value="compliance" data-testid="tab-compliance">
-            <FileText className="h-4 w-4 mr-2" />
-            Compliance
-          </TabsTrigger>
-          <TabsTrigger value="payroll" data-testid="tab-payroll">
-            <Clock className="h-4 w-4 mr-2" />
-            Payroll
-          </TabsTrigger>
-          <TabsTrigger value="hustler" data-testid="tab-hustler">
-            <Users className="h-4 w-4 mr-2" />
-            Hustler Oversight
-          </TabsTrigger>
-        </TabsList>
+        {isMobile ? (
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="mb-4" data-testid="select-company-settings-tab">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="trade">Trade</SelectItem>
+              <SelectItem value="branding">Branding</SelectItem>
+              <SelectItem value="insurance">Insurance</SelectItem>
+              <SelectItem value="compliance">Compliance</SelectItem>
+              <SelectItem value="payroll">Payroll</SelectItem>
+              <SelectItem value="hustler">Hustler Oversight</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : (
+          <TabsList data-testid="tabs-company-settings">
+            <TabsTrigger value="trade" data-testid="tab-trade">
+              <Wrench className="h-4 w-4 mr-2" />
+              Trade
+            </TabsTrigger>
+            <TabsTrigger value="branding" data-testid="tab-branding">
+              <Image className="h-4 w-4 mr-2" />
+              Branding
+            </TabsTrigger>
+            <TabsTrigger value="insurance" data-testid="tab-insurance">
+              <Shield className="h-4 w-4 mr-2" />
+              Insurance
+            </TabsTrigger>
+            <TabsTrigger value="compliance" data-testid="tab-compliance">
+              <FileText className="h-4 w-4 mr-2" />
+              Compliance
+            </TabsTrigger>
+            <TabsTrigger value="payroll" data-testid="tab-payroll">
+              <Clock className="h-4 w-4 mr-2" />
+              Payroll
+            </TabsTrigger>
+            <TabsTrigger value="hustler" data-testid="tab-hustler">
+              <Users className="h-4 w-4 mr-2" />
+              Hustler Oversight
+            </TabsTrigger>
+          </TabsList>
+        )}
 
         <TabsContent value="trade" className="mt-6">
           <div className="space-y-6">
