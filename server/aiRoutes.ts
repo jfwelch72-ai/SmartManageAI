@@ -16,7 +16,7 @@ import { logUpdate, logCreate } from "./auditLogger";
 import { seedScopeStandardizationForTrade } from "./seedTradeExpansion";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
-import { type AuthRequest } from "./auth";
+import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { openai, researchCustomTrade, TradeResearchResult } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
@@ -156,16 +156,8 @@ const tradeResearchSchema = z.object({
 
 const router = Router();
 
-router.get("/ai-settings", async (req: AuthRequest, res) => {
+router.get("/ai-settings", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (req.user.role !== 'ADMIN') {
-      return res.status(403).json({ error: "Admin access required" });
-    }
-
     let [settings] = await db.select().from(aiSettings).limit(1);
 
     if (!settings) {
@@ -179,16 +171,8 @@ router.get("/ai-settings", async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/ai-settings", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.patch("/ai-settings", sensitiveLimiter, requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (req.user.role !== 'ADMIN') {
-      return res.status(403).json({ error: "Admin access required" });
-    }
-
     // SECURITY: Sanitize text inputs BEFORE Zod validation
     const sanitizedInput = {
       ...req.body,
@@ -235,17 +219,9 @@ router.patch("/ai-settings", sensitiveLimiter, async (req: AuthRequest, res) => 
   }
 });
 
-router.post("/ai-pm/run", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai-pm/run", sensitiveLimiter, requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!['ADMIN', 'MANAGER'].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admin or Manager access required" });
-    }
-
-    const runId = await runAIAnalysis(req.user.id);
+    const runId = await runAIAnalysis(req.user!.id);
 
     await logCreate(
       req.user.id,
@@ -262,12 +238,8 @@ router.post("/ai-pm/run", sensitiveLimiter, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-pm/latest-run", async (req: AuthRequest, res) => {
+router.get("/ai-pm/latest-run", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const run = await getLatestAIRun();
     
     if (!run) {
@@ -288,12 +260,8 @@ router.get("/ai-pm/latest-run", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-pm/runs/:runId", async (req: AuthRequest, res) => {
+router.get("/ai-pm/runs/:runId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const run = await getAIRunById(req.params.runId);
 
     if (!run) {
@@ -314,12 +282,8 @@ router.get("/ai-pm/runs/:runId", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-pm/tasks", async (req: AuthRequest, res) => {
+router.get("/ai-pm/tasks", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { role, status } = req.query;
 
     const userRole = role ? String(role) : req.user.role;
@@ -339,12 +303,8 @@ router.get("/ai-pm/tasks", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-pm/tasks/role/:role", async (req: AuthRequest, res) => {
+router.get("/ai-pm/tasks/role/:role", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { role } = req.params;
     const { status } = req.query;
 
@@ -364,12 +324,8 @@ router.get("/ai-pm/tasks/role/:role", async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/ai-pm/tasks/:taskId", async (req: AuthRequest, res) => {
+router.patch("/ai-pm/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { status } = req.body;
 
     if (!status || !['PENDING', 'IN_PROGRESS', 'COMPLETED', 'DISMISSED'].includes(status)) {
@@ -411,16 +367,8 @@ router.patch("/ai-pm/tasks/:taskId", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/cfo/profitability", async (req: AuthRequest, res) => {
+router.get("/cfo/profitability", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!['ADMIN', 'MANAGER'].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admin or Manager access required" });
-    }
-
     const latestRun = await getLatestAIRun();
 
     if (latestRun?.profitabilityData) {
@@ -437,16 +385,8 @@ router.get("/cfo/profitability", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/cfo/equipment-metrics", async (req: AuthRequest, res) => {
+router.get("/cfo/equipment-metrics", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!['ADMIN', 'MANAGER'].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admin or Manager access required" });
-    }
-
     const latestRun = await getLatestAIRun();
 
     if (!latestRun || !latestRun.snapshotData) {
@@ -531,16 +471,8 @@ router.get("/cfo/equipment-metrics", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
+router.get("/ai-pm/runs", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!['ADMIN', 'MANAGER'].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admin or Manager access required" });
-    }
-
     const runs = await db
       .select()
       .from(aiRuns)
@@ -555,12 +487,8 @@ router.get("/ai-pm/runs", async (req: AuthRequest, res) => {
 });
 
 // Get master SOW items for a trade type (for onboarding suggestions)
-router.get("/ai/onboarding/sow-items/:tradeType", async (req: AuthRequest, res) => {
+router.get("/ai/onboarding/sow-items/:tradeType", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { tradeType } = req.params;
     
     // Validate trade type
@@ -603,7 +531,7 @@ router.get("/ai/onboarding/sow-items/:tradeType", async (req: AuthRequest, res) 
 });
 
 // Get all trade templates (for onboarding trade selection)
-router.get("/ai/onboarding/trades", async (req: AuthRequest, res) => {
+router.get("/ai/onboarding/trades", requireAuth, async (req: AuthRequest, res) => {
   try {
     const templates = await db
       .select({
@@ -627,7 +555,7 @@ router.get("/ai/onboarding/trades", async (req: AuthRequest, res) => {
 });
 
 // Get units of measure (for dropdowns)
-router.get("/ai/onboarding/units", async (req: AuthRequest, res) => {
+router.get("/ai/onboarding/units", requireAuth, async (req: AuthRequest, res) => {
   try {
     const units = await db
       .select()
@@ -844,11 +772,8 @@ Step progression for OTHER trades: 1=trade, 2=tradeName, 3=crew, 4=region, 5=cus
 }
 
 // Complete onboarding and save organization configuration
-router.post("/ai/onboarding/complete", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
 
     // Validate and sanitize input
     const validationResult = onboardingCompleteSchema.safeParse(req.body);
@@ -1451,12 +1376,8 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
 }
 
 // Trade Research endpoint - researches an unknown trade using AI
-router.post("/ai/onboarding/research-trade", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/research-trade", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const validationResult = tradeResearchSchema.safeParse(req.body);
     if (!validationResult.success) {
       return res.status(400).json({ 
@@ -1540,12 +1461,8 @@ INSTRUCTIONS:
 }
 
 // AI Onboarding Chat endpoint
-router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     // Validate and sanitize input
     const validationResult = onboardingChatSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -1601,12 +1518,8 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, async (req: AuthRequest, re
 });
 
 // Get user walkthrough status
-router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
+router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     // Query fresh user data directly from database to handle session timing issues
     // This ensures we get the latest organizationId even if it was just updated
     const [freshUser] = await db.select({
@@ -1673,12 +1586,8 @@ router.get("/ai/walkthrough/status", async (req: AuthRequest, res) => {
 });
 
 // Start walkthrough for user
-router.post("/ai/walkthrough/start", async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     // Verify user has an organization
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1718,12 +1627,8 @@ router.post("/ai/walkthrough/start", async (req: AuthRequest, res) => {
 });
 
 // Advance walkthrough to next step
-router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     // Verify user has an organization
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1799,12 +1704,8 @@ router.post("/ai/walkthrough/next", async (req: AuthRequest, res) => {
 });
 
 // Skip/complete walkthrough
-router.post("/ai/walkthrough/complete", async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     // Verify user has an organization
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1833,12 +1734,8 @@ router.post("/ai/walkthrough/complete", async (req: AuthRequest, res) => {
 });
 
 // Reset walkthrough (for testing or retaking)
-router.post("/ai/walkthrough/reset", async (req: AuthRequest, res) => {
+router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     // Verify user has an organization
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1866,11 +1763,8 @@ router.post("/ai/walkthrough/reset", async (req: AuthRequest, res) => {
 });
 
 // Update walkthrough step progress (for tour system persistence)
-router.patch("/ai/walkthrough/step", async (req: AuthRequest, res) => {
+router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
 
     if (!req.user.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
@@ -1913,12 +1807,8 @@ router.patch("/ai/walkthrough/step", async (req: AuthRequest, res) => {
 });
 
 // AI Assistant Chat endpoint - with walkthrough mode support
-router.post("/ai/assistant/chat", async (req: AuthRequest, res) => {
+router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { message, currentPath, conversationHistory = [] } = req.body;
 
     if (!message || typeof message !== 'string') {
@@ -2034,16 +1924,8 @@ const aiAnalysisSchema = z.object({
   saveResults: z.boolean().optional().default(true),
 });
 
-router.post("/ai-analyze", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai-analyze", sensitiveLimiter, requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!['ADMIN', 'MANAGER', 'SUPER_ADMIN'].includes(req.user.role)) {
-      return res.status(403).json({ error: "Admin or Manager access required" });
-    }
-
     const validationResult = aiAnalysisSchema.safeParse(req.body);
     if (!validationResult.success) {
       return res.status(400).json({ 
@@ -2115,13 +1997,9 @@ router.post("/ai-analyze", sensitiveLimiter, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-insights/dashboard-summary", async (req: AuthRequest, res) => {
+router.get("/ai-insights/dashboard-summary", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const organizationId = req.user.organizationId;
+    const organizationId = req.user!.organizationId;
 
     const conditions: any[] = [
       eq(aiInsights.isAcknowledged, false),
@@ -2180,12 +2058,8 @@ router.get("/ai-insights/dashboard-summary", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-insights", async (req: AuthRequest, res) => {
+router.get("/ai-insights", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { module, projectId, severity, acknowledged } = req.query;
     const organizationId = req.user.organizationId;
 
@@ -2238,12 +2112,8 @@ router.get("/ai-insights", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-insights/:id", async (req: AuthRequest, res) => {
+router.get("/ai-insights/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { id } = req.params;
 
     const [insight] = await db
@@ -2276,12 +2146,8 @@ router.get("/ai-insights/:id", async (req: AuthRequest, res) => {
   }
 });
 
-router.patch("/ai-insights/:id/acknowledge", async (req: AuthRequest, res) => {
+router.patch("/ai-insights/:id/acknowledge", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { id } = req.params;
 
     const [insight] = await db
@@ -2317,12 +2183,8 @@ router.patch("/ai-insights/:id/acknowledge", async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/ai-gantt-recommendations/:projectId", async (req: AuthRequest, res) => {
+router.get("/ai-gantt-recommendations/:projectId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { projectId } = req.params;
 
     const recommendations = await db
@@ -2345,11 +2207,8 @@ router.get("/ai-gantt-recommendations/:projectId", async (req: AuthRequest, res)
   }
 });
 
-router.get("/ai-vendor-comparisons", async (req: AuthRequest, res) => {
+router.get("/ai-vendor-comparisons", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
 
     const organizationId = req.user.organizationId;
     const { category } = req.query;
@@ -2405,12 +2264,8 @@ import {
 } from "./ai/scopePredictionEngine";
 
 // Get all available trades with their SOW item counts
-router.get("/ai/trades", async (req: AuthRequest, res) => {
+router.get("/ai/trades", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const tradesWithCounts = await getTradesWithSowCounts();
     
     res.json({
@@ -2425,12 +2280,8 @@ router.get("/ai/trades", async (req: AuthRequest, res) => {
 });
 
 // AI-powered trade discovery from project description
-router.post("/ai/trades/discover", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai/trades/discover", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { projectName, projectDescription, projectType, existingScope, bidDocumentExtracts } = req.body;
 
     if (!projectDescription && !bidDocumentExtracts?.length) {
@@ -2455,12 +2306,8 @@ router.post("/ai/trades/discover", sensitiveLimiter, async (req: AuthRequest, re
 });
 
 // AI-powered scope prediction
-router.post("/ai/scope/predict", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai/scope/predict", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { tradeType, projectDescription, projectType, estimatedValue, existingScopeItems, relatedTrades, limit } = req.body;
 
     if (!tradeType) {
@@ -2486,12 +2333,8 @@ router.post("/ai/scope/predict", sensitiveLimiter, async (req: AuthRequest, res)
 });
 
 // Search scope items across master and organization items
-router.get("/ai/scope/search", async (req: AuthRequest, res) => {
+router.get("/ai/scope/search", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { q, trades, limit } = req.query;
 
     if (!q || typeof q !== 'string') {
@@ -2516,12 +2359,8 @@ router.get("/ai/scope/search", async (req: AuthRequest, res) => {
 });
 
 // Get scope items for a specific trade
-router.get("/ai/scope/trade/:tradeType", async (req: AuthRequest, res) => {
+router.get("/ai/scope/trade/:tradeType", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { tradeType } = req.params;
 
     const items = await getScopeItemsForTrade(
@@ -2537,12 +2376,8 @@ router.get("/ai/scope/trade/:tradeType", async (req: AuthRequest, res) => {
 });
 
 // Get modifiers for a trade
-router.get("/ai/scope/modifiers/:tradeType", async (req: AuthRequest, res) => {
+router.get("/ai/scope/modifiers/:tradeType", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { tradeType } = req.params;
     const { categoryId } = req.query;
 
@@ -2559,12 +2394,8 @@ router.get("/ai/scope/modifiers/:tradeType", async (req: AuthRequest, res) => {
 });
 
 // Get modifier categories for multiple trades
-router.post("/ai/trades/modifiers", async (req: AuthRequest, res) => {
+router.post("/ai/trades/modifiers", requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { tradeTypes } = req.body;
 
     if (!tradeTypes || !Array.isArray(tradeTypes)) {
@@ -2581,12 +2412,8 @@ router.post("/ai/trades/modifiers", async (req: AuthRequest, res) => {
 });
 
 // AI-powered scope suggestion from bid document
-router.post("/ai/scope/from-document", sensitiveLimiter, async (req: AuthRequest, res) => {
+router.post("/ai/scope/from-document", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
     const { documentText, tradeType, limit } = req.body;
 
     if (!documentText || !tradeType) {

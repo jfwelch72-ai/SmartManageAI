@@ -12,10 +12,13 @@ import {
   setAuthCookie, clearAuthCookie, type AuthRequest
 } from "./auth";
 import { authLimiter } from "./rateLimiter";
-import { eq, desc, sql, and, or, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, or, inArray, isNull, gt } from "drizzle-orm";
 import { z } from "zod";
+import crypto from "crypto";
 import { logUpdate, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
+import { emailVerificationTokens } from "@shared/schema";
+import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from "./email";
 
 const router = Router();
 
@@ -28,19 +31,23 @@ const upload = multer({
   // Auth Routes
   // ====================
 
-  // Login schema
   const loginSchema = z.object({
     email: z.string().email("Invalid email address"),
     password: z.string().min(1, "Password is required"),
   });
 
-  // Registration schema
+  const passwordSchema = z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number");
+
   const registerSchema = z.object({
     firstName: z.string().min(1, "First name is required"),
     lastName: z.string().min(1, "Last name is required"),
     email: z.string().email("Invalid email address"),
     phone: z.string().optional(),
-    password: z.string().min(8, "Password must be at least 8 characters"),
+    password: passwordSchema,
   });
 
   // Register new user
@@ -72,29 +79,44 @@ const upload = multer({
         return;
       }
 
-      // Create new user - auto-approved and ready for onboarding
-      const passwordHash = await hashPassword(password);
+      const passwordHashVal = await hashPassword(password);
       
       const [newUser] = await db.insert(users).values({
         firstName,
         lastName,
         email,
         phone,
-        role: "ADMIN", // New registrants become org admins after onboarding
-        isActive: true, // Auto-approved - no admin activation required
-        passwordHash,
-        // organizationId is null - user needs to complete onboarding
+        role: "ADMIN",
+        isActive: true,
+        emailVerified: false,
+        passwordHash: passwordHashVal,
       }).returning();
 
-      // Auto-login the user by setting the auth cookie
+      const verificationToken = crypto.randomBytes(32).toString("hex");
+      const verificationHash = crypto.createHash("sha256").update(verificationToken).digest("hex");
+      await db.insert(emailVerificationTokens).values({
+        userId: newUser.id,
+        tokenHash: verificationHash,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+
+      const appUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+      const verifyLink = `${appUrl}/api/auth/verify-email?token=${verificationToken}&userId=${newUser.id}`;
+      sendEmail({
+        to: email,
+        subject: "Verify your email - SmartManageAI",
+        html: getEmailVerificationHtml(verifyLink, firstName),
+        text: getEmailVerificationText(verifyLink, firstName),
+      }).catch(err => console.error("Failed to send verification email:", err));
+
       const token = generateToken(newUser.id, newUser.tokenVersion);
       setAuthCookie(res, token);
 
       const { passwordHash: _, tokenVersion: __, ...userWithoutPassword } = newUser;
       res.status(201).json({
         user: userWithoutPassword,
-        message: "Registration successful! Let's set up your business.",
-        needsOnboarding: true // Flag to redirect to onboarding
+        message: "Registration successful! Please check your email to verify your account.",
+        needsOnboarding: true,
       });
     } catch (error) {
       console.error("Registration error:", error);
@@ -102,13 +124,14 @@ const upload = multer({
     }
   });
 
-  // Login
+  const MAX_FAILED_ATTEMPTS = 5;
+  const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
   router.post("/api/auth/login", authLimiter, async (req: AuthRequest, res) => {
     try {
-      // SECURITY: Sanitize email before validation
       const sanitizedBody = {
         email: sanitizeEmail(req.body.email),
-        password: req.body.password, // Don't sanitize passwords - preserve exact input
+        password: req.body.password,
       };
 
       const validationResult = loginSchema.safeParse(sanitizedBody);
@@ -127,17 +150,31 @@ const upload = multer({
         return;
       }
 
+      if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+        res.status(423).json({ error: "Account temporarily locked due to too many failed attempts. Please try again later." });
+        return;
+      }
+
       if (!user.passwordHash) {
-        const provider = user.oauthProvider === "google" ? "Google" : user.oauthProvider === "apple" ? "Apple" : "social login";
-        res.status(401).json({ error: `This account uses ${provider}. Please sign in with ${provider} instead.` });
+        res.status(401).json({ error: "Invalid credentials" });
         return;
       }
 
       const isValid = await verifyPassword(password, user.passwordHash);
       
       if (!isValid) {
+        const newAttempts = (user.failedLoginAttempts ?? 0) + 1;
+        const updateData: any = { failedLoginAttempts: newAttempts, updatedAt: new Date() };
+        if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+          updateData.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+        }
+        await db.update(users).set(updateData).where(eq(users.id, user.id));
         res.status(401).json({ error: "Invalid credentials" });
         return;
+      }
+
+      if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+        await db.update(users).set({ failedLoginAttempts: 0, lockedUntil: null, updatedAt: new Date() }).where(eq(users.id, user.id));
       }
 
       const token = generateToken(user.id, user.tokenVersion);
@@ -155,6 +192,72 @@ const upload = multer({
   router.post("/api/auth/logout", (req: AuthRequest, res) => {
     clearAuthCookie(res);
     res.json({ success: true });
+  });
+
+  router.get("/api/auth/verify-email", async (req: AuthRequest, res) => {
+    try {
+      const { token, userId } = req.query;
+      if (!token || !userId || typeof token !== "string" || typeof userId !== "string") {
+        res.status(400).json({ error: "Invalid verification link" });
+        return;
+      }
+
+      const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      const [record] = await db.select().from(emailVerificationTokens)
+        .where(and(
+          eq(emailVerificationTokens.userId, userId),
+          eq(emailVerificationTokens.tokenHash, tokenHash),
+          isNull(emailVerificationTokens.usedAt),
+          gt(emailVerificationTokens.expiresAt, new Date()),
+        ))
+        .limit(1);
+
+      if (!record) {
+        res.status(400).json({ error: "Invalid or expired verification link" });
+        return;
+      }
+
+      await db.update(emailVerificationTokens).set({ usedAt: new Date() }).where(eq(emailVerificationTokens.id, record.id));
+      await db.update(users).set({ emailVerified: true, updatedAt: new Date() }).where(eq(users.id, userId));
+
+      res.redirect("/?emailVerified=true");
+    } catch (error) {
+      console.error("Email verification error:", error);
+      res.status(500).json({ error: "Verification failed" });
+    }
+  });
+
+  router.post("/api/auth/resend-verification", requireAuth, authLimiter, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
+
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user) { res.status(404).json({ error: "User not found" }); return; }
+      if (user.emailVerified) { res.json({ message: "Email already verified" }); return; }
+
+      const verificationToken = crypto.randomBytes(32).toString("hex");
+      const verificationHash = crypto.createHash("sha256").update(verificationToken).digest("hex");
+      await db.insert(emailVerificationTokens).values({
+        userId,
+        tokenHash: verificationHash,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+
+      const appUrl = process.env.APP_URL || `${req.protocol}://${req.get("host")}`;
+      const verifyLink = `${appUrl}/api/auth/verify-email?token=${verificationToken}&userId=${userId}`;
+      await sendEmail({
+        to: user.email,
+        subject: "Verify your email - SmartManageAI",
+        html: getEmailVerificationHtml(verifyLink, user.firstName),
+        text: getEmailVerificationText(verifyLink, user.firstName),
+      });
+
+      res.json({ message: "Verification email sent" });
+    } catch (error) {
+      console.error("Resend verification error:", error);
+      res.status(500).json({ error: "Failed to send verification email" });
+    }
   });
 
   // DEV ONLY: Quick test login for development
@@ -372,11 +475,11 @@ const upload = multer({
       const userId = req.user?.id;
       if (!userId) { res.status(401).json({ error: "Not authenticated" }); return; }
 
-      const passwordSchema = z.object({
+      const changePasswordSchema = z.object({
         currentPassword: z.string().min(1, "Current password is required"),
-        newPassword: z.string().min(8, "Password must be at least 8 characters"),
+        newPassword: passwordSchema,
       });
-      const parsed = passwordSchema.safeParse(req.body);
+      const parsed = changePasswordSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid input" }); return; }
 
       const { currentPassword, newPassword } = parsed.data;

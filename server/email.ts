@@ -341,3 +341,69 @@ ${data.requesterPhone ? data.requesterPhone : ''}
 ${data.organizationName}
 `;
 }
+
+export function getEmailVerificationHtml(verifyLink: string, userName: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Email</title>
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px;">
+  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+    <div style="background-color: #1a365d; padding: 24px; text-align: center;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Verify Your Email</h1>
+    </div>
+    <div style="padding: 32px 24px;">
+      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+        Hi ${userName},
+      </p>
+      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
+        Welcome to SmartManageAI! Please verify your email address by clicking the button below:
+      </p>
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${verifyLink}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">
+          Verify Email
+        </a>
+      </div>
+      <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+        This link will expire in <strong>24 hours</strong>.
+      </p>
+      <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
+        If you didn't create an account, you can safely ignore this email.
+      </p>
+      <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;">
+      <p style="color: #999999; font-size: 12px; line-height: 1.6; margin: 0;">
+        If the button doesn't work, copy and paste this link into your browser:<br>
+        <a href="${verifyLink}" style="color: #2563eb; word-break: break-all;">${verifyLink}</a>
+      </p>
+    </div>
+    <div style="background-color: #f9fafb; padding: 16px 24px; text-align: center;">
+      <p style="color: #999999; font-size: 12px; margin: 0;">
+        SmartManageAI Construction Management Platform
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+`;
+}
+
+export function getEmailVerificationText(verifyLink: string, userName: string): string {
+  return `
+Hi ${userName},
+
+Welcome to SmartManageAI! Please verify your email address by clicking the link below:
+
+${verifyLink}
+
+This link will expire in 24 hours.
+
+If you didn't create an account, you can safely ignore this email.
+
+---
+SmartManageAI Construction Management Platform
+`;
+}

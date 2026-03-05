@@ -122,6 +122,7 @@ export async function authMiddleware(
       phone: user.phone,
       role: user.role,
       isActive: user.isActive,
+      emailVerified: user.emailVerified,
       costRateRegular: user.costRateRegular,
       costRateOvertime: user.costRateOvertime,
       organizationId: user.organizationId,

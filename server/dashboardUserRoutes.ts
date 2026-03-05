@@ -501,6 +501,10 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (password !== undefined) updateData.passwordHash = await hashPassword(password);
+
+    if (email !== undefined || password !== undefined || isActive === false) {
+      updateData.tokenVersion = sql`COALESCE(${users.tokenVersion}, 0) + 1`;
+    }
     
     updateData.updatedAt = new Date();
 
