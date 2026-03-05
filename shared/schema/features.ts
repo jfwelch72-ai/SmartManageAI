@@ -5424,6 +5424,7 @@ export const kpiEntries = pgTable("kpi_entries", {
   periodStart: date("period_start").notNull(),
   periodEnd: date("period_end").notNull(),
   notes: text("notes"),
+  source: varchar("source", { length: 10 }).notNull().default("manual"),
   recordedBy: varchar("recorded_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

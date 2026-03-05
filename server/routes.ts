@@ -64,9 +64,12 @@ import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
 import { validateFileExists, validateMimeType, validateFileSize } from "./fileValidation";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
-import { registerTimeClockRoutes } from "./timeClockRoutes";
-import { registerPayrollSettingsRoutes } from "./payrollSettingsRoutes";
-import { registerPayrollManagementRoutes } from "./payrollManagementRoutes";
+import timeClockRoutes from "./timeClockRoutes";
+import overtimeRoutes from "./overtimeRoutes";
+import timeEntryRoutes from "./timeEntryRoutes";
+import payrollNotificationRoutes from "./payrollNotificationRoutes";
+import payrollSettingsRoutes from "./payrollSettingsRoutes";
+import payrollManagementRoutes from "./payrollManagementRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
@@ -156,13 +159,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", apiLimiter);
 
   // Register time-clock routes (now protected by rate limiter)
-  registerTimeClockRoutes(app);
+  app.use(timeClockRoutes);
+
+  // Register overtime request routes
+  app.use(overtimeRoutes);
+
+  // Register time entry approval routes
+  app.use(timeEntryRoutes);
+
+  // Register payroll notification routes
+  app.use(payrollNotificationRoutes);
   
   // Register payroll settings routes (work week config, weekly reports)
-  registerPayrollSettingsRoutes(app);
+  app.use(payrollSettingsRoutes);
 
   // Register payroll management routes (pay runs, workers, time entries)
-  registerPayrollManagementRoutes(app);
+  app.use(payrollManagementRoutes);
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderRoutes);

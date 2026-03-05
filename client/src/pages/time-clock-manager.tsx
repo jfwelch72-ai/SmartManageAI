@@ -582,6 +582,22 @@ export default function TimeClockManagerPage() {
                               ) : (
                                 <span className="text-xs text-muted-foreground">No GPS</span>
                               )}
+                              {shift.geofenceStatus && (
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    shift.geofenceStatus === "WITHIN_RANGE"
+                                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                      : shift.geofenceStatus === "OUT_OF_RANGE"
+                                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                                  }
+                                  data-testid={`badge-geofence-${shift.id}`}
+                                >
+                                  <MapPin className="w-3 h-3 mr-0.5" />
+                                  {shift.geofenceStatus === "WITHIN_RANGE" ? "On Site" : shift.geofenceStatus === "OUT_OF_RANGE" ? "Off Site" : shift.geofenceStatus === "NO_GPS" ? "No GPS" : "No Geofence"}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                           <div className="text-right shrink-0" data-testid={`cell-duration-${shift.id}`}>
@@ -691,6 +707,22 @@ export default function TimeClockManagerPage() {
                                   {shift.clockOut ? format(new Date(shift.clockOut), "h:mm a") : "Now"}
                                 </span>
                               </div>
+                              {shift.geofenceStatus && (
+                                <Badge
+                                  variant="secondary"
+                                  className={
+                                    shift.geofenceStatus === "WITHIN_RANGE"
+                                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                                      : shift.geofenceStatus === "OUT_OF_RANGE"
+                                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                                      : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                                  }
+                                  data-testid={`badge-geofence-pending-${shift.id}`}
+                                >
+                                  <MapPin className="w-3 h-3 mr-0.5" />
+                                  {shift.geofenceStatus === "WITHIN_RANGE" ? "On Site" : shift.geofenceStatus === "OUT_OF_RANGE" ? "Off Site" : shift.geofenceStatus === "NO_GPS" ? "No GPS" : "No Geofence"}
+                                </Badge>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 flex-wrap" data-testid={`cell-actions-${shift.id}`}>
                               <Button

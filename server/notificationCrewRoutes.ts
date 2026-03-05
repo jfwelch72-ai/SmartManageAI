@@ -659,9 +659,14 @@ router.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res) =
 router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { crewProjectAssignments, insertCrewProjectAssignmentSchema } = await import("@shared/schema");
+    const { ne, or, isNull, lte, gte } = await import("drizzle-orm");
     
+    const allowOverlap = req.body.allowOverlap === true;
+    const bodyWithoutFlag = { ...req.body };
+    delete bodyWithoutFlag.allowOverlap;
+
     const validated = insertCrewProjectAssignmentSchema.parse({
-      ...req.body,
+      ...bodyWithoutFlag,
       assignedById: req.user!.id,
     });
 
@@ -683,6 +688,83 @@ router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTEN
         details: "This crew is already assigned to the specified project."
       });
       return;
+    }
+
+    // BUSINESS VALIDATION: Check for overlapping date ranges with other assignments for the same crew
+    if (validated.startDate || validated.endDate) {
+      const otherAssignments = await db
+        .select({
+          assignment: crewProjectAssignments,
+          project: {
+            id: projects.id,
+            name: projects.name,
+            code: projects.code,
+          },
+        })
+        .from(crewProjectAssignments)
+        .leftJoin(projects, eq(crewProjectAssignments.projectId, projects.id))
+        .where(
+          and(
+            eq(crewProjectAssignments.crewId, validated.crewId),
+            ne(crewProjectAssignments.projectId, validated.projectId)
+          )
+        );
+
+      const conflicts: Array<{
+        assignmentId: string;
+        projectId: string;
+        projectName: string;
+        projectCode: string | null;
+        existingStart: string | null;
+        existingEnd: string | null;
+      }> = [];
+
+      for (const other of otherAssignments) {
+        const otherStart = other.assignment.startDate;
+        const otherEnd = other.assignment.endDate;
+        const newStart = validated.startDate;
+        const newEnd = validated.endDate;
+
+        const hasOverlap = (() => {
+          if (!otherStart && !otherEnd) return true;
+          if (!newStart && !newEnd) return true;
+          if (newStart && !newEnd) {
+            if (!otherEnd) return true;
+            return newStart <= otherEnd;
+          }
+          if (!newStart && newEnd) {
+            if (!otherStart) return true;
+            return otherStart <= newEnd;
+          }
+          if (newStart && newEnd) {
+            if (!otherStart && !otherEnd) return true;
+            if (!otherStart) return newStart <= otherEnd!;
+            if (!otherEnd) return otherStart <= newEnd;
+            return newStart <= otherEnd && otherStart <= newEnd;
+          }
+          return false;
+        })();
+
+        if (hasOverlap) {
+          conflicts.push({
+            assignmentId: other.assignment.id,
+            projectId: other.assignment.projectId,
+            projectName: other.project?.name || "Unknown Project",
+            projectCode: other.project?.code || null,
+            existingStart: otherStart?.toISOString() || null,
+            existingEnd: otherEnd?.toISOString() || null,
+          });
+        }
+      }
+
+      if (conflicts.length > 0 && !allowOverlap) {
+        res.status(409).json({
+          error: "Scheduling conflict detected",
+          conflicts,
+          message: `This crew has overlapping assignments with ${conflicts.length} other project(s). Set allowOverlap to true to force assignment.`,
+        });
+        return;
+      }
     }
 
     // Create crew assignment (sequential operations - Neon HTTP driver doesn't support transactions)

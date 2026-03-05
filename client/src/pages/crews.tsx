@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Plus, Trash2, Edit, UserPlus, Award, X, Search, Filter, Sparkles } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Users, Plus, Trash2, Edit, UserPlus, Award, X, Search, Filter, Sparkles, Calendar, AlertTriangle, Briefcase } from "lucide-react";
 
 interface Crew {
   id: string;
@@ -54,6 +55,37 @@ interface CrewMember {
   user: User;
 }
 
+interface Project {
+  id: string;
+  name: string;
+  code: string | null;
+  status: string;
+}
+
+interface CrewAssignment {
+  assignment: {
+    id: string;
+    crewId: string;
+    projectId: string;
+    startDate: string | null;
+    endDate: string | null;
+    assignedById: string;
+    notes: string | null;
+    createdAt: string;
+  };
+  crew: { id: string; name: string } | null;
+  project: { id: string; code: string | null; name: string; status: string } | null;
+}
+
+interface ConflictInfo {
+  assignmentId: string;
+  projectId: string;
+  projectName: string;
+  projectCode: string | null;
+  existingStart: string | null;
+  existingEnd: string | null;
+}
+
 export default function CrewsPage() {
   const { user, logout, organizationName } = useAuth();
   const isMobile = useIsMobile();
@@ -87,6 +119,16 @@ export default function CrewsPage() {
   const [memberRole, setMemberRole] = useState("");
   const [memberSkillAssignments, setMemberSkillAssignments] = useState<{ category: string; skillId: string }[]>([]);
 
+  // Assignment state
+  const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
+  const [assignmentCrewId, setAssignmentCrewId] = useState("");
+  const [assignmentProjectId, setAssignmentProjectId] = useState("");
+  const [assignmentStartDate, setAssignmentStartDate] = useState("");
+  const [assignmentEndDate, setAssignmentEndDate] = useState("");
+  const [assignmentNotes, setAssignmentNotes] = useState("");
+  const [assignmentConflicts, setAssignmentConflicts] = useState<ConflictInfo[]>([]);
+  const [showConflictWarning, setShowConflictWarning] = useState(false);
+
   // Data queries
   const { data: crews = [], isLoading: crewsLoading, refetch: refetchCrews } = useQuery<Crew[]>({
     queryKey: ["/api/crews"],
@@ -98,6 +140,14 @@ export default function CrewsPage() {
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: projectsList = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+  });
+
+  const { data: crewAssignments = [], isLoading: assignmentsLoading } = useQuery<CrewAssignment[]>({
+    queryKey: ["/api/crew-assignments"],
   });
 
   const { data: crewMembers = [], refetch: refetchMembers } = useQuery<CrewMember[]>({
@@ -307,6 +357,52 @@ export default function CrewsPage() {
     },
   });
 
+  const createAssignmentMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/crew-assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (res.status === 409 && json.conflicts) {
+          throw { isConflict: true, conflicts: json.conflicts, message: json.message };
+        }
+        throw new Error(json.error || "Failed to create assignment");
+      }
+      return json;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crew-assignments"] });
+      toast({ title: "Success", description: "Crew assigned to project" });
+      setShowAssignmentDialog(false);
+      setShowConflictWarning(false);
+      setAssignmentConflicts([]);
+      resetAssignmentForm();
+    },
+    onError: (error: any) => {
+      if (error.isConflict) {
+        setAssignmentConflicts(error.conflicts);
+        setShowConflictWarning(true);
+      } else {
+        toast({ title: "Error", description: error.message || "Failed to assign crew", variant: "destructive" });
+      }
+    },
+  });
+
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/crew-assignments/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crew-assignments"] });
+      toast({ title: "Success", description: "Assignment removed" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to remove assignment", variant: "destructive" });
+    },
+  });
+
   const resetCrewForm = () => {
     setSelectedCrew(null);
     setCrewName("");
@@ -361,6 +457,40 @@ export default function CrewsPage() {
       category: skillCategory || null,
       description: skillDescription || null,
     });
+  };
+
+  const resetAssignmentForm = () => {
+    setAssignmentCrewId("");
+    setAssignmentProjectId("");
+    setAssignmentStartDate("");
+    setAssignmentEndDate("");
+    setAssignmentNotes("");
+    setAssignmentConflicts([]);
+    setShowConflictWarning(false);
+  };
+
+  const handleSaveAssignment = (forceOverlap = false) => {
+    if (!assignmentCrewId || !assignmentProjectId) {
+      toast({ title: "Error", description: "Crew and Project are required", variant: "destructive" });
+      return;
+    }
+
+    const data: any = {
+      crewId: assignmentCrewId,
+      projectId: assignmentProjectId,
+      notes: assignmentNotes || null,
+    };
+
+    if (assignmentStartDate) data.startDate = new Date(assignmentStartDate).toISOString();
+    if (assignmentEndDate) data.endDate = new Date(assignmentEndDate).toISOString();
+    if (forceOverlap) data.allowOverlap = true;
+
+    createAssignmentMutation.mutate(data);
+  };
+
+  const formatDateShort = (dateStr: string | null) => {
+    if (!dateStr) return "Open";
+    return new Date(dateStr).toLocaleDateString();
   };
 
   const handleViewMembers = (crew: Crew) => {
@@ -425,6 +555,7 @@ export default function CrewsPage() {
         <Tabs defaultValue="crews" className="space-y-6">
           <TabsList data-testid="tabs-crews-skills">
             <TabsTrigger value="crews" data-testid="tab-crews">Crews</TabsTrigger>
+            <TabsTrigger value="assignments" data-testid="tab-assignments">Assignments</TabsTrigger>
             <TabsTrigger value="skills" data-testid="tab-skills">Skills</TabsTrigger>
           </TabsList>
 
@@ -637,6 +768,84 @@ export default function CrewsPage() {
                       ))}
                     </TableBody>
                   </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="assignments" className="space-y-4">
+            <div className="flex flex-wrap justify-between items-center gap-4">
+              <h2 className="text-xl font-semibold">Project Assignments</h2>
+              <Button
+                onClick={() => {
+                  resetAssignmentForm();
+                  setShowAssignmentDialog(true);
+                }}
+                data-testid="button-create-assignment"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Assign Crew
+              </Button>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                {assignmentsLoading ? (
+                  <div className="p-8 text-center text-muted-foreground">Loading assignments...</div>
+                ) : crewAssignments.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground">No crew assignments found</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Crew</TableHead>
+                          <TableHead>Project</TableHead>
+                          <TableHead>Start Date</TableHead>
+                          <TableHead>End Date</TableHead>
+                          <TableHead>Notes</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {crewAssignments.map((ca) => (
+                          <TableRow key={ca.assignment.id} data-testid={`assignment-row-${ca.assignment.id}`}>
+                            <TableCell className="font-medium">
+                              {ca.crew?.name || "Unknown Crew"}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap items-center gap-1">
+                                <Briefcase className="h-3 w-3 text-muted-foreground" />
+                                <span>{ca.project?.name || "Unknown Project"}</span>
+                                {ca.project?.code && (
+                                  <Badge variant="outline" className="text-xs">{ca.project.code}</Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell data-testid={`text-start-date-${ca.assignment.id}`}>
+                              {formatDateShort(ca.assignment.startDate)}
+                            </TableCell>
+                            <TableCell data-testid={`text-end-date-${ca.assignment.id}`}>
+                              {formatDateShort(ca.assignment.endDate)}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground max-w-xs truncate">
+                              {ca.assignment.notes || "-"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteAssignmentMutation.mutate(ca.assignment.id)}
+                                data-testid={`button-delete-assignment-${ca.assignment.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </CardContent>
@@ -1155,6 +1364,136 @@ export default function CrewsPage() {
             >
               Add Member
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Assign Crew to Project Dialog */}
+      <Dialog open={showAssignmentDialog} onOpenChange={(open) => {
+        setShowAssignmentDialog(open);
+        if (!open) {
+          setShowConflictWarning(false);
+          setAssignmentConflicts([]);
+        }
+      }}>
+        <DialogContent data-testid="dialog-assignment">
+          <DialogHeader>
+            <DialogTitle>Assign Crew to Project</DialogTitle>
+            <DialogDescription>Select a crew and project with optional date range</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="assignment-crew">Crew</Label>
+              <Select value={assignmentCrewId} onValueChange={setAssignmentCrewId}>
+                <SelectTrigger id="assignment-crew" data-testid="select-assignment-crew">
+                  <SelectValue placeholder="Select a crew" />
+                </SelectTrigger>
+                <SelectContent>
+                  {crews.filter(c => c.isActive).map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="assignment-project">Project</Label>
+              <Select value={assignmentProjectId} onValueChange={setAssignmentProjectId}>
+                <SelectTrigger id="assignment-project" data-testid="select-assignment-project">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectsList.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} {p.code ? `(${p.code})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="assignment-start">Start Date</Label>
+                <Input
+                  id="assignment-start"
+                  type="date"
+                  value={assignmentStartDate}
+                  onChange={(e) => setAssignmentStartDate(e.target.value)}
+                  data-testid="input-assignment-start-date"
+                />
+              </div>
+              <div>
+                <Label htmlFor="assignment-end">End Date</Label>
+                <Input
+                  id="assignment-end"
+                  type="date"
+                  value={assignmentEndDate}
+                  onChange={(e) => setAssignmentEndDate(e.target.value)}
+                  data-testid="input-assignment-end-date"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="assignment-notes">Notes (Optional)</Label>
+              <Textarea
+                id="assignment-notes"
+                value={assignmentNotes}
+                onChange={(e) => setAssignmentNotes(e.target.value)}
+                placeholder="Additional notes about this assignment"
+                data-testid="input-assignment-notes"
+              />
+            </div>
+
+            {showConflictWarning && assignmentConflicts.length > 0 && (
+              <Alert variant="destructive" data-testid="alert-scheduling-conflict">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Scheduling Conflict Detected</AlertTitle>
+                <AlertDescription>
+                  <p className="mb-2">This crew has overlapping assignments with {assignmentConflicts.length} project(s):</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    {assignmentConflicts.map((c) => (
+                      <li key={c.assignmentId} className="text-sm">
+                        <span className="font-medium">{c.projectName}</span>
+                        {c.projectCode && <span> ({c.projectCode})</span>}
+                        {" — "}
+                        {formatDateShort(c.existingStart)} to {formatDateShort(c.existingEnd)}
+                      </li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAssignmentDialog(false);
+                setShowConflictWarning(false);
+                setAssignmentConflicts([]);
+              }}
+              data-testid="button-cancel-assignment"
+            >
+              Cancel
+            </Button>
+            {showConflictWarning && assignmentConflicts.length > 0 ? (
+              <Button
+                variant="destructive"
+                onClick={() => handleSaveAssignment(true)}
+                disabled={createAssignmentMutation.isPending}
+                data-testid="button-force-assignment"
+              >
+                <AlertTriangle className="h-4 w-4 mr-2" />
+                Assign Anyway
+              </Button>
+            ) : (
+              <Button
+                onClick={() => handleSaveAssignment(false)}
+                disabled={createAssignmentMutation.isPending}
+                data-testid="button-save-assignment"
+              >
+                Assign Crew
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

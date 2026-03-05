@@ -99,7 +99,7 @@ export default function TimeClockPage() {
     }
 
     try {
-      await clockIn.mutateAsync({
+      const result = await clockIn.mutateAsync({
         projectId: selectedProjectId,
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
@@ -108,6 +108,13 @@ export default function TimeClockPage() {
         title: "Clocked In",
         description: "You have successfully clocked in",
       });
+      if ((result as any)?.geofenceWarning || (result as any)?.geofenceStatus === "OUT_OF_RANGE") {
+        toast({
+          title: "Geofence Warning",
+          description: (result as any)?.geofenceWarning || "You appear to be outside the project job site area. Your clock-in has been recorded but flagged.",
+          variant: "destructive",
+        });
+      }
       setSelectedProjectId("");
     } catch (error: any) {
       toast({

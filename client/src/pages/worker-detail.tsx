@@ -2,214 +2,29 @@ import { useState } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
-  ArrowUp,
-  ArrowDown,
-  Star,
-  Check,
-  CheckCircle,
-  AlertTriangle,
   UserPlus,
   FileWarning,
   ClipboardList,
   Wrench,
   ToggleLeft,
   ToggleRight,
-  ChevronDown,
-  ChevronUp,
-  Clock,
-  CalendarDays,
-  Briefcase,
   Mail,
-  Phone,
-  Shield,
-  MessageSquareQuote,
   Loader2,
-  X,
-  Plus,
 } from "lucide-react";
-
-type TabKey = "overview" | "skills" | "performance" | "projects" | "logs";
-
-interface WorkerData {
-  user: {
-    id: string;
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string | null;
-    role: string;
-    isActive: boolean;
-    avatarUrl: string | null;
-    tradeSpecialization: string | null;
-    employmentType: string | null;
-    birthdate: string | null;
-    timezone: string | null;
-    emergencyContactName: string | null;
-    emergencyContactPhone: string | null;
-    emergencyContactAddress: string | null;
-    emergencyContactEmail: string | null;
-    profileDescription: string | null;
-    createdAt: string;
-  };
-  performanceProfile: {
-    experienceLevel: string | null;
-    pastProjects: string | null;
-    productivityTendencies: string | null;
-  } | null;
-  skills: Array<{
-    id: string;
-    skillName: string;
-    rating: number;
-    isVerified: boolean;
-    verifiedByUserId: string | null;
-    verifiedAt: string | null;
-    createdAt: string;
-  }>;
-  certifications: Array<{
-    id: string;
-    certificationName: string;
-    issuedDate: string | null;
-    expiryDate: string | null;
-    fileUrl: string | null;
-    status: string;
-    createdAt: string;
-  }>;
-  attendanceLogs: Array<{
-    id: string;
-    date: string;
-    status: string;
-    notes: string | null;
-  }>;
-  safetyIncidents: Array<{
-    id: string;
-    date: string;
-    severity: string;
-    description: string;
-    actionTaken: string | null;
-  }>;
-  qualityIssues: Array<{
-    id: string;
-    date: string;
-    category: string;
-    description: string;
-    resolution: string | null;
-  }>;
-  performanceReviews: Array<{
-    id: string;
-    reviewDate: string;
-    reviewerName: string;
-    overallRating: number;
-    productivityRating: number | null;
-    qualityRating: number | null;
-    safetyRating: number | null;
-    communicationRating: number | null;
-    leadershipRating: number | null;
-    notes: string | null;
-    scheduleAdherence: string | null;
-    costControl: string | null;
-    subcontractorCoordination: string | null;
-    clientInspectionOutcomes: string | null;
-  }>;
-  supervisorNotes: Array<{
-    id: string;
-    note: string;
-    createdByName: string;
-    createdAt: string;
-  }>;
-  workerLogs: Array<{
-    id: string;
-    date: string;
-    note: string;
-    category: string;
-    createdByName: string;
-    createdAt: string;
-  }>;
-  timeClockShifts: Array<{
-    id: string;
-    projectId: string;
-    projectName: string | null;
-    clockIn: string;
-    clockOut: string | null;
-    totalHours: number | null;
-    notes: string | null;
-  }>;
-  currentShift: {
-    id: string;
-    projectId: string;
-    projectName: string | null;
-    clockIn: string;
-  } | null;
-}
-
-function RatingStars({ rating, max = 5 }: { rating: number; max?: number }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {Array.from({ length: max }, (_, i) => (
-        <Star
-          key={i}
-          className={`h-4 w-4 ${
-            i < rating
-              ? "text-yellow-500 fill-yellow-500"
-              : "text-muted-foreground/40"
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
-
-function StarRatingInput({ value, onChange, label }: { value: number; onChange: (v: number) => void; label: string }) {
-  return (
-    <div className="space-y-1" data-testid={`star-rating-input-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      <Label className="text-sm">{label}</Label>
-      <div className="flex items-center gap-0.5">
-        {Array.from({ length: 5 }, (_, i) => {
-          const starValue = i + 1;
-          return (
-            <button
-              key={i}
-              type="button"
-              className="cursor-pointer p-0.5"
-              onClick={() => onChange(value === starValue ? 0 : starValue)}
-              data-testid={`star-${label.toLowerCase().replace(/\s+/g, "-")}-${starValue}`}
-            >
-              <Star
-                className={`h-5 w-5 ${
-                  starValue <= value
-                    ? "text-yellow-500 fill-yellow-500"
-                    : "text-muted-foreground/40"
-                }`}
-              />
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function getCertStatus(expiryDate: string | null): { label: string; className: string } {
-  if (!expiryDate) return { label: "Active", className: "bg-green-500/15 text-green-600 border-transparent" };
-  const now = Date.now();
-  const expiry = new Date(expiryDate).getTime();
-  if (expiry < now) return { label: "Expired", className: "bg-red-500/15 text-red-600 border-transparent" };
-  const diff = (expiry - now) / (1000 * 60 * 60 * 24);
-  if (diff <= 30) return { label: "Expiring Soon", className: "bg-amber-500/15 text-amber-600 border-transparent" };
-  return { label: "Active", className: "bg-green-500/15 text-green-600 border-transparent" };
-}
+import { type WorkerData, type TabKey } from "@/components/worker/types";
+import { OverviewTab, SkillsTab, PerformanceTab, ProjectsTab, LogsTab } from "@/components/worker/WorkerTabs";
+import { EvalDialog, SkillsDialog, AssignProjectDialog } from "@/components/worker/WorkerDialogs";
 
 export default function WorkerDetailPage() {
   const [, params] = useRoute("/manage-workers/:id");
@@ -228,56 +43,12 @@ export default function WorkerDetailPage() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
 
   const [showAssignDialog, setShowAssignDialog] = useState(false);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [assignNotes, setAssignNotes] = useState("");
-
   const [showEvalDialog, setShowEvalDialog] = useState(false);
-  const [evalReviewerName, setEvalReviewerName] = useState("");
-  const [evalReviewDate, setEvalReviewDate] = useState(new Date().toISOString().split("T")[0]);
-  const [evalOverallRating, setEvalOverallRating] = useState(0);
-  const [evalProductivityRating, setEvalProductivityRating] = useState(0);
-  const [evalQualityRating, setEvalQualityRating] = useState(0);
-  const [evalSafetyRating, setEvalSafetyRating] = useState(0);
-  const [evalCommunicationRating, setEvalCommunicationRating] = useState(0);
-  const [evalLeadershipRating, setEvalLeadershipRating] = useState(0);
-  const [evalNotes, setEvalNotes] = useState("");
-  const [evalScheduleAdherence, setEvalScheduleAdherence] = useState("");
-  const [evalCostControl, setEvalCostControl] = useState("");
-  const [evalSubCoordination, setEvalSubCoordination] = useState("");
-  const [evalInspectionOutcomes, setEvalInspectionOutcomes] = useState("");
-
   const [showSkillsDialog, setShowSkillsDialog] = useState(false);
-  const [newSkillName, setNewSkillName] = useState("");
 
   const { data, isLoading, error } = useQuery<WorkerData>({
     queryKey: ["/api/auth/manage-workers", workerId],
     enabled: !!workerId,
-  });
-
-  const { data: projectsResponse, isLoading: projectsLoading } = useQuery<{ data: Array<{ id: string; name: string; code: string; status: string }> }>({
-    queryKey: ["/api/projects"],
-    enabled: showAssignDialog,
-  });
-  const orgProjects = projectsResponse?.data;
-
-  const assignProjectMutation = useMutation({
-    mutationFn: async () => {
-      return await apiRequest("POST", `/api/auth/manage-workers/${workerId}/assign-project`, {
-        projectId: selectedProjectId,
-        notes: assignNotes || undefined,
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers"] });
-      toast({ title: "Worker assigned to project successfully" });
-      setShowAssignDialog(false);
-      setSelectedProjectId("");
-      setAssignNotes("");
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to assign project", description: err.message, variant: "destructive" });
-    },
   });
 
   const statusMutation = useMutation({
@@ -330,88 +101,6 @@ export default function WorkerDetailPage() {
     },
   });
 
-  const evalMutation = useMutation({
-    mutationFn: async () => {
-      const body: Record<string, unknown> = {
-        userId: data?.user?.id,
-        reviewDate: evalReviewDate,
-        reviewerName: evalReviewerName,
-        overallRating: evalOverallRating,
-      };
-      if (evalProductivityRating > 0) body.productivityRating = evalProductivityRating;
-      if (evalQualityRating > 0) body.qualityRating = evalQualityRating;
-      if (evalSafetyRating > 0) body.safetyRating = evalSafetyRating;
-      if (evalCommunicationRating > 0) body.communicationRating = evalCommunicationRating;
-      if (evalLeadershipRating > 0) body.leadershipRating = evalLeadershipRating;
-      if (evalNotes.trim()) body.notes = evalNotes.trim();
-      if (evalScheduleAdherence.trim()) body.scheduleAdherence = evalScheduleAdherence.trim();
-      if (evalCostControl.trim()) body.costControl = evalCostControl.trim();
-      if (evalSubCoordination.trim()) body.subcontractorCoordination = evalSubCoordination.trim();
-      if (evalInspectionOutcomes.trim()) body.clientInspectionOutcomes = evalInspectionOutcomes.trim();
-      return await apiRequest("POST", "/api/auth/performance-reviews", body);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
-      toast({ title: "Evaluation added successfully" });
-      setShowEvalDialog(false);
-      setEvalReviewerName("");
-      setEvalReviewDate(new Date().toISOString().split("T")[0]);
-      setEvalOverallRating(0);
-      setEvalProductivityRating(0);
-      setEvalQualityRating(0);
-      setEvalSafetyRating(0);
-      setEvalCommunicationRating(0);
-      setEvalLeadershipRating(0);
-      setEvalNotes("");
-      setEvalScheduleAdherence("");
-      setEvalCostControl("");
-      setEvalSubCoordination("");
-      setEvalInspectionOutcomes("");
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to add evaluation", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const addSkillMutation = useMutation({
-    mutationFn: async (skillName: string) => {
-      return await apiRequest("POST", `/api/auth/manage-workers/${workerId}/skills`, { skillName });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
-      toast({ title: "Skill added" });
-      setNewSkillName("");
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to add skill", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const removeSkillMutation = useMutation({
-    mutationFn: async (userSkillId: string) => {
-      return await apiRequest("DELETE", `/api/auth/manage-workers/${workerId}/skills/${userSkillId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
-      toast({ title: "Skill removed" });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to remove skill", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const updateSkillRatingMutation = useMutation({
-    mutationFn: async ({ userSkillId, starRating }: { userSkillId: string; starRating: number }) => {
-      return await apiRequest("PATCH", `/api/auth/manage-workers/${workerId}/skills/${userSkillId}/rating`, { starRating });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", workerId] });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to update rating", description: err.message, variant: "destructive" });
-    },
-  });
-
   if (isLoading) {
     return (
       <div className="p-6 space-y-4" data-testid="worker-detail-loading">
@@ -436,7 +125,7 @@ export default function WorkerDetailPage() {
     );
   }
 
-  const { user, performanceProfile, skills, certifications, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews, supervisorNotes, workerLogs, timeClockShifts, currentShift } = data;
+  const { user, skills, certifications, attendanceLogs, safetyIncidents, qualityIssues, performanceReviews, supervisorNotes, workerLogs, timeClockShifts, currentShift } = data;
 
   const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase();
   const fullName = `${user.firstName} ${user.lastName}`;
@@ -453,10 +142,7 @@ export default function WorkerDetailPage() {
     if (attendanceLogs.length < 2) return null;
     const now = Date.now();
     const d30 = 30 * 24 * 60 * 60 * 1000;
-    const recent = attendanceLogs.filter((l) => {
-      const t = new Date(l.date).getTime();
-      return t >= now - d30;
-    });
+    const recent = attendanceLogs.filter((l) => new Date(l.date).getTime() >= now - d30);
     const previous = attendanceLogs.filter((l) => {
       const t = new Date(l.date).getTime();
       return t >= now - 2 * d30 && t < now - d30;
@@ -551,10 +237,7 @@ export default function WorkerDetailPage() {
             <h1 className="text-2xl font-bold" data-testid="text-worker-name">{fullName}</h1>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <Badge variant="secondary" data-testid="badge-role">{roleDisplay}</Badge>
-              <Badge
-                variant={user.isActive ? "secondary" : "destructive"}
-                data-testid="badge-status"
-              >
+              <Badge variant={user.isActive ? "secondary" : "destructive"} data-testid="badge-status">
                 {user.isActive ? "Active" : "Inactive"}
               </Badge>
             </div>
@@ -566,39 +249,19 @@ export default function WorkerDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6 border-b pb-4" data-testid="quick-actions">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowAssignDialog(true)}
-            data-testid="button-assign-project"
-          >
+          <Button variant="outline" size="sm" onClick={() => setShowAssignDialog(true)} data-testid="button-assign-project">
             <UserPlus className="h-4 w-4 mr-1" />
             Assign to Project
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowIncidentForm(!showIncidentForm)}
-            data-testid="button-record-incident"
-          >
+          <Button variant="outline" size="sm" onClick={() => setShowIncidentForm(!showIncidentForm)} data-testid="button-record-incident">
             <FileWarning className="h-4 w-4 mr-1" />
             Record Incident
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowEvalDialog(true)}
-            data-testid="button-add-evaluation"
-          >
+          <Button variant="outline" size="sm" onClick={() => setShowEvalDialog(true)} data-testid="button-add-evaluation">
             <ClipboardList className="h-4 w-4 mr-1" />
             Add Evaluation
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSkillsDialog(true)}
-            data-testid="button-update-skills"
-          >
+          <Button variant="outline" size="sm" onClick={() => setShowSkillsDialog(true)} data-testid="button-update-skills">
             <Wrench className="h-4 w-4 mr-1" />
             Update Skills
           </Button>
@@ -682,11 +345,7 @@ export default function WorkerDetailPage() {
 
         <div className="pb-8 space-y-4">
           {activeTab === "overview" && (
-            <OverviewTab
-              user={user}
-              certifications={certifications}
-              topSkills={topSkills}
-            />
+            <OverviewTab user={user} certifications={certifications} topSkills={topSkills} />
           )}
           {activeTab === "skills" && <SkillsTab skills={skills} />}
           {activeTab === "performance" && (
@@ -727,809 +386,26 @@ export default function WorkerDetailPage() {
         </div>
       </div>
 
-      <Dialog open={showEvalDialog} onOpenChange={setShowEvalDialog}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Add Performance Evaluation</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="eval-reviewer">Reviewer Name</Label>
-              <Input
-                id="eval-reviewer"
-                value={evalReviewerName}
-                onChange={(e) => setEvalReviewerName(e.target.value)}
-                placeholder="Enter reviewer name"
-                data-testid="input-eval-reviewer"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="eval-date">Review Date</Label>
-              <Input
-                id="eval-date"
-                type="date"
-                value={evalReviewDate}
-                onChange={(e) => setEvalReviewDate(e.target.value)}
-                data-testid="input-eval-date"
-              />
-            </div>
-            <StarRatingInput label="Overall Rating" value={evalOverallRating} onChange={setEvalOverallRating} />
-            <StarRatingInput label="Productivity" value={evalProductivityRating} onChange={setEvalProductivityRating} />
-            <StarRatingInput label="Quality" value={evalQualityRating} onChange={setEvalQualityRating} />
-            <StarRatingInput label="Safety" value={evalSafetyRating} onChange={setEvalSafetyRating} />
-            <StarRatingInput label="Communication" value={evalCommunicationRating} onChange={setEvalCommunicationRating} />
-            <StarRatingInput label="Leadership" value={evalLeadershipRating} onChange={setEvalLeadershipRating} />
-            <div className="space-y-2">
-              <Label htmlFor="eval-notes">Notes (optional)</Label>
-              <Textarea
-                id="eval-notes"
-                value={evalNotes}
-                onChange={(e) => setEvalNotes(e.target.value)}
-                placeholder="Additional notes..."
-                className="resize-none"
-                data-testid="textarea-eval-notes"
-              />
-            </div>
-            {user.role === "SUPERINTENDENT" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="eval-schedule">Schedule Adherence</Label>
-                  <Input
-                    id="eval-schedule"
-                    value={evalScheduleAdherence}
-                    onChange={(e) => setEvalScheduleAdherence(e.target.value)}
-                    placeholder="Schedule adherence notes"
-                    data-testid="input-eval-schedule"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="eval-cost">Cost Control</Label>
-                  <Input
-                    id="eval-cost"
-                    value={evalCostControl}
-                    onChange={(e) => setEvalCostControl(e.target.value)}
-                    placeholder="Cost control notes"
-                    data-testid="input-eval-cost"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="eval-sub-coord">Subcontractor Coordination</Label>
-                  <Input
-                    id="eval-sub-coord"
-                    value={evalSubCoordination}
-                    onChange={(e) => setEvalSubCoordination(e.target.value)}
-                    placeholder="Subcontractor coordination notes"
-                    data-testid="input-eval-sub-coord"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="eval-inspection">Client Inspection Outcomes</Label>
-                  <Input
-                    id="eval-inspection"
-                    value={evalInspectionOutcomes}
-                    onChange={(e) => setEvalInspectionOutcomes(e.target.value)}
-                    placeholder="Inspection outcomes"
-                    data-testid="input-eval-inspection"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowEvalDialog(false)}
-              data-testid="button-cancel-eval"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => evalMutation.mutate()}
-              disabled={!evalReviewerName.trim() || !evalReviewDate || evalOverallRating === 0 || evalMutation.isPending}
-              data-testid="button-submit-eval"
-            >
-              {evalMutation.isPending ? "Submitting..." : "Submit Evaluation"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EvalDialog
+        open={showEvalDialog}
+        onOpenChange={setShowEvalDialog}
+        userId={user.id}
+        userRole={user.role}
+        workerId={workerId!}
+      />
 
-      <Dialog open={showSkillsDialog} onOpenChange={setShowSkillsDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Update Skills</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="flex items-end gap-2" data-testid="add-skill-form">
-              <div className="flex-1 space-y-2">
-                <Label htmlFor="new-skill-name">Add New Skill</Label>
-                <Input
-                  id="new-skill-name"
-                  value={newSkillName}
-                  onChange={(e) => setNewSkillName(e.target.value)}
-                  placeholder="Enter skill name"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newSkillName.trim()) {
-                      addSkillMutation.mutate(newSkillName.trim());
-                    }
-                  }}
-                  data-testid="input-new-skill"
-                />
-              </div>
-              <Button
-                size="sm"
-                onClick={() => addSkillMutation.mutate(newSkillName.trim())}
-                disabled={!newSkillName.trim() || addSkillMutation.isPending}
-                data-testid="button-add-skill"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
-            </div>
-            {skills.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-skills-dialog">
-                No skills recorded yet. Add one above.
-              </p>
-            ) : (
-              <div className="space-y-3 max-h-[40vh] overflow-y-auto">
-                {skills.map((skill) => (
-                  <div
-                    key={skill.id}
-                    className="flex items-center justify-between gap-2 py-1.5 border-b last:border-b-0"
-                    data-testid={`skill-manage-row-${skill.id}`}
-                  >
-                    <span className="text-sm truncate min-w-0 flex-1">{skill.skillName}</span>
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: 5 }, (_, i) => {
-                        const starVal = i + 1;
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            className="cursor-pointer p-0.5"
-                            onClick={() => updateSkillRatingMutation.mutate({
-                              userSkillId: skill.id,
-                              starRating: skill.rating === starVal ? 0 : starVal,
-                            })}
-                            data-testid={`star-skill-${skill.id}-${starVal}`}
-                          >
-                            <Star
-                              className={`h-4 w-4 ${
-                                starVal <= skill.rating
-                                  ? "text-yellow-500 fill-yellow-500"
-                                  : "text-muted-foreground/40"
-                              }`}
-                            />
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeSkillMutation.mutate(skill.id)}
-                      disabled={removeSkillMutation.isPending}
-                      data-testid={`button-remove-skill-${skill.id}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowSkillsDialog(false)}
-              data-testid="button-close-skills"
-            >
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SkillsDialog
+        open={showSkillsDialog}
+        onOpenChange={setShowSkillsDialog}
+        skills={skills}
+        workerId={workerId!}
+      />
 
-      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Assign to Project</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label>Project</Label>
-              {projectsLoading ? (
-                <Skeleton className="h-9 w-full" />
-              ) : (
-                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                  <SelectTrigger data-testid="select-assign-project">
-                    <SelectValue placeholder="Select a project" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(() => {
-                      const activeProjects = (orgProjects || []).filter(
-                        (p: any) => p.status !== "COMPLETED" && p.status !== "CANCELLED"
-                      );
-                      if (activeProjects.length === 0) {
-                        return <SelectItem value="__none" disabled>No active projects available</SelectItem>;
-                      }
-                      return activeProjects.map((p: any) => (
-                        <SelectItem key={p.id} value={p.id} data-testid={`option-project-${p.id}`}>
-                          {p.name}{p.code ? ` (${p.code})` : ""}
-                        </SelectItem>
-                      ));
-                    })()}
-                  </SelectContent>
-                </Select>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="assign-notes">Notes (optional)</Label>
-              <Textarea
-                id="assign-notes"
-                value={assignNotes}
-                onChange={(e) => setAssignNotes(e.target.value)}
-                placeholder="Add assignment notes..."
-                data-testid="input-assign-notes"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowAssignDialog(false)}
-              data-testid="button-cancel-assign"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => assignProjectMutation.mutate()}
-              disabled={!selectedProjectId || assignProjectMutation.isPending || projectsLoading}
-              data-testid="button-confirm-assign"
-            >
-              {assignProjectMutation.isPending ? "Assigning..." : "Assign"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-}
-
-function OverviewTab({
-  user,
-  certifications,
-  topSkills,
-}: {
-  user: WorkerData["user"];
-  certifications: WorkerData["certifications"];
-  topSkills: WorkerData["skills"];
-}) {
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Basic Information</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">Worker ID</span>
-            <span className="text-sm font-mono" data-testid="text-worker-id">{user.id.substring(0, 8)}</span>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">Contact Phone</span>
-            <span className="text-sm flex items-center gap-1" data-testid="text-worker-phone">
-              <Phone className="h-3.5 w-3.5" />
-              {user.phone || "Not provided"}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">Employment Type</span>
-            <span className="text-sm" data-testid="text-employment-type">{user.employmentType || "Not specified"}</span>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm text-muted-foreground">Trade</span>
-            <span className="text-sm" data-testid="text-trade">{user.tradeSpecialization || "Not specified"}</span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Certifications</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {certifications.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="text-no-certs">No certifications on file</p>
-          ) : (
-            <div className="space-y-2">
-              {certifications.map((cert) => {
-                const status = getCertStatus(cert.expiryDate);
-                return (
-                  <div
-                    key={cert.id}
-                    className="flex items-center justify-between gap-2"
-                    data-testid={`cert-row-${cert.id}`}
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <Check className="h-4 w-4 text-green-600 shrink-0" />
-                      <span className="text-sm truncate">{cert.certificationName}</span>
-                    </div>
-                    <Badge variant="secondary" className={`text-xs shrink-0 ${status.className}`}>
-                      {status.label}
-                    </Badge>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="md:col-span-2">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Skill Highlights</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {topSkills.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="text-no-skills">No skills recorded</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {topSkills.map((skill) => (
-                <div
-                  key={skill.id}
-                  className="flex items-center justify-between gap-2"
-                  data-testid={`skill-highlight-${skill.id}`}
-                >
-                  <span className="text-sm truncate">{skill.skillName}</span>
-                  <RatingStars rating={skill.rating} />
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function SkillsTab({ skills }: { skills: WorkerData["skills"] }) {
-  if (skills.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center">
-          <Wrench className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
-          <p className="text-sm text-muted-foreground" data-testid="text-no-skills-full">No skills have been recorded for this worker.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">Full Skill Matrix</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {skills.map((skill) => (
-            <div
-              key={skill.id}
-              className="flex items-center justify-between gap-3 py-1.5 border-b last:border-b-0"
-              data-testid={`skill-row-${skill.id}`}
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm">{skill.skillName}</span>
-                {skill.isVerified && (
-                  <CheckCircle className="h-4 w-4 text-green-600 shrink-0" data-testid={`verified-badge-${skill.id}`} />
-                )}
-              </div>
-              <RatingStars rating={skill.rating} />
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function PerformanceTab({
-  user,
-  attendanceLogs,
-  attendanceReliability,
-  attendanceTrend,
-  productivityLabel,
-  qualityLabel,
-  qualityIssues,
-  safetyIncidents,
-  supervisorNotes,
-  performanceReviews,
-}: {
-  user: WorkerData["user"];
-  attendanceLogs: WorkerData["attendanceLogs"];
-  attendanceReliability: number | null;
-  attendanceTrend: string | null;
-  productivityLabel: string;
-  qualityLabel: string;
-  qualityIssues: WorkerData["qualityIssues"];
-  safetyIncidents: WorkerData["safetyIncidents"];
-  supervisorNotes: WorkerData["supervisorNotes"];
-  performanceReviews: WorkerData["performanceReviews"];
-}) {
-  const isSuperintendent = user.role === "SUPERINTENDENT";
-  const { toast } = useToast();
-  const [newNoteText, setNewNoteText] = useState("");
-
-  const addNoteMutation = useMutation({
-    mutationFn: async (note: string) => {
-      const res = await apiRequest("POST", `/api/auth/manage-workers/${user.id}/notes`, { note });
-      return res.json();
-    },
-    onSuccess: () => {
-      setNewNoteText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/manage-workers", user.id] });
-      toast({ title: "Note added successfully" });
-    },
-    onError: () => {
-      toast({ title: "Failed to add note", variant: "destructive" });
-    },
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="performance-metrics-grid">
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground mb-1">Attendance Reliability</p>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold" data-testid="text-perf-attendance">
-                {attendanceReliability !== null ? `${attendanceReliability}%` : "N/A"}
-              </span>
-              {attendanceTrend === "up" && <ArrowUp className="h-4 w-4 text-green-600" data-testid="icon-trend-up" />}
-              {attendanceTrend === "down" && <ArrowDown className="h-4 w-4 text-red-600" data-testid="icon-trend-down" />}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground mb-1">Productivity Rating</p>
-            <div className="flex items-center gap-2" data-testid="text-perf-productivity">
-              <span className="text-2xl font-bold">{productivityLabel}</span>
-              {productivityLabel === "Below Average" && (
-                <Badge variant="destructive" className="text-xs" data-testid="badge-prod-warning">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  Warning
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground mb-1">Quality Issues</p>
-            <div className="flex items-center gap-2" data-testid="text-perf-quality">
-              <span className="text-2xl font-bold">{qualityLabel}</span>
-              {qualityLabel === "High" && (
-                <Badge variant="destructive" className="text-xs" data-testid="badge-quality-warning">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  Warning
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground mb-1">Safety Incidents</p>
-            <div className="flex items-center gap-2" data-testid="text-perf-safety">
-              <span className="text-2xl font-bold">{safetyIncidents.length}</span>
-              {safetyIncidents.length > 0 && (
-                <Badge variant="destructive" className="text-xs" data-testid="badge-safety-warning">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  Warning
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <MessageSquareQuote className="h-4 w-4" />
-            Supervisor Notes
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-2" data-testid="add-note-form">
-            <Textarea
-              placeholder="Add a supervisor note..."
-              value={newNoteText}
-              onChange={(e) => setNewNoteText(e.target.value)}
-              className="text-sm min-h-[60px]"
-              data-testid="textarea-supervisor-note"
-            />
-            <Button
-              size="sm"
-              disabled={!newNoteText.trim() || addNoteMutation.isPending}
-              onClick={() => addNoteMutation.mutate(newNoteText.trim())}
-              data-testid="button-add-supervisor-note"
-            >
-              {addNoteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
-            </Button>
-          </div>
-          {supervisorNotes.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="text-no-supervisor-notes">No supervisor notes.</p>
-          ) : (
-            <div className="space-y-3">
-              {supervisorNotes.map((n) => (
-                <div key={n.id} className="border-b pb-3 last:border-b-0 last:pb-0" data-testid={`supervisor-note-${n.id}`}>
-                  <p className="text-sm italic">&ldquo;{n.note}&rdquo;</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    &mdash; {n.createdByName}{n.createdAt ? `, ${new Date(n.createdAt).toLocaleDateString()}` : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {isSuperintendent && performanceReviews.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Superintendent Metrics
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {(() => {
-                const latest = performanceReviews[0];
-                return (
-                  <>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Schedule Adherence</p>
-                      <p className="text-sm font-medium" data-testid="text-schedule-adherence">
-                        {latest.scheduleAdherence || "N/A"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Cost Impact</p>
-                      <p className="text-sm font-medium" data-testid="text-cost-control">
-                        {latest.costControl || "N/A"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Subcontractor Coordination</p>
-                      <p className="text-sm font-medium" data-testid="text-sub-coordination">
-                        {latest.subcontractorCoordination || "N/A"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Inspection Outcomes</p>
-                      <p className="text-sm font-medium" data-testid="text-inspection-outcomes">
-                        {latest.clientInspectionOutcomes || "N/A"}
-                      </p>
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function ProjectsTab({
-  projectGroups,
-  projectNameMap,
-  currentShift,
-  expandedProjects,
-  toggleProject,
-}: {
-  projectGroups: Record<string, WorkerData["timeClockShifts"]>;
-  projectNameMap: Record<string, string>;
-  currentShift: WorkerData["currentShift"];
-  expandedProjects: Set<string>;
-  toggleProject: (pid: string) => void;
-}) {
-  const projectIds = Object.keys(projectGroups);
-
-  if (projectIds.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center">
-          <Briefcase className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
-          <p className="text-sm text-muted-foreground" data-testid="text-no-projects">No project history</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      {projectIds.map((pid) => {
-        const shifts = projectGroups[pid];
-        const isCurrent = currentShift?.projectId === pid;
-        const totalHours = shifts.reduce((sum, s) => sum + (s.totalHours || 0), 0);
-        const expanded = expandedProjects.has(pid);
-        const firstShift = shifts.reduce((earliest, s) => {
-          return new Date(s.clockIn) < new Date(earliest.clockIn) ? s : earliest;
-        }, shifts[0]);
-        const lastShift = shifts.reduce((latest, s) => {
-          const compare = s.clockOut || s.clockIn;
-          const latestCompare = latest.clockOut || latest.clockIn;
-          return new Date(compare) > new Date(latestCompare) ? s : latest;
-        }, shifts[0]);
-
-        return (
-          <Card key={pid}>
-            <CardContent className="pt-4">
-              <div
-                className="flex items-center justify-between gap-2 cursor-pointer"
-                onClick={() => toggleProject(pid)}
-                data-testid={`project-row-${pid}`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm font-medium truncate">{projectNameMap[pid] || `Project ${pid.substring(0, 8)}`}</span>
-                  {isCurrent ? (
-                    <Badge variant="secondary" className="text-xs bg-green-500/15 text-green-600 border-transparent shrink-0">
-                      Current
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-xs shrink-0">Past</Badge>
-                  )}
-                </div>
-                {expanded ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                )}
-              </div>
-              {expanded && (
-                <div className="mt-3 space-y-2 border-t pt-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-muted-foreground">Duration</span>
-                    <span className="text-sm" data-testid={`text-project-duration-${pid}`}>
-                      {new Date(firstShift.clockIn).toLocaleDateString()} &ndash;{" "}
-                      {lastShift.clockOut
-                        ? new Date(lastShift.clockOut).toLocaleDateString()
-                        : "Present"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-muted-foreground">Total Hours</span>
-                    <span className="text-sm font-medium" data-testid={`text-project-hours-${pid}`}>
-                      {totalHours.toFixed(1)} hrs
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-muted-foreground">Shifts Logged</span>
-                    <span className="text-sm" data-testid={`text-project-shifts-${pid}`}>
-                      {shifts.length}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
-function LogsTab({
-  workerLogs,
-  logNote,
-  setLogNote,
-  logCategory,
-  setLogCategory,
-  logDate,
-  setLogDate,
-  addLogMutation,
-}: {
-  workerLogs: WorkerData["workerLogs"];
-  logNote: string;
-  setLogNote: (v: string) => void;
-  logCategory: string;
-  setLogCategory: (v: string) => void;
-  logDate: string;
-  setLogDate: (v: string) => void;
-  addLogMutation: ReturnType<typeof useMutation<Response, Error, void>>;
-}) {
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Add Note</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Textarea
-            value={logNote}
-            onChange={(e) => setLogNote(e.target.value)}
-            placeholder="Enter a note about this worker..."
-            rows={3}
-            className="resize-none"
-            data-testid="textarea-log-note"
-          />
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="w-40">
-              <Label className="text-xs">Category</Label>
-              <Select value={logCategory} onValueChange={setLogCategory}>
-                <SelectTrigger data-testid="select-log-category">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GENERAL">General</SelectItem>
-                  <SelectItem value="INCIDENT">Incident</SelectItem>
-                  <SelectItem value="PERFORMANCE">Performance</SelectItem>
-                  <SelectItem value="SAFETY">Safety</SelectItem>
-                  <SelectItem value="ATTENDANCE">Attendance</SelectItem>
-                  <SelectItem value="COMMENDATION">Commendation</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs">Date</Label>
-              <Input
-                type="date"
-                value={logDate}
-                onChange={(e) => setLogDate(e.target.value)}
-                data-testid="input-log-date"
-              />
-            </div>
-            <Button
-              size="sm"
-              onClick={() => addLogMutation.mutate()}
-              disabled={addLogMutation.isPending || !logNote.trim()}
-              data-testid="button-submit-log"
-            >
-              {addLogMutation.isPending ? "Saving..." : "Add Note"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {workerLogs.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center">
-            <CalendarDays className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
-            <p className="text-sm text-muted-foreground" data-testid="text-no-logs">No log entries yet.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {[...workerLogs]
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-            .map((log) => (
-              <Card key={log.id}>
-                <CardContent className="pt-4">
-                  <div className="flex items-start justify-between gap-3" data-testid={`log-row-${log.id}`}>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">{log.note}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {log.createdByName} &middot; {new Date(log.date).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs shrink-0" data-testid={`badge-log-category-${log.id}`}>
-                      {log.category}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-        </div>
-      )}
+      <AssignProjectDialog
+        open={showAssignDialog}
+        onOpenChange={setShowAssignDialog}
+        workerId={workerId!}
+      />
     </div>
   );
 }

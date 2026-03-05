@@ -1,0 +1,465 @@
+import { Router } from "express";
+import { db } from "./db";
+import { timeEntries, timeClockShifts, users, projects } from "@shared/schema";
+import { eq, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { logAudit } from "./auditLogger";
+import { sanitizeText } from "./sanitization";
+import { z } from "zod";
+import { getOrgIdForFilter } from "./orgFilter";
+import { createApprovalRequest } from "./services/approvalService";
+import { isFeatureEnabled } from "./services/featureFlagService";
+
+const router = Router();
+
+router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json([]);
+    }
+
+    const { projectId, startDate, endDate } = req.query;
+
+    const conditions: any[] = [eq(timeEntries.approvalStatus, "PENDING")];
+    
+    if (startDate) {
+      conditions.push(gte(timeEntries.date, new Date(startDate as string)));
+    }
+    if (endDate) {
+      conditions.push(lte(timeEntries.date, new Date(endDate as string)));
+    }
+    if (projectId) {
+      conditions.push(eq(timeEntries.projectId, projectId as string));
+    }
+
+    const pendingEntries = await db
+      .select({
+        entry: timeEntries,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          role: users.role,
+          organizationId: users.organizationId,
+        },
+        project: {
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+          gcOrganizationId: projects.gcOrganizationId,
+        },
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.userId, users.id))
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .where(and(...conditions))
+      .orderBy(desc(timeEntries.date));
+
+    const filteredEntries = shouldFilter && orgId
+      ? pendingEntries.filter(e => {
+          const entryOrgId = e.project?.gcOrganizationId || e.user?.organizationId;
+          return entryOrgId === orgId;
+        })
+      : pendingEntries;
+
+    const formattedEntries = filteredEntries.map(({ entry, user, project }) => ({
+      ...entry,
+      userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
+      userEmail: user?.email,
+      userRole: user?.role,
+      projectName: project?.name,
+      projectCode: project?.code,
+    }));
+
+    res.json(formattedEntries);
+  } catch (error) {
+    console.error("Get pending time entry approvals error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [entry] = await db
+      .select({
+        entry: timeEntries,
+        project: projects,
+        entryUser: {
+          id: users.id,
+          organizationId: users.organizationId,
+        },
+      })
+      .from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(users, eq(timeEntries.userId, users.id))
+      .where(eq(timeEntries.id, req.params.id))
+      .limit(1);
+
+    if (!entry.entry) {
+      return res.status(404).json({ error: "Time entry not found" });
+    }
+
+    if (shouldFilter && orgId) {
+      const entryOrgId = entry.project?.gcOrganizationId || entry.entryUser?.organizationId;
+      if (entryOrgId !== orgId) {
+        return res.status(403).json({ error: "Access denied to this time entry" });
+      }
+    }
+
+    if (entry.entry.approvalStatus === "APPROVED") {
+      return res.status(400).json({ error: "Time entry is already approved" });
+    }
+
+    const [updatedEntry] = await db
+      .update(timeEntries)
+      .set({
+        approvalStatus: "APPROVED",
+        approvedById: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(timeEntries.id, req.params.id))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "TIME_ENTRY",
+      entityId: req.params.id,
+      action: "APPROVE",
+      oldValue: JSON.stringify({ approvalStatus: entry.entry.approvalStatus }),
+      newValue: JSON.stringify({ approvalStatus: "APPROVED" }),
+    }, req);
+
+    res.json(updatedEntry);
+  } catch (error) {
+    console.error("Approve time entry error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const schema = z.object({
+      reason: z.string().min(1, "Rejection reason is required"),
+    });
+
+    const sanitizedBody = {
+      ...req.body,
+      reason: req.body.reason ? sanitizeText(req.body.reason) : undefined,
+    };
+
+    const data = schema.parse(sanitizedBody);
+
+    const [entry] = await db
+      .select({
+        entry: timeEntries,
+        project: projects,
+        entryUser: {
+          id: users.id,
+          organizationId: users.organizationId,
+        },
+      })
+      .from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(users, eq(timeEntries.userId, users.id))
+      .where(eq(timeEntries.id, req.params.id))
+      .limit(1);
+
+    if (!entry.entry) {
+      return res.status(404).json({ error: "Time entry not found" });
+    }
+
+    if (shouldFilter && orgId) {
+      const entryOrgId = entry.project?.gcOrganizationId || entry.entryUser?.organizationId;
+      if (entryOrgId !== orgId) {
+        return res.status(403).json({ error: "Access denied to this time entry" });
+      }
+    }
+
+    const [updatedEntry] = await db
+      .update(timeEntries)
+      .set({
+        approvalStatus: "REJECTED",
+        rejectedById: req.user!.id,
+        rejectedAt: new Date(),
+        rejectionReason: data.reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(timeEntries.id, req.params.id))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "TIME_ENTRY",
+      entityId: req.params.id,
+      action: "REJECT",
+      oldValue: JSON.stringify({ approvalStatus: entry.entry.approvalStatus }),
+      newValue: JSON.stringify({ approvalStatus: "REJECTED", reason: data.reason }),
+    }, req);
+
+    res.json(updatedEntry);
+  } catch (error) {
+    console.error("Reject time entry error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const schema = z.object({
+      entryIds: z.array(z.string()).min(1, "At least one entry ID is required"),
+    });
+
+    const data = schema.parse(req.body);
+
+    const entries = await db
+      .select({
+        entry: timeEntries,
+        project: projects,
+        entryUser: {
+          id: users.id,
+          organizationId: users.organizationId,
+        },
+      })
+      .from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .leftJoin(users, eq(timeEntries.userId, users.id))
+      .where(inArray(timeEntries.id, data.entryIds));
+
+    const accessibleIds = entries
+      .filter(e => {
+        if (!shouldFilter || !orgId) return true;
+        const entryOrgId = e.project?.gcOrganizationId || e.entryUser?.organizationId;
+        return entryOrgId === orgId;
+      })
+      .map(e => e.entry.id);
+
+    if (accessibleIds.length === 0) {
+      return res.status(403).json({ error: "No accessible time entries to approve" });
+    }
+
+    const now = new Date();
+    await db
+      .update(timeEntries)
+      .set({
+        approvalStatus: "APPROVED",
+        approvedById: req.user!.id,
+        approvedAt: now,
+        updatedAt: now,
+      })
+      .where(and(
+        inArray(timeEntries.id, accessibleIds),
+        eq(timeEntries.approvalStatus, "PENDING")
+      ));
+
+    if (req.user?.organizationId) {
+      try {
+        const approvalsEnabled = await isFeatureEnabled(req.user.organizationId, "APPROVALS_FRAMEWORK");
+        if (approvalsEnabled) {
+          await createApprovalRequest(
+            req.user.organizationId,
+            "TIME_ENTRY",
+            accessibleIds[0],
+            req.user.id,
+            `Bulk approved ${accessibleIds.length} time entries`
+          );
+        }
+      } catch (e) { /* non-blocking */ }
+    }
+
+    res.json({ 
+      success: true, 
+      approvedCount: accessibleIds.length,
+      message: `Successfully approved ${accessibleIds.length} time entries`
+    });
+  } catch (error) {
+    console.error("Bulk approve time entries error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { startDate, endDate, projectId, userId: filterUserId, status } = req.query;
+
+    const conditions: any[] = [];
+
+    if (startDate) {
+      conditions.push(gte(timeEntries.date, new Date(startDate as string)));
+    }
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+      conditions.push(lte(timeEntries.date, end));
+    }
+    if (projectId) {
+      conditions.push(eq(timeEntries.projectId, projectId as string));
+    }
+    if (filterUserId) {
+      conditions.push(eq(timeEntries.userId, filterUserId as string));
+    }
+    if (status === "approved") {
+      conditions.push(sql`${timeEntries.approvedById} IS NOT NULL`);
+    } else if (status === "pending") {
+      conditions.push(sql`${timeEntries.approvedById} IS NULL AND ${timeEntries.rejectedById} IS NULL`);
+    } else if (status === "rejected") {
+      conditions.push(sql`${timeEntries.rejectedById} IS NOT NULL`);
+    }
+
+    const entries = await db
+      .select({
+        entry: timeEntries,
+        userName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'Unknown')`,
+        userEmail: users.email,
+        projectName: projects.name,
+        projectCode: projects.code,
+      })
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.userId, users.id))
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .where(conditions.length > 0 ? and(...conditions) : sql`true`)
+      .orderBy(desc(timeEntries.date));
+
+    const csvHeader = "Date,Employee,Email,Project,Project Code,Regular Hours,Overtime Hours,Total Hours,Cost Code,Status,Notes\n";
+    const csvRows = entries.map(row => {
+      const e = row.entry;
+      const regular = parseFloat(e.hoursRegular || "0");
+      const overtime = parseFloat(e.hoursOvertime || "0");
+      const total = regular + overtime;
+      const entryStatus = e.approvedById ? "Approved" : e.rejectedById ? "Rejected" : "Pending";
+      const date = e.date ? new Date(e.date).toLocaleDateString("en-US") : "";
+      const escapeCsv = (val: string | null | undefined) => {
+        if (!val) return "";
+        const str = val.replace(/"/g, '""');
+        return str.includes(",") || str.includes('"') || str.includes("\n") ? `"${str}"` : str;
+      };
+      return `${date},${escapeCsv(row.userName)},${escapeCsv(row.userEmail)},${escapeCsv(row.projectName)},${escapeCsv(row.projectCode)},${regular.toFixed(2)},${overtime.toFixed(2)},${total.toFixed(2)},${escapeCsv(e.costCode)},${entryStatus},${escapeCsv(e.notes)}`;
+    }).join("\n");
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=time-entries-export-${new Date().toISOString().split('T')[0]}.csv`);
+    res.send(csvHeader + csvRows);
+  } catch (error) {
+    console.error("Export time entries error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    
+    if (mustDenyAccess) {
+      return res.json({ shifts: [], entries: [], totals: {} });
+    }
+
+    const { startDate, endDate, projectId } = req.query;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({ error: "startDate and endDate are required" });
+    }
+
+    const shiftConditions: any[] = [
+      gte(timeClockShifts.clockIn, new Date(startDate as string)),
+      lte(timeClockShifts.clockIn, new Date(endDate as string)),
+    ];
+    if (projectId) shiftConditions.push(eq(timeClockShifts.projectId, projectId as string));
+
+    const shifts = await db
+      .select({
+        projectId: timeClockShifts.projectId,
+        projectName: projects.name,
+        projectCode: projects.code,
+        gcOrganizationId: projects.gcOrganizationId,
+        approvalStatus: timeClockShifts.approvalStatus,
+        totalHours: timeClockShifts.totalHours,
+      })
+      .from(timeClockShifts)
+      .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
+      .where(and(...shiftConditions));
+
+    const filteredShifts = shouldFilter && orgId
+      ? shifts.filter(s => s.gcOrganizationId === orgId) : shifts;
+
+    const entryConditions: any[] = [
+      gte(timeEntries.date, new Date(startDate as string)),
+      lte(timeEntries.date, new Date(endDate as string)),
+    ];
+    if (projectId) entryConditions.push(eq(timeEntries.projectId, projectId as string));
+
+    const entries = await db
+      .select({
+        projectId: timeEntries.projectId,
+        projectName: projects.name,
+        projectCode: projects.code,
+        gcOrganizationId: projects.gcOrganizationId,
+        approvalStatus: timeEntries.approvalStatus,
+        hoursRegular: timeEntries.hoursRegular,
+        hoursOvertime: timeEntries.hoursOvertime,
+      })
+      .from(timeEntries)
+      .leftJoin(projects, eq(timeEntries.projectId, projects.id))
+      .where(and(...entryConditions));
+
+    const filteredEntries = shouldFilter && orgId
+      ? entries.filter(e => e.gcOrganizationId === orgId) : entries;
+
+    const shiftSummary = {
+      pending: filteredShifts.filter(s => s.approvalStatus === "PENDING").length,
+      approved: filteredShifts.filter(s => s.approvalStatus === "APPROVED").length,
+      rejected: filteredShifts.filter(s => s.approvalStatus === "REJECTED").length,
+      totalHours: filteredShifts.reduce((sum, s) => sum + parseFloat(s.totalHours || "0"), 0),
+    };
+
+    const entrySummary = {
+      pending: filteredEntries.filter(e => e.approvalStatus === "PENDING").length,
+      approved: filteredEntries.filter(e => e.approvalStatus === "APPROVED").length,
+      rejected: filteredEntries.filter(e => e.approvalStatus === "REJECTED").length,
+      totalHours: filteredEntries.reduce((sum, e) => 
+        sum + parseFloat(e.hoursRegular || "0") + parseFloat(e.hoursOvertime || "0"), 0),
+    };
+
+    res.json({
+      period: { start: startDate, end: endDate },
+      shifts: shiftSummary,
+      entries: entrySummary,
+      totals: {
+        pendingItems: shiftSummary.pending + entrySummary.pending,
+        approvedItems: shiftSummary.approved + entrySummary.approved,
+        rejectedItems: shiftSummary.rejected + entrySummary.rejected,
+        totalHours: shiftSummary.totalHours + entrySummary.totalHours,
+      },
+    });
+  } catch (error) {
+    console.error("Get approval summary error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+export default router;

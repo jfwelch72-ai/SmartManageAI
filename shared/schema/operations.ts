@@ -1073,6 +1073,7 @@ export const timeClockShifts = pgTable("time_clock_shifts", {
   clockOutLongitude: doublePrecision("clock_out_longitude"),
   notes: text("notes"),
   autoClockOut: boolean("auto_clock_out").notNull().default(false),
+  geofenceStatus: varchar("geofence_status", { length: 20 }),
   approvalStatus: shiftApprovalStatusEnum("approval_status").notNull().default("PENDING"),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),

@@ -79,6 +79,7 @@ interface KpiEntry {
   periodStart: string;
   periodEnd: string;
   notes: string | null;
+  source: string;
   recordedBy: string;
   createdAt: string;
 }
@@ -276,38 +277,61 @@ function KpiHistoryChart({ assignmentId }: { assignmentId: string }) {
     );
   }
 
-  const chartData = [...entries]
-    .sort((a, b) => new Date(a.periodEnd).getTime() - new Date(b.periodEnd).getTime())
-    .map((entry) => ({
+  const sortedEntries = [...entries]
+    .sort((a, b) => new Date(a.periodEnd).getTime() - new Date(b.periodEnd).getTime());
+
+  const chartData = sortedEntries.map((entry) => ({
       date: new Date(entry.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
       value: Number(entry.actualValue),
     }));
 
   return (
-    <div className="h-48" data-testid={`chart-history-${assignmentId}`}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-          <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />
-          <YAxis className="text-xs" tick={{ fontSize: 11 }} />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--card))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: "6px",
-              fontSize: "12px",
-            }}
-          />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="hsl(var(--primary))"
-            strokeWidth={2}
-            dot={{ r: 3 }}
-            activeDot={{ r: 5 }}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+    <div className="space-y-3">
+      <div className="h-48" data-testid={`chart-history-${assignmentId}`}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+            <XAxis dataKey="date" className="text-xs" tick={{ fontSize: 11 }} />
+            <YAxis className="text-xs" tick={{ fontSize: 11 }} />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: "hsl(var(--card))",
+                border: "1px solid hsl(var(--border))",
+                borderRadius: "6px",
+                fontSize: "12px",
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="hsl(var(--primary))"
+              strokeWidth={2}
+              dot={{ r: 3 }}
+              activeDot={{ r: 5 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="space-y-1 max-h-32 overflow-y-auto">
+        {sortedEntries.slice().reverse().slice(0, 5).map((entry) => (
+          <div key={entry.id} className="flex items-center justify-between gap-2 text-xs py-1 border-b last:border-b-0" data-testid={`entry-row-${entry.id}`}>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">
+                {new Date(entry.periodEnd).toLocaleDateString()}
+              </span>
+              <span className="font-medium">{Number(entry.actualValue).toFixed(2)}</span>
+              {entry.source === "auto" && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0" data-testid={`badge-auto-${entry.id}`}>
+                  Auto
+                </Badge>
+              )}
+            </div>
+            {entry.notes && (
+              <span className="text-muted-foreground truncate max-w-[120px]">{entry.notes}</span>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
