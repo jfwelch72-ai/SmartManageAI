@@ -8,11 +8,14 @@ import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSc
 import { eq, and, lt, lte, sql } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
+import { publishToPlatform } from "../social/publishService";
+import { socialAccounts } from "@shared/schema";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
 let syncScheduleTask: ReturnType<typeof cron.schedule> | null = null;
 let socialPostTask: ReturnType<typeof cron.schedule> | null = null;
+let tokenExpiryTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -49,7 +52,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, and social post schedulers)");
+  tokenExpiryTask = cron.schedule("0 3 * * *", async () => {
+    try {
+      await checkSocialTokenExpiry();
+    } catch (err) {
+      logError("Token expiry check failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, and token expiry schedulers)");
 }
 
 export function stopJobRunner() {
@@ -68,6 +79,10 @@ export function stopJobRunner() {
   if (socialPostTask) {
     socialPostTask.stop();
     socialPostTask = null;
+  }
+  if (tokenExpiryTask) {
+    tokenExpiryTask.stop();
+    tokenExpiryTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -282,10 +297,44 @@ async function processScheduledSocialPosts() {
 
   for (const post of duePosts) {
     try {
+      let externalPostId: string | undefined;
+      let externalPostUrl: string | undefined;
+
+      if (post.socialAccountId) {
+        const account = await db.query.socialAccounts.findFirst({
+          where: eq(socialAccounts.id, post.socialAccountId),
+        });
+
+        if (account && account.accessTokenEncrypted) {
+          const result = await publishToPlatform(
+            { id: post.id, content: post.content, platform: post.platform, mediaUrls: post.mediaUrls, hashtags: post.hashtags, title: post.title },
+            { id: account.id, platform: account.platform, accountId: account.accountId, accessTokenEncrypted: account.accessTokenEncrypted, refreshTokenEncrypted: account.refreshTokenEncrypted }
+          );
+          externalPostId = result.externalPostId;
+          externalPostUrl = result.externalPostUrl;
+        } else if (account && !account.accessTokenEncrypted) {
+          logInfo("Social account has no token, marking as published locally", { postId: post.id });
+        }
+      } else {
+        const retries = (post.retryCount || 0) + 1;
+        await db.update(socialMediaPosts)
+          .set({
+            status: retries >= 3 ? "FAILED" as any : "SCHEDULED" as any,
+            retryCount: retries,
+            lastError: "No social account linked to this post",
+            updatedAt: now,
+          })
+          .where(eq(socialMediaPosts.id, post.id));
+        logError("No social account linked", { postId: post.id });
+        continue;
+      }
+
       await db.update(socialMediaPosts)
         .set({
           status: "POSTED",
           publishedAt: now,
+          externalPostId: externalPostId || null,
+          externalPostUrl: externalPostUrl || null,
           updatedAt: now,
         })
         .where(eq(socialMediaPosts.id, post.id));
@@ -332,7 +381,7 @@ async function processScheduledSocialPosts() {
         }
       }
 
-      logInfo("Social post published", { postId: post.id, platform: post.platform });
+      logInfo("Social post published", { postId: post.id, platform: post.platform, externalId: externalPostId });
     } catch (err) {
       const retries = (post.retryCount || 0) + 1;
       const newStatus = retries >= 3 ? "FAILED" : "SCHEDULED";
@@ -345,6 +394,82 @@ async function processScheduledSocialPosts() {
         })
         .where(eq(socialMediaPosts.id, post.id));
       logError("Failed to process social post", { postId: post.id, retries, error: String(err) });
+    }
+  }
+}
+
+function getPlatformCreds(platform: string): { clientId: string; clientSecret: string } {
+  switch (platform) {
+    case "FACEBOOK":
+    case "INSTAGRAM":
+      return { clientId: process.env.FB_APP_ID || "", clientSecret: process.env.FB_APP_SECRET || "" };
+    case "LINKEDIN":
+      return { clientId: process.env.LINKEDIN_CLIENT_ID || "", clientSecret: process.env.LINKEDIN_CLIENT_SECRET || "" };
+    case "TWITTER":
+      return { clientId: process.env.TWITTER_CLIENT_ID || "", clientSecret: process.env.TWITTER_CLIENT_SECRET || "" };
+    default:
+      return { clientId: "", clientSecret: "" };
+  }
+}
+
+async function checkSocialTokenExpiry() {
+  const sevenDaysFromNow = new Date();
+  sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+  const expiringAccounts = await db.query.socialAccounts.findMany({
+    where: and(
+      eq(socialAccounts.status, "CONNECTED"),
+      lte(socialAccounts.tokenExpiresAt, sevenDaysFromNow)
+    ),
+  });
+
+  if (expiringAccounts.length === 0) return;
+
+  logInfo(`Checking ${expiringAccounts.length} accounts with expiring tokens`);
+
+  for (const account of expiringAccounts) {
+    try {
+      if (account.refreshTokenEncrypted) {
+        const { refreshToken: refreshTokenFn } = await import("../social/publishService");
+        const creds = getPlatformCreds(account.platform);
+        const result = await refreshTokenFn(account.platform, account.refreshTokenEncrypted, creds.clientId, creds.clientSecret);
+
+        if (result) {
+          const { default: crypto } = await import("crypto");
+          const ENCRYPTION_KEY = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || "";
+          const key = crypto.scryptSync(ENCRYPTION_KEY, "salt", 32);
+          const iv = crypto.randomBytes(16);
+          const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+          let encrypted = cipher.update(result.accessToken, "utf8", "hex");
+          encrypted += cipher.final("hex");
+          const encryptedToken = iv.toString("hex") + ":" + encrypted;
+
+          const expiresAt = result.expiresIn ? new Date(Date.now() + result.expiresIn * 1000) : null;
+          await db.update(socialAccounts)
+            .set({
+              accessTokenEncrypted: encryptedToken,
+              tokenExpiresAt: expiresAt,
+              lastSyncAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(socialAccounts.id, account.id));
+          logInfo("Auto-refreshed token", { accountId: account.id, platform: account.platform });
+        } else {
+          await db.update(socialAccounts)
+            .set({ status: "EXPIRED", lastSyncError: "Token refresh failed", updatedAt: new Date() })
+            .where(eq(socialAccounts.id, account.id));
+          logError("Token refresh failed, marking as expired", { accountId: account.id });
+        }
+      } else {
+        if (account.tokenExpiresAt && account.tokenExpiresAt <= new Date()) {
+          await db.update(socialAccounts)
+            .set({ status: "EXPIRED", lastSyncError: "Token expired, no refresh token available", updatedAt: new Date() })
+            .where(eq(socialAccounts.id, account.id));
+          logError("Token expired without refresh token", { accountId: account.id });
+        }
+      }
+    } catch (err) {
+      logError("Error checking token expiry", { accountId: account.id, error: String(err) });
     }
   }
 }

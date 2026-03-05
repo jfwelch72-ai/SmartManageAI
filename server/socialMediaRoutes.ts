@@ -6,6 +6,7 @@ import { requireAuth, type AuthRequest } from "./auth";
 import { randomUUID } from "crypto";
 import crypto from "crypto";
 import { openai } from "./ai/openaiClient";
+import { publishToPlatform, validateToken, refreshToken } from "./social/publishService";
 
 const router = Router();
 
@@ -41,6 +42,20 @@ function getOrgId(req: AuthRequest): string | null {
 
 function isAdmin(req: AuthRequest): boolean {
   return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(req.user?.role || "");
+}
+
+function getPlatformCredentials(platform: string): { clientId: string; clientSecret: string } {
+  switch (platform) {
+    case "FACEBOOK":
+    case "INSTAGRAM":
+      return { clientId: process.env.FB_APP_ID || "", clientSecret: process.env.FB_APP_SECRET || "" };
+    case "LINKEDIN":
+      return { clientId: process.env.LINKEDIN_CLIENT_ID || "", clientSecret: process.env.LINKEDIN_CLIENT_SECRET || "" };
+    case "TWITTER":
+      return { clientId: process.env.TWITTER_CLIENT_ID || "", clientSecret: process.env.TWITTER_CLIENT_SECRET || "" };
+    default:
+      return { clientId: "", clientSecret: "" };
+  }
 }
 
 router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response) => {
@@ -199,6 +214,21 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
       postStatus = "SCHEDULED";
     }
 
+    let warning: string | undefined;
+    if (platform && content) {
+      const duplicates = await db.query.socialMediaPosts.findMany({
+        where: and(
+          eq(socialMediaPosts.organizationId, orgId),
+          eq(socialMediaPosts.platform, platform as any),
+          ilike(socialMediaPosts.content, content.trim()),
+        ),
+        limit: 1,
+      });
+      if (duplicates.length > 0) {
+        warning = "Similar content already exists for this platform";
+      }
+    }
+
     const [post] = await db.insert(socialMediaPosts).values({
       organizationId: orgId,
       title: title || null,
@@ -224,7 +254,7 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
       createdById: req.user!.id,
     }).returning();
 
-    res.json(post);
+    res.json(warning ? { ...post, warning } : post);
   } catch (error) {
     console.error("Error creating social post:", error);
     res.status(500).json({ error: "Failed to create social post" });
@@ -315,13 +345,56 @@ router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Res
     if (!orgId) return res.status(400).json({ error: "Organization required" });
 
     const { id } = req.params;
+    const post = await db.query.socialMediaPosts.findFirst({
+      where: and(eq(socialMediaPosts.id, id), eq(socialMediaPosts.organizationId, orgId)),
+    });
+    if (!post) return res.status(404).json({ error: "Post not found" });
+
+    if (!post.socialAccountId) {
+      return res.status(400).json({ error: "Please link a social account before publishing" });
+    }
+
+    const account = await db.query.socialAccounts.findFirst({
+      where: and(eq(socialAccounts.id, post.socialAccountId), eq(socialAccounts.organizationId, orgId)),
+    });
+    if (!account) {
+      return res.status(400).json({ error: "Linked social account not found. Please reconnect." });
+    }
+
+    let externalPostId: string | undefined;
+    let externalPostUrl: string | undefined;
+    let publishWarning: string | undefined;
+
+    try {
+      const result = await publishToPlatform(
+        { id: post.id, content: post.content, platform: post.platform, mediaUrls: post.mediaUrls, hashtags: post.hashtags, title: post.title },
+        { id: account.id, platform: account.platform, accountId: account.accountId, accessTokenEncrypted: account.accessTokenEncrypted, refreshTokenEncrypted: account.refreshTokenEncrypted }
+      );
+      externalPostId = result.externalPostId;
+      externalPostUrl = result.externalPostUrl;
+      if (!result.platformSupported) {
+        publishWarning = result.error;
+      }
+    } catch (publishError: any) {
+      const [failed] = await db.update(socialMediaPosts)
+        .set({ status: "FAILED", lastError: publishError.message, retryCount: (post.retryCount || 0) + 1, updatedAt: new Date() })
+        .where(eq(socialMediaPosts.id, id))
+        .returning();
+      return res.status(502).json({ error: `Publishing failed: ${publishError.message}`, post: failed });
+    }
+
     const [updated] = await db.update(socialMediaPosts)
-      .set({ status: "POSTED", publishedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(socialMediaPosts.id, id), eq(socialMediaPosts.organizationId, orgId)))
+      .set({
+        status: "POSTED",
+        publishedAt: new Date(),
+        externalPostId: externalPostId || null,
+        externalPostUrl: externalPostUrl || null,
+        updatedAt: new Date(),
+      })
+      .where(eq(socialMediaPosts.id, id))
       .returning();
 
-    if (!updated) return res.status(404).json({ error: "Post not found" });
-    res.json(updated);
+    res.json({ ...updated, warning: publishWarning });
   } catch (error) {
     console.error("Error publishing social post:", error);
     res.status(500).json({ error: "Failed to publish social post" });
@@ -375,6 +448,7 @@ router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: R
       status: "DRAFT",
       mediaUrls: original.mediaUrls,
       hashtags: original.hashtags,
+      scheduledAt: null,
       campaignTag: original.campaignTag,
       tone: original.tone,
       notes: original.notes,
@@ -590,6 +664,123 @@ Return a JSON object with:
   } catch (error) {
     console.error("Error generating social post:", error);
     res.status(500).json({ error: "Failed to generate social post" });
+  }
+});
+
+router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
+    const orgId = getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const existing = await db.query.socialMediaPosts.findFirst({
+      where: and(eq(socialMediaPosts.id, id), eq(socialMediaPosts.organizationId, orgId)),
+    });
+    if (!existing) return res.status(404).json({ error: "Post not found" });
+    if (existing.approvalStatus !== "pending") {
+      return res.status(400).json({ error: "Only posts pending approval can be rejected" });
+    }
+
+    const [updated] = await db.update(socialMediaPosts)
+      .set({
+        status: "DRAFT",
+        approvalStatus: "rejected",
+        rejectionReason: reason || "No reason provided",
+        approvedById: req.user!.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(socialMediaPosts.id, id), eq(socialMediaPosts.organizationId, orgId)))
+      .returning();
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error rejecting social post:", error);
+    res.status(500).json({ error: "Failed to reject social post" });
+  }
+});
+
+router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const { id } = req.params;
+    const account = await db.query.socialAccounts.findFirst({
+      where: and(eq(socialAccounts.id, id), eq(socialAccounts.organizationId, orgId)),
+    });
+    if (!account) return res.status(404).json({ error: "Account not found" });
+
+    if (!account.accessTokenEncrypted) {
+      return res.json({ valid: false, error: "No access token configured", expiresAt: null });
+    }
+
+    const token = decrypt(account.accessTokenEncrypted);
+    if (!token) {
+      return res.json({ valid: false, error: "Token decryption failed", expiresAt: null });
+    }
+
+    const result = await validateToken(account.platform, token, account.accountId || undefined);
+    res.json({
+      valid: result.valid,
+      error: result.error || null,
+      expiresAt: account.tokenExpiresAt || null,
+    });
+  } catch (error) {
+    console.error("Error checking account status:", error);
+    res.status(500).json({ error: "Failed to check account status" });
+  }
+});
+
+router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
+    const orgId = getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const { id } = req.params;
+    const account = await db.query.socialAccounts.findFirst({
+      where: and(eq(socialAccounts.id, id), eq(socialAccounts.organizationId, orgId)),
+    });
+    if (!account) return res.status(404).json({ error: "Account not found" });
+
+    if (!account.refreshTokenEncrypted) {
+      return res.status(400).json({ error: "No refresh token available. Please reconnect the account." });
+    }
+
+    const platformCreds = getPlatformCredentials(account.platform);
+    const result = await refreshToken(account.platform, account.refreshTokenEncrypted, platformCreds.clientId, platformCreds.clientSecret);
+    if (!result) {
+      await db.update(socialAccounts)
+        .set({ status: "EXPIRED", updatedAt: new Date() })
+        .where(eq(socialAccounts.id, id));
+      return res.status(400).json({ error: "Token refresh failed. Please reconnect the account." });
+    }
+
+    const expiresAt = result.expiresIn ? new Date(Date.now() + result.expiresIn * 1000) : null;
+    const [updated] = await db.update(socialAccounts)
+      .set({
+        accessTokenEncrypted: encrypt(result.accessToken),
+        tokenExpiresAt: expiresAt,
+        status: "CONNECTED",
+        lastSyncAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(socialAccounts.id, id))
+      .returning();
+
+    res.json({
+      success: true,
+      status: "CONNECTED",
+      expiresAt,
+      account: { ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" },
+    });
+  } catch (error) {
+    console.error("Error refreshing token:", error);
+    res.status(500).json({ error: "Failed to refresh token" });
   }
 });
 

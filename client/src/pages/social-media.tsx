@@ -78,6 +78,12 @@ interface SocialPost {
   isRecurring: boolean;
   recurringPattern: any;
   aiGenerated: boolean;
+  socialAccountId: string | null;
+  externalPostUrl: string | null;
+  rejectionReason: string | null;
+  approvalStatus: string | null;
+  lastError: string | null;
+  warning?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,12 +165,13 @@ function StatsView() {
   );
 }
 
-function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate }: {
+function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onReject }: {
   post: SocialPost;
   onEdit: (post: SocialPost) => void;
   onDelete: (id: string) => void;
   onPublish: (id: string) => void;
   onDuplicate: (id: string) => void;
+  onReject: (id: string) => void;
 }) {
   const info = getPlatformInfo(post.platform || "FACEBOOK");
   const Icon = info.icon;
@@ -190,6 +197,18 @@ function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate }: {
                 )}
               </div>
               <p className="text-sm text-muted-foreground line-clamp-2">{post.content}</p>
+              {post.mediaUrls && post.mediaUrls.length > 0 && (
+                <div className="flex gap-1 mt-2">
+                  {post.mediaUrls.slice(0, 4).map((url, i) => (
+                    <div key={i} className="w-10 h-10 rounded border overflow-hidden shrink-0">
+                      <img src={url} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  ))}
+                  {post.mediaUrls.length > 4 && (
+                    <div className="w-10 h-10 rounded border flex items-center justify-center text-xs text-muted-foreground">+{post.mediaUrls.length - 4}</div>
+                  )}
+                </div>
+              )}
               <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
                 {post.scheduledAt && (
                   <span className="flex items-center gap-1">
@@ -215,7 +234,22 @@ function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate }: {
                     {post.hashtags.length} tags
                   </span>
                 )}
+                {post.externalPostUrl && (
+                  <a href={post.externalPostUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary hover:underline" onClick={e => e.stopPropagation()}>
+                    <ExternalLink className="h-3 w-3" />View Post
+                  </a>
+                )}
               </div>
+              {post.rejectionReason && post.approvalStatus === "rejected" && (
+                <div className="mt-2 px-2 py-1.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-400" data-testid={`rejection-reason-${post.id}`}>
+                  <strong>Rejected:</strong> {post.rejectionReason}
+                </div>
+              )}
+              {post.status === "FAILED" && post.lastError && (
+                <div className="mt-2 px-2 py-1.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-400">
+                  <strong>Error:</strong> {post.lastError}
+                </div>
+              )}
             </div>
           </div>
           <DropdownMenu>
@@ -233,7 +267,12 @@ function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate }: {
               </DropdownMenuItem>
               {post.status !== "POSTED" && (
                 <DropdownMenuItem onClick={() => onPublish(post.id)} data-testid={`publish-post-${post.id}`}>
-                  <Send className="h-4 w-4 mr-2" />Mark as Published
+                  <Send className="h-4 w-4 mr-2" />Publish Now
+                </DropdownMenuItem>
+              )}
+              {post.status === "PENDING_APPROVAL" && (
+                <DropdownMenuItem onClick={() => onReject(post.id)} className="text-amber-600" data-testid={`reject-post-${post.id}`}>
+                  <AlertCircle className="h-4 w-4 mr-2" />Reject
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onClick={() => {
@@ -341,7 +380,8 @@ function ConnectedAccountsSection() {
 
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [connectPlatform, setConnectPlatform] = useState("");
-  const [connectForm, setConnectForm] = useState({ accountName: "", accountId: "", accessToken: "" });
+  const [connectForm, setConnectForm] = useState({ accountName: "", accountId: "", accessToken: "", refreshToken: "" });
+  const [tokenStatuses, setTokenStatuses] = useState<Record<string, { valid: boolean; error?: string; expiresAt?: string }>>({});
 
   const connectMutation = useMutation({
     mutationFn: async (data: any) => apiRequest("POST", "/api/social/accounts", data),
@@ -350,7 +390,7 @@ function ConnectedAccountsSection() {
       queryClient.invalidateQueries({ queryKey: ["/api/social/stats"] });
       toast({ title: "Account connected" });
       setShowConnectDialog(false);
-      setConnectForm({ accountName: "", accountId: "", accessToken: "" });
+      setConnectForm({ accountName: "", accountId: "", accessToken: "", refreshToken: "" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -388,32 +428,49 @@ function ConnectedAccountsSection() {
                 const account = getAccountForPlatform(p.value);
                 const Icon = p.icon;
                 const isConnected = account?.status === "CONNECTED";
+                const isExpired = account?.status === "EXPIRED";
+                const tokenStatus = account ? tokenStatuses[account.id] : undefined;
 
                 return (
                   <div
                     key={p.value}
-                    className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-colors ${isConnected ? "border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/30" : "border-dashed"}`}
+                    className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-colors ${isConnected ? "border-green-200 bg-green-50/50 dark:border-green-900 dark:bg-green-950/30" : isExpired ? "border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/30" : "border-dashed"}`}
                     data-testid={`account-${p.value.toLowerCase()}`}
                   >
                     <Icon className="h-6 w-6" style={{ color: p.color }} />
                     <span className="text-xs font-medium text-center">{p.label}</span>
                     {account ? (
                       <>
-                        <Badge variant={isConnected ? "default" : "secondary"} className="text-[10px]">
+                        <Badge variant={isConnected ? "default" : isExpired ? "destructive" : "secondary"} className="text-[10px]">
                           {account.status}
                         </Badge>
                         {account.accountName && (
                           <span className="text-[10px] text-muted-foreground truncate max-w-full">{account.accountName}</span>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-xs text-destructive"
-                          onClick={() => disconnectMutation.mutate(account.id)}
-                          data-testid={`disconnect-${p.value.toLowerCase()}`}
-                        >
-                          Disconnect
-                        </Button>
+                        {tokenStatus && (
+                          <div className={`w-2 h-2 rounded-full ${tokenStatus.valid ? "bg-green-500" : "bg-red-500"}`} title={tokenStatus.valid ? "Token valid" : tokenStatus.error || "Token invalid"} />
+                        )}
+                        {isExpired ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-xs text-amber-600"
+                            onClick={() => { setConnectPlatform(p.value); setShowConnectDialog(true); }}
+                            data-testid={`reconnect-${p.value.toLowerCase()}`}
+                          >
+                            Reconnect
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs text-destructive"
+                            onClick={() => disconnectMutation.mutate(account.id)}
+                            data-testid={`disconnect-${p.value.toLowerCase()}`}
+                          >
+                            Disconnect
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <Button
@@ -472,6 +529,17 @@ function ConnectedAccountsSection() {
               />
               <p className="text-xs text-muted-foreground mt-1">Tokens are stored encrypted. Leave blank to connect without auto-posting.</p>
             </div>
+            <div>
+              <Label>Refresh Token (optional)</Label>
+              <Input
+                type="password"
+                placeholder="Your refresh token for auto-renewal"
+                value={connectForm.refreshToken}
+                onChange={e => setConnectForm(prev => ({ ...prev, refreshToken: e.target.value }))}
+                data-testid="input-refresh-token"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Used to automatically renew access tokens before they expire.</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowConnectDialog(false)}>Cancel</Button>
@@ -481,6 +549,7 @@ function ConnectedAccountsSection() {
                 accountName: connectForm.accountName,
                 accountId: connectForm.accountId,
                 accessToken: connectForm.accessToken || undefined,
+                refreshToken: connectForm.refreshToken || undefined,
               })}
               disabled={connectMutation.isPending || !connectForm.accountName.trim()}
               data-testid="button-connect-account"
@@ -492,6 +561,106 @@ function ConnectedAccountsSection() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function PlatformPreview({ platform, content, hashtags, mediaUrls }: { platform: string; content: string; hashtags: string[]; mediaUrls: string[] }) {
+  const info = getPlatformInfo(platform);
+  const Icon = info.icon;
+  const fullContent = content + (hashtags.length > 0 ? "\n\n" + hashtags.map(h => `#${h}`).join(" ") : "");
+  const charLimit = CHAR_LIMITS[platform] || 5000;
+  const isOver = fullContent.length > charLimit;
+
+  if (platform === "TWITTER") {
+    return (
+      <div className="rounded-xl border p-4 max-w-sm bg-background">
+        <div className="flex gap-3">
+          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0"><Icon className="h-5 w-5" /></div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-bold">Your Company</span>
+              <span className="text-xs text-muted-foreground">@company · now</span>
+            </div>
+            <p className={`text-sm mt-1 whitespace-pre-wrap ${isOver ? "text-destructive" : ""}`}>{fullContent || "Your tweet will appear here..."}</p>
+            {mediaUrls.length > 0 && (
+              <div className={`mt-2 grid gap-1 ${mediaUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"} rounded-xl overflow-hidden`}>
+                {mediaUrls.slice(0, 4).map((url, i) => <img key={i} src={url} alt="" className="w-full h-32 object-cover" />)}
+              </div>
+            )}
+            <div className="flex justify-between mt-3 text-muted-foreground max-w-[250px]">
+              {["💬", "🔁", "❤️", "📤"].map((e, i) => <span key={i} className="text-xs">{e}</span>)}
+            </div>
+          </div>
+        </div>
+        <p className={`text-xs mt-2 ${isOver ? "text-destructive font-medium" : "text-muted-foreground"}`}>{fullContent.length}/{charLimit}</p>
+      </div>
+    );
+  }
+
+  if (platform === "INSTAGRAM") {
+    return (
+      <div className="rounded-xl border max-w-sm bg-background overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 p-0.5"><div className="w-full h-full rounded-full bg-background flex items-center justify-center"><Icon className="h-3.5 w-3.5" style={{ color: info.color }} /></div></div>
+          <span className="text-xs font-semibold">your_company</span>
+        </div>
+        <div className="aspect-square bg-muted flex items-center justify-center">
+          {mediaUrls.length > 0 ? <img src={mediaUrls[0]} alt="" className="w-full h-full object-cover" /> : <Image className="h-12 w-12 text-muted-foreground/30" />}
+        </div>
+        <div className="px-3 py-2">
+          <div className="flex gap-3 mb-2 text-lg">❤️ 💬 📤</div>
+          <p className="text-xs"><strong>your_company</strong> {content || "Caption..."}</p>
+          {hashtags.length > 0 && <p className="text-xs text-blue-500 mt-1">{hashtags.map(h => `#${h}`).join(" ")}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  if (platform === "LINKEDIN") {
+    return (
+      <div className="rounded-xl border max-w-md bg-background p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center"><Icon className="h-6 w-6" style={{ color: info.color }} /></div>
+          <div>
+            <p className="text-sm font-semibold">Your Company</p>
+            <p className="text-xs text-muted-foreground">Construction · Just now</p>
+          </div>
+        </div>
+        <p className="text-sm whitespace-pre-wrap">{fullContent || "Your post will appear here..."}</p>
+        {mediaUrls.length > 0 && (
+          <div className="mt-3 rounded-lg overflow-hidden border">
+            <img src={mediaUrls[0]} alt="" className="w-full h-48 object-cover" />
+          </div>
+        )}
+        <Separator className="my-3" />
+        <div className="flex justify-around text-xs text-muted-foreground">
+          {["👍 Like", "💬 Comment", "🔁 Repost", "📤 Send"].map(a => <span key={a}>{a}</span>)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border max-w-md bg-background p-4">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"><Icon className="h-5 w-5" style={{ color: info.color }} /></div>
+        <div>
+          <p className="text-sm font-semibold">Your Company</p>
+          <p className="text-xs text-muted-foreground">Just now · 🌐</p>
+        </div>
+      </div>
+      <p className="text-sm whitespace-pre-wrap">{fullContent || "Your post will appear here..."}</p>
+      {mediaUrls.length > 0 && (
+        <div className={`mt-3 grid gap-1 ${mediaUrls.length === 1 ? "grid-cols-1" : "grid-cols-2"} rounded-lg overflow-hidden`}>
+          {mediaUrls.slice(0, 4).map((url, i) => <img key={i} src={url} alt="" className="w-full h-40 object-cover" />)}
+        </div>
+      )}
+      <Separator className="my-3" />
+      <div className="flex justify-around text-xs text-muted-foreground">
+        {["👍 Like", "💬 Comment", "↗ Share"].map(a => <span key={a}>{a}</span>)}
+      </div>
+      {isOver && <p className="text-xs text-destructive mt-2">{fullContent.length}/{charLimit} characters</p>}
+    </div>
   );
 }
 
@@ -521,11 +690,25 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
     utmMedium: "social",
     utmCampaign: "",
     scheduleMode: "now" as "now" | "schedule",
+    mediaUrls: [] as string[],
+    socialAccountId: "" as string,
   });
 
   const [form, setForm] = useState(getDefaultForm());
   const [aiTopic, setAiTopic] = useState("");
   const [aiResult, setAiResult] = useState<any>(null);
+  const [showPreview, setShowPreview] = useState(false);
+  const [mediaUrlInput, setMediaUrlInput] = useState("");
+
+  const { data: accounts } = useQuery<SocialAccount[]>({
+    queryKey: ["/api/social/accounts"],
+    enabled: open,
+  });
+
+  const platformAccounts = useMemo(() => {
+    if (!accounts) return [];
+    return accounts.filter(a => a.platform === form.platform && a.status === "CONNECTED");
+  }, [accounts, form.platform]);
 
   const isEditing = !!editingPost;
 
@@ -551,6 +734,8 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
         utmMedium: "social",
         utmCampaign: "",
         scheduleMode: editingPost.scheduledAt ? "schedule" : "now",
+        mediaUrls: editingPost.mediaUrls || [],
+        socialAccountId: editingPost.socialAccountId || "",
       });
     } else if (prefilledDate) {
       const dateStr = new Date(prefilledDate.getFullYear(), prefilledDate.getMonth(), prefilledDate.getDate(), 9, 0)
@@ -561,6 +746,8 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
     }
     setAiTopic("");
     setAiResult(null);
+    setShowPreview(false);
+    setMediaUrlInput("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
@@ -569,12 +756,18 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
   const isOverLimit = charCount > charLimit;
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => apiRequest("POST", "/api/social/posts", data),
-    onSuccess: () => {
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", "/api/social/posts", data);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/social/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/social/calendar"] });
       queryClient.invalidateQueries({ queryKey: ["/api/social/stats"] });
       toast({ title: "Post created" });
+      if (data?.warning) {
+        toast({ title: "Note", description: data.warning });
+      }
       onClose();
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -615,6 +808,11 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
   });
 
   const handleSubmit = (saveStatus: string) => {
+    if (saveStatus === "SCHEDULED" && !form.socialAccountId && platformAccounts.length > 0) {
+      toast({ title: "Please select an account", description: "Select which connected account to publish to before scheduling.", variant: "destructive" });
+      return;
+    }
+
     const payload: any = {
       title: form.title || null,
       content: form.content,
@@ -628,6 +826,8 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
       utmSource: form.utmSource || null,
       utmMedium: form.utmMedium || null,
       utmCampaign: form.utmCampaign || null,
+      mediaUrls: form.mediaUrls.length > 0 ? form.mediaUrls : null,
+      socialAccountId: form.socialAccountId || null,
     };
 
     if (form.scheduleMode === "schedule" && form.scheduledAt) {
@@ -723,18 +923,102 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <Label>Content</Label>
+              <div className="flex items-center gap-2">
+                <Label>Content</Label>
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowPreview(!showPreview)} data-testid="toggle-preview">
+                  <Eye className="h-3 w-3 mr-1" />{showPreview ? "Edit" : "Preview"}
+                </Button>
+              </div>
               <span className={`text-xs ${isOverLimit ? "text-destructive font-medium" : "text-muted-foreground"}`}>
                 {charCount}/{charLimit}
               </span>
             </div>
-            <Textarea
-              placeholder="Write your post content..."
-              value={form.content}
-              onChange={e => setForm(prev => ({ ...prev, content: e.target.value }))}
-              className="min-h-[120px]"
-              data-testid="input-post-content"
-            />
+            {showPreview ? (
+              <div className="flex justify-center p-4 bg-muted/30 rounded-lg min-h-[200px]">
+                <PlatformPreview platform={form.platform} content={form.content} hashtags={form.hashtags} mediaUrls={form.mediaUrls} />
+              </div>
+            ) : (
+              <Textarea
+                placeholder="Write your post content..."
+                value={form.content}
+                onChange={e => setForm(prev => ({ ...prev, content: e.target.value }))}
+                className="min-h-[120px]"
+                data-testid="input-post-content"
+              />
+            )}
+          </div>
+
+          {platformAccounts.length > 0 && (
+            <div>
+              <Label>Post to Account</Label>
+              <Select value={form.socialAccountId} onValueChange={v => setForm(prev => ({ ...prev, socialAccountId: v }))}>
+                <SelectTrigger data-testid="select-account">
+                  <SelectValue placeholder="Select an account..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No account selected</SelectItem>
+                  {platformAccounts.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.accountName || a.platform}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.scheduleMode === "schedule" && !form.socialAccountId && (
+                <p className="text-xs text-amber-600 mt-1">Select an account to enable publishing when scheduled</p>
+              )}
+            </div>
+          )}
+
+          <div>
+            <Label>Media ({form.mediaUrls.length}/4)</Label>
+            {form.mediaUrls.length > 0 && (
+              <div className="flex gap-2 mb-2 flex-wrap">
+                {form.mediaUrls.map((url, i) => (
+                  <div key={i} className="relative w-16 h-16 rounded-lg border overflow-hidden group">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <button
+                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                      onClick={() => setForm(prev => ({ ...prev, mediaUrls: prev.mediaUrls.filter((_, j) => j !== i) }))}
+                      data-testid={`remove-media-${i}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-white" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {form.mediaUrls.length < 4 && (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Paste an image URL..."
+                  value={mediaUrlInput}
+                  onChange={e => setMediaUrlInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (mediaUrlInput.trim()) {
+                        setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, mediaUrlInput.trim()] }));
+                        setMediaUrlInput("");
+                      }
+                    }
+                  }}
+                  data-testid="input-media-url"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (mediaUrlInput.trim()) {
+                      setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, mediaUrlInput.trim()] }));
+                      setMediaUrlInput("");
+                    }
+                  }}
+                  disabled={!mediaUrlInput.trim() || form.mediaUrls.length >= 4}
+                  data-testid="button-add-media"
+                >
+                  <Image className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="p-3 rounded-lg border bg-muted/30 space-y-3">
@@ -930,6 +1214,9 @@ export default function SocialMediaPage() {
   const [filterPlatform, setFilterPlatform] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [prefilledDate, setPrefilledDate] = useState<Date | null>(null);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [rejectPostId, setRejectPostId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
 
   const postsQuery = useQuery<{ data: SocialPost[]; total: number }>({
     queryKey: ["/api/social/posts", filterStatus, filterPlatform],
@@ -982,6 +1269,20 @@ export default function SocialMediaPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/social/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/social/stats"] });
       toast({ title: "Post duplicated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => apiRequest("POST", `/api/social/posts/${id}/reject`, { reason }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social/posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/stats"] });
+      toast({ title: "Post rejected" });
+      setShowRejectDialog(false);
+      setRejectPostId(null);
+      setRejectReason("");
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1079,6 +1380,7 @@ export default function SocialMediaPage() {
                     onDelete={id => deleteMutation.mutate(id)}
                     onPublish={id => publishMutation.mutate(id)}
                     onDuplicate={id => duplicateMutation.mutate(id)}
+                    onReject={id => { setRejectPostId(id); setRejectReason(""); setShowRejectDialog(true); }}
                   />
                 ))
               ) : (
@@ -1147,6 +1449,7 @@ export default function SocialMediaPage() {
                   onDelete={id => deleteMutation.mutate(id)}
                   onPublish={id => publishMutation.mutate(id)}
                   onDuplicate={id => duplicateMutation.mutate(id)}
+                  onReject={id => { setRejectPostId(id); setRejectReason(""); setShowRejectDialog(true); }}
                 />
               ))}
             </div>
@@ -1194,6 +1497,37 @@ export default function SocialMediaPage() {
           prefilledDate={prefilledDate}
         />
       )}
+
+      <Dialog open={showRejectDialog} onOpenChange={setShowRejectDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reject Post</DialogTitle>
+            <DialogDescription>Provide a reason for rejecting this post. The creator will see this feedback.</DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>Rejection Reason</Label>
+            <Textarea
+              placeholder="Explain why this post is being rejected..."
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              className="min-h-[80px]"
+              data-testid="input-reject-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRejectDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => { if (rejectPostId) rejectMutation.mutate({ id: rejectPostId, reason: rejectReason }); }}
+              disabled={rejectMutation.isPending}
+              data-testid="button-confirm-reject"
+            >
+              {rejectMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <AlertCircle className="h-4 w-4 mr-2" />}
+              Reject Post
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

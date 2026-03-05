@@ -5492,6 +5492,7 @@ export const socialMediaPosts = pgTable("social_media_posts", {
   utmMedium: text("utm_medium"),
   utmCampaign: text("utm_campaign"),
   approvalStatus: text("approval_status"),
+  rejectionReason: text("rejection_reason"),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdById: varchar("created_by_id").references(() => users.id),
