@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,12 +27,21 @@ import {
   Lock,
   ExternalLink,
   Loader2,
-  Cloud,
 } from "lucide-react";
 import { SiDropbox, SiGoogledrive, SiBox } from "react-icons/si";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
+
+function OneDriveIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M14.22 4.5a7.25 7.25 0 0 0-6.75 4.6A5.75 5.75 0 0 0 1 14.75a5.72 5.72 0 0 0 2.09 4.42l8.18-4.87 4.58 2.73 6.65-3.96A5.5 5.5 0 0 0 17 8a5.47 5.47 0 0 0-2.78.75z" opacity=".5" />
+      <path d="M11.27 14.3l-8.18 4.87A5.72 5.72 0 0 0 7.25 20.5h11.5a5.49 5.49 0 0 0 3.75-1.47l-6.65-3.96z" />
+      <path d="M14.22 4.5a7.19 7.19 0 0 0-3.58.95l4.94 8.12 6.92-4.12A5.48 5.48 0 0 0 17 8a5.47 5.47 0 0 0-2.78.75z" opacity=".7" />
+    </svg>
+  );
+}
 
 type UploadSource = "local" | "direct-link" | "dropbox" | "gdrive" | "onedrive" | "box";
 type Step = "choose-source" | "pick-file" | "metadata";
@@ -88,7 +97,7 @@ const SOURCE_OPTIONS = [
     id: "onedrive" as UploadSource,
     label: "OneDrive",
     description: "Import from OneDrive",
-    icon: Cloud,
+    iconComponent: OneDriveIcon,
     isCloud: true,
     provider: "onedrive",
   },
@@ -116,6 +125,17 @@ export function UploadSourcePicker({
   const [documentTitle, setDocumentTitle] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("OTHER");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [progressMessage, setProgressMessage] = useState("Downloading file from URL...");
+
+  useEffect(() => {
+    if (!isSubmitting) {
+      setProgressMessage("Downloading file from URL...");
+      return;
+    }
+    const t1 = setTimeout(() => setProgressMessage("Still downloading... this may take a moment for large files"), 5000);
+    const t2 = setTimeout(() => setProgressMessage("Almost there... processing large file"), 15000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [isSubmitting]);
 
   const { data: connections = [] } = useQuery<CloudConnection[]>({
     queryKey: ["/api/integrations/connections"],
@@ -512,7 +532,7 @@ export function UploadSourcePicker({
                 data-testid="button-confirm-upload"
               >
                 {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                {isSubmitting ? "Uploading..." : "Upload"}
+                {isSubmitting ? progressMessage : "Upload"}
               </Button>
             </DialogFooter>
           </div>

@@ -9,7 +9,7 @@ import {
   quantityCategories,
 } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
@@ -40,7 +40,7 @@ router.get("/api/reports/takeoff/quantity", requireAuth, requireRole("ADMIN", "M
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select().from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -56,7 +56,7 @@ router.get("/api/reports/takeoff/quantity", requireAuth, requireRole("ADMIN", "M
       unitCost: takeoffMeasurements.unitCost,
       categoryId: takeoffMeasurements.categoryId,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const sheetMap = Object.fromEntries(sheets.map(s => [s.id, s]));
 
@@ -98,7 +98,7 @@ router.get("/api/reports/takeoff/summary", requireAuth, requireRole("ADMIN", "MA
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select({ id: takeoffSheets.id }).from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -109,7 +109,7 @@ router.get("/api/reports/takeoff/summary", requireAuth, requireRole("ADMIN", "MA
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const summary: Record<string, { type: string; totalQuantity: number; unit: string; measurementCount: number }> = {};
     for (const m of measurements) {
@@ -148,7 +148,7 @@ router.get("/api/reports/takeoff/by-takeoff", requireAuth, requireRole("ADMIN", 
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select().from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -162,7 +162,7 @@ router.get("/api/reports/takeoff/by-takeoff", requireAuth, requireRole("ADMIN", 
       count: takeoffMeasurements.count,
       sheetId: takeoffMeasurements.sheetId,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const sheetMap = Object.fromEntries(sheets.map(s => [s.id, s]));
     const grouped: Record<string, { sheetName: string; measurements: any[] }> = {};
@@ -205,7 +205,7 @@ router.get("/api/reports/takeoff/items", requireAuth, requireRole("ADMIN", "MANA
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select({ id: takeoffSheets.id }).from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -214,7 +214,7 @@ router.get("/api/reports/takeoff/items", requireAuth, requireRole("ADMIN", "MANA
       label: takeoffMeasurements.label,
       type: takeoffMeasurements.type,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const seen = new Map<string, any>();
     for (const m of measurements) {
@@ -244,7 +244,7 @@ router.get("/api/reports/takeoff/item-cost", requireAuth, requireRole("ADMIN", "
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select({ id: takeoffSheets.id }).from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -258,7 +258,7 @@ router.get("/api/reports/takeoff/item-cost", requireAuth, requireRole("ADMIN", "
       count: takeoffMeasurements.count,
       unitCost: takeoffMeasurements.unitCost,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const rows = measurements.map(m => {
       let quantity = 0;
@@ -297,7 +297,7 @@ router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, requireRole("A
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select({ id: takeoffSheets.id }).from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -311,7 +311,7 @@ router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, requireRole("A
       count: takeoffMeasurements.count,
       unitCost: takeoffMeasurements.unitCost,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const grouped: Record<string, { type: string; items: any[]; subtotal: number }> = {};
     for (const m of measurements) {
@@ -359,7 +359,7 @@ router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, requireRole
     if (projectIds.length === 0) return res.json([]);
 
     const sheets = await db.select().from(takeoffSheets)
-      .where(sql`${takeoffSheets.projectId} = ANY(${projectIds})`);
+      .where(inArray(takeoffSheets.projectId, projectIds));
     const sheetIds = sheets.map(s => s.id);
     if (sheetIds.length === 0) return res.json([]);
 
@@ -374,7 +374,7 @@ router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, requireRole
       unitCost: takeoffMeasurements.unitCost,
       sheetId: takeoffMeasurements.sheetId,
     }).from(takeoffMeasurements)
-      .where(sql`${takeoffMeasurements.sheetId} = ANY(${sheetIds})`);
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const sheetMap = Object.fromEntries(sheets.map(s => [s.id, s]));
     const grouped: Record<string, { sheetName: string; items: any[]; subtotal: number }> = {};
