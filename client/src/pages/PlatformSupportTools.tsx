@@ -599,40 +599,39 @@ export default function PlatformSupportTools() {
 
                 <div className="md:hidden space-y-3">
                   {filteredUsers?.map((user) => (
-                    <div key={user.id} className="border rounded-lg p-4 space-y-3" data-testid={`card-user-${user.id}`}>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <p className="font-medium text-sm" data-testid={`text-name-${user.id}`}>{user.firstName} {user.lastName}</p>
-                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5" data-testid={`text-email-${user.id}`}>
-                            <Mail className="h-3 w-3" />
-                            {user.email}
-                          </p>
+                    <div key={user.id} className="border rounded-lg p-3 space-y-2" data-testid={`card-user-${user.id}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-sm truncate" data-testid={`text-name-${user.id}`}>{user.firstName} {user.lastName}</p>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Badge
+                            variant={user.emailVerified ? "default" : "outline"}
+                            className={user.emailVerified ? "bg-green-600" : "text-amber-600 border-amber-400"}
+                            data-testid={`badge-email-verified-mobile-${user.id}`}
+                          >
+                            {user.emailVerified ? (
+                              <><ShieldCheck className="h-3 w-3 mr-1" />Verified</>
+                            ) : (
+                              <><ShieldX className="h-3 w-3 mr-1" />Unverified</>
+                            )}
+                          </Badge>
+                          <Badge variant={user.isActive ? "default" : "destructive"} data-testid={`status-active-${user.id}`}>
+                            {user.isActive ? "Active" : "Inactive"}
+                          </Badge>
                         </div>
-                        <Badge variant={user.isActive ? "default" : "destructive"} data-testid={`status-active-${user.id}`}>
-                          {user.isActive ? "Active" : "Inactive"}
-                        </Badge>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs text-muted-foreground truncate" data-testid={`text-email-${user.id}`}>
+                        {user.email}
+                      </p>
+                      <div className="flex items-center gap-2">
                         <Badge variant={user.role === "SUPER_ADMIN" ? "default" : "secondary"} data-testid={`badge-role-${user.id}`}>
                           {roleLabels[user.role] || user.role}
                         </Badge>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid={`text-org-${user.id}`}>
-                          <Building2 className="h-3 w-3" />
-                          {organizations?.find((o) => o.id === user.organizationId)?.name || "-"}
+                        <span className="text-xs text-muted-foreground flex items-center gap-1 truncate" data-testid={`text-org-${user.id}`}>
+                          <Building2 className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{organizations?.find((o) => o.id === user.organizationId)?.name || "-"}</span>
                         </span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={user.emailVerified ? "default" : "outline"}
-                          className={user.emailVerified ? "bg-green-600" : "text-amber-600 border-amber-400"}
-                          data-testid={`badge-email-verified-mobile-${user.id}`}
-                        >
-                          {user.emailVerified ? (
-                            <><ShieldCheck className="h-3 w-3 mr-1" />Verified</>
-                          ) : (
-                            <><ShieldX className="h-3 w-3 mr-1" />Unverified</>
-                          )}
-                        </Badge>
+                      <div className="flex items-center flex-wrap gap-1 pt-2 border-t">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -640,10 +639,8 @@ export default function PlatformSupportTools() {
                           onClick={() => toggleEmailVerifiedMutation.mutate(user.id)}
                           data-testid={`button-toggle-verified-mobile-${user.id}`}
                         >
-                          {user.emailVerified ? "Unverify" : "Verify"}
+                          {user.emailVerified ? <><ShieldX className="h-3 w-3 mr-1" />Unverify</> : <><ShieldCheck className="h-3 w-3 mr-1" />Verify</>}
                         </Button>
-                      </div>
-                      <div className="flex items-center gap-2 pt-2 border-t">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
