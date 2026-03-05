@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -81,6 +81,7 @@ export default function PlatformSupportTools() {
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [showArchivedUsers, setShowArchivedUsers] = useState(false);
+  const [activeTab, setActiveTab] = useState("users");
 
   const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
   const userRole = user?.role || "SUPER_ADMIN";
@@ -315,29 +316,39 @@ export default function PlatformSupportTools() {
           </div>
         </div>
 
-        <Tabs defaultValue="users" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="users" data-testid="tab-users" onClick={() => setShowArchivedUsers(false)}>
-            <Users className="h-4 w-4 mr-2" />
-            All Users
-          </TabsTrigger>
-          <TabsTrigger value="archived" data-testid="tab-archived" onClick={() => setShowArchivedUsers(true)}>
-            <Archive className="h-4 w-4 mr-2" />
-            Archived Users
-          </TabsTrigger>
-          <TabsTrigger value="sow" data-testid="tab-sow">
-            <Building2 className="h-4 w-4 mr-2" />
-            SOW Items
-          </TabsTrigger>
-          <TabsTrigger value="worktypes" data-testid="tab-worktypes">
-            <Building2 className="h-4 w-4 mr-2" />
-            Work Types
-          </TabsTrigger>
-          <TabsTrigger value="datatools" data-testid="tab-datatools">
-            <Database className="h-4 w-4 mr-2" />
-            Data Tools
-          </TabsTrigger>
-        </TabsList>
+        <Tabs value={activeTab} onValueChange={(val) => {
+          setActiveTab(val);
+          if (val === "archived") setShowArchivedUsers(true);
+          else if (val === "users") setShowArchivedUsers(false);
+        }} className="space-y-6">
+        <div className="w-full max-w-xs">
+          <Select value={activeTab} onValueChange={(val) => {
+            setActiveTab(val);
+            if (val === "archived") setShowArchivedUsers(true);
+            else if (val === "users") setShowArchivedUsers(false);
+          }}>
+            <SelectTrigger data-testid="select-support-tab">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="users" data-testid="tab-users">
+                <span className="flex items-center gap-2"><Users className="h-4 w-4" /> All Users</span>
+              </SelectItem>
+              <SelectItem value="archived" data-testid="tab-archived">
+                <span className="flex items-center gap-2"><Archive className="h-4 w-4" /> Archived Users</span>
+              </SelectItem>
+              <SelectItem value="sow" data-testid="tab-sow">
+                <span className="flex items-center gap-2"><Building2 className="h-4 w-4" /> SOW Items</span>
+              </SelectItem>
+              <SelectItem value="worktypes" data-testid="tab-worktypes">
+                <span className="flex items-center gap-2"><Building2 className="h-4 w-4" /> Work Types</span>
+              </SelectItem>
+              <SelectItem value="datatools" data-testid="tab-datatools">
+                <span className="flex items-center gap-2"><Database className="h-4 w-4" /> Data Tools</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
         <TabsContent value="users" className="space-y-4">
           <Card>
