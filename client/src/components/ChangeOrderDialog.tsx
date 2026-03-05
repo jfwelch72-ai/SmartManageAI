@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { format } from "date-fns";
-import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight, History, ArrowRight, Shield } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,6 +145,51 @@ export function ChangeOrderDialog({
   const { data: vendorCatalog } = useQuery<VendorPricingCatalog[]>({
     queryKey: ["/api/vendor-pricing/search", { category: catalogState?.category }],
     enabled: !!catalogState?.category,
+  });
+
+  // Fetch revision history
+  const { data: revisions } = useQuery<Array<{
+    revision: {
+      id: string;
+      revisionNumber: number;
+      previousStatus: string;
+      newStatus: string;
+      amount: string | null;
+      description: string | null;
+      changedFields: string | null;
+      createdAt: string;
+    };
+    revisedBy: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+    } | null;
+  }>>({
+    queryKey: ["/api/change-orders", changeOrder?.id, "revisions"],
+    enabled: !!changeOrder?.id && open,
+  });
+
+  // Fetch approval chain
+  const { data: approvals } = useQuery<Array<{
+    approval: {
+      id: string;
+      approverRole: string;
+      status: string;
+      stepOrder: number;
+      comments: string | null;
+      decidedAt: string | null;
+      createdAt: string;
+    };
+    approver: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+    } | null;
+  }>>({
+    queryKey: ["/api/change-orders", changeOrder?.id, "approvals"],
+    enabled: !!changeOrder?.id && open,
   });
 
   useEffect(() => {
@@ -909,6 +954,98 @@ export function ChangeOrderDialog({
             </div>
             <ChangeOrderFiles changeOrderId={changeOrder.id} alwaysExpanded />
           </div>
+
+          {/* Approval Chain Progress */}
+          {approvals && approvals.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <Shield className="w-4 h-4" />
+                  Approval Chain
+                </h3>
+                <div className="space-y-2">
+                  {approvals.map((item, idx) => (
+                    <div key={item.approval.id} className="flex items-center gap-3" data-testid={`approval-step-${item.approval.stepOrder}`}>
+                      <div className={`flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold shrink-0 ${
+                        item.approval.status === "APPROVED" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" :
+                        item.approval.status === "REJECTED" ? "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" :
+                        "bg-muted text-muted-foreground"
+                      }`}>
+                        {item.approval.status === "APPROVED" ? <CheckCircle className="w-4 h-4" /> :
+                         item.approval.status === "REJECTED" ? <XCircle className="w-4 h-4" /> :
+                         item.approval.stepOrder}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{item.approval.approverRole}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.approval.status === "PENDING" ? "Awaiting approval" :
+                           item.approver ? `${item.approver.firstName} ${item.approver.lastName}` : "—"}
+                          {item.approval.decidedAt && ` · ${formatDistanceToNow(new Date(item.approval.decidedAt), { addSuffix: true })}`}
+                        </p>
+                        {item.approval.comments && (
+                          <p className="text-xs text-muted-foreground mt-0.5 italic">"{item.approval.comments}"</p>
+                        )}
+                      </div>
+                      <Badge variant={
+                        item.approval.status === "APPROVED" ? "default" :
+                        item.approval.status === "REJECTED" ? "destructive" :
+                        "secondary"
+                      }>
+                        {item.approval.status}
+                      </Badge>
+                      {idx < approvals.length - 1 && <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0 hidden sm:block" />}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Revision History Timeline */}
+          {revisions && revisions.length > 0 && (
+            <>
+              <Separator />
+              <Collapsible>
+                <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium w-full" data-testid="toggle-revision-history">
+                  <History className="w-4 h-4" />
+                  Revision History ({revisions.length})
+                  <ChevronRight className="w-4 h-4 ml-auto transition-transform data-[state=open]:rotate-90" />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-3">
+                  <div className="space-y-3">
+                    {revisions.map((item) => (
+                      <div key={item.revision.id} className="flex gap-3 text-sm" data-testid={`revision-${item.revision.revisionNumber}`}>
+                        <div className="flex flex-col items-center">
+                          <div className="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0" />
+                          <div className="w-px flex-1 bg-border" />
+                        </div>
+                        <div className="flex-1 pb-3 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="text-xs">{item.revision.previousStatus}</Badge>
+                            <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                            <Badge variant={
+                              item.revision.newStatus === "APPROVED" ? "default" :
+                              item.revision.newStatus === "REJECTED" ? "destructive" :
+                              "secondary"
+                            } className="text-xs">{item.revision.newStatus}</Badge>
+                          </div>
+                          {item.revision.description && (
+                            <p className="text-xs text-muted-foreground mt-1">{item.revision.description}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {item.revisedBy ? `${item.revisedBy.firstName} ${item.revisedBy.lastName}` : "System"}
+                            {" · "}
+                            {formatDistanceToNow(new Date(item.revision.createdAt), { addSuffix: true })}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            </>
+          )}
         </div>
 
         <DialogFooter className="flex-wrap gap-2">

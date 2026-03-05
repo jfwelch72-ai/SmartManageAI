@@ -74,7 +74,7 @@ import aiRoutes from "./aiRoutes";
 import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
 import taskRoutes from "./taskRoutes";
-import registerEstimateRoutes from "./estimateRoutes";
+import estimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmTicketRoutes";
 import platformAdminRoutes from "./platformAdminRoutes";
 import calculatorRoutes from "./calculatorRoutes";
@@ -197,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(taskRoutes);
 
   // Register estimate routes
-  registerEstimateRoutes(app);
+  app.use(estimateRoutes);
 
   // Register T&M ticket routes
   registerTMTicketRoutes(app);

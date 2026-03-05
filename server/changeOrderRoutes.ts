@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
-import { changeOrders, insertChangeOrderSchema, users, notifications, projects } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals } from "@shared/schema";
+import { eq, and, desc, sql, max } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
@@ -119,6 +119,37 @@ async function notifyStatusChange(
   }
 }
 
+/**
+ * Creates a revision record for a change order status change
+ */
+async function createRevision(
+  changeOrderId: string,
+  previousStatus: string,
+  newStatus: string,
+  revisedById: string,
+  description?: string,
+  amount?: string | null,
+  changedFields?: Record<string, any>
+) {
+  const [maxRev] = await db
+    .select({ maxNum: sql<number>`COALESCE(MAX(${changeOrderRevisions.revisionNumber}), 0)` })
+    .from(changeOrderRevisions)
+    .where(eq(changeOrderRevisions.changeOrderId, changeOrderId));
+
+  const nextRevision = (maxRev?.maxNum || 0) + 1;
+
+  await db.insert(changeOrderRevisions).values({
+    changeOrderId,
+    revisionNumber: nextRevision,
+    previousStatus,
+    newStatus,
+    amount: amount || null,
+    description: description || `Status changed from ${previousStatus} to ${newStatus}`,
+    changedFields: changedFields ? JSON.stringify(changedFields) : null,
+    revisedById,
+  });
+}
+
 // ====================
 // Change Order State Transition Routes
 // ====================
@@ -171,6 +202,8 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
       res.status(404).json({ error: "Change order not found" });
       return;
     }
+
+    await createRevision(order.id, order.status, "SUBMITTED", req.user!.id, "Submitted to client", order.amount);
 
     await logAudit({
       userId: req.user!.id,
@@ -257,6 +290,8 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
+    await createRevision(order.id, order.status, "SUBMITTED", req.user!.id, "Submitted to client", order.amount);
+
     // Audit log
     await logAudit({
       userId: req.user!.id,
@@ -328,6 +363,8 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       res.status(404).json({ error: "Change order not found" });
       return;
     }
+
+    await createRevision(order.id, order.status, "APPROVED", req.user!.id, "Change order approved", order.amount);
 
     // Audit log
     await logAudit({
@@ -445,6 +482,8 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
+    await createRevision(order.id, order.status, "REJECTED", req.user!.id, `Rejected: ${rejectionReason}`, order.amount, { rejectionReason });
+
     // Audit log
     await logAudit({
       userId: req.user!.id,
@@ -523,6 +562,8 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
+    await createRevision(order.id, order.status, "DRAFT", req.user!.id, reason ? `Returned to draft: ${reason}` : "Returned to draft for revision", order.amount, reason ? { reason } : undefined);
+
     // Audit log
     await logAudit({
       userId: req.user!.id,
@@ -544,6 +585,348 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Return to draft error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Change Order Revision History
+// ====================
+
+router.get("/:id/revisions", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const revisions = await db
+      .select({
+        revision: changeOrderRevisions,
+        revisedBy: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
+      })
+      .from(changeOrderRevisions)
+      .leftJoin(users, eq(changeOrderRevisions.revisedById, users.id))
+      .where(eq(changeOrderRevisions.changeOrderId, req.params.id))
+      .orderBy(desc(changeOrderRevisions.revisionNumber));
+
+    res.json(revisions);
+  } catch (error: any) {
+    console.error("Get revisions error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Change Order Approval Chain
+// ====================
+
+router.get("/:id/approvals", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const approvals = await db
+      .select({
+        approval: changeOrderApprovals,
+        approver: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+        },
+      })
+      .from(changeOrderApprovals)
+      .leftJoin(users, eq(changeOrderApprovals.approverId, users.id))
+      .where(eq(changeOrderApprovals.changeOrderId, req.params.id))
+      .orderBy(changeOrderApprovals.stepOrder);
+
+    res.json(approvals);
+  } catch (error: any) {
+    console.error("Get approvals error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/:id/approve-step", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { comments } = req.body;
+    const result = await getChangeOrderById(req.params.id);
+
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (order.status !== "SUBMITTED") {
+      res.status(400).json({ error: "Change order must be SUBMITTED to approve steps" });
+      return;
+    }
+
+    const pendingApprovals = await db
+      .select()
+      .from(changeOrderApprovals)
+      .where(and(
+        eq(changeOrderApprovals.changeOrderId, req.params.id),
+        eq(changeOrderApprovals.status, "PENDING")
+      ))
+      .orderBy(changeOrderApprovals.stepOrder);
+
+    if (pendingApprovals.length === 0) {
+      res.status(400).json({ error: "No pending approval steps" });
+      return;
+    }
+
+    const currentStep = pendingApprovals[0];
+
+    const [updatedApproval] = await db
+      .update(changeOrderApprovals)
+      .set({
+        status: "APPROVED",
+        approverId: req.user!.id,
+        comments: comments ? sanitizeText(comments) : null,
+        decidedAt: new Date(),
+      })
+      .where(eq(changeOrderApprovals.id, currentStep.id))
+      .returning();
+
+    await createRevision(
+      order.id,
+      order.status,
+      order.status,
+      req.user!.id,
+      `Approval step ${currentStep.stepOrder} approved by ${currentStep.approverRole}`,
+      order.amount,
+      { approvalStep: currentStep.stepOrder, approverRole: currentStep.approverRole }
+    );
+
+    const remainingPending = await db
+      .select()
+      .from(changeOrderApprovals)
+      .where(and(
+        eq(changeOrderApprovals.changeOrderId, req.params.id),
+        eq(changeOrderApprovals.status, "PENDING")
+      ));
+
+    if (remainingPending.length === 0) {
+      const [updatedOrder] = await db
+        .update(changeOrders)
+        .set({
+          status: "APPROVED",
+          approvedById: req.user!.id,
+          approvedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(changeOrders.id, req.params.id))
+        .returning();
+
+      await createRevision(order.id, "SUBMITTED", "APPROVED", req.user!.id, "All approval steps completed — change order approved", order.amount);
+
+      await logAudit({
+        userId: req.user!.id,
+        action: "APPROVE",
+        entityType: "changeOrder",
+        entityId: order.id,
+        oldValue: JSON.stringify({ status: "SUBMITTED" }),
+        newValue: JSON.stringify({ status: "APPROVED" }),
+      }, req);
+
+      await notifyStatusChange(
+        updatedOrder || order,
+        "APPROVED",
+        `Change order ${order.changeOrderNumber} has been fully approved`,
+        true
+      );
+
+      res.json({ approval: updatedApproval, order: updatedOrder, allApproved: true });
+    } else {
+      res.json({ approval: updatedApproval, allApproved: false, remainingSteps: remainingPending.length });
+    }
+  } catch (error: any) {
+    console.error("Approve step error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const rejectionReason = req.body.rejectionReason ? sanitizeText(req.body.rejectionReason) : undefined;
+
+    if (!rejectionReason || rejectionReason.trim().length === 0) {
+      res.status(400).json({ error: "Rejection reason is required" });
+      return;
+    }
+
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (order.status !== "SUBMITTED") {
+      res.status(400).json({ error: "Change order must be SUBMITTED to reject steps" });
+      return;
+    }
+
+    const pendingApprovals = await db
+      .select()
+      .from(changeOrderApprovals)
+      .where(and(
+        eq(changeOrderApprovals.changeOrderId, req.params.id),
+        eq(changeOrderApprovals.status, "PENDING")
+      ))
+      .orderBy(changeOrderApprovals.stepOrder);
+
+    if (pendingApprovals.length === 0) {
+      res.status(400).json({ error: "No pending approval steps" });
+      return;
+    }
+
+    const currentStep = pendingApprovals[0];
+
+    await db
+      .update(changeOrderApprovals)
+      .set({
+        status: "REJECTED",
+        approverId: req.user!.id,
+        comments: rejectionReason,
+        decidedAt: new Date(),
+      })
+      .where(eq(changeOrderApprovals.id, currentStep.id));
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "DRAFT",
+        rejectionReason,
+        submittedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    await db
+      .update(changeOrderApprovals)
+      .set({ status: "PENDING", approverId: null, comments: null, decidedAt: null })
+      .where(and(
+        eq(changeOrderApprovals.changeOrderId, req.params.id),
+        eq(changeOrderApprovals.status, "PENDING")
+      ));
+
+    await createRevision(
+      order.id, order.status, "DRAFT", req.user!.id,
+      `Rejected at step ${currentStep.stepOrder} (${currentStep.approverRole}): ${rejectionReason}`,
+      order.amount, { rejectionReason, rejectedStep: currentStep.stepOrder }
+    );
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "REJECT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "DRAFT", rejectionReason }),
+    }, req);
+
+    await notifyStatusChange(
+      updatedOrder || order,
+      "DRAFT",
+      `Change order ${order.changeOrderNumber} rejected at approval step: ${rejectionReason}`,
+      true
+    );
+
+    res.json({ order: updatedOrder, rejectedStep: currentStep.stepOrder });
+  } catch (error: any) {
+    console.error("Reject step error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const chainSchema = z.object({
+      steps: z.array(z.object({
+        approverRole: z.string(),
+        approverId: z.string().optional(),
+      })).min(1),
+    });
+
+    const validation = chainSchema.safeParse(req.body);
+    if (!validation.success) {
+      res.status(400).json({ error: "Invalid approval chain", details: validation.error.errors });
+      return;
+    }
+
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    await db.delete(changeOrderApprovals).where(eq(changeOrderApprovals.changeOrderId, req.params.id));
+
+    const approvalEntries = validation.data.steps.map((step, idx) => ({
+      changeOrderId: req.params.id,
+      approverRole: step.approverRole,
+      approverId: step.approverId || null,
+      status: "PENDING" as const,
+      stepOrder: idx + 1,
+    }));
+
+    await db.insert(changeOrderApprovals).values(approvalEntries);
+
+    await db.update(changeOrders).set({
+      approvalChainJson: JSON.stringify(validation.data.steps),
+      updatedAt: new Date(),
+    }).where(eq(changeOrders.id, req.params.id));
+
+    res.json({ message: "Approval chain configured", steps: approvalEntries.length });
+  } catch (error: any) {
+    console.error("Setup approval chain error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

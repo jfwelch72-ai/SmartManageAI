@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import { Router } from "express";
 import { db } from "./db";
 import { 
   estimates, 
@@ -107,10 +107,10 @@ function normalizeLineItemData(data: any): any {
   };
 }
 
-export function registerEstimateRoutes(app: Express) {
-  
-  // Get active estimate for a project
-  app.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
+const router = Router();
+
+// Get active estimate for a project
+router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -198,7 +198,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Create new estimate for project
-  app.post("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
       console.log("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
       const { projectId } = req.params;
@@ -247,7 +247,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Get active estimate for a bid
-  app.get("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { bidId } = req.params;
 
@@ -323,7 +323,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Create new estimate for bid
-  app.post("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/bids/:bidId/estimate", requireAuth, async (req: AuthRequest, res) => {
     try {
       console.log("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
       const { bidId } = req.params;
@@ -372,7 +372,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Import takeoff quantities into estimate
-  app.post("/api/projects/:projectId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/projects/:projectId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
       const { estimateId, categoryIds } = req.body as { estimateId: string, categoryIds: string[] };
@@ -526,7 +526,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Production rate labor estimation — must be before /:estimateId routes to avoid route shadowing
-  app.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -584,7 +584,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Add manual line item
-  app.post("/api/estimates/:estimateId/line-items", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const lineItem = req.body;
@@ -681,7 +681,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Update line item
-  app.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
+  router.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
       const updates = req.body;
@@ -786,7 +786,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Delete line item
-  app.delete("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
 
@@ -817,7 +817,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // Approve estimate and sync to project budget, create procurement items and scope items
-  app.post("/api/estimates/:estimateId/approve", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/approve", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const userId = req.user!.id;
@@ -935,7 +935,7 @@ export function registerEstimateRoutes(app: Express) {
   });
 
   // AI CFO estimate analysis
-  app.post("/api/estimates/:estimateId/analyze", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/analyze", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
 
@@ -1104,7 +1104,7 @@ Provide comprehensive financial analysis and recommendations.`
     }
   });
 
-  app.get("/api/estimates/production-rates/suggestions", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/production-rates/suggestions", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -1158,7 +1158,7 @@ Provide comprehensive financial analysis and recommendations.`
     }
   });
 
-  app.get("/api/estimates/production-rates/lookup", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/production-rates/lookup", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -1217,7 +1217,7 @@ Provide comprehensive financial analysis and recommendations.`
 
   // Unified SOW Tracking: Get production rate by organizationSowItemId
   // This provides more reliable historical data than description-based matching
-  app.get("/api/estimates/production-rates/by-sow-item/:sowItemId", requireAuth, async (req: AuthRequest, res) => {
+  router.get("/api/estimates/production-rates/by-sow-item/:sowItemId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
       
@@ -1284,7 +1284,7 @@ Provide comprehensive financial analysis and recommendations.`
     }
   });
 
-  app.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/auto-populate-labor", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId } = req.params;
       const { lineItemId, applyRate } = req.body;
@@ -1403,7 +1403,7 @@ Provide comprehensive financial analysis and recommendations.`
   });
 
   // Sync material calculator results to estimate line item
-  app.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, async (req: AuthRequest, res) => {
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/sync-materials", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { estimateId, lineItemId } = req.params;
       
@@ -1485,6 +1485,5 @@ Provide comprehensive financial analysis and recommendations.`
       res.status(500).json({ error: "Failed to sync material calculations" });
     }
   });
-}
 
-export default registerEstimateRoutes;
+export default router;

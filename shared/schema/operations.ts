@@ -740,6 +740,7 @@ export const changeOrders = pgTable("change_orders", {
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
+  approvalChainJson: text("approval_chain_json"),
   attachmentsJson: text("attachments_json"),
   // Standardized Scope of Work fields (matches estimating sheets for production rate tracking)
   workTypeId: varchar("work_type_id"),
@@ -794,6 +795,38 @@ export const changeOrderMaterialEntries = pgTable("change_order_material_entries
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
   vendorPricingId: varchar("vendor_pricing_id"), // Reference to catalog item if applied
 });
+
+// Change Order Revisions - tracks history of changes for audit trail
+export const changeOrderRevisions = pgTable("change_order_revisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  revisionNumber: integer("revision_number").notNull(),
+  previousStatus: text("previous_status").notNull(),
+  newStatus: text("new_status").notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }),
+  description: text("description"),
+  changedFields: text("changed_fields"),
+  revisedById: varchar("revised_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  changeOrderIdIdx: index("change_order_revisions_co_id_idx").on(table.changeOrderId),
+}));
+
+// Change Order Approvals - multi-level approval chain
+export const changeOrderApprovals = pgTable("change_order_approvals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  approverRole: text("approver_role").notNull(),
+  approverId: varchar("approver_id").references(() => users.id),
+  status: text("status").notNull().default("PENDING"),
+  stepOrder: integer("step_order").notNull(),
+  comments: text("comments"),
+  decidedAt: timestamp("decided_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  changeOrderIdIdx: index("change_order_approvals_co_id_idx").on(table.changeOrderId),
+  statusIdx: index("change_order_approvals_status_idx").on(table.status),
+}));
 
 // Project Delays table - tracks schedule delays with change order integration
 export const projectDelays = pgTable("project_delays", {
@@ -1561,6 +1594,22 @@ export type ChangeOrderEquipmentEntry = typeof changeOrderEquipmentEntries.$infe
 
 export type InsertChangeOrderMaterialEntry = z.infer<typeof insertChangeOrderMaterialEntrySchema>;
 export type ChangeOrderMaterialEntry = typeof changeOrderMaterialEntries.$inferSelect;
+
+// Change Order Revisions schema
+export const insertChangeOrderRevisionSchema = createInsertSchema(changeOrderRevisions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertChangeOrderRevision = z.infer<typeof insertChangeOrderRevisionSchema>;
+export type ChangeOrderRevision = typeof changeOrderRevisions.$inferSelect;
+
+// Change Order Approvals schema
+export const insertChangeOrderApprovalSchema = createInsertSchema(changeOrderApprovals).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertChangeOrderApproval = z.infer<typeof insertChangeOrderApprovalSchema>;
+export type ChangeOrderApproval = typeof changeOrderApprovals.$inferSelect;
 
 // Project Delays schema
 export const insertProjectDelaySchema = createInsertSchema(projectDelays).omit({

@@ -2,50 +2,15 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
 import { useState } from "react";
 import { useBid } from "@/hooks/use-data";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Slider } from "@/components/ui/slider";
-import { Plus, FileText, DollarSign, TrendingUp, CheckCircle, Calculator, Layers, Mountain, Tag, Store } from "lucide-react";
+import { FileText, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
-import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
-import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
-import { UomSelect } from "@/components/UomSelect";
-import MaterialCalculator, { MaterialJobTotals, getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
-import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
-import { LaborRateSelector } from "@/components/LaborRateSelector";
-import { EquipmentRateSelector, type EquipmentSelectionData } from "@/components/EquipmentRateSelector";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogDescription, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger 
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
+import { MaterialJobTotals } from "@/components/MaterialCalculator";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table";
 import type { 
   Estimate, 
   EstimateLineItem, 
@@ -53,95 +18,23 @@ import type {
 } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditBids } from "@/lib/rbac";
+import type { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import type { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
 
-const lineItemSchema = z.object({
-  description: z.string().min(1, "Description is required"),
-  category: z.string().min(1, "Category is required"),
-  unit: z.string().min(1, "Unit is required"),
-  quantity: z.coerce.number().min(0, "Quantity must be positive"),
-  materialCost: z.coerce.number().min(0).default(0),
-  laborCost: z.coerce.number().min(0).default(0),
-  laborHours: z.coerce.number().min(0).default(0),
-  jobClassificationId: z.string().optional(),
-  laborRateUsed: z.coerce.number().min(0).optional(),
-  equipmentHours: z.coerce.number().min(0).default(0),
-  equipmentCost: z.coerce.number().min(0).default(0),
-  equipmentSource: z.enum(["OWNED", "RENTAL", "MANUAL"]).optional(),
-  selectedEquipmentId: z.string().optional(),
-  equipmentRateUsed: z.coerce.number().min(0).optional(),
-  consumablesCost: z.coerce.number().min(0).default(0),
-  subcontractCost: z.coerce.number().min(0).default(0),
-  subcontractorQuoteId: z.string().optional(),
-  overheadAllocation: z.coerce.number().min(0).default(0),
-  profitAllocation: z.coerce.number().min(0).default(0),
-  notes: z.string().optional(),
-  scopeWorkTypeId: z.string().optional(),
-});
-
-type LineItemFormValues = z.infer<typeof lineItemSchema>;
-
-type CatalogPriceItem = {
-  id: string;
-  itemName: string;
-  itemCode: string | null;
-  category: string;
-  description: string | null;
-  unit: string;
-  unitPrice: string;
-  minimumOrder: number | null;
-  deliveryFee: string | null;
-  effectiveQuarter: string;
-  leadTimeDays: number | null;
-  vendorId: string;
-  vendorName: string;
-  vendorType: string;
-};
-
-function buildMaterialCalculatorPayload(data: MaterialCalculatorData) {
-  return {
-    concreteDepthInches: data.concreteDepthInches || undefined,
-    dimensionWidthInches: data.dimensionWidthInches || undefined,
-    dimensionHeightInches: data.dimensionHeightInches || undefined,
-    concreteWasteFactor: data.concreteWasteFactor || "10",
-    calculatedConcreteYards: data.calculatedConcreteYards || undefined,
-    requiresStoneBase: data.requiresStoneBase || false,
-    stoneType: data.requiresStoneBase ? (data.stoneType || "CRUSHED_STONE") : undefined,
-    stoneSize: data.requiresStoneBase ? (data.stoneSize || "#57") : undefined,
-    stoneDepthInches: data.requiresStoneBase ? (data.stoneDepthInches || undefined) : undefined,
-    stoneWasteFactor: data.requiresStoneBase ? (data.stoneWasteFactor || "10") : undefined,
-    calculatedStoneTons: data.requiresStoneBase ? (data.calculatedStoneTons || undefined) : undefined,
-    requiresExcavation: data.requiresExcavation || false,
-    excavationDepthInches: data.requiresExcavation ? (data.excavationDepthInches || undefined) : undefined,
-    excavationWidthInches: data.requiresExcavation ? (data.excavationWidthInches || undefined) : undefined,
-    excavationSwellFactor: data.requiresExcavation ? (data.excavationSwellFactor || "25") : undefined,
-    calculatedExcavationYards: data.requiresExcavation ? (data.calculatedExcavationYards || undefined) : undefined,
-    requiresWireMesh: data.requiresWireMesh || false,
-    wireMeshType: data.requiresWireMesh ? (data.wireMeshType || "6x6_W1.4") : undefined,
-    wireMeshWasteFactor: data.requiresWireMesh ? (data.wireMeshWasteFactor || "10") : undefined,
-    calculatedWireMeshRolls: data.requiresWireMesh ? (data.calculatedWireMeshRolls || undefined) : undefined,
-    requiresRebar: data.requiresRebar || false,
-    rebarSize: data.requiresRebar ? (data.rebarSize || "#4") : undefined,
-    rebarFabType: data.requiresRebar ? (data.rebarFabType || "FIELD_TIED") : undefined,
-    rebarSpacingInches: data.requiresRebar ? (data.rebarSpacingInches || "12") : undefined,
-    rebarWasteFactor: data.requiresRebar ? (data.rebarWasteFactor || "10") : undefined,
-    calculatedRebarCount: data.requiresRebar ? (data.calculatedRebarCount || undefined) : undefined,
-    calculatedRebarLinearFeet: data.requiresRebar ? (data.calculatedRebarLinearFeet || undefined) : undefined,
-    requiresDowels: data.requiresDowels || false,
-    dowelSpacingInches: data.requiresDowels ? (data.dowelSpacingInches || "12") : undefined,
-    jointLengthFeet: data.requiresDowels ? (data.jointLengthFeet || undefined) : undefined,
-    calculatedDowelCount: data.requiresDowels ? (data.calculatedDowelCount || undefined) : undefined,
-    requiresSealer: data.requiresSealer || false,
-    sealerType: data.requiresSealer ? (data.sealerType || "CURE_SEAL") : undefined,
-    sealerCoats: data.requiresSealer ? (data.sealerCoats || "1") : undefined,
-    sealerWasteFactor: data.requiresSealer ? (data.sealerWasteFactor || "10") : undefined,
-    calculatedSealerGallons: data.requiresSealer ? (data.calculatedSealerGallons || undefined) : undefined,
-    requiresUnderlayment: data.requiresUnderlayment || false,
-    underlaymentType: data.requiresUnderlayment ? (data.underlaymentType || "6MIL_POLY") : undefined,
-    underlaymentOverlapInches: data.requiresUnderlayment ? (data.underlaymentOverlapInches || "6") : undefined,
-    underlaymentWasteFactor: data.requiresUnderlayment ? (data.underlaymentWasteFactor || "10") : undefined,
-    calculatedUnderlaymentSF: data.requiresUnderlayment ? (data.calculatedUnderlaymentSF || undefined) : undefined,
-  };
-}
+import {
+  lineItemSchema,
+  type LineItemFormValues,
+  type CatalogPriceItem,
+  type WorkCategory,
+  buildMaterialCalculatorPayload,
+  normalizeUnit,
+  detectMaterialTypeFromName,
+  LINE_ITEM_DEFAULT_VALUES,
+} from "@/lib/estimate-utils";
+import { EstimateSummaryCards } from "@/components/estimate/EstimateSummaryCards";
+import { MarkupCalculatorCard } from "@/components/estimate/MarkupCalculator";
+import { LineItemFormDialog } from "@/components/estimate/LineItemForm";
+import { LineItemsTable } from "@/components/estimate/LineItemsTable";
 
 export default function BidEstimate() {
   const [, params] = useRoute("/bids/:code/estimate");
@@ -149,9 +42,7 @@ export default function BidEstimate() {
   const bidCode = params?.code || "";
   const { data: bid, isLoading: bidLoading } = useBid(bidCode);
   const bidId = bid?.id;
-  const { user, logout, organizationName } = useAuth();
-  
-  // Check if user has estimate editing access (Admin, Manager, Estimator only)
+  const { user } = useAuth();
   const hasEstimateAccess = canEditBids(user?.role);
   
   const { toast } = useToast();
@@ -170,7 +61,6 @@ export default function BidEstimate() {
   const [useHierarchicalBuilder, setUseHierarchicalBuilder] = useState<boolean>(true);
   const [catalogPricedMaterials, setCatalogPricedMaterials] = useState<Set<string>>(new Set());
 
-  // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
     estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
   }>({
@@ -180,55 +70,29 @@ export default function BidEstimate() {
 
   const estimate = estimateData?.estimate || null;
   
-  // Fetch subcontractor quotes for the bid
   const { data: subcontractorQuotes = [] } = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidId, "subcontractor-quotes"],
     enabled: !!bidId,
   });
   
-  // Fetch organization-specific work categories based on trade type
-  type WorkCategoryItem = {
-    id: string;
-    name: string;
-    code: string;
-    unit: string | null;
-    description: string | null;
-  };
-  
-  type WorkCategory = {
-    value: string;
-    label: string;
-    itemCount: number;
-    isDefault?: boolean;
-    items: WorkCategoryItem[];
-  };
-  
   const { data: workCategories = [] } = useQuery<WorkCategory[]>({
     queryKey: ["/api/organization/work-categories"],
     enabled: hasEstimateAccess,
-    staleTime: 10 * 60 * 1000, // 10 minutes - categories don't change often
+    staleTime: 10 * 60 * 1000,
   });
   
-  // Fetch catalog pricing suggestions for the selected category
   const { data: catalogPrices = [] } = useQuery<CatalogPriceItem[]>({
     queryKey: [`/api/vendor-pricing/search?category=${selectedCatalogCategory}`],
     enabled: !!selectedCatalogCategory && hasEstimateAccess,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
   
   const totals = estimate?.totals || {
-    materialCost: 0,
-    laborCost: 0,
-    laborHours: 0,
-    equipmentCost: 0,
-    consumablesCost: 0,
-    subcontractCost: 0,
-    overheadAllocation: 0,
-    profitAllocation: 0,
-    totalCost: 0,
+    materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
+    consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
+    profitAllocation: 0, totalCost: 0,
   };
 
-  // Add line item mutation
   const addLineItemMutation = useMutation({
     mutationFn: (data: LineItemFormValues & { estimateId: string }) => 
       apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data),
@@ -245,7 +109,6 @@ export default function BidEstimate() {
     },
   });
 
-  // Approve estimate mutation
   const approveEstimateMutation = useMutation({
     mutationFn: (estimateId: string) => 
       apiRequest("POST", `/api/estimates/${estimateId}/approve`, {}),
@@ -259,7 +122,6 @@ export default function BidEstimate() {
     },
   });
 
-  // Delete line item mutation
   const deleteLineItemMutation = useMutation({
     mutationFn: ({ estimateId, lineItemId }: { estimateId: string, lineItemId: string }) => 
       apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}`, {}),
@@ -272,7 +134,6 @@ export default function BidEstimate() {
     },
   });
 
-  // Edit line item mutation
   const editLineItemMutation = useMutation({
     mutationFn: ({ estimateId, lineItemId, data }: { estimateId: string, lineItemId: string, data: any }) => 
       apiRequest("PUT", `/api/estimates/${estimateId}/line-items/${lineItemId}`, data),
@@ -291,46 +152,20 @@ export default function BidEstimate() {
 
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
-    defaultValues: {
-      description: "",
-      category: "",
-      unit: "",
-      quantity: 0,
-      materialCost: 0,
-      laborCost: 0,
-      laborHours: 0,
-      jobClassificationId: undefined,
-      laborRateUsed: undefined,
-      equipmentHours: 0,
-      equipmentCost: 0,
-      equipmentSource: undefined,
-      selectedEquipmentId: undefined,
-      equipmentRateUsed: undefined,
-      consumablesCost: 0,
-      subcontractCost: 0,
-      overheadAllocation: 0,
-      profitAllocation: 0,
-      notes: "",
-      scopeWorkTypeId: undefined,
-    },
+    defaultValues: LINE_ITEM_DEFAULT_VALUES,
   });
 
-  // Handle standardized scope selection
   const handleScopeSelect = (data: ScopeSelectionData) => {
     setSelectedScopeData(data);
     form.setValue("description", data.canonicalName);
     form.setValue("unit", data.unit);
     form.setValue("scopeWorkTypeId", data.workTypeId);
     
-    // Find matching category from organization's work categories
-    // The backend returns legacy enum values (CONCRETE, EXCAVATION, etc.) as value
-    // Try to find a category whose label matches the scope's categoryName
     let matchedCategory = workCategories.find(c => 
       c.label.toLowerCase() === data.categoryName.toLowerCase() ||
       c.label.toLowerCase().includes(data.categoryName.toLowerCase())
     );
     
-    // Fallback: use the default category (marked with isDefault flag) or 'OTHER'
     const defaultCategory = workCategories.find(c => c.isDefault);
     const mappedCategory = matchedCategory?.value || defaultCategory?.value || 'OTHER';
     
@@ -338,263 +173,79 @@ export default function BidEstimate() {
     setSelectedCatalogCategory(mappedCategory);
   };
   
-  // Handle category change to trigger catalog lookup
   const handleCategoryChange = (value: string) => {
     form.setValue("category", value);
     setSelectedCatalogCategory(value);
   };
-  
-  // Normalize unit strings for consistent matching across catalog variants
-  const normalizeUnit = (unit: string): string => {
-    const normalized = (unit || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-    // Map various unit labels to standard abbreviations
-    const unitMap: Record<string, string> = {
-      // Cubic yards (concrete, excavation)
-      "CY": "CY", "CUBICYARD": "CY", "CUBICYARDS": "CY", "YARD": "CY", "YARDS": "CY", 
-      "YD": "CY", "YDS": "CY", "CUYD": "CY", "CUYDS": "CY", "CUBYD": "CY", "CUBYDS": "CY",
-      "CUBICYD": "CY", "CUBICYDS": "CY", "CUD": "CY", "CUDS": "CY", "YARDCUBIC": "CY",
-      // Tons (stone, aggregate)
-      "TON": "TON", "TONS": "TON", "TN": "TON", "TNS": "TON",
-      // Rolls (wire mesh)
-      "ROLL": "ROLL", "ROLLS": "ROLL", "RL": "ROLL", "RLS": "ROLL",
-      // Each/pieces (rebar, dowels)
-      "EA": "EA", "EACH": "EA", "PC": "EA", "PCS": "EA", "PIECE": "EA", "PIECES": "EA", 
-      "BAR": "EA", "BARS": "EA", "UNIT": "EA", "UNITS": "EA",
-      // Linear feet (rebar)
-      "LF": "LF", "LINEARFOOT": "LF", "LINEARFEET": "LF", "FT": "LF", "FEET": "LF", "FOOT": "LF",
-      "LINFT": "LF", "LINFOOT": "LF", "LINFEET": "LF",
-      // Gallons (sealer)
-      "GAL": "GAL", "GALLON": "GAL", "GALLONS": "GAL", "GALS": "GAL",
-      // Dowels (specific unit)
-      "DOWEL": "DOWEL", "DOWELS": "DOWEL",
-      // Square feet (underlayment)
-      "SF": "SF", "SQFT": "SF", "SQUAREFOOT": "SF", "SQUAREFEET": "SF", "SQF": "SF",
-    };
-    
-    // Check direct match first
-    if (unitMap[normalized]) {
-      return unitMap[normalized];
-    }
-    
-    // Rule-based matching for variants not in the map
-    // Cubic yard variants: starts with CU and ends with Y/YD/YDS
-    if ((normalized.startsWith("CU") || normalized.startsWith("CUBIC")) && 
-        (normalized.endsWith("Y") || normalized.endsWith("YD") || normalized.endsWith("YDS") || normalized.endsWith("YARD") || normalized.endsWith("YARDS"))) {
-      return "CY";
-    }
-    // Square foot variants: starts with SQ and ends with F/FT/FOOT/FEET
-    if ((normalized.startsWith("SQ") || normalized.startsWith("SQUARE")) && 
-        (normalized.endsWith("F") || normalized.endsWith("FT") || normalized.endsWith("FOOT") || normalized.endsWith("FEET"))) {
-      return "SF";
-    }
-    // Linear foot variants: starts with LIN and ends with F/FT/FOOT/FEET
-    if (normalized.startsWith("LIN") && 
-        (normalized.endsWith("F") || normalized.endsWith("FT") || normalized.endsWith("FOOT") || normalized.endsWith("FEET"))) {
-      return "LF";
-    }
-    
-    return normalized;
-  };
-  
-  // Detect material type from catalog item name/description
-  const detectMaterialTypeFromName = (itemName: string): string | null => {
-    const name = (itemName || "").toLowerCase();
-    if (name.includes("dowel")) return "dowels";
-    if (name.includes("rebar") || name.includes("re-bar") || name.includes("reinforcing bar")) return "rebar";
-    if (name.includes("excavat") || name.includes("haul") || name.includes("backfill") || name.includes("dirt") || name.includes("soil")) return "excavation";
-    if (name.includes("concrete") || name.includes("readymix") || name.includes("ready-mix") || name.includes("ready mix")) return "concrete";
-    if (name.includes("stone") || name.includes("gravel") || name.includes("aggregate") || name.includes("base")) return "stone";
-    if (name.includes("mesh") || name.includes("wire")) return "wireMesh";
-    if (name.includes("sealer") || name.includes("seal")) return "sealer";
-    if (name.includes("underlayment") || name.includes("vapor barrier") || name.includes("membrane")) return "underlayment";
-    return null;
-  };
-  
-  // Apply catalog pricing to form - uses calculated quantities from Material Calculator
+
   const applyCatalogPrice = (item: CatalogPriceItem) => {
     const scopeQuantity = form.getValues("quantity") || 1;
     const unitPrice = parseFloat(item.unitPrice);
-    const normalizedUnit = normalizeUnit(item.unit || "");
+    const normalizedItemUnit = normalizeUnit(item.unit || "");
     
-    // First, try to detect material type from catalog item name (more accurate)
     const nameBasedMaterialType = detectMaterialTypeFromName(item.itemName);
     
-    // Map catalog item unit to the correct calculated quantity from Material Calculator
-    // This ensures we multiply unit price by the CALCULATED quantity, not the scope quantity
     let materialQuantity = scopeQuantity;
     let quantitySource = "scope";
-    let materialType: string | null = null; // Track which material type was priced
+    let materialType: string | null = null;
     
-    // If we detected material type from name, use it with appropriate quantity
     if (nameBasedMaterialType) {
-      const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
-      const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
-      const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
-      const meshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
-      const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
-      const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
-      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
-      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
+      const quantityMap: Record<string, { field: string; source: string }> = {
+        concrete: { field: "calculatedConcreteYards", source: "calculated concrete" },
+        excavation: { field: "calculatedExcavationYards", source: "calculated excavation" },
+        stone: { field: "calculatedStoneTons", source: "calculated stone" },
+        wireMesh: { field: "calculatedWireMeshRolls", source: "calculated wire mesh" },
+        rebar: { field: "calculatedRebarCount", source: "calculated rebar" },
+        dowels: { field: "calculatedDowelCount", source: "calculated dowels" },
+        sealer: { field: "calculatedSealerGallons", source: "calculated sealer" },
+        underlayment: { field: "calculatedUnderlaymentSF", source: "calculated underlayment" },
+      };
       
-      switch (nameBasedMaterialType) {
-        case "concrete":
-          if (concreteYards > 0) {
-            materialQuantity = concreteYards;
-            quantitySource = "calculated concrete";
-            materialType = "concrete";
-          }
-          break;
-        case "excavation":
-          if (excavationYards > 0) {
-            materialQuantity = excavationYards;
-            quantitySource = "calculated excavation";
-            materialType = "excavation";
-          }
-          break;
-        case "stone":
-          if (stoneTons > 0) {
-            materialQuantity = stoneTons;
-            quantitySource = "calculated stone";
-            materialType = "stone";
-          }
-          break;
-        case "wireMesh":
-          if (meshRolls > 0) {
-            materialQuantity = meshRolls;
-            quantitySource = "calculated wire mesh";
-            materialType = "wireMesh";
-          }
-          break;
-        case "rebar":
-          if (rebarCount > 0) {
-            materialQuantity = rebarCount;
-            quantitySource = "calculated rebar";
-            materialType = "rebar";
-          }
-          break;
-        case "dowels":
-          if (dowelCount > 0) {
-            materialQuantity = dowelCount;
-            quantitySource = "calculated dowels";
-            materialType = "dowels";
-          }
-          break;
-        case "sealer":
-          if (sealerGallons > 0) {
-            materialQuantity = sealerGallons;
-            quantitySource = "calculated sealer";
-            materialType = "sealer";
-          }
-          break;
-        case "underlayment":
-          if (underlaymentSF > 0) {
-            materialQuantity = underlaymentSF;
-            quantitySource = "calculated underlayment";
-            materialType = "underlayment";
-          }
-          break;
+      const mapping = quantityMap[nameBasedMaterialType];
+      if (mapping) {
+        const calcValue = parseFloat((materialCalcData as any)[mapping.field] || "0");
+        if (calcValue > 0) {
+          materialQuantity = calcValue;
+          quantitySource = mapping.source;
+          materialType = nameBasedMaterialType;
+        }
       }
     }
     
-    // Fallback to unit-based detection if name didn't match or quantity was 0
     if (!materialType) {
-      // Concrete materials (priced per CY)
-      if (normalizedUnit === "CY") {
-        const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
-        const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
-        // Use concrete if available, otherwise excavation, otherwise fall back
-        if (concreteYards > 0) {
-          materialQuantity = concreteYards;
-          quantitySource = "calculated concrete";
-          materialType = "concrete";
-        } else if (excavationYards > 0) {
-          materialQuantity = excavationYards;
-          quantitySource = "calculated excavation";
-          materialType = "excavation";
-        }
-      }
-      // Stone/aggregate materials (priced per TON)
-      else if (normalizedUnit === "TON") {
-        const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
-        if (stoneTons > 0) {
-          materialQuantity = stoneTons;
-          quantitySource = "calculated stone";
-          materialType = "stone";
-        }
-      }
-      // Wire mesh (priced per ROLL)
-      else if (normalizedUnit === "ROLL") {
-        const meshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
-        if (meshRolls > 0) {
-          materialQuantity = meshRolls;
-          quantitySource = "calculated wire mesh";
-          materialType = "wireMesh";
-        }
-      }
-      // EA unit - check item name to determine if dowels or rebar
-      else if (normalizedUnit === "EA") {
-        const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
-        const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
-        // Prefer dowels if only dowels have quantity, otherwise rebar
-        if (dowelCount > 0 && rebarCount === 0) {
-          materialQuantity = dowelCount;
-          quantitySource = "calculated dowels";
-          materialType = "dowels";
-        } else if (rebarCount > 0) {
-          materialQuantity = rebarCount;
-          quantitySource = "calculated rebar";
-          materialType = "rebar";
-        } else if (dowelCount > 0) {
-          materialQuantity = dowelCount;
-          quantitySource = "calculated dowels";
-          materialType = "dowels";
-        }
-      }
-      // Rebar (priced per LF)
-      else if (normalizedUnit === "LF") {
-        const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
-        if (rebarFeet > 0) {
-          materialQuantity = rebarFeet;
-          quantitySource = "calculated rebar LF";
-          materialType = "rebar";
-        }
-      }
-      // Sealer (priced per GAL)
-      else if (normalizedUnit === "GAL") {
-        const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
-        if (sealerGallons > 0) {
-          materialQuantity = sealerGallons;
-          quantitySource = "calculated sealer";
-          materialType = "sealer";
-        }
-      }
-      // Dowels (priced per DOWEL unit specifically)
-      else if (normalizedUnit === "DOWEL") {
-        const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
-        if (dowelCount > 0) {
-          materialQuantity = dowelCount;
-          quantitySource = "calculated dowels";
-          materialType = "dowels";
-        }
-      }
-      // SF-priced items use underlayment calculation or scope quantity
-      else if (normalizedUnit === "SF") {
-        const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
-        if (underlaymentSF > 0) {
-          materialQuantity = underlaymentSF;
-          quantitySource = "calculated underlayment";
-          materialType = "underlayment";
+      const unitToFieldMap: Record<string, { field: string; fallback?: string; source: string; fallbackSource?: string }> = {
+        CY: { field: "calculatedConcreteYards", fallback: "calculatedExcavationYards", source: "calculated concrete", fallbackSource: "calculated excavation" },
+        TON: { field: "calculatedStoneTons", source: "calculated stone" },
+        ROLL: { field: "calculatedWireMeshRolls", source: "calculated wire mesh" },
+        EA: { field: "calculatedRebarCount", source: "calculated rebar" },
+        LF: { field: "calculatedRebarLinearFeet", source: "calculated rebar LF" },
+        GAL: { field: "calculatedSealerGallons", source: "calculated sealer" },
+        DOWEL: { field: "calculatedDowelCount", source: "calculated dowels" },
+        SF: { field: "calculatedUnderlaymentSF", source: "calculated underlayment" },
+      };
+      
+      const mapping = unitToFieldMap[normalizedItemUnit];
+      if (mapping) {
+        const calcValue = parseFloat((materialCalcData as any)[mapping.field] || "0");
+        if (calcValue > 0) {
+          materialQuantity = calcValue;
+          quantitySource = mapping.source;
+          materialType = mapping.source.replace("calculated ", "");
+        } else if (mapping.fallback) {
+          const fallbackValue = parseFloat((materialCalcData as any)[mapping.fallback] || "0");
+          if (fallbackValue > 0) {
+            materialQuantity = fallbackValue;
+            quantitySource = mapping.fallbackSource || mapping.source;
+            materialType = (mapping.fallbackSource || mapping.source).replace("calculated ", "");
+          }
         }
       }
     }
     
     const totalMaterialCost = unitPrice * materialQuantity;
-    
-    // Add to existing material cost instead of replacing
     const currentMaterialCost = Number(form.getValues("materialCost")) || 0;
     form.setValue("materialCost", currentMaterialCost + totalMaterialCost);
     
-    // Track which material type was priced via catalog
     if (materialType) {
       setCatalogPricedMaterials(prev => {
         const newSet = new Set(prev);
@@ -603,21 +254,14 @@ export default function BidEstimate() {
       });
     }
     
-    // Don't change the unit - keep scope unit (SF) separate from material unit (CY)
-    // The line item quantity is the scope quantity, material cost uses calculated quantity
-    
     const description = quantitySource === "scope" 
       ? `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} = $${totalMaterialCost.toFixed(2)}`
       : `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} ${item.unit} (${quantitySource}) = $${totalMaterialCost.toFixed(2)}`;
     
-    toast({
-      title: "Catalog price applied",
-      description
-    });
+    toast({ title: "Catalog price applied", description });
   };
   
-  // Reset form and scope selection when dialog closes
-  const handleDialogClose = (open: boolean) => {
+  const handleAddDialogClose = (open: boolean) => {
     setAddLineItemOpen(open);
     if (!open) {
       form.reset();
@@ -632,23 +276,29 @@ export default function BidEstimate() {
     }
   };
   
-  // Handle hierarchical selection and sync with form
+  const handleEditDialogClose = (open: boolean) => {
+    setEditLineItemOpen(open);
+    if (!open) {
+      setEditingLineItem(null);
+      form.reset();
+      setEquipmentSelectorKey(prev => prev + 1);
+      setMaterialCalcData(getDefaultMaterialCalculatorData());
+      setSelectedCatalogCategory("");
+    }
+  };
+
   const handleHierarchicalSelectionChange = (data: LineItemSelectionData | null) => {
     setHierarchicalSelection(data);
     if (data) {
       form.setValue("description", data.canonicalName);
       form.setValue("unit", data.unit);
       form.setValue("quantity", hierarchicalQuantity);
-      // Note: Don't set scopeWorkTypeId - hierarchical selection uses organizationSowItems IDs
-      // which are different from scope_work_types table. Leave it undefined.
       form.setValue("scopeWorkTypeId", undefined);
       
-      // Find matching category from workCategories - categoryCode must match a valid category
       const matchedCategory = workCategories.find(c => 
         c.value === data.categoryCode ||
         c.value === data.tradeName.toUpperCase().replace(/ /g, "_")
       );
-      // Only use valid categories; fall back to GENERAL if no match found
       const defaultCategory = workCategories.find(c => c.isDefault)?.value || "GENERAL";
       const mappedCategory = matchedCategory?.value || defaultCategory;
       form.setValue("category", mappedCategory);
@@ -662,34 +312,32 @@ export default function BidEstimate() {
     const materialCalcPayload = buildMaterialCalculatorPayload(materialCalcData);
 
     if (editingLineItem) {
-      const editPayload = {
-        category: values.category,
-        description: values.description,
-        unit: values.unit,
-        quantity: values.quantity,
-        materialCost: values.materialCost,
-        laborCost: values.laborCost,
-        laborHours: values.laborHours,
-        jobClassificationId: values.jobClassificationId || null,
-        laborRateUsed: values.laborRateUsed || null,
-        equipmentCost: values.equipmentCost,
-        consumablesCost: values.consumablesCost || 0,
-        subcontractCost: values.subcontractCost || 0,
-        subcontractorQuoteId: values.subcontractorQuoteId || undefined,
-        overheadAllocation: values.overheadAllocation,
-        profitAllocation: values.profitAllocation,
-        notes: values.notes || undefined,
-        scopeWorkTypeId: values.scopeWorkTypeId || undefined,
-        ...materialCalcPayload,
-      };
-      
       editLineItemMutation.mutate({
         estimateId: estimateData.estimate.id,
         lineItemId: editingLineItem.id,
-        data: editPayload,
+        data: {
+          category: values.category,
+          description: values.description,
+          unit: values.unit,
+          quantity: values.quantity,
+          materialCost: values.materialCost,
+          laborCost: values.laborCost,
+          laborHours: values.laborHours,
+          jobClassificationId: values.jobClassificationId || null,
+          laborRateUsed: values.laborRateUsed || null,
+          equipmentCost: values.equipmentCost,
+          consumablesCost: values.consumablesCost || 0,
+          subcontractCost: values.subcontractCost || 0,
+          subcontractorQuoteId: values.subcontractorQuoteId || undefined,
+          overheadAllocation: values.overheadAllocation,
+          profitAllocation: values.profitAllocation,
+          notes: values.notes || undefined,
+          scopeWorkTypeId: values.scopeWorkTypeId || undefined,
+          ...materialCalcPayload,
+        },
       });
     } else {
-      const addPayload = {
+      addLineItemMutation.mutate({
         estimateId: estimateData.estimate.id,
         category: values.category,
         description: values.description,
@@ -712,9 +360,83 @@ export default function BidEstimate() {
         workTypeCode: selectedScopeData?.workTypeCode || hierarchicalSelection?.workTypeCode || undefined,
         organizationSowItemId: hierarchicalSelection?.organizationSowItemId || undefined,
         ...materialCalcPayload,
-      };
-      
-      addLineItemMutation.mutate(addPayload as any);
+      } as any);
+    }
+  };
+
+  const handleEditLineItem = (item: EstimateLineItem) => {
+    setEditingLineItem(item);
+    const lineItemAny = item as any;
+    form.reset({
+      description: item.description,
+      category: item.category,
+      unit: item.unit,
+      quantity: Number(item.quantity),
+      materialCost: Number(item.materialCost),
+      laborCost: Number(item.laborCost),
+      laborHours: Number(item.laborHours),
+      equipmentHours: Number(item.equipmentHours || 0),
+      equipmentCost: Number(item.equipmentCost),
+      equipmentSource: lineItemAny.equipmentSource || undefined,
+      selectedEquipmentId: lineItemAny.selectedEquipmentId || undefined,
+      equipmentRateUsed: lineItemAny.equipmentRateUsed ? Number(lineItemAny.equipmentRateUsed) : undefined,
+      consumablesCost: Number(item.consumablesCost || 0),
+      subcontractCost: Number(item.subcontractCost || 0),
+      subcontractorQuoteId: lineItemAny.subcontractorQuoteId || undefined,
+      overheadAllocation: 0,
+      profitAllocation: 0,
+      notes: lineItemAny.metadata || "",
+    });
+    setMaterialCalcData({
+      concreteDepthInches: lineItemAny.concreteDepthInches || "",
+      dimensionWidthInches: lineItemAny.dimensionWidthInches || "",
+      dimensionHeightInches: lineItemAny.dimensionHeightInches || "",
+      concreteWasteFactor: lineItemAny.concreteWasteFactor || "10",
+      calculatedConcreteYards: lineItemAny.calculatedConcreteYards || "",
+      requiresStoneBase: lineItemAny.requiresStoneBase || false,
+      stoneType: lineItemAny.stoneType || "CRUSHED_STONE",
+      stoneSize: lineItemAny.stoneSize || "#57",
+      stoneDepthInches: lineItemAny.stoneDepthInches || "",
+      stoneWasteFactor: lineItemAny.stoneWasteFactor || "10",
+      calculatedStoneTons: lineItemAny.calculatedStoneTons || "",
+      requiresExcavation: lineItemAny.requiresExcavation || false,
+      excavationDepthInches: lineItemAny.excavationDepthInches || "",
+      excavationWidthInches: lineItemAny.excavationWidthInches || "",
+      excavationSwellFactor: lineItemAny.excavationSwellFactor || "25",
+      calculatedExcavationYards: lineItemAny.calculatedExcavationYards || "",
+      requiresWireMesh: lineItemAny.requiresWireMesh || false,
+      wireMeshType: lineItemAny.wireMeshType || "6x6_W1.4",
+      wireMeshWasteFactor: lineItemAny.wireMeshWasteFactor || "10",
+      calculatedWireMeshRolls: lineItemAny.calculatedWireMeshRolls || "0",
+      requiresRebar: lineItemAny.requiresRebar || false,
+      rebarSize: lineItemAny.rebarSize || "#4",
+      rebarFabType: lineItemAny.rebarFabType || "FIELD_TIED",
+      rebarSpacingInches: lineItemAny.rebarSpacingInches || "12",
+      rebarWasteFactor: lineItemAny.rebarWasteFactor || "10",
+      calculatedRebarCount: lineItemAny.calculatedRebarCount || "0",
+      calculatedRebarLinearFeet: lineItemAny.calculatedRebarLinearFeet || "0",
+      requiresDowels: lineItemAny.requiresDowels || false,
+      dowelSpacingInches: lineItemAny.dowelSpacingInches || "12",
+      jointLengthFeet: lineItemAny.jointLengthFeet || "",
+      calculatedDowelCount: lineItemAny.calculatedDowelCount || "0",
+      requiresSealer: lineItemAny.requiresSealer || false,
+      sealerType: lineItemAny.sealerType || "CURE_SEAL",
+      sealerCoats: lineItemAny.sealerCoats || "1",
+      sealerWasteFactor: lineItemAny.sealerWasteFactor || "10",
+      calculatedSealerGallons: lineItemAny.calculatedSealerGallons || "0",
+      requiresUnderlayment: lineItemAny.requiresUnderlayment || false,
+      underlaymentType: lineItemAny.underlaymentType || "6MIL_POLY",
+      underlaymentOverlapInches: lineItemAny.underlaymentOverlapInches || "6",
+      underlaymentWasteFactor: lineItemAny.underlaymentWasteFactor || "10",
+      calculatedUnderlaymentSF: lineItemAny.calculatedUnderlaymentSF || "0",
+    });
+    setSelectedCatalogCategory(item.category);
+    setEditLineItemOpen(true);
+  };
+
+  const handleDeleteLineItem = (lineItemId: string) => {
+    if (confirm("Delete this line item?") && estimate) {
+      deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId });
     }
   };
 
@@ -790,1745 +512,90 @@ export default function BidEstimate() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-              <CardTitle className="text-sm font-medium">Total Estimate</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-total-estimate">
-                ${totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {estimate.lineItems.length} line items
-              </p>
-            </CardContent>
-          </Card>
+        <EstimateSummaryCards
+          totals={totals}
+          lineItemCount={estimate.lineItems.length}
+          overheadPercent={overheadPercent}
+          profitMarginPercent={profitMarginPercent}
+        />
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-              <CardTitle className="text-sm font-medium">Material Cost</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-material-cost">
-                ${totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {totals.totalCost > 0 
-                  ? `${((totals.materialCost / totals.totalCost) * 100).toFixed(1)}% of total`
-                  : "0% of total"}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-              <CardTitle className="text-sm font-medium">Labor Cost</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold" data-testid="text-labor-cost">
-                ${totals.laborCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {totals.laborHours.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} hours estimated
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-              <CardTitle className="text-sm font-medium">Profit Margin</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {(() => {
-                const directCosts = totals.materialCost + totals.laborCost + totals.equipmentCost + 
-                  totals.consumablesCost + totals.subcontractCost;
-                const projectedOverhead = directCosts * (overheadPercent / 100);
-                const costPlusOverhead = directCosts + projectedOverhead;
-                const projectedProfit = costPlusOverhead * (profitMarginPercent / 100);
-                return (
-                  <>
-                    <div className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-profit-margin">
-                      ${projectedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {profitMarginPercent}% of cost + overhead
-                    </p>
-                  </>
-                );
-              })()}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Material Quantities Summary - Job Totals */}
         <MaterialJobTotals lineItems={estimate.lineItems} />
 
         {estimate.lineItems.length > 0 && (
-          <Card className="border-primary/20 bg-primary/5" data-testid="card-markup-calculator">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calculator className="h-5 w-5" />
-                    Markup Calculator
-                  </CardTitle>
-                  <CardDescription className="mt-1">
-                    Adjust overhead and profit percentages to see impact on total bid amount
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Overhead</label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="30"
-                          step="0.5"
-                          value={overheadPercent}
-                          onChange={(e) => {
-                            const value = Math.min(30, Math.max(0, Number(e.target.value)));
-                            setOverheadPercent(value);
-                          }}
-                          className="w-16 h-8 text-right"
-                          data-testid="input-overhead-percent"
-                        />
-                        <span className="text-sm text-muted-foreground">%</span>
-                      </div>
-                    </div>
-                    <Slider
-                      value={[overheadPercent]}
-                      onValueChange={(value) => setOverheadPercent(value[0])}
-                      min={0}
-                      max={30}
-                      step={0.5}
-                      className="w-full"
-                      data-testid="slider-overhead"
-                    />
-                    <div className="flex gap-1">
-                      {[5, 10, 15].map((preset) => (
-                        <Button
-                          key={preset}
-                          type="button"
-                          variant={overheadPercent === preset ? "default" : "outline"}
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() => setOverheadPercent(preset)}
-                          data-testid={`button-overhead-preset-${preset}`}
-                        >
-                          {preset}%
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Profit</label>
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          min="0"
-                          max="50"
-                          step="0.5"
-                          value={profitMarginPercent}
-                          onChange={(e) => {
-                            const value = Math.min(50, Math.max(0, Number(e.target.value)));
-                            setProfitMarginPercent(value);
-                          }}
-                          className="w-16 h-8 text-right"
-                          data-testid="input-profit-margin-percent"
-                        />
-                        <span className="text-sm text-muted-foreground">%</span>
-                      </div>
-                    </div>
-                    <Slider
-                      value={[profitMarginPercent]}
-                      onValueChange={(value) => setProfitMarginPercent(value[0])}
-                      min={0}
-                      max={50}
-                      step={0.5}
-                      className="w-full"
-                      data-testid="slider-profit-margin"
-                    />
-                    <div className="flex gap-1">
-                      {[10, 15, 20].map((preset) => (
-                        <Button
-                          key={preset}
-                          type="button"
-                          variant={profitMarginPercent === preset ? "default" : "outline"}
-                          size="sm"
-                          className="h-6 px-2 text-xs"
-                          onClick={() => setProfitMarginPercent(preset)}
-                          data-testid={`button-profit-preset-${preset}`}
-                        >
-                          {preset}%
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {(() => {
-                    const directCosts = 
-                      totals.materialCost +
-                      totals.laborCost +
-                      totals.equipmentCost +
-                      totals.consumablesCost +
-                      totals.subcontractCost;
-                    
-                    const projectedOverhead = directCosts * (overheadPercent / 100);
-                    const costPlusOverhead = directCosts + projectedOverhead;
-                    const projectedProfit = costPlusOverhead * (profitMarginPercent / 100);
-                    const projectedTotal = costPlusOverhead + projectedProfit;
-                    const combinedMarkup = overheadPercent + profitMarginPercent + (overheadPercent * profitMarginPercent / 100);
-
-                    return (
-                      <>
-                        <div className="p-4 bg-background rounded-md border">
-                          <p className="text-sm text-muted-foreground mb-1">Direct Costs</p>
-                          <p className="text-xl font-bold">${directCosts.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        </div>
-                        <div className="p-4 bg-background rounded-md border">
-                          <p className="text-sm text-muted-foreground mb-1">+ Overhead</p>
-                          <p className="text-xl font-bold text-orange-600 dark:text-orange-400">
-                            ${projectedOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {overheadPercent}%
-                          </p>
-                        </div>
-                        <div className="p-4 bg-background rounded-md border">
-                          <p className="text-sm text-muted-foreground mb-1">+ Profit</p>
-                          <p className="text-xl font-bold text-green-600 dark:text-green-400">
-                            ${projectedProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {profitMarginPercent}%
-                          </p>
-                        </div>
-                        <div className="p-4 bg-primary/10 rounded-md border border-primary/20">
-                          <p className="text-sm text-muted-foreground mb-1">Total Bid</p>
-                          <p className="text-xl font-bold">${projectedTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {combinedMarkup.toFixed(1)}% markup
-                          </p>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <MarkupCalculatorCard
+            totals={totals}
+            overheadPercent={overheadPercent}
+            profitMarginPercent={profitMarginPercent}
+            onOverheadChange={setOverheadPercent}
+            onProfitChange={setProfitMarginPercent}
+          />
         )}
 
         {hasEstimateAccess && (
           <div className="flex gap-3">
-            <Dialog open={addLineItemOpen} onOpenChange={handleDialogClose}>
-              <DialogTrigger asChild>
-                <Button data-testid="button-open-add-line-item">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Line Item
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Add Line Item</DialogTitle>
-                  <DialogDescription>
-                    Select scope of work and configure pricing details
-                  </DialogDescription>
-                </DialogHeader>
-                
-                {/* Mode Toggle */}
-                <div className="flex items-center gap-2 border-b pb-3 mb-4">
-                  <Button
-                    type="button"
-                    variant={useHierarchicalBuilder ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setUseHierarchicalBuilder(true)}
-                    data-testid="button-hierarchical-mode"
-                  >
-                    <Layers className="h-4 w-4 mr-2" />
-                    Guided Selection
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={!useHierarchicalBuilder ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setUseHierarchicalBuilder(false)}
-                    data-testid="button-manual-mode"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Manual Entry
-                  </Button>
-                </div>
-                
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    {useHierarchicalBuilder ? (
-                      /* Hierarchical SOW Builder - Progressive Selection Mode */
-                      <>
-                        <HierarchicalLineItemBuilder
-                          onSelectionChange={handleHierarchicalSelectionChange}
-                          quantity={hierarchicalQuantity}
-                          onQuantityChange={(q) => {
-                            setHierarchicalQuantity(q);
-                            form.setValue("quantity", q);
-                          }}
-                          unit={hierarchicalUnit}
-                          onUnitChange={(u) => {
-                            setHierarchicalUnit(u);
-                            form.setValue("unit", u);
-                          }}
-                          materialCalcData={materialCalcData}
-                          onMaterialCalcChange={setMaterialCalcData}
-                        />
-                        
-                        {hierarchicalSelection && (
-                          <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-900">
-                            <p className="text-sm font-medium text-green-700 dark:text-green-400 flex items-center gap-2">
-                              <CheckCircle className="h-4 w-4" />
-                              Scope selected: {hierarchicalSelection.canonicalName}
-                            </p>
-                            <p className="text-xs text-green-600 dark:text-green-500 mt-1">
-                              Trade: {hierarchicalSelection.tradeName} → {hierarchicalSelection.subcategoryName} → {hierarchicalSelection.workTypeName}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      /* Classic Mode - StandardizedScopeSelector */
-                      <div className="border rounded-md p-4 bg-muted/30">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Layers className="h-4 w-4 text-primary" />
-                          <span className="text-sm font-medium">Standardized Scope of Work</span>
-                          <span className="text-xs text-muted-foreground ml-auto">Optional</span>
-                        </div>
-                        <StandardizedScopeSelector
-                          value={selectedScopeData || undefined}
-                          onChange={handleScopeSelect}
-                          showDimensionInputs={false}
-                        />
-                        {selectedScopeData && (
-                          <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/30 rounded border border-green-200 dark:border-green-900">
-                            <p className="text-xs text-green-700 dark:text-green-400">
-                              SOW selected: Description, unit, and category have been auto-filled.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Basic Fields - Only show in manual mode */}
-                    {!useHierarchicalBuilder && (
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="description"
-                          render={({ field }) => (
-                            <FormItem className="col-span-2">
-                              <FormLabel>Description</FormLabel>
-                              <FormControl>
-                                <Input 
-                                  placeholder="e.g., Foundation excavation" 
-                                  {...field}
-                                  data-testid="input-description"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
+            <LineItemFormDialog
+              mode="add"
+              open={addLineItemOpen}
+              onOpenChange={handleAddDialogClose}
+              form={form}
+              onSubmit={onSubmit}
+              isPending={addLineItemMutation.isPending}
+              overheadPercent={overheadPercent}
+              profitMarginPercent={profitMarginPercent}
+              workCategories={workCategories}
+              catalogPrices={catalogPrices}
+              subcontractorQuotes={subcontractorQuotes}
+              materialCalcData={materialCalcData}
+              onMaterialCalcChange={setMaterialCalcData}
+              catalogPricedMaterials={catalogPricedMaterials}
+              onCatalogPricedMaterialsChange={setCatalogPricedMaterials}
+              onCategoryChange={handleCategoryChange}
+              onApplyCatalogPrice={applyCatalogPrice}
+              equipmentSelectorKey={equipmentSelectorKey}
+              useHierarchicalBuilder={useHierarchicalBuilder}
+              onUseHierarchicalBuilderChange={setUseHierarchicalBuilder}
+              selectedScopeData={selectedScopeData}
+              onScopeSelect={handleScopeSelect}
+              hierarchicalSelection={hierarchicalSelection}
+              onHierarchicalSelectionChange={handleHierarchicalSelectionChange}
+              hierarchicalQuantity={hierarchicalQuantity}
+              onHierarchicalQuantityChange={setHierarchicalQuantity}
+              hierarchicalUnit={hierarchicalUnit}
+              onHierarchicalUnitChange={setHierarchicalUnit}
+            />
 
-                        <FormField
-                          control={form.control}
-                          name="category"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Category</FormLabel>
-                              <Select onValueChange={handleCategoryChange} value={field.value}>
-                                <FormControl>
-                                  <SelectTrigger data-testid="select-category">
-                                    <SelectValue placeholder="Select a category" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {workCategories.length > 0 ? (
-                                    workCategories.map((cat) => (
-                                      <SelectItem key={cat.value} value={cat.value}>
-                                        {cat.label}
-                                        {cat.itemCount > 0 && (
-                                          <span className="ml-2 text-xs text-muted-foreground">
-                                            ({cat.itemCount})
-                                          </span>
-                                        )}
-                                      </SelectItem>
-                                    ))
-                                  ) : (
-                                    <>
-                                      <SelectItem value="GENERAL">General</SelectItem>
-                                      <SelectItem value="EXCAVATION">Excavation</SelectItem>
-                                      <SelectItem value="CONCRETE">Concrete</SelectItem>
-                                      <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
-                                      <SelectItem value="UTILITIES">Utilities</SelectItem>
-                                      <SelectItem value="GRADING">Grading</SelectItem>
-                                      <SelectItem value="OTHER">Other</SelectItem>
-                                    </>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="unit"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Unit</FormLabel>
-                              <FormControl>
-                                <UomSelect
-                                  value={field.value}
-                                  onChange={field.onChange}
-                                  placeholder="Select unit"
-                                  data-testid="select-unit"
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        <FormField
-                          control={form.control}
-                          name="quantity"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Quantity</FormLabel>
-                              <FormControl>
-                                <Input type="number" step="0.01" {...field} placeholder="0" data-testid="input-quantity" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                    )}
-
-                    {/* Cost Fields */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="materialCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Material Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-material-cost" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Catalog Price Suggestions */}
-                      {catalogPrices.length > 0 && (
-                        <div className="col-span-2 p-3 bg-muted/50 rounded-md border">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Store className="h-4 w-4 text-primary" />
-                            <span className="text-sm font-medium">Catalog Pricing Available</span>
-                            <Badge variant="secondary" className="text-xs">{catalogPrices.length} items</Badge>
-                          </div>
-                          <div className="space-y-2 max-h-32 overflow-y-auto">
-                            {catalogPrices.slice(0, 5).map((item) => (
-                              <div 
-                                key={item.id}
-                                className="flex items-center justify-between p-2 bg-background rounded border hover-elevate cursor-pointer"
-                                onClick={() => applyCatalogPrice(item)}
-                                data-testid={`catalog-price-${item.id}`}
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{item.itemName}</p>
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {item.vendorName} | {item.effectiveQuarter}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2 ml-2">
-                                  <Badge variant="outline" className="text-xs whitespace-nowrap">
-                                    ${parseFloat(item.unitPrice).toFixed(2)}/{item.unit}
-                                  </Badge>
-                                  <Tag className="h-3 w-3 text-muted-foreground" />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          {catalogPrices.length > 5 && (
-                            <p className="text-xs text-muted-foreground mt-2 text-center">
-                              +{catalogPrices.length - 5} more items available
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Labor Costs Section with Job Classification Integration */}
-                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
-                        <h5 className="font-medium text-sm">Labor Costs</h5>
-                        
-                        <div className="space-y-2">
-                          <FormLabel className="text-sm">Labor Classification (from Cost Rates)</FormLabel>
-                          <LaborRateSelector
-                            value={form.watch("jobClassificationId")}
-                            onSelect={(classificationId, rate) => {
-                              form.setValue("jobClassificationId", classificationId || undefined);
-                              form.setValue("laborRateUsed", rate);
-                              const laborHours = form.watch("laborHours") || 0;
-                              if (rate > 0 && laborHours > 0) {
-                                form.setValue("laborCost", laborHours * rate);
-                              }
-                            }}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="laborHours"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Labor Hours</FormLabel>
-                                <FormControl>
-                                  <Input 
-                                    type="text"
-                                    inputMode="decimal"
-                                    pattern="[0-9]*\.?[0-9]*"
-                                    placeholder="0.0" 
-                                    {...field}
-                                    value={field.value ?? ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                        const hours = parseFloat(val) || 0;
-                                        field.onChange(hours);
-                                        const rate = form.watch("laborRateUsed") || 0;
-                                        if (rate > 0) {
-                                          form.setValue("laborCost", hours * rate);
-                                        }
-                                      }
-                                    }}
-                                    data-testid="input-labor-hours"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name="laborCost"
-                            render={({ field }) => {
-                              const rate = form.watch("laborRateUsed");
-                              const hasRate = !!(rate && rate > 0);
-                              return (
-                                <FormItem>
-                                  <FormLabel>
-                                    Labor Cost ($)
-                                    {hasRate && (
-                                      <span className="text-xs text-muted-foreground ml-1">
-                                        (auto-calculated)
-                                      </span>
-                                    )}
-                                  </FormLabel>
-                                  <FormControl>
-                                    <Input 
-                                      type="number" 
-                                      step="0.01" 
-                                      placeholder="0.00" 
-                                      {...field}
-                                      readOnly={hasRate}
-                                      className={hasRate ? "bg-muted" : ""}
-                                      data-testid="input-labor-cost"
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              );
-                            }}
-                          />
-                        </div>
-
-                        {form.watch("laborRateUsed") && form.watch("laborRateUsed")! > 0 && form.watch("laborHours") > 0 && (
-                          <div className="text-xs text-muted-foreground bg-background p-2 rounded border" data-testid="labor-calculation-summary">
-                            {form.watch("laborHours")} hrs × ${form.watch("laborRateUsed")?.toFixed(2)}/hr = ${form.watch("laborCost").toFixed(2)}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Equipment Costs Section */}
-                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
-                        <h5 className="font-medium text-sm">Equipment Costs</h5>
-                        
-                        <EquipmentRateSelector
-                          key={`equipment-add-${equipmentSelectorKey}`}
-                          onSelect={(equipmentData) => {
-                            form.setValue("equipmentHours", equipmentData.hours);
-                            form.setValue("equipmentCost", equipmentData.totalCost);
-                            form.setValue("equipmentSource", equipmentData.source);
-                            form.setValue("selectedEquipmentId", equipmentData.equipmentId || undefined);
-                            form.setValue("equipmentRateUsed", equipmentData.hourlyRate);
-                          }}
-                          initialHours={form.getValues("equipmentHours")}
-                          initialEquipmentId={form.getValues("selectedEquipmentId")}
-                          initialSource={form.getValues("equipmentSource") as "OWNED" | "RENTAL" | "MANUAL" | undefined}
-                        />
-                        
-                        <FormField
-                          control={form.control}
-                          name="equipmentCost"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>
-                                Equipment Cost ($)
-                                <span className="text-xs text-muted-foreground ml-1">
-                                  (or enter manually)
-                                </span>
-                              </FormLabel>
-                              <FormControl>
-                                <Input 
-                                  type="text"
-                                  inputMode="decimal"
-                                  pattern="[0-9]*\.?[0-9]*"
-                                  {...field} 
-                                  value={field.value ?? ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                      field.onChange(parseFloat(val) || 0);
-                                    }
-                                  }}
-                                  placeholder="0.00" 
-                                  data-testid="input-equipment-cost" 
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="subcontractCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Subcontract Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="text"
-                                inputMode="decimal"
-                                pattern="[0-9]*\.?[0-9]*"
-                                {...field} 
-                                value={field.value ?? ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                    field.onChange(parseFloat(val) || 0);
-                                  }
-                                }}
-                                placeholder="0.00" 
-                                data-testid="input-subcontract-cost" 
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Subcontractor Quote Selector - shows when subcontract cost > 0 */}
-                      {form.watch("subcontractCost") > 0 && subcontractorQuotes.length > 0 && (
-                        <FormField
-                          control={form.control}
-                          name="subcontractorQuoteId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Assign to Subcontractor</FormLabel>
-                              <Select
-                                onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
-                                value={field.value || ""}
-                              >
-                                <FormControl>
-                                  <SelectTrigger data-testid="select-subcontractor-quote">
-                                    <SelectValue placeholder="Select subcontractor..." />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">None</SelectItem>
-                                  {subcontractorQuotes.map((quote) => (
-                                    <SelectItem key={quote.id} value={quote.id}>
-                                      {quote.subcontractorName} - ${Number(quote.quoteAmount).toLocaleString()}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      <FormField
-                        control={form.control}
-                        name="notes"
-                        render={({ field }) => (
-                          <FormItem className="col-span-2">
-                            <FormLabel>Notes (Optional)</FormLabel>
-                            <FormControl>
-                              <Textarea {...field} value={field.value || ""} placeholder="Additional details..." data-testid="input-notes" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    {/* Material Calculator - show for concrete, excavation, and related work (only in Manual Entry mode) */}
-                    {!useHierarchicalBuilder && (() => {
-                      const watchedValues = form.watch();
-                      const unit = watchedValues.unit;
-                      const quantity = Number(watchedValues.quantity) || 0;
-                      const category = watchedValues.category;
-                      const description = watchedValues.description || "";
-                      
-                      // Show for SF or LF units with concrete, excavation, or site work categories
-                      const materialCategories = [
-                        "CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB",
-                        "EXCAVATION", "GRADING", "SITE_WORK", "UTILITY", "TRENCH", "EARTHWORK"
-                      ];
-                      const showMaterialCalc = (unit === "SF" || unit === "LF") && 
-                        materialCategories.includes(category || "");
-                      
-                      return showMaterialCalc ? (
-                        <MaterialCalculator
-                          unit={unit}
-                          quantity={quantity}
-                          description={description}
-                          value={materialCalcData}
-                          onChange={setMaterialCalcData}
-                        />
-                      ) : null;
-                    })()}
-
-                    {/* Calculated Material Quantities Summary - verify the math */}
-                    {(() => {
-                      const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
-                      const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
-                      const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
-                      const wireMeshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
-                      const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
-                      const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
-                      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
-                      const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
-                      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
-                      
-                      const hasCalculatedQuantities = concreteYards > 0 || stoneTons > 0 || excavationYards > 0 || 
-                        wireMeshRolls > 0 || rebarCount > 0 || sealerGallons > 0 || dowelCount > 0 || underlaymentSF > 0;
-                      
-                      if (!hasCalculatedQuantities) return null;
-                      
-                      return (
-                        <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
-                              <Calculator className="h-4 w-4" />
-                              Calculated Material Quantities
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              These quantities will be used for material cost calculations (not the scope quantity)
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="flex flex-wrap gap-2">
-                              {concreteYards > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-concrete-yards">
-                                  Concrete: {concreteYards.toFixed(2)} CY
-                                </Badge>
-                              )}
-                              {stoneTons > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-stone-tons">
-                                  Stone: {stoneTons.toFixed(2)} TON
-                                </Badge>
-                              )}
-                              {excavationYards > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-excavation-yards">
-                                  Excavation: {excavationYards.toFixed(2)} CY
-                                </Badge>
-                              )}
-                              {wireMeshRolls > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-wire-mesh-rolls">
-                                  Wire Mesh: {wireMeshRolls.toFixed(1)} ROLLS
-                                </Badge>
-                              )}
-                              {rebarCount > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-rebar-count">
-                                  Rebar: {rebarCount.toFixed(0)} EA ({rebarFeet.toFixed(0)} LF)
-                                </Badge>
-                              )}
-                              {dowelCount > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-dowel-count">
-                                  Dowels: {dowelCount.toFixed(0)} EA
-                                </Badge>
-                              )}
-                              {sealerGallons > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-sealer-gallons">
-                                  Sealer: {sealerGallons.toFixed(1)} GAL
-                                </Badge>
-                              )}
-                              {underlaymentSF > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="badge-underlayment-sf">
-                                  Underlayment: {underlaymentSF.toFixed(0)} SF
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Use catalog pricing or enter manual unit prices below
-                            </p>
-                          </CardContent>
-                        </Card>
-                      );
-                    })()}
-
-                    {/* Manual Material Pricing - for materials without catalog prices */}
-                    <ManualMaterialPricing
-                      materialCalcData={materialCalcData}
-                      onMaterialCostChange={(cost) => form.setValue("materialCost", cost)}
-                      currentMaterialCost={Number(form.watch("materialCost")) || 0}
-                      catalogPricedMaterials={catalogPricedMaterials}
-                    />
-
-                    {/* Cost Per Unit Preview */}
-                    {(() => {
-                      const watchedValues = form.watch();
-                      const quantity = Number(watchedValues.quantity) || 0;
-                      const unit = watchedValues.unit || "UNIT";
-                      const directCost = (Number(watchedValues.materialCost) || 0) + 
-                                        (Number(watchedValues.laborCost) || 0) + 
-                                        (Number(watchedValues.equipmentCost) || 0) + 
-                                        (Number(watchedValues.consumablesCost) || 0) +
-                                        (Number(watchedValues.subcontractCost) || 0);
-                      
-                      const costPerUnit = quantity > 0 ? directCost / quantity : 0;
-                      const overheadPerUnit = costPerUnit * (overheadPercent / 100);
-                      const costWithOverhead = costPerUnit + overheadPerUnit;
-                      const profitPerUnit = costWithOverhead * (profitMarginPercent / 100);
-                      const bidPricePerUnit = costWithOverhead + profitPerUnit;
-                      const totalMarkupPercent = costPerUnit > 0 ? ((bidPricePerUnit / costPerUnit) - 1) * 100 : 0;
-                      const totalOverhead = directCost * (overheadPercent / 100);
-                      const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
-                      
-                      return quantity > 0 ? (
-                        <Card className="border-primary/20 bg-primary/5">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <Calculator className="h-4 w-4" />
-                              Cost Per {unit} Breakdown
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              Auto-calculated based on quantity and What-If Calculator settings
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="grid grid-cols-4 gap-3">
-                              <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">Your Cost</p>
-                                <p className="text-lg font-semibold" data-testid="text-cost-per-unit">
-                                  ${costPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                              <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">+ Overhead ({overheadPercent}%)</p>
-                                <p className="text-lg font-semibold text-blue-600 dark:text-blue-400" data-testid="text-overhead-per-unit">
-                                  +${overheadPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                              <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">+ Profit ({profitMarginPercent}%)</p>
-                                <p className="text-lg font-semibold text-green-600 dark:text-green-400" data-testid="text-profit-per-unit">
-                                  +${profitPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                              <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
-                                <p className="text-xs text-muted-foreground mb-1">Bid Price</p>
-                                <p className="text-lg font-bold text-primary" data-testid="text-bid-price-per-unit">
-                                  ${bidPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                            </div>
-                            {/* Line Item Totals */}
-                            <div className="mt-3 pt-3 border-t">
-                              <div className="grid grid-cols-3 gap-3">
-                                <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-md border border-orange-200 dark:border-orange-800">
-                                  <p className="text-xs text-muted-foreground mb-1">Total Overhead</p>
-                                  <p className="text-xl font-bold text-orange-600 dark:text-orange-400" data-testid="text-total-overhead">
-                                    ${totalOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                                <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
-                                  <p className="text-xs text-muted-foreground mb-1">Total Profit</p>
-                                  <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-total-profit">
-                                    ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                                <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
-                                  <p className="text-xs text-muted-foreground mb-1">Total Bid Price</p>
-                                  <p className="text-xl font-bold text-primary" data-testid="text-total-bid-price">
-                                    ${(quantity * bidPricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-3 pt-3 border-t flex justify-between items-center text-xs text-muted-foreground">
-                              <span>
-                                {quantity.toLocaleString()} {unit} x ${bidPricePerUnit.toFixed(2)} = <span className="font-semibold text-foreground">${(quantity * bidPricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> total bid
-                              </span>
-                              <span className="text-amber-600 dark:text-amber-400 font-medium">
-                                {totalMarkupPercent.toFixed(1)}% total markup
-                              </span>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ) : null;
-                    })()}
-
-                    <div className="flex justify-end gap-3">
-                      <Button type="button" variant="outline" onClick={() => setAddLineItemOpen(false)} data-testid="button-cancel">
-                        Cancel
-                      </Button>
-                      <Button type="submit" disabled={addLineItemMutation.isPending} data-testid="button-submit-line-item">
-                        {addLineItemMutation.isPending ? "Adding..." : "Add Line Item"}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={editLineItemOpen} onOpenChange={(open) => {
-              setEditLineItemOpen(open);
-              if (!open) {
-                setEditingLineItem(null);
-                form.reset();
-                setEquipmentSelectorKey(prev => prev + 1);
-                setMaterialCalcData(getDefaultMaterialCalculatorData());
-                setSelectedCatalogCategory("");
-              }
-            }}>
-              <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                  <DialogTitle>Edit Line Item</DialogTitle>
-                  <DialogDescription>
-                    Update the estimate line item details
-                  </DialogDescription>
-                </DialogHeader>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
-                      <FormField
-                        control={form.control}
-                        name="description"
-                        render={({ field }) => (
-                          <FormItem className="col-span-2">
-                            <FormLabel>Description</FormLabel>
-                            <FormControl>
-                              <Input 
-                                placeholder="e.g., Foundation excavation" 
-                                {...field}
-                                data-testid="input-edit-description"
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="category"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Category</FormLabel>
-                            <Select onValueChange={handleCategoryChange} value={field.value}>
-                              <FormControl>
-                                <SelectTrigger data-testid="select-edit-category">
-                                  <SelectValue placeholder="Select a category" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {workCategories.length > 0 ? (
-                                  workCategories.map((cat) => (
-                                    <SelectItem key={cat.value} value={cat.value}>
-                                      {cat.label}
-                                      {cat.itemCount > 0 && (
-                                        <span className="ml-2 text-xs text-muted-foreground">
-                                          ({cat.itemCount})
-                                        </span>
-                                      )}
-                                    </SelectItem>
-                                  ))
-                                ) : (
-                                  <>
-                                    <SelectItem value="GENERAL">General</SelectItem>
-                                    <SelectItem value="EXCAVATION">Excavation</SelectItem>
-                                    <SelectItem value="CONCRETE">Concrete</SelectItem>
-                                    <SelectItem value="FOUNDATIONS">Foundations</SelectItem>
-                                    <SelectItem value="UTILITIES">Utilities</SelectItem>
-                                    <SelectItem value="GRADING">Grading</SelectItem>
-                                    <SelectItem value="OTHER">Other</SelectItem>
-                                  </>
-                                )}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="unit"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Unit</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="e.g., CY, SF, LF" data-testid="input-edit-unit" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="quantity"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Quantity</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0" data-testid="input-edit-quantity" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="materialCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Material Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input type="number" step="0.01" {...field} placeholder="0.00" data-testid="input-edit-material-cost" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Catalog Price Suggestions (Edit Dialog) */}
-                      {catalogPrices.length > 0 && (
-                        <div className="col-span-2 p-3 bg-muted/50 rounded-md border">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Store className="h-4 w-4 text-primary" />
-                            <span className="text-sm font-medium">Catalog Pricing Available</span>
-                            <Badge variant="secondary" className="text-xs">{catalogPrices.length} items</Badge>
-                          </div>
-                          <div className="space-y-2 max-h-32 overflow-y-auto">
-                            {catalogPrices.slice(0, 5).map((item) => (
-                              <div 
-                                key={item.id}
-                                className="flex items-center justify-between p-2 bg-background rounded border hover-elevate cursor-pointer"
-                                onClick={() => applyCatalogPrice(item)}
-                                data-testid={`edit-catalog-price-${item.id}`}
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-medium truncate">{item.itemName}</p>
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {item.vendorName} | {item.effectiveQuarter}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2 ml-2">
-                                  <Badge variant="outline" className="text-xs whitespace-nowrap">
-                                    ${parseFloat(item.unitPrice).toFixed(2)}/{item.unit}
-                                  </Badge>
-                                  <Tag className="h-3 w-3 text-muted-foreground" />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          {catalogPrices.length > 5 && (
-                            <p className="text-xs text-muted-foreground mt-2 text-center">
-                              +{catalogPrices.length - 5} more items available
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Labor Costs Section with Job Classification Integration (Edit Dialog) */}
-                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
-                        <h5 className="font-medium text-sm">Labor Costs</h5>
-                        
-                        <div className="space-y-2">
-                          <FormLabel className="text-sm">Labor Classification (from Cost Rates)</FormLabel>
-                          <LaborRateSelector
-                            value={form.watch("jobClassificationId")}
-                            onSelect={(classificationId, rate) => {
-                              form.setValue("jobClassificationId", classificationId || undefined);
-                              form.setValue("laborRateUsed", rate);
-                              const laborHours = form.watch("laborHours") || 0;
-                              if (rate > 0 && laborHours > 0) {
-                                form.setValue("laborCost", laborHours * rate);
-                              }
-                            }}
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={form.control}
-                            name="laborHours"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Labor Hours</FormLabel>
-                                <FormControl>
-                                  <Input 
-                                    type="text"
-                                    inputMode="decimal"
-                                    pattern="[0-9]*\.?[0-9]*"
-                                    placeholder="0.0" 
-                                    {...field}
-                                    value={field.value ?? ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                        const hours = parseFloat(val) || 0;
-                                        field.onChange(hours);
-                                        const rate = form.watch("laborRateUsed") || 0;
-                                        if (rate > 0) {
-                                          form.setValue("laborCost", hours * rate);
-                                        }
-                                      }
-                                    }}
-                                    data-testid="input-edit-labor-hours"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={form.control}
-                            name="laborCost"
-                            render={({ field }) => {
-                              const rate = form.watch("laborRateUsed");
-                              const hasRate = !!(rate && rate > 0);
-                              return (
-                                <FormItem>
-                                  <FormLabel>
-                                    Labor Cost ($)
-                                    {hasRate && (
-                                      <span className="text-xs text-muted-foreground ml-1">
-                                        (auto-calculated)
-                                      </span>
-                                    )}
-                                  </FormLabel>
-                                  <FormControl>
-                                    <Input 
-                                      type="number" 
-                                      step="0.01" 
-                                      placeholder="0.00" 
-                                      {...field}
-                                      readOnly={hasRate}
-                                      className={hasRate ? "bg-muted" : ""}
-                                      data-testid="input-edit-labor-cost"
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              );
-                            }}
-                          />
-                        </div>
-
-                        {form.watch("laborRateUsed") && form.watch("laborRateUsed")! > 0 && form.watch("laborHours") > 0 && (
-                          <div className="text-xs text-muted-foreground bg-background p-2 rounded border" data-testid="edit-labor-calculation-summary">
-                            {form.watch("laborHours")} hrs × ${form.watch("laborRateUsed")?.toFixed(2)}/hr = ${form.watch("laborCost").toFixed(2)}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Equipment Costs Section (Edit Dialog) */}
-                      <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
-                        <h5 className="font-medium text-sm">Equipment Costs</h5>
-                        
-                        <EquipmentRateSelector
-                          key={`equipment-edit-${editingLineItem?.id || 'new'}-${equipmentSelectorKey}`}
-                          onSelect={(equipmentData) => {
-                            form.setValue("equipmentHours", equipmentData.hours);
-                            form.setValue("equipmentCost", equipmentData.totalCost);
-                            form.setValue("equipmentSource", equipmentData.source);
-                            form.setValue("selectedEquipmentId", equipmentData.equipmentId || undefined);
-                            form.setValue("equipmentRateUsed", equipmentData.hourlyRate);
-                          }}
-                          initialHours={form.getValues("equipmentHours")}
-                          initialEquipmentId={form.getValues("selectedEquipmentId")}
-                          initialSource={form.getValues("equipmentSource") as "OWNED" | "RENTAL" | "MANUAL" | undefined}
-                        />
-                        
-                        <FormField
-                          control={form.control}
-                          name="equipmentCost"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>
-                                Equipment Cost ($)
-                                <span className="text-xs text-muted-foreground ml-1">
-                                  (or enter manually)
-                                </span>
-                              </FormLabel>
-                              <FormControl>
-                                <Input 
-                                  type="text"
-                                  inputMode="decimal"
-                                  pattern="[0-9]*\.?[0-9]*"
-                                  {...field} 
-                                  value={field.value ?? ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                      field.onChange(parseFloat(val) || 0);
-                                    }
-                                  }}
-                                  placeholder="0.00" 
-                                  data-testid="input-edit-equipment-cost" 
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="subcontractCost"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Subcontract Cost ($)</FormLabel>
-                            <FormControl>
-                              <Input 
-                                type="text"
-                                inputMode="decimal"
-                                pattern="[0-9]*\.?[0-9]*"
-                                {...field} 
-                                value={field.value ?? ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                    field.onChange(parseFloat(val) || 0);
-                                  }
-                                }}
-                                placeholder="0.00" 
-                                data-testid="input-edit-subcontract-cost" 
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      {/* Subcontractor Quote Selector - shows when subcontract cost > 0 */}
-                      {form.watch("subcontractCost") > 0 && subcontractorQuotes.length > 0 && (
-                        <FormField
-                          control={form.control}
-                          name="subcontractorQuoteId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Assign to Subcontractor</FormLabel>
-                              <Select
-                                onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
-                                value={field.value || ""}
-                              >
-                                <FormControl>
-                                  <SelectTrigger data-testid="select-edit-subcontractor-quote">
-                                    <SelectValue placeholder="Select subcontractor..." />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  <SelectItem value="none">None</SelectItem>
-                                  {subcontractorQuotes.map((quote) => (
-                                    <SelectItem key={quote.id} value={quote.id}>
-                                      {quote.subcontractorName} - ${Number(quote.quoteAmount).toLocaleString()}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      )}
-
-                      <FormField
-                        control={form.control}
-                        name="notes"
-                        render={({ field }) => (
-                          <FormItem className="col-span-2">
-                            <FormLabel>Notes (Optional)</FormLabel>
-                            <FormControl>
-                              <Textarea {...field} value={field.value || ""} placeholder="Additional details..." data-testid="input-edit-notes" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-
-                    {/* Material Calculator for Edit Dialog */}
-                    {(() => {
-                      const watchedValues = form.watch();
-                      const unit = watchedValues.unit || "";
-                      const quantity = Number(watchedValues.quantity) || 0;
-                      const category = watchedValues.category || "";
-                      const description = watchedValues.description || "";
-                      
-                      const materialCategories = [
-                        "CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB",
-                        "EXCAVATION", "GRADING", "SITE_WORK", "UTILITY", "TRENCH", "EARTHWORK"
-                      ];
-                      const showMaterialCalc = (unit === "SF" || unit === "LF") && 
-                        materialCategories.includes(category || "");
-                      
-                      return showMaterialCalc ? (
-                        <MaterialCalculator
-                          unit={unit}
-                          quantity={quantity}
-                          description={description}
-                          value={materialCalcData}
-                          onChange={setMaterialCalcData}
-                        />
-                      ) : null;
-                    })()}
-
-                    {/* Calculated Material Quantities Summary - verify the math (Edit Dialog) */}
-                    {(() => {
-                      const concreteYards = parseFloat(materialCalcData.calculatedConcreteYards || "0");
-                      const stoneTons = parseFloat(materialCalcData.calculatedStoneTons || "0");
-                      const excavationYards = parseFloat(materialCalcData.calculatedExcavationYards || "0");
-                      const wireMeshRolls = parseFloat(materialCalcData.calculatedWireMeshRolls || "0");
-                      const rebarCount = parseFloat(materialCalcData.calculatedRebarCount || "0");
-                      const rebarFeet = parseFloat(materialCalcData.calculatedRebarLinearFeet || "0");
-                      const sealerGallons = parseFloat(materialCalcData.calculatedSealerGallons || "0");
-                      const dowelCount = parseFloat(materialCalcData.calculatedDowelCount || "0");
-                      const underlaymentSF = parseFloat(materialCalcData.calculatedUnderlaymentSF || "0");
-                      
-                      const hasCalculatedQuantities = concreteYards > 0 || stoneTons > 0 || excavationYards > 0 || 
-                        wireMeshRolls > 0 || rebarCount > 0 || sealerGallons > 0 || dowelCount > 0 || underlaymentSF > 0;
-                      
-                      if (!hasCalculatedQuantities) return null;
-                      
-                      return (
-                        <Card className="border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm flex items-center gap-2 text-green-700 dark:text-green-400">
-                              <Calculator className="h-4 w-4" />
-                              Calculated Material Quantities
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              These quantities will be used for material cost calculations (not the scope quantity)
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="flex flex-wrap gap-2">
-                              {concreteYards > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-concrete-yards">
-                                  Concrete: {concreteYards.toFixed(2)} CY
-                                </Badge>
-                              )}
-                              {stoneTons > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-stone-tons">
-                                  Stone: {stoneTons.toFixed(2)} TON
-                                </Badge>
-                              )}
-                              {excavationYards > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-excavation-yards">
-                                  Excavation: {excavationYards.toFixed(2)} CY
-                                </Badge>
-                              )}
-                              {wireMeshRolls > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-wire-mesh-rolls">
-                                  Wire Mesh: {wireMeshRolls.toFixed(1)} ROLLS
-                                </Badge>
-                              )}
-                              {rebarCount > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-rebar-count">
-                                  Rebar: {rebarCount.toFixed(0)} EA ({rebarFeet.toFixed(0)} LF)
-                                </Badge>
-                              )}
-                              {dowelCount > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-dowel-count">
-                                  Dowels: {dowelCount.toFixed(0)} EA
-                                </Badge>
-                              )}
-                              {sealerGallons > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-sealer-gallons">
-                                  Sealer: {sealerGallons.toFixed(1)} GAL
-                                </Badge>
-                              )}
-                              {underlaymentSF > 0 && (
-                                <Badge variant="outline" className="bg-background" data-testid="edit-badge-underlayment-sf">
-                                  Underlayment: {underlaymentSF.toFixed(0)} SF
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-2">
-                              Use catalog pricing or enter manual unit prices below
-                            </p>
-                          </CardContent>
-                        </Card>
-                      );
-                    })()}
-
-                    {/* Manual Material Pricing - for Edit dialog */}
-                    <ManualMaterialPricing
-                      materialCalcData={materialCalcData}
-                      onMaterialCostChange={(cost) => form.setValue("materialCost", cost)}
-                      currentMaterialCost={Number(form.watch("materialCost")) || 0}
-                      catalogPricedMaterials={catalogPricedMaterials}
-                    />
-
-                    {/* Cost Per Unit Preview */}
-                    {(() => {
-                      const watchedValues = form.watch();
-                      const quantity = Number(watchedValues.quantity) || 0;
-                      const unit = watchedValues.unit || "UNIT";
-                      const directCost = (Number(watchedValues.materialCost) || 0) + 
-                                        (Number(watchedValues.laborCost) || 0) + 
-                                        (Number(watchedValues.equipmentCost) || 0) + 
-                                        (Number(watchedValues.consumablesCost) || 0) +
-                                        (Number(watchedValues.subcontractCost) || 0);
-                      
-                      const costPerUnit = quantity > 0 ? directCost / quantity : 0;
-                      const overheadPerUnit = costPerUnit * (overheadPercent / 100);
-                      const costWithOverhead = costPerUnit + overheadPerUnit;
-                      const profitPerUnit = costWithOverhead * (profitMarginPercent / 100);
-                      const bidPricePerUnit = costWithOverhead + profitPerUnit;
-                      const totalMarkupPercent = costPerUnit > 0 ? ((bidPricePerUnit / costPerUnit) - 1) * 100 : 0;
-                      const totalOverhead = directCost * (overheadPercent / 100);
-                      const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
-                      
-                      return quantity > 0 ? (
-                        <Card className="border-primary/20 bg-primary/5">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm flex items-center gap-2">
-                              <Calculator className="h-4 w-4" />
-                              Cost Per {unit} Breakdown
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                              Auto-calculated based on quantity and What-If Calculator settings
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="pt-0">
-                            <div className="grid grid-cols-4 gap-3">
-                              <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">Your Cost</p>
-                                <p className="text-lg font-semibold" data-testid="text-edit-cost-per-unit">
-                                  ${costPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                              <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">+ Overhead ({overheadPercent}%)</p>
-                                <p className="text-lg font-semibold text-blue-600 dark:text-blue-400" data-testid="text-edit-overhead-per-unit">
-                                  +${overheadPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                              <div className="p-3 bg-background rounded-md border">
-                                <p className="text-xs text-muted-foreground mb-1">+ Profit ({profitMarginPercent}%)</p>
-                                <p className="text-lg font-semibold text-green-600 dark:text-green-400" data-testid="text-edit-profit-per-unit">
-                                  +${profitPerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                              <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
-                                <p className="text-xs text-muted-foreground mb-1">Bid Price</p>
-                                <p className="text-lg font-bold text-primary" data-testid="text-edit-bid-price-per-unit">
-                                  ${bidPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">per {unit}</p>
-                              </div>
-                            </div>
-                            {/* Line Item Totals */}
-                            <div className="mt-3 pt-3 border-t">
-                              <div className="grid grid-cols-3 gap-3">
-                                <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-md border border-orange-200 dark:border-orange-800">
-                                  <p className="text-xs text-muted-foreground mb-1">Total Overhead</p>
-                                  <p className="text-xl font-bold text-orange-600 dark:text-orange-400" data-testid="text-edit-total-overhead">
-                                    ${totalOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                                <div className="p-3 bg-green-50 dark:bg-green-950/30 rounded-md border border-green-200 dark:border-green-800">
-                                  <p className="text-xs text-muted-foreground mb-1">Total Profit</p>
-                                  <p className="text-xl font-bold text-green-600 dark:text-green-400" data-testid="text-edit-total-profit">
-                                    ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                                <div className="p-3 bg-primary/10 rounded-md border border-primary/20">
-                                  <p className="text-xs text-muted-foreground mb-1">Total Bid Price</p>
-                                  <p className="text-xl font-bold text-primary" data-testid="text-edit-total-bid-price">
-                                    ${(quantity * bidPricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-3 pt-3 border-t flex justify-between items-center text-xs text-muted-foreground">
-                              <span>
-                                {quantity.toLocaleString()} {unit} x ${bidPricePerUnit.toFixed(2)} = <span className="font-semibold text-foreground">${(quantity * bidPricePerUnit).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> total bid
-                              </span>
-                              <span className="text-amber-600 dark:text-amber-400 font-medium">
-                                {totalMarkupPercent.toFixed(1)}% total markup
-                              </span>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ) : null;
-                    })()}
-
-                    <div className="flex justify-end gap-3">
-                      <Button type="button" variant="outline" onClick={() => {
-                        setEditLineItemOpen(false);
-                        setEditingLineItem(null);
-                        form.reset();
-                        setEquipmentSelectorKey(prev => prev + 1);
-                        setMaterialCalcData(getDefaultMaterialCalculatorData());
-                        setSelectedCatalogCategory("");
-                        setCatalogPricedMaterials(new Set());
-                      }} data-testid="button-cancel-edit">
-                        Cancel
-                      </Button>
-                      <Button type="submit" disabled={editLineItemMutation.isPending} data-testid="button-submit-edit-line-item">
-                        {editLineItemMutation.isPending ? "Updating..." : "Update Line Item"}
-                      </Button>
-                    </div>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
+            <LineItemFormDialog
+              mode="edit"
+              open={editLineItemOpen}
+              onOpenChange={handleEditDialogClose}
+              form={form}
+              onSubmit={onSubmit}
+              isPending={editLineItemMutation.isPending}
+              overheadPercent={overheadPercent}
+              profitMarginPercent={profitMarginPercent}
+              workCategories={workCategories}
+              catalogPrices={catalogPrices}
+              subcontractorQuotes={subcontractorQuotes}
+              materialCalcData={materialCalcData}
+              onMaterialCalcChange={setMaterialCalcData}
+              catalogPricedMaterials={catalogPricedMaterials}
+              onCatalogPricedMaterialsChange={setCatalogPricedMaterials}
+              onCategoryChange={handleCategoryChange}
+              onApplyCatalogPrice={applyCatalogPrice}
+              equipmentSelectorKey={equipmentSelectorKey}
+            />
           </div>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Estimate Line Items</CardTitle>
-            <CardDescription>
-              Detailed breakdown of all cost items in this estimate
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {estimate.lineItems.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No line items yet</p>
-                <p className="text-sm mt-2">Add manual line items to get started</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0 px-4 sm:px-0">
-                <Table className="min-w-[1000px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="whitespace-nowrap">Description</TableHead>
-                      <TableHead className="whitespace-nowrap">Category</TableHead>
-                      <TableHead>Qty</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Material</TableHead>
-                      <TableHead className="text-right">Labor</TableHead>
-                      <TableHead className="text-right">Hours</TableHead>
-                      <TableHead className="text-right">Equipment</TableHead>
-                      <TableHead className="text-right">Subcontract</TableHead>
-                      <TableHead className="text-right">Direct Cost</TableHead>
-                      <TableHead className="text-right text-orange-600 dark:text-orange-400">Overhead ({overheadPercent}%)</TableHead>
-                      <TableHead className="text-right text-green-600 dark:text-green-400">Profit ({profitMarginPercent}%)</TableHead>
-                      <TableHead className="text-right">Bid Total</TableHead>
-                      {hasEstimateAccess && <TableHead></TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {estimate.lineItems.map((item) => {
-                      const directCost = Number(item.materialCost) + Number(item.laborCost) + Number(item.equipmentCost) + Number(item.consumablesCost || 0) + Number(item.subcontractCost || 0);
-                      const totalOverhead = directCost * (overheadPercent / 100);
-                      const totalProfit = (directCost + totalOverhead) * (profitMarginPercent / 100);
-                      const bidTotal = directCost + totalOverhead + totalProfit;
-                      
-                      return (
-                      <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
-                        <TableCell className="font-medium">{item.description}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {item.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{item.quantity.toLocaleString()}</TableCell>
-                        <TableCell className="text-muted-foreground text-xs">{item.unit}</TableCell>
-                        <TableCell className="text-right">
-                          ${Number(item.materialCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${Number(item.laborCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {Number(item.laborHours).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${Number(item.equipmentCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${Number(item.subcontractCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          ${directCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right text-orange-600 dark:text-orange-400">
-                          ${totalOverhead.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right text-green-600 dark:text-green-400">
-                          ${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        <TableCell className="text-right font-bold">
-                          ${bidTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </TableCell>
-                        {hasEstimateAccess && (
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setEditingLineItem(item);
-                                  const lineItemAny = item as any;
-                                  form.reset({
-                                    description: item.description,
-                                    category: item.category,
-                                    unit: item.unit,
-                                    quantity: Number(item.quantity),
-                                    materialCost: Number(item.materialCost),
-                                    laborCost: Number(item.laborCost),
-                                    laborHours: Number(item.laborHours),
-                                    equipmentHours: Number(item.equipmentHours || 0),
-                                    equipmentCost: Number(item.equipmentCost),
-                                    equipmentSource: lineItemAny.equipmentSource || undefined,
-                                    selectedEquipmentId: lineItemAny.selectedEquipmentId || undefined,
-                                    equipmentRateUsed: lineItemAny.equipmentRateUsed ? Number(lineItemAny.equipmentRateUsed) : undefined,
-                                    consumablesCost: Number(item.consumablesCost || 0),
-                                    subcontractCost: Number(item.subcontractCost || 0),
-                                    subcontractorQuoteId: lineItemAny.subcontractorQuoteId || undefined,
-                                    overheadAllocation: 0,
-                                    profitAllocation: 0,
-                                    notes: lineItemAny.metadata || "",
-                                  });
-                                  // Load material calc data from line item (lineItemAny already defined above)
-                                  setMaterialCalcData({
-                                    concreteDepthInches: lineItemAny.concreteDepthInches || "",
-                                    dimensionWidthInches: lineItemAny.dimensionWidthInches || "",
-                                    dimensionHeightInches: lineItemAny.dimensionHeightInches || "",
-                                    concreteWasteFactor: lineItemAny.concreteWasteFactor || "10",
-                                    calculatedConcreteYards: lineItemAny.calculatedConcreteYards || "",
-                                    requiresStoneBase: lineItemAny.requiresStoneBase || false,
-                                    stoneType: lineItemAny.stoneType || "CRUSHED_STONE",
-                                    stoneSize: lineItemAny.stoneSize || "#57",
-                                    stoneDepthInches: lineItemAny.stoneDepthInches || "",
-                                    stoneWasteFactor: lineItemAny.stoneWasteFactor || "10",
-                                    calculatedStoneTons: lineItemAny.calculatedStoneTons || "",
-                                    requiresExcavation: lineItemAny.requiresExcavation || false,
-                                    excavationDepthInches: lineItemAny.excavationDepthInches || "",
-                                    excavationWidthInches: lineItemAny.excavationWidthInches || "",
-                                    excavationSwellFactor: lineItemAny.excavationSwellFactor || "25",
-                                    calculatedExcavationYards: lineItemAny.calculatedExcavationYards || "",
-                                    requiresWireMesh: lineItemAny.requiresWireMesh || false,
-                                    wireMeshType: lineItemAny.wireMeshType || "6x6_W1.4",
-                                    wireMeshWasteFactor: lineItemAny.wireMeshWasteFactor || "10",
-                                    calculatedWireMeshRolls: lineItemAny.calculatedWireMeshRolls || "0",
-                                    requiresRebar: lineItemAny.requiresRebar || false,
-                                    rebarSize: lineItemAny.rebarSize || "#4",
-                                    rebarFabType: lineItemAny.rebarFabType || "FIELD_TIED",
-                                    rebarSpacingInches: lineItemAny.rebarSpacingInches || "12",
-                                    rebarWasteFactor: lineItemAny.rebarWasteFactor || "10",
-                                    calculatedRebarCount: lineItemAny.calculatedRebarCount || "0",
-                                    calculatedRebarLinearFeet: lineItemAny.calculatedRebarLinearFeet || "0",
-                                    requiresDowels: lineItemAny.requiresDowels || false,
-                                    dowelSpacingInches: lineItemAny.dowelSpacingInches || "12",
-                                    jointLengthFeet: lineItemAny.jointLengthFeet || "",
-                                    calculatedDowelCount: lineItemAny.calculatedDowelCount || "0",
-                                    requiresSealer: lineItemAny.requiresSealer || false,
-                                    sealerType: lineItemAny.sealerType || "CURE_SEAL",
-                                    sealerCoats: lineItemAny.sealerCoats || "1",
-                                    sealerWasteFactor: lineItemAny.sealerWasteFactor || "10",
-                                    calculatedSealerGallons: lineItemAny.calculatedSealerGallons || "0",
-                                    requiresUnderlayment: lineItemAny.requiresUnderlayment || false,
-                                    underlaymentType: lineItemAny.underlaymentType || "6MIL_POLY",
-                                    underlaymentOverlapInches: lineItemAny.underlaymentOverlapInches || "6",
-                                    underlaymentWasteFactor: lineItemAny.underlaymentWasteFactor || "10",
-                                    calculatedUnderlaymentSF: lineItemAny.calculatedUnderlaymentSF || "0",
-                                  });
-                                  setSelectedCatalogCategory(item.category);
-                                  setEditLineItemOpen(true);
-                                }}
-                                data-testid={`button-edit-line-item-${item.id}`}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  if (confirm("Delete this line item?")) {
-                                    deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId: item.id });
-                                  }
-                                }}
-                                data-testid={`button-delete-line-item-${item.id}`}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <LineItemsTable
+          lineItems={estimate.lineItems}
+          overheadPercent={overheadPercent}
+          profitMarginPercent={profitMarginPercent}
+          hasEstimateAccess={hasEstimateAccess}
+          onEdit={handleEditLineItem}
+          onDelete={handleDeleteLineItem}
+          isDeleting={deleteLineItemMutation.isPending}
+        />
       </main>
     </div>
   );
