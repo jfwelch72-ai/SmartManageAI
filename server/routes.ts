@@ -137,6 +137,9 @@ import bidRoutes2 from "./bidRoutes2";
 import dashboardUserRoutes from "./dashboardUserRoutes";
 import projectCoreRoutes from "./projectCoreRoutes";
 import crmVendorRoutes from "./crmVendorRoutes";
+import crmContactRoutes from "./crmContactRoutes";
+import vendorEnrollmentRoutes from "./vendorEnrollmentRoutes";
+import vendorPricingRoutes from "./vendorPricingRoutes";
 import scopeConfigRoutes from "./scopeConfigRoutes";
 import projectContentRoutes from "./projectContentRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
@@ -145,6 +148,8 @@ import takeoffSubRoutes from "./takeoffSubRoutes";
 import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
+import rentalEquipmentRoutes from "./rentalEquipmentRoutes";
+import equipmentPlanRoutes from "./equipmentPlanRoutes";
 import mobileSyncRoutes from "./mobileSyncRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
@@ -426,8 +431,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(projectCoreRoutes);
 
 
-  // CRM + Vendor Routes (extracted to crmVendorRoutes.ts)
+  // CRM + Vendor Routes (extracted to crmVendorRoutes.ts, crmContactRoutes.ts, vendorEnrollmentRoutes.ts, vendorPricingRoutes.ts)
   app.use(crmVendorRoutes);
+  app.use(crmContactRoutes);
+  app.use(vendorEnrollmentRoutes);
+  app.use(vendorPricingRoutes);
 
   // Scope Config, Material Calculator, Trade Config, Org Work Categories (extracted to scopeConfigRoutes.ts)
   app.use(scopeConfigRoutes);
@@ -451,6 +459,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Equipment & Tool Management Routes (extracted to equipmentMgmtRoutes.ts)
   app.use(equipmentMgmtRoutes);
+
+  // Rental Equipment & Vendor Routes (extracted from equipmentMgmtRoutes.ts)
+  app.use(rentalEquipmentRoutes);
+
+  // Equipment Plan & Bid Equipment Routes (extracted from equipmentMgmtRoutes.ts)
+  app.use(equipmentPlanRoutes);
 
   // Mobile & Offline Sync Routes
   app.use(mobileSyncRoutes);

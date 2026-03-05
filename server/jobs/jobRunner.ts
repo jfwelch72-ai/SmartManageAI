@@ -4,8 +4,8 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts } from "@shared/schema";
-import { eq, and, lt, lte, sql } from "drizzle-orm";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, notifications, users } from "@shared/schema";
+import { eq, and, lt, lte, sql, or, isNotNull, inArray } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 import { publishToPlatform } from "../social/publishService";
@@ -16,6 +16,7 @@ let retentionTask: ReturnType<typeof cron.schedule> | null = null;
 let syncScheduleTask: ReturnType<typeof cron.schedule> | null = null;
 let socialPostTask: ReturnType<typeof cron.schedule> | null = null;
 let tokenExpiryTask: ReturnType<typeof cron.schedule> | null = null;
+let complianceCheckTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -60,7 +61,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, and token expiry schedulers)");
+  complianceCheckTask = cron.schedule("0 7 * * *", async () => {
+    try {
+      await processComplianceExpirations();
+    } catch (err) {
+      logError("Compliance expiration check failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, and compliance schedulers)");
 }
 
 export function stopJobRunner() {
@@ -83,6 +92,10 @@ export function stopJobRunner() {
   if (tokenExpiryTask) {
     tokenExpiryTask.stop();
     tokenExpiryTask = null;
+  }
+  if (complianceCheckTask) {
+    complianceCheckTask.stop();
+    complianceCheckTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -470,6 +483,120 @@ async function checkSocialTokenExpiry() {
       }
     } catch (err) {
       logError("Error checking token expiry", { accountId: account.id, error: String(err) });
+    }
+  }
+}
+
+async function processComplianceExpirations() {
+  const now = new Date();
+  const fourteenDaysFromNow = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+  const expirationCheck = or(
+    and(isNotNull(crmOrganisations.insuranceExpiration), lte(crmOrganisations.insuranceExpiration, fourteenDaysFromNow)),
+    and(isNotNull(crmOrganisations.wcInsuranceExpiration), lte(crmOrganisations.wcInsuranceExpiration, fourteenDaysFromNow)),
+    and(isNotNull(crmOrganisations.licenseExpiration), lte(crmOrganisations.licenseExpiration, fourteenDaysFromNow)),
+    and(isNotNull(crmOrganisations.contractExpiration), lte(crmOrganisations.contractExpiration, fourteenDaysFromNow))
+  );
+
+  const orgs = await db
+    .select({
+      id: crmOrganisations.id,
+      name: crmOrganisations.name,
+      organizationId: crmOrganisations.organizationId,
+      insuranceExpiration: crmOrganisations.insuranceExpiration,
+      wcInsuranceExpiration: crmOrganisations.wcInsuranceExpiration,
+      licenseExpiration: crmOrganisations.licenseExpiration,
+      contractExpiration: crmOrganisations.contractExpiration,
+    })
+    .from(crmOrganisations)
+    .where(and(eq(crmOrganisations.isActive, true), expirationCheck!));
+
+  if (orgs.length === 0) {
+    logInfo("Compliance check: no expiring items found");
+    return;
+  }
+
+  const orgIdSet = new Set(orgs.map(o => o.organizationId));
+  const orgIds = [...orgIdSet];
+
+  const managers = await db
+    .select({ id: users.id, organizationId: users.organizationId })
+    .from(users)
+    .where(
+      and(
+        inArray(users.organizationId, orgIds),
+        inArray(users.role, ["ADMIN", "MANAGER", "OFFICE_MANAGER", "PROCUREMENT_MANAGER"])
+      )
+    );
+
+  const managersByOrg = new Map<string, string[]>();
+  for (const m of managers) {
+    if (!m.organizationId) continue;
+    const list = managersByOrg.get(m.organizationId) || [];
+    list.push(m.id);
+    managersByOrg.set(m.organizationId, list);
+  }
+
+  const notificationValues: Array<{
+    userId: string;
+    type: "GENERAL";
+    title: string;
+    message: string;
+    relatedEntityId: string;
+    relatedEntityType: string;
+  }> = [];
+
+  for (const org of orgs) {
+    const recipients = managersByOrg.get(org.organizationId) || [];
+    if (recipients.length === 0) continue;
+
+    const fields = [
+      { type: "General Liability Insurance", date: org.insuranceExpiration },
+      { type: "Workers Comp Insurance", date: org.wcInsuranceExpiration },
+      { type: "License", date: org.licenseExpiration },
+      { type: "Contract", date: org.contractExpiration },
+    ];
+
+    for (const field of fields) {
+      if (!field.date) continue;
+      const expDate = new Date(field.date);
+      if (expDate > fourteenDaysFromNow) continue;
+
+      const daysUntil = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const statusLabel = daysUntil <= 0 ? "EXPIRED" : `expires in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`;
+
+      for (const userId of recipients) {
+        notificationValues.push({
+          userId,
+          type: "GENERAL",
+          title: `Compliance Alert: ${field.type} ${statusLabel}`,
+          message: `${org.name} — ${field.type} ${statusLabel}. Please update compliance records.`,
+          relatedEntityId: org.id,
+          relatedEntityType: "CRM_COMPLIANCE",
+        });
+      }
+    }
+  }
+
+  if (notificationValues.length > 0) {
+    const existing = await db
+      .select({ relatedEntityId: notifications.relatedEntityId, userId: notifications.userId, title: notifications.title })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.relatedEntityType, "CRM_COMPLIANCE"),
+          eq(notifications.isRead, false)
+        )
+      );
+
+    const existingKeys = new Set(existing.map(e => `${e.userId}:${e.relatedEntityId}:${e.title}`));
+    const deduped = notificationValues.filter(n => !existingKeys.has(`${n.userId}:${n.relatedEntityId}:${n.title}`));
+
+    if (deduped.length > 0) {
+      await db.insert(notifications).values(deduped);
+      logInfo("Compliance notifications created", { count: deduped.length });
+    } else {
+      logInfo("Compliance check: all notifications already exist (unread)");
     }
   }
 }
