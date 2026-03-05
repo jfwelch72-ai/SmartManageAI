@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,13 +19,15 @@ import {
   Plus, Calendar as CalendarIcon, List, LayoutDashboard, Loader2, Sparkles,
   Copy, Trash2, Edit, MoreHorizontal, ExternalLink, RefreshCw, Clock,
   CheckCircle, AlertCircle, Send, Eye, ChevronLeft, ChevronRight,
-  Hash, Image, Link2, Megaphone, TrendingUp, Users, Filter, Search
+  Hash, Image, Link2, Megaphone, TrendingUp, Users, Filter, Search,
+  Upload, Check, ChevronDown, Wand2
 } from "lucide-react";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok, SiPinterest } from "react-icons/si";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isSameMonth, addMonths, subMonths, startOfWeek, endOfWeek, isToday } from "date-fns";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
+import { ObjectUploader } from "@/components/ObjectUploader";
 
 const PLATFORMS = [
   { value: "FACEBOOK", label: "Facebook", icon: SiFacebook, color: "#1877F2" },
@@ -675,7 +677,7 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
   const getDefaultForm = () => ({
     title: "",
     content: "",
-    platform: "FACEBOOK" as string,
+    platforms: ["FACEBOOK"] as string[],
     status: "DRAFT",
     hashtags: [] as string[],
     hashtagInput: "",
@@ -699,6 +701,21 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
   const [aiResult, setAiResult] = useState<any>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [mediaUrlInput, setMediaUrlInput] = useState("");
+  const [mediaMode, setMediaMode] = useState<"none" | "url" | "ai">("none");
+  const [aiImagePrompt, setAiImagePrompt] = useState("");
+  const [platformDropdownOpen, setPlatformDropdownOpen] = useState(false);
+  const platformDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!platformDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (platformDropdownRef.current && !platformDropdownRef.current.contains(e.target as Node)) {
+        setPlatformDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [platformDropdownOpen]);
 
   const { data: accounts } = useQuery<SocialAccount[]>({
     queryKey: ["/api/social/accounts"],
@@ -707,8 +724,8 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
 
   const platformAccounts = useMemo(() => {
     if (!accounts) return [];
-    return accounts.filter(a => a.platform === form.platform && a.status === "CONNECTED");
-  }, [accounts, form.platform]);
+    return accounts.filter(a => form.platforms.includes(a.platform) && a.status === "CONNECTED");
+  }, [accounts, form.platforms]);
 
   const isEditing = !!editingPost;
 
@@ -719,7 +736,7 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
       setForm({
         title: editingPost.title || "",
         content: editingPost.content || "",
-        platform: editingPost.platform || "FACEBOOK",
+        platforms: (editingPost.platforms && editingPost.platforms.length > 0) ? editingPost.platforms : (editingPost.platform ? [editingPost.platform] : ["FACEBOOK"]),
         status: editingPost.status,
         hashtags: editingPost.hashtags || [],
         hashtagInput: "",
@@ -748,10 +765,13 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
     setAiResult(null);
     setShowPreview(false);
     setMediaUrlInput("");
+    setMediaMode("none");
+    setAiImagePrompt("");
+    setPlatformDropdownOpen(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
-  const charLimit = CHAR_LIMITS[form.platform] || 5000;
+  const charLimit = form.platforms.length > 0 ? Math.min(...form.platforms.map(p => CHAR_LIMITS[p] || 5000)) : 5000;
   const charCount = form.content.length;
   const isOverLimit = charCount > charLimit;
 
@@ -788,7 +808,7 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/social/posts/generate", {
-        platform: form.platform,
+        platform: form.platforms[0] || "FACEBOOK",
         topic: aiTopic,
         tone: form.tone,
       });
@@ -807,7 +827,45 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
     onError: (e: Error) => toast({ title: "Generation failed", description: e.message, variant: "destructive" }),
   });
 
+  const generateImageMutation = useMutation({
+    mutationFn: async (prompt: string) => {
+      const res = await apiRequest("POST", "/api/social/posts/generate-image", { prompt });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      if (data.imageUrl) {
+        setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, data.imageUrl] }));
+        setAiImagePrompt("");
+        setMediaMode("none");
+        toast({ title: "Image generated" });
+      }
+    },
+    onError: (e: Error) => toast({ title: "Image generation failed", description: e.message, variant: "destructive" }),
+  });
+
+  const onGetUploadParameters = async () => {
+    const response = await apiRequest("POST", "/api/objects/upload");
+    const data = await response.json();
+    return { method: "PUT" as const, url: data.uploadURL };
+  };
+
+  const handleUploadComplete = (result: any) => {
+    if (!result.successful || result.successful.length === 0) {
+      toast({ title: "Upload failed", variant: "destructive" });
+      return;
+    }
+    const fileUrl = result.successful[0].uploadURL;
+    if (fileUrl) {
+      setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, fileUrl] }));
+      toast({ title: "Image uploaded" });
+    }
+  };
+
   const handleSubmit = (saveStatus: string) => {
+    if (form.platforms.length === 0) {
+      toast({ title: "Select at least one platform", variant: "destructive" });
+      return;
+    }
     if (saveStatus === "SCHEDULED" && !form.socialAccountId && platformAccounts.length > 0) {
       toast({ title: "Please select an account", description: "Select which connected account to publish to before scheduling.", variant: "destructive" });
       return;
@@ -816,7 +874,8 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
     const payload: any = {
       title: form.title || null,
       content: form.content,
-      platform: form.platform,
+      platform: form.platforms[0] || null,
+      platforms: form.platforms,
       status: saveStatus,
       hashtags: form.hashtags.length > 0 ? form.hashtags : null,
       campaignTag: form.campaignTag || null,
@@ -873,25 +932,59 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Platform</Label>
-              <Select value={form.platform} onValueChange={v => setForm(prev => ({ ...prev, platform: v }))}>
-                <SelectTrigger data-testid="select-platform">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLATFORMS.map(p => {
-                    const Icon = p.icon;
-                    return (
-                      <SelectItem key={p.value} value={p.value}>
-                        <span className="flex items-center gap-2">
+              <Label>Platforms</Label>
+              <div className="relative" ref={platformDropdownRef}>
+                <button
+                  type="button"
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                  onClick={() => setPlatformDropdownOpen(!platformDropdownOpen)}
+                  data-testid="select-platform"
+                >
+                  <span className="flex items-center gap-1 overflow-hidden">
+                    {form.platforms.length === 0 ? (
+                      <span className="text-muted-foreground">Select platforms...</span>
+                    ) : (
+                      form.platforms.slice(0, 3).map(pv => {
+                        const pInfo = getPlatformInfo(pv);
+                        const Icon = pInfo.icon;
+                        return <Icon key={pv} className="h-4 w-4 shrink-0" style={{ color: pInfo.color }} />;
+                      })
+                    )}
+                    {form.platforms.length > 3 && <span className="text-xs text-muted-foreground ml-1">+{form.platforms.length - 3}</span>}
+                  </span>
+                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                </button>
+                {platformDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover p-1 shadow-md">
+                    {PLATFORMS.map(p => {
+                      const Icon = p.icon;
+                      const isSelected = form.platforms.includes(p.value);
+                      return (
+                        <button
+                          key={p.value}
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground"
+                          onClick={() => {
+                            setForm(prev => {
+                              const next = isSelected
+                                ? prev.platforms.filter(v => v !== p.value)
+                                : [...prev.platforms, p.value];
+                              return { ...prev, platforms: next.length === 0 ? prev.platforms : next };
+                            });
+                          }}
+                          data-testid={`platform-option-${p.value.toLowerCase()}`}
+                        >
+                          <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? "bg-primary border-primary" : "border-muted-foreground/30"}`}>
+                            {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                          </div>
                           <Icon className="h-3.5 w-3.5" style={{ color: p.color }} />
-                          {p.label}
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+                          <span>{p.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <Label>Tone</Label>
@@ -935,7 +1028,18 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
             </div>
             {showPreview ? (
               <div className="flex justify-center p-4 bg-muted/30 rounded-lg min-h-[200px]">
-                <PlatformPreview platform={form.platform} content={form.content} hashtags={form.hashtags} mediaUrls={form.mediaUrls} />
+                <div className="w-full space-y-2">
+                  {form.platforms.length > 1 && (
+                    <div className="flex gap-1 justify-center mb-2">
+                      {form.platforms.map(pv => {
+                        const pInfo = getPlatformInfo(pv);
+                        const Icon = pInfo.icon;
+                        return <Badge key={pv} variant="outline" className="text-xs"><Icon className="h-3 w-3 mr-1" style={{ color: pInfo.color }} />{pInfo.label}</Badge>;
+                      })}
+                    </div>
+                  )}
+                  <PlatformPreview platform={form.platforms[0] || "FACEBOOK"} content={form.content} hashtags={form.hashtags} mediaUrls={form.mediaUrls} />
+                </div>
               </div>
             ) : (
               <Textarea
@@ -987,36 +1091,102 @@ function CreateEditPostDialog({ open, onClose, editingPost, prefilledDate }: {
               </div>
             )}
             {form.mediaUrls.length < 4 && (
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Paste an image URL..."
-                  value={mediaUrlInput}
-                  onChange={e => setMediaUrlInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      if (mediaUrlInput.trim()) {
-                        setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, mediaUrlInput.trim()] }));
-                        setMediaUrlInput("");
-                      }
-                    }
-                  }}
-                  data-testid="input-media-url"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (mediaUrlInput.trim()) {
-                      setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, mediaUrlInput.trim()] }));
-                      setMediaUrlInput("");
-                    }
-                  }}
-                  disabled={!mediaUrlInput.trim() || form.mediaUrls.length >= 4}
-                  data-testid="button-add-media"
-                >
-                  <Image className="h-4 w-4" />
-                </Button>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <ObjectUploader
+                    maxNumberOfFiles={1}
+                    maxFileSize={10485760}
+                    allowedFileTypes={["image/*"]}
+                    onGetUploadParameters={onGetUploadParameters}
+                    onComplete={handleUploadComplete}
+                    testId="button-upload-media"
+                  >
+                    <Button variant="outline" size="sm" type="button" className="gap-1.5" data-testid="button-upload-media">
+                      <Upload className="h-3.5 w-3.5" />
+                      Upload
+                    </Button>
+                  </ObjectUploader>
+                  <Button
+                    variant={mediaMode === "url" ? "secondary" : "outline"}
+                    size="sm"
+                    type="button"
+                    className="gap-1.5"
+                    onClick={() => setMediaMode(mediaMode === "url" ? "none" : "url")}
+                    data-testid="button-media-url-toggle"
+                  >
+                    <Link2 className="h-3.5 w-3.5" />
+                    URL
+                  </Button>
+                  <Button
+                    variant={mediaMode === "ai" ? "secondary" : "outline"}
+                    size="sm"
+                    type="button"
+                    className="gap-1.5"
+                    onClick={() => setMediaMode(mediaMode === "ai" ? "none" : "ai")}
+                    data-testid="button-media-ai-toggle"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    Generate
+                  </Button>
+                </div>
+                {mediaMode === "url" && (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Paste an image URL..."
+                      value={mediaUrlInput}
+                      onChange={e => setMediaUrlInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (mediaUrlInput.trim()) {
+                            setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, mediaUrlInput.trim()] }));
+                            setMediaUrlInput("");
+                          }
+                        }
+                      }}
+                      data-testid="input-media-url"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (mediaUrlInput.trim()) {
+                          setForm(prev => ({ ...prev, mediaUrls: [...prev.mediaUrls, mediaUrlInput.trim()] }));
+                          setMediaUrlInput("");
+                        }
+                      }}
+                      disabled={!mediaUrlInput.trim()}
+                      data-testid="button-add-media-url"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+                {mediaMode === "ai" && (
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Describe the image you want..."
+                      value={aiImagePrompt}
+                      onChange={e => setAiImagePrompt(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          if (aiImagePrompt.trim().length >= 3) generateImageMutation.mutate(aiImagePrompt.trim());
+                        }
+                      }}
+                      data-testid="input-ai-image-prompt"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => generateImageMutation.mutate(aiImagePrompt.trim())}
+                      disabled={generateImageMutation.isPending || aiImagePrompt.trim().length < 3}
+                      data-testid="button-generate-image"
+                    >
+                      {generateImageMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

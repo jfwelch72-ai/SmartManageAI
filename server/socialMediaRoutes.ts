@@ -7,6 +7,9 @@ import { randomUUID } from "crypto";
 import crypto from "crypto";
 import { openai } from "./ai/openaiClient";
 import { publishToPlatform, validateToken, refreshToken } from "./social/publishService";
+import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
+
+const objectStorage = new ObjectStorageService();
 
 const router = Router();
 
@@ -258,6 +261,88 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error("Error creating social post:", error);
     res.status(500).json({ error: "Failed to create social post" });
+  }
+});
+
+router.post("/posts/generate-image", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const { prompt } = req.body;
+    if (!prompt || typeof prompt !== "string" || prompt.trim().length < 3) {
+      return res.status(400).json({ error: "Please provide a descriptive prompt (at least 3 characters)" });
+    }
+
+    const imagePrompt = `Professional social media post image: ${prompt.trim()}. High-quality, vibrant, suitable for social media marketing. Clean composition, no text overlays.`;
+
+    const imageResponse = await openai.images.generate({
+      model: "gpt-image-1",
+      prompt: imagePrompt,
+      n: 1,
+      size: "1024x1024",
+      quality: "low",
+      output_format: "png",
+    } as any);
+
+    const b64Data = imageResponse.data?.[0]?.b64_json;
+    if (!b64Data) {
+      return res.status(500).json({ error: "Failed to generate image" });
+    }
+
+    const imageBuffer = Buffer.from(b64Data, "base64");
+    const publicPaths = objectStorage.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      return res.status(500).json({ error: "Object storage not configured" });
+    }
+
+    const basePath = publicPaths[0];
+    const uniqueId = randomUUID();
+    const fileName = `gallery/${orgId}/social-${uniqueId}.png`;
+    const fullPath = `${basePath}/${fileName}`;
+    const pathParts = fullPath.split("/").filter(p => p.length > 0);
+    const bucketName = pathParts[0];
+    const objectName = pathParts.slice(1).join("/");
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const blob = bucket.file(objectName);
+
+    await blob.save(imageBuffer, {
+      metadata: {
+        contentType: "image/png",
+        metadata: { originalName: `social-ai-${uniqueId}.png` },
+      },
+    });
+
+    const imageUrl = `/api/social/image/${orgId}/social-${uniqueId}.png`;
+    res.json({ imageUrl });
+  } catch (error: any) {
+    console.error("Error generating social media image:", error);
+    if (error?.code === "content_policy_violation") {
+      return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different prompt." });
+    }
+    if (error?.code === "unknown_model" || error?.message?.includes("Unknown model") || error?.status === 404 || error?.message?.includes("not found")) {
+      return res.status(501).json({ error: "AI image generation is not available. Please upload an image manually." });
+    }
+    res.status(500).json({ error: error?.message || "Failed to generate image" });
+  }
+});
+
+router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
+  try {
+    const { orgId, fileName } = req.params;
+    const filePath = `gallery/${orgId}/${fileName}`;
+    const file = await objectStorage.searchPublicObject(filePath);
+    if (!file) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+    objectStorage.downloadObject(file, res, 86400);
+  } catch (error: any) {
+    console.error("Error serving social image:", error);
+    if (error instanceof ObjectNotFoundError) {
+      return res.status(404).json({ error: "Image not found" });
+    }
+    res.status(500).json({ error: "Failed to serve image" });
   }
 });
 
