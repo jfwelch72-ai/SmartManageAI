@@ -251,6 +251,7 @@ interface FormConfig {
   fields: FormFieldConfig[];
   redirectUrl?: string;
   recipientEmail?: string;
+  showLabels?: boolean;
   submitButtonStyle?: Record<string, string>;
   fieldStyle?: Record<string, string>;
 }
@@ -1579,6 +1580,14 @@ function FormEditor({ comp, onChange, brandingColors }: { comp: BodyComponent & 
           data-testid="input-form-recipient-email" 
         />
         <p className="text-xs text-muted-foreground mt-1">Form submissions will be emailed to this address</p>
+      </div>
+      <div className="flex items-center justify-between">
+        <Label className="text-xs">Show Field Labels</Label>
+        <Switch
+          checked={comp.config.showLabels !== false}
+          onCheckedChange={(checked) => onChange({ ...comp.config, showLabels: checked })}
+          data-testid="switch-form-show-labels"
+        />
       </div>
 
       <Collapsible>

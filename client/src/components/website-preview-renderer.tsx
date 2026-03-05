@@ -1246,7 +1246,8 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
           );
         }
         case 'form': {
-          const { title, submitButtonText, fields = [], redirectUrl, submitButtonStyle = {}, fieldStyle: globalFieldStyle = {}, recipientEmail } = cfg as any;
+          const { title, submitButtonText, fields = [], redirectUrl, submitButtonStyle = {}, fieldStyle: globalFieldStyle = {}, recipientEmail, showLabels: showLabelsConfig } = cfg as any;
+          const showLabels = showLabelsConfig !== false;
           const inputBaseStyle: React.CSSProperties = {
             width: '100%',
             padding: '0.5rem',
@@ -1427,18 +1428,20 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
                     }
                     return (
                       <div key={field.id}>
-                        <label style={labelStyle}>
-                          {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
-                        </label>
+                        {showLabels && (
+                          <label style={labelStyle}>
+                            {field.label}{field.required && <span style={{ color: '#ef4444' }}> *</span>}
+                          </label>
+                        )}
                         {field.type === 'textarea' ? (
-                          <textarea name={field.id} placeholder={field.placeholder} required={field.required} style={{ ...fieldInputStyle, minHeight: '80px' }} />
+                          <textarea name={field.id} placeholder={!showLabels ? (field.required ? `${field.placeholder || field.label} *` : (field.placeholder || field.label)) : (field.placeholder || undefined)} required={field.required} style={{ ...fieldInputStyle, minHeight: '80px' }} />
                         ) : field.type === 'select' ? (
                           <select name={field.id} required={field.required} style={fieldInputStyle}>
-                            <option value="">{field.placeholder || 'Select...'}</option>
+                            <option value="">{!showLabels ? (field.required ? `${field.placeholder || field.label} *` : (field.placeholder || field.label)) : (field.placeholder || 'Select...')}</option>
                             {(field.options || []).map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
                           </select>
                         ) : (
-                          <input name={field.id} type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={field.placeholder} required={field.required} style={fieldInputStyle} />
+                          <input name={field.id} type={field.type === 'email' ? 'email' : (field.type === 'phone' || field.type === 'tel') ? 'tel' : field.type === 'number' ? 'number' : 'text'} placeholder={!showLabels ? (field.required ? `${field.placeholder || field.label} *` : (field.placeholder || field.label)) : (field.placeholder || undefined)} required={field.required} style={fieldInputStyle} />
                         )}
                       </div>
                     );
