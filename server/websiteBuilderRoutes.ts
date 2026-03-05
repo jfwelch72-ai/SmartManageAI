@@ -131,6 +131,15 @@ router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
     const normalizedPath = objectStorageService.normalizeObjectEntityPath(org.logoUrl);
 
     if (!normalizedPath.startsWith("/objects/")) {
+      try {
+        const parsedLogoUrl = new URL(org.logoUrl);
+        if (parsedLogoUrl.protocol !== "https:" ||
+          (!parsedLogoUrl.hostname.endsWith("storage.googleapis.com") && !parsedLogoUrl.hostname.endsWith("googleusercontent.com"))) {
+          return res.status(404).json({ error: "Logo not found" });
+        }
+      } catch {
+        return res.status(404).json({ error: "Logo not found" });
+      }
       return res.redirect(org.logoUrl);
     }
 

@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import helmet from "helmet";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAIScheduler } from "./ai/scheduler";
@@ -10,6 +11,11 @@ const app = express();
 
 // Trust proxy - Required for accurate IP detection behind Replit proxy
 app.set("trust proxy", 1);
+
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 
 // CORS Configuration - Fixed default to localhost:5173
 app.use(cors({
@@ -38,6 +44,40 @@ app.use((req, res, next) => {
   next();
 });
 
+const SENSITIVE_KEYS = new Set([
+  'password', 'passwordHash', 'password_hash',
+  'token', 'accessToken', 'access_token', 'refreshToken', 'refresh_token',
+  'secret', 'sessionSecret', 'apiKey', 'api_key',
+  'authorization', 'cookie',
+]);
+const PII_KEYS = new Set(['email', 'phone', 'recipientEmail']);
+
+function redactForLog(obj: any, depth = 0): any {
+  if (depth > 3 || obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.length > 3 ? `[Array(${obj.length})]` : obj.map(item => redactForLog(item, depth + 1));
+  const result: Record<string, any> = {};
+  for (const key of Object.keys(obj)) {
+    const lk = key.toLowerCase();
+    if (SENSITIVE_KEYS.has(key) || SENSITIVE_KEYS.has(lk)) {
+      result[key] = '[REDACTED]';
+    } else if (PII_KEYS.has(key) || PII_KEYS.has(lk)) {
+      const val = obj[key];
+      if (typeof val === 'string' && val.includes('@')) {
+        const [local, domain] = val.split('@');
+        result[key] = `${local[0]}***@${domain}`;
+      } else if (typeof val === 'string' && val.length > 4) {
+        result[key] = `***${val.slice(-4)}`;
+      } else {
+        result[key] = '[REDACTED]';
+      }
+    } else {
+      result[key] = redactForLog(obj[key], depth + 1);
+    }
+  }
+  return result;
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -54,7 +94,7 @@ app.use((req, res, next) => {
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        logLine += ` :: ${JSON.stringify(redactForLog(capturedJsonResponse))}`;
       }
 
       if (logLine.length > 80) {
