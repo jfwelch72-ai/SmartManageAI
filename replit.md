@@ -32,8 +32,8 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **API Log Redaction**: Middleware redacts sensitive fields and masks PII in server logs.
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling, with security hardened via AES-256-GCM token encryption. Includes integrations for cloud storage providers (Dropbox, Google Drive, OneDrive, Box).
 *   **Multi-Source Document Upload**: Upload Source Picker supports local files, direct links (with SSRF protection), and integrated cloud storage services.
-*   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, and UI for history and comparison.
-*   **Addenda Tracking System**: Full addenda lifecycle management per project.
+*   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, and UI for history and comparison. RFIs, submittals, and transmittals use shared hook/dialog architecture: `useRfiMutations.tsx`, `useSubmittalMutations.ts`, `useTransmittalMutations.ts` for mutations and `document-control/` directory for shared detail dialogs (`RfiDetailDialog.tsx`, `SubmittalDetailDialog.tsx`, `TransmittalDetailDialog.tsx`, `RfiCreateFields.tsx`). Submittal backend split into `submittalRoutes.ts` (CRUD) and `submittalWorkflowRoutes.ts` (review workflow). In-app notifications for all document status transitions via `documentNotificationService.ts`. RFI overdue tracking with visual indicators and stats. RFI attachments use `DocumentAttachments` component consistently.
+*   **Addenda Tracking System**: Full addenda lifecycle management per project with in-app notifications on issuance.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs with snapshot trending.
 *   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher.
 *   **Takeoff Enhancements**: Sheet management, visual revision comparison, addenda overlays, advanced calibration, and new measurement types.

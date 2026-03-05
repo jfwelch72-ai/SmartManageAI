@@ -16,6 +16,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { notifyDocumentEvent } from "./services/documentNotificationService";
 
 const router = Router();
 
@@ -129,17 +130,23 @@ router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
     }
 
     const allRfis = await db
-      .select({ status: rfis.status })
+      .select({ status: rfis.status, dateRequired: rfis.dateRequired })
       .from(rfis)
       .leftJoin(projects, eq(rfis.projectId, projects.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined);
 
+    const now = new Date();
     const total = allRfis.length;
     const open = allRfis.filter((r) => ["DRAFT", "SUBMITTED", "UNDER_REVIEW"].includes(r.status)).length;
     const answered = allRfis.filter((r) => r.status === "ANSWERED").length;
     const closed = allRfis.filter((r) => r.status === "CLOSED").length;
+    const overdue = allRfis.filter((r) =>
+      ["SUBMITTED", "UNDER_REVIEW"].includes(r.status) &&
+      r.dateRequired &&
+      new Date(r.dateRequired) < now
+    ).length;
 
-    res.json({ total, open, answered, closed });
+    res.json({ total, open, answered, closed, overdue });
   } catch (error) {
     console.error("Get RFI stats error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -313,6 +320,12 @@ router.post("/rfi/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
     const user = req.user!;
     await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, "RFI Submitted");
 
+    const recipientIds: string[] = [];
+    if (rfi.assignedToId) recipientIds.push(rfi.assignedToId);
+    if (recipientIds.length > 0) {
+      notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, recipientIds, `RFI Submitted: ${rfi.subject}`, rfi.rfiNumber);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Submit RFI error:", error);
@@ -377,6 +390,8 @@ router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, "RFI Answered", answer);
 
+    notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, [rfi.submittedById], `RFI Answered: ${rfi.subject}`, rfi.rfiNumber);
+
     res.json(updated);
   } catch (error) {
     console.error("Answer RFI error:", error);
@@ -403,6 +418,10 @@ router.post("/rfi/:id/close", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
       .returning();
 
     await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, "RFI Closed");
+
+    const closeRecipients: string[] = [rfi.submittedById];
+    if (rfi.assignedToId) closeRecipients.push(rfi.assignedToId);
+    notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, closeRecipients, `RFI Closed: ${rfi.subject}`, rfi.rfiNumber);
 
     res.json(updated);
   } catch (error) {
@@ -434,6 +453,10 @@ router.post("/rfi/:id/reopen", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     const user = req.user!;
     await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, "RFI Reopened");
+
+    const reopenRecipients: string[] = [rfi.submittedById];
+    if (rfi.assignedToId) reopenRecipients.push(rfi.assignedToId);
+    notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, reopenRecipients, `RFI Reopened: ${rfi.subject}`, rfi.rfiNumber);
 
     res.json(updated);
   } catch (error) {

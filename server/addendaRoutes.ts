@@ -4,6 +4,7 @@ import { db } from "./db";
 import { addenda, addendumAcknowledgments } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
+import { notifyDocumentEvent } from "./services/documentNotificationService";
 
 const router = Router();
 
@@ -168,6 +169,16 @@ router.post("/addenda/:id/issue", requireAuth, async (req, res) => {
       .returning();
 
     logInfo("Addendum issued", { addendumId: updated.id });
+
+    const acks = await db.select().from(addendumAcknowledgments)
+      .where(eq(addendumAcknowledgments.addendumId, updated.id));
+    const ackRecipientIds = acks
+      .map(a => a.recipientId)
+      .filter((rid): rid is string => !!rid);
+    if (ackRecipientIds.length > 0) {
+      notifyDocumentEvent("ADDENDUM", updated.id, user.organizationId, existing.projectId, user.id, ackRecipientIds, `Addendum Issued: ${existing.title}`, `Addendum #${existing.addendumNumber}`);
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: "Failed to issue addendum" });

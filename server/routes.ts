@@ -110,6 +110,7 @@ import aiScheduleRoutes from "./aiScheduleRoutes";
 import rfiRoutes from "./rfiRoutes";
 import transmittalRoutes from "./transmittalRoutes";
 import submittalRoutes from "./submittalRoutes";
+import submittalWorkflowRoutes from "./submittalWorkflowRoutes";
 import portalRoutes from "./portalRoutes";
 import portalChatRoutes from "./portalChatRoutes";
 import integrationRoutes from "./integrationRoutes";
@@ -272,6 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", rfiRoutes);
   app.use("/api", transmittalRoutes);
   app.use("/api", submittalRoutes);
+  app.use("/api", submittalWorkflowRoutes);
 
   app.use("/api", portalRoutes);
   app.use("/api", portalChatRoutes);

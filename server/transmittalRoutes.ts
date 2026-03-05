@@ -13,6 +13,7 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { notifyDocumentEvent } from "./services/documentNotificationService";
 
 const router = Router();
 
@@ -284,6 +285,19 @@ router.post("/transmittals/:id/send", requireAuth, requireRole("SUPER_ADMIN", "A
       })
       .where(eq(documentTransmittals.id, id))
       .returning();
+
+    const recipients = await db
+      .select()
+      .from(transmittalRecipients)
+      .where(eq(transmittalRecipients.transmittalId, id));
+
+    const recipientUserIds = recipients
+      .map(r => r.acknowledgedById)
+      .filter((rid): rid is string => !!rid);
+
+    if (recipientUserIds.length > 0) {
+      notifyDocumentEvent("TRANSMITTAL", id, existing.transmittal.organizationId, existing.transmittal.projectId, req.user!.id, recipientUserIds, `Transmittal Sent: ${existing.transmittal.subject}`, existing.transmittal.transmittalNumber);
+    }
 
     res.json(updated);
   } catch (error) {
