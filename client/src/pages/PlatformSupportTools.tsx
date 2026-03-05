@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound, Trash2, Archive, RotateCcw, LogIn, Database, RefreshCw, CheckCircle, AlertCircle } from "lucide-react";
+import { ChevronLeft, Plus, Users, Search, Mail, Building2, KeyRound, Trash2, Archive, RotateCcw, LogIn, Database, RefreshCw, CheckCircle, AlertCircle, ShieldCheck, ShieldX } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,6 +42,7 @@ interface User {
   role: string;
   organizationId: string | null;
   isActive: boolean;
+  emailVerified: boolean;
 }
 
 interface SowItem {
@@ -195,6 +196,20 @@ export default function PlatformSupportTools() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to delete user", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const toggleEmailVerifiedMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      return apiRequest("PATCH", `/api/platform/users/${userId}/verify-email`);
+    },
+    onSuccess: async (res, userId) => {
+      const data = await res.json();
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
+      toast({ title: data.message || "Email verification status updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update verification status", description: error.message, variant: "destructive" });
     },
   });
 
@@ -396,6 +411,7 @@ export default function PlatformSupportTools() {
                       {selectedRoleFilter !== "all" && <> with role <strong className="text-foreground">{roleLabels[selectedRoleFilter]}</strong></>}
                     </span>
                   </div>
+                <div className="hidden md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -404,6 +420,7 @@ export default function PlatformSupportTools() {
                       <TableHead>Role</TableHead>
                       <TableHead>Organization</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Email Verified</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -431,6 +448,37 @@ export default function PlatformSupportTools() {
                           <Badge variant={user.isActive ? "default" : "destructive"}>
                             {user.isActive ? "Active" : "Inactive"}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Badge 
+                              variant={user.emailVerified ? "default" : "outline"}
+                              className={user.emailVerified ? "bg-green-600" : "text-amber-600 border-amber-400"}
+                              data-testid={`badge-email-verified-${user.id}`}
+                            >
+                              {user.emailVerified ? (
+                                <><ShieldCheck className="h-3 w-3 mr-1" />Verified</>
+                              ) : (
+                                <><ShieldX className="h-3 w-3 mr-1" />Unverified</>
+                              )}
+                            </Badge>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  disabled={toggleEmailVerifiedMutation.isPending}
+                                  onClick={() => toggleEmailVerifiedMutation.mutate(user.id)}
+                                  data-testid={`button-toggle-verified-${user.id}`}
+                                >
+                                  {user.emailVerified ? <ShieldX className="h-4 w-4 text-muted-foreground" /> : <ShieldCheck className="h-4 w-4 text-green-600" />}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{user.emailVerified ? "Mark as unverified" : "Mark as verified"}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -529,13 +577,151 @@ export default function PlatformSupportTools() {
                     ))}
                     {filteredUsers?.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                           No users found matching your filters
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
+                </div>
+
+                <div className="md:hidden space-y-3">
+                  {filteredUsers?.map((user) => (
+                    <div key={user.id} className="border rounded-lg p-4 space-y-3" data-testid={`card-user-${user.id}`}>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-medium text-sm" data-testid={`text-name-${user.id}`}>{user.firstName} {user.lastName}</p>
+                          <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5" data-testid={`text-email-${user.id}`}>
+                            <Mail className="h-3 w-3" />
+                            {user.email}
+                          </p>
+                        </div>
+                        <Badge variant={user.isActive ? "default" : "destructive"} data-testid={`status-active-${user.id}`}>
+                          {user.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={user.role === "SUPER_ADMIN" ? "default" : "secondary"} data-testid={`badge-role-${user.id}`}>
+                          {roleLabels[user.role] || user.role}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground flex items-center gap-1" data-testid={`text-org-${user.id}`}>
+                          <Building2 className="h-3 w-3" />
+                          {organizations?.find((o) => o.id === user.organizationId)?.name || "-"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={user.emailVerified ? "default" : "outline"}
+                          className={user.emailVerified ? "bg-green-600" : "text-amber-600 border-amber-400"}
+                          data-testid={`badge-email-verified-mobile-${user.id}`}
+                        >
+                          {user.emailVerified ? (
+                            <><ShieldCheck className="h-3 w-3 mr-1" />Verified</>
+                          ) : (
+                            <><ShieldX className="h-3 w-3 mr-1" />Unverified</>
+                          )}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={toggleEmailVerifiedMutation.isPending}
+                          onClick={() => toggleEmailVerifiedMutation.mutate(user.id)}
+                          data-testid={`button-toggle-verified-mobile-${user.id}`}
+                        >
+                          {user.emailVerified ? "Unverify" : "Verify"}
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2 border-t">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={resetPasswordMutation.isPending}
+                              data-testid={`button-reset-password-mobile-${user.id}`}
+                            >
+                              <KeyRound className="h-3 w-3 mr-1" />
+                              Reset PW
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Reset Password</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will send a password reset email to <strong>{user.email}</strong>.
+                                The user will receive a link to set a new password.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => resetPasswordMutation.mutate(user.id)}>
+                                Send Reset Email
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                        {user.role !== "SUPER_ADMIN" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={impersonateUserMutation.isPending}
+                            onClick={() => impersonateUserMutation.mutate(user.id)}
+                            data-testid={`button-login-as-mobile-${user.id}`}
+                          >
+                            <LogIn className="h-3 w-3 mr-1" />
+                            Login As
+                          </Button>
+                        )}
+                        {user.role !== "SUPER_ADMIN" && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive ml-auto"
+                                disabled={softDeleteMutation.isPending}
+                                data-testid={`button-delete-user-mobile-${user.id}`}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Archive
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Archive User Account</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to archive this user account?
+                                  <br /><br />
+                                  <strong>{user.firstName} {user.lastName}</strong> ({user.email}) will be:
+                                  <ul className="list-disc list-inside mt-2 space-y-1">
+                                    <li>Deactivated and unable to log in</li>
+                                    <li>Moved to Archived Users</li>
+                                    <li>Available for permanent deletion later</li>
+                                  </ul>
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => softDeleteMutation.mutate(user.id)}
+                                  className="bg-destructive text-destructive-foreground"
+                                >
+                                  Yes, Archive User
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {filteredUsers?.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground" data-testid="text-no-users-mobile">
+                      No users found matching your filters
+                    </div>
+                  )}
+                </div>
                 </div>
               )}
             </CardContent>

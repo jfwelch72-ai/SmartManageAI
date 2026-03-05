@@ -311,6 +311,7 @@ router.get("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRe
       email: users.email,
       role: users.role,
       isActive: users.isActive,
+      emailVerified: users.emailVerified,
       organizationId: users.organizationId,
       createdAt: users.createdAt,
     })
@@ -617,6 +618,38 @@ router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmi
   } catch (error: any) {
     console.error("Soft delete user error:", error.message);
     res.status(500).json({ error: "Failed to deactivate user" });
+  }
+});
+
+router.patch("/platform/users/:userId/verify-email", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const newStatus = !user.emailVerified;
+    const [updated] = await db.update(users)
+      .set({ emailVerified: newStatus, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    await logAudit({
+      action: "UPDATE",
+      entityType: "users",
+      entityId: user.id,
+      userId: req.user!.id,
+      oldValue: JSON.stringify({ emailVerified: user.emailVerified }),
+      newValue: JSON.stringify({ emailVerified: newStatus }),
+    }, req);
+
+    res.json({ emailVerified: updated.emailVerified, message: `Email ${newStatus ? 'verified' : 'unverified'} for ${user.email}` });
+  } catch (error: any) {
+    console.error("Toggle email verification error:", error.message);
+    res.status(500).json({ error: "Failed to update email verification status" });
   }
 });
 
