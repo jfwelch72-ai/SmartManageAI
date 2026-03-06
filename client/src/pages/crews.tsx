@@ -142,9 +142,10 @@ export default function CrewsPage() {
     queryKey: ["/api/users"],
   });
 
-  const { data: projectsList = [] } = useQuery<Project[]>({
+  const { data: projectsResponse } = useQuery<{ data: Project[]; pagination: any }>({
     queryKey: ["/api/projects"],
   });
+  const projectsList = projectsResponse?.data ?? [];
 
   const { data: crewAssignments = [], isLoading: assignmentsLoading } = useQuery<CrewAssignment[]>({
     queryKey: ["/api/crew-assignments"],
