@@ -24,7 +24,12 @@ import {
   XCircle,
   AlertTriangle,
   Clock,
+  History,
+  ArrowRight,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function planBadgeColor(tier: string) {
   switch (tier) {
@@ -55,6 +60,18 @@ export function statusIcon(status: string) {
   }
 }
 
+function EventTypeBadge({ type }: { type: string }) {
+  const config: Record<string, { label: string; className: string }> = {
+    plan_change: { label: "Plan Change", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+    status_change: { label: "Status Change", className: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" },
+    addon_change: { label: "Add-on", className: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" },
+    created: { label: "Created", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+    canceled: { label: "Canceled", className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200" },
+  };
+  const c = config[type] || { label: type, className: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200" };
+  return <Badge className={`${c.className} text-xs whitespace-nowrap`} data-testid={`badge-event-type-${type}`}>{c.label}</Badge>;
+}
+
 interface SubDetailData {
   organization: any;
   subscription: any;
@@ -79,9 +96,31 @@ export function SubscriptionDetailDialog({
   const [newPlanTier, setNewPlanTier] = useState("");
   const [newStatus, setNewStatus] = useState("");
   const [confirmAction, setConfirmAction] = useState<{ type: string; label: string } | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const { data, isLoading } = useQuery<SubDetailData>({
     queryKey: ["/api/platform/subscriptions", orgId],
+    enabled: open && !!orgId,
+  });
+
+  const { data: historyData, isLoading: historyLoading } = useQuery<{
+    events: Array<{
+      id: string;
+      eventType: string;
+      previousValue: string | null;
+      newValue: string | null;
+      description: string;
+      performerName: string | null;
+      createdAt: string;
+    }>;
+    pagination: { page: number; limit: number; total: number; totalPages: number };
+  }>({
+    queryKey: ["/api/platform/subscriptions", orgId, "history", historyPage],
+    queryFn: async () => {
+      const res = await fetch(`/api/platform/subscriptions/${orgId}/history?page=${historyPage}&limit=20`);
+      if (!res.ok) throw new Error("Failed to fetch history");
+      return res.json();
+    },
     enabled: open && !!orgId,
   });
 
@@ -96,6 +135,7 @@ export function SubscriptionDetailDialog({
       setConfirmAction(null);
       setNewPlanTier("");
       setNewStatus("");
+      setHistoryPage(1);
     },
     onError: (err: any) => {
       toast({ title: "Update Failed", description: err.message, variant: "destructive" });
@@ -181,141 +221,203 @@ export function SubscriptionDetailDialog({
           ) : !sub ? (
             <p className="text-center text-muted-foreground py-4">No subscription found for this organization.</p>
           ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Current Plan</p>
-                  <Badge className={`${planBadgeColor(sub.planTier)} text-sm`} data-testid="text-detail-plan">
-                    {data?.planInfo?.name || sub.planTier}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Status</p>
-                  <Badge className={`${statusBadgeVariant(sub.status)} text-sm`} data-testid="text-detail-status">
-                    {statusIcon(sub.status)} {sub.status}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Billing Provider</p>
-                  <p className="text-sm font-medium capitalize">{sub.billingProvider}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Monthly Price</p>
-                  <p className="text-sm font-medium">${data?.planInfo?.price || 0}/mo</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Period End</p>
-                  <p className="text-sm">{sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : "N/A"}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Created</p>
-                  <p className="text-sm">{new Date(sub.createdAt).toLocaleDateString()}</p>
-                </div>
-              </div>
+            <Tabs defaultValue="details" className="w-full">
+              <TabsList className="mb-4">
+                <TabsTrigger value="details" data-testid="tab-subscription-details">Details</TabsTrigger>
+                <TabsTrigger value="history" data-testid="tab-billing-history">
+                  <History className="w-3.5 h-3.5 mr-1.5" /> Billing History
+                </TabsTrigger>
+              </TabsList>
 
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <ArrowUpDown className="w-4 h-4" /> Change Plan
-                </h4>
-                <div className="flex gap-2">
-                  <Select value={newPlanTier} onValueChange={setNewPlanTier}>
-                    <SelectTrigger className="w-48" data-testid="select-change-plan">
-                      <SelectValue placeholder="Select plan..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="free">Trial ($0)</SelectItem>
-                      <SelectItem value="starter">Starter ($89)</SelectItem>
-                      <SelectItem value="professional">Growth ($229)</SelectItem>
-                      <SelectItem value="enterprise">Scale ($579)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    onClick={handlePlanChange}
-                    disabled={!newPlanTier || newPlanTier === sub.planTier || updateSubscription.isPending}
-                    data-testid="button-apply-plan-change"
-                  >
-                    Apply
-                  </Button>
-                </div>
-              </div>
+              <TabsContent value="details">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Current Plan</p>
+                      <Badge className={`${planBadgeColor(sub.planTier)} text-sm`} data-testid="text-detail-plan">
+                        {data?.planInfo?.name || sub.planTier}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Status</p>
+                      <Badge className={`${statusBadgeVariant(sub.status)} text-sm`} data-testid="text-detail-status">
+                        {statusIcon(sub.status)} {sub.status}
+                      </Badge>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Billing Provider</p>
+                      <p className="text-sm font-medium capitalize">{sub.billingProvider}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Monthly Price</p>
+                      <p className="text-sm font-medium">${data?.planInfo?.price || 0}/mo</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Period End</p>
+                      <p className="text-sm">{sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd).toLocaleDateString() : "N/A"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Created</p>
+                      <p className="text-sm">{new Date(sub.createdAt).toLocaleDateString()}</p>
+                    </div>
+                  </div>
 
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3">Change Status</h4>
-                <div className="flex gap-2">
-                  <Select value={newStatus} onValueChange={setNewStatus}>
-                    <SelectTrigger className="w-48" data-testid="select-change-status">
-                      <SelectValue placeholder="Select status..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="trialing">Trialing</SelectItem>
-                      <SelectItem value="past_due">Past Due</SelectItem>
-                      <SelectItem value="canceled">Canceled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    onClick={handleStatusChange}
-                    disabled={!newStatus || newStatus === sub.status || updateSubscription.isPending}
-                    data-testid="button-apply-status-change"
-                  >
-                    Apply
-                  </Button>
-                </div>
-              </div>
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <ArrowUpDown className="w-4 h-4" /> Change Plan
+                    </h4>
+                    <div className="flex gap-2">
+                      <Select value={newPlanTier} onValueChange={setNewPlanTier}>
+                        <SelectTrigger className="w-48" data-testid="select-change-plan">
+                          <SelectValue placeholder="Select plan..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="free">Trial ($0)</SelectItem>
+                          <SelectItem value="starter">Starter ($89)</SelectItem>
+                          <SelectItem value="professional">Growth ($229)</SelectItem>
+                          <SelectItem value="enterprise">Scale ($579)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        onClick={handlePlanChange}
+                        disabled={!newPlanTier || newPlanTier === sub.planTier || updateSubscription.isPending}
+                        data-testid="button-apply-plan-change"
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
 
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                  <ToggleLeft className="w-4 h-4" /> Add-ons
-                </h4>
-                <div className="grid grid-cols-1 gap-2">
-                  {allAddonKeys.map(key => {
-                    const existing = data?.addons?.find((a: any) => a.addonKey === key);
-                    const isActive = existing?.status === "active";
-                    return (
-                      <div key={key} className="flex items-center justify-between py-1.5 px-3 rounded-md border bg-muted/30">
-                        <span className="text-sm capitalize">{key.replace(/_/g, " ")}</span>
-                        <Button
-                          variant={isActive ? "destructive" : "outline"}
-                          size="sm"
-                          onClick={() => toggleAddon.mutate({ addonKey: key, status: isActive ? "inactive" : "active" })}
-                          disabled={toggleAddon.isPending}
-                          data-testid={`button-toggle-addon-${key}`}
-                        >
-                          {isActive ? "Disable" : "Enable"}
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-semibold mb-3">Change Status</h4>
+                    <div className="flex gap-2">
+                      <Select value={newStatus} onValueChange={setNewStatus}>
+                        <SelectTrigger className="w-48" data-testid="select-change-status">
+                          <SelectValue placeholder="Select status..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="trialing">Trialing</SelectItem>
+                          <SelectItem value="past_due">Past Due</SelectItem>
+                          <SelectItem value="canceled">Canceled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        onClick={handleStatusChange}
+                        disabled={!newStatus || newStatus === sub.status || updateSubscription.isPending}
+                        data-testid="button-apply-status-change"
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  </div>
 
-              {data?.recentAudit && data.recentAudit.length > 0 && (
-                <div className="border-t pt-4">
-                  <h4 className="text-sm font-semibold mb-3">Recent Changes</h4>
-                  <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {data.recentAudit.map((entry: any) => (
-                      <div key={entry.id} className="text-xs text-muted-foreground flex justify-between py-1 border-b last:border-0">
-                        <span>{entry.action} — {entry.newValue ? JSON.parse(entry.newValue).changes?.join(", ") || entry.newValue : ""}</span>
-                        <span>{new Date(entry.createdAt).toLocaleDateString()}</span>
-                      </div>
-                    ))}
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <ToggleLeft className="w-4 h-4" /> Add-ons
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2">
+                      {allAddonKeys.map(key => {
+                        const existing = data?.addons?.find((a: any) => a.addonKey === key);
+                        const isActive = existing?.status === "active";
+                        return (
+                          <div key={key} className="flex items-center justify-between py-1.5 px-3 rounded-md border bg-muted/30">
+                            <span className="text-sm capitalize">{key.replace(/_/g, " ")}</span>
+                            <Button
+                              variant={isActive ? "destructive" : "outline"}
+                              size="sm"
+                              onClick={() => toggleAddon.mutate({ addonKey: key, status: isActive ? "inactive" : "active" })}
+                              disabled={toggleAddon.isPending}
+                              data-testid={`button-toggle-addon-${key}`}
+                            >
+                              {isActive ? "Disable" : "Enable"}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setConfirmAction({ type: "delete", label: `Delete subscription for ${data?.organization?.name || "this organization"}` })}
+                      data-testid="button-delete-subscription"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> Delete Subscription
+                    </Button>
                   </div>
                 </div>
-              )}
+              </TabsContent>
 
-              <div className="border-t pt-4">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setConfirmAction({ type: "delete", label: `Delete subscription for ${sub?.organizationName || "this organization"}` })}
-                  data-testid="button-delete-subscription"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" /> Delete Subscription
-                </Button>
-              </div>
-            </div>
+              <TabsContent value="history">
+                <div className="space-y-3">
+                  {historyLoading ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : !historyData?.events?.length ? (
+                    <p className="text-center text-muted-foreground py-6 text-sm" data-testid="text-no-history">No billing history events recorded yet.</p>
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        {historyData.events.map((event) => (
+                          <div key={event.id} className="flex items-start gap-3 p-3 rounded-lg border bg-muted/20" data-testid={`history-event-${event.id}`}>
+                            <div className="mt-0.5">
+                              <EventTypeBadge type={event.eventType} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium" data-testid={`text-event-desc-${event.id}`}>{event.description}</p>
+                              {(event.previousValue || event.newValue) && (
+                                <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground">
+                                  {event.previousValue && <span className="font-mono bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded">{event.previousValue}</span>}
+                                  {event.previousValue && event.newValue && <ArrowRight className="w-3 h-3" />}
+                                  {event.newValue && <span className="font-mono bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300 px-1.5 py-0.5 rounded">{event.newValue}</span>}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+                                <span>{new Date(event.createdAt).toLocaleString()}</span>
+                                {event.performerName && <span>by {event.performerName}</span>}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {historyData.pagination.totalPages > 1 && (
+                        <div className="flex items-center justify-between pt-2">
+                          <span className="text-xs text-muted-foreground" data-testid="text-history-pagination">
+                            Page {historyData.pagination.page} of {historyData.pagination.totalPages} ({historyData.pagination.total} events)
+                          </span>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={historyPage <= 1}
+                              onClick={() => setHistoryPage(p => p - 1)}
+                              data-testid="button-history-prev"
+                            >
+                              <ChevronLeft className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={historyPage >= historyData.pagination.totalPages}
+                              onClick={() => setHistoryPage(p => p + 1)}
+                              data-testid="button-history-next"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>

@@ -94,6 +94,25 @@ export const insertOrganizationUsageSchema = createInsertSchema(organizationUsag
 export type InsertOrganizationUsage = z.infer<typeof insertOrganizationUsageSchema>;
 export type OrganizationUsage = typeof organizationUsage.$inferSelect;
 
+export const subscriptionEvents = pgTable("subscription_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
+  description: text("description").notNull(),
+  performedBy: varchar("performed_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdIdx: index("subscription_events_org_id_idx").on(table.organizationId),
+  eventTypeIdx: index("subscription_events_event_type_idx").on(table.eventType),
+  createdAtIdx: index("subscription_events_created_at_idx").on(table.createdAt),
+}));
+
+export const insertSubscriptionEventSchema = createInsertSchema(subscriptionEvents).omit({ id: true, createdAt: true });
+export type InsertSubscriptionEvent = z.infer<typeof insertSubscriptionEventSchema>;
+export type SubscriptionEvent = typeof subscriptionEvents.$inferSelect;
+
 // Work Week Start Day Enum (0=Sunday, 1=Monday, etc.)
 export const organizationPayrollSettings = pgTable("organization_payroll_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -7,10 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Users, Search, ExternalLink, ChevronLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Building2, Users, Search, ExternalLink, ChevronLeft, Plus } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface Organization {
   id: string;
@@ -29,8 +33,41 @@ interface Organization {
 
 export default function PlatformOrganizations() {
   const { user, logout, organizationName } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [tradeFilter, setTradeFilter] = useState<string>("all");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [newOrgName, setNewOrgName] = useState("");
+  const [newOrgSlug, setNewOrgSlug] = useState("");
+  const [newOrgTradeType, setNewOrgTradeType] = useState("GENERAL_CONTRACTOR");
+  const [newOrgRegion, setNewOrgRegion] = useState("");
+  const [newOrgEmail, setNewOrgEmail] = useState("");
+  const [newOrgPhone, setNewOrgPhone] = useState("");
+
+  const generateSlug = (name: string) => {
+    return name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  };
+
+  const createOrgMutation = useMutation({
+    mutationFn: async (data: { name: string; slug: string; tradeType: string; region: string; email: string; phone: string }) => {
+      const res = await apiRequest("POST", "/api/platform/organizations", data);
+      return await res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/organizations"] });
+      setCreateDialogOpen(false);
+      setNewOrgName("");
+      setNewOrgSlug("");
+      setNewOrgTradeType("GENERAL_CONTRACTOR");
+      setNewOrgRegion("");
+      setNewOrgEmail("");
+      setNewOrgPhone("");
+      toast({ title: "Organization created", description: "The new organization has been created successfully." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to create organization", description: error.message, variant: "destructive" });
+    },
+  });
 
   const { data: organizations, isLoading } = useQuery<Organization[]>({
     queryKey: ["/api/platform/organizations"],
@@ -92,10 +129,14 @@ export default function PlatformOrganizations() {
               Back
             </Button>
           </Link>
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-bold" data-testid="text-organizations-title">Organizations</h1>
             <p className="text-muted-foreground">Manage all contractor companies on the platform</p>
           </div>
+          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-org">
+            <Plus className="h-4 w-4 mr-2" />
+            Create Organization
+          </Button>
         </div>
 
         <Card>
@@ -198,6 +239,107 @@ export default function PlatformOrganizations() {
         </CardContent>
       </Card>
       </main>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Organization</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              createOrgMutation.mutate({
+                name: newOrgName,
+                slug: newOrgSlug || generateSlug(newOrgName),
+                tradeType: newOrgTradeType,
+                region: newOrgRegion,
+                email: newOrgEmail,
+                phone: newOrgPhone,
+              });
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="org-name">Name *</Label>
+              <Input
+                id="org-name"
+                value={newOrgName}
+                onChange={(e) => {
+                  setNewOrgName(e.target.value);
+                  if (!newOrgSlug || newOrgSlug === generateSlug(newOrgName)) {
+                    setNewOrgSlug(generateSlug(e.target.value));
+                  }
+                }}
+                placeholder="Acme Construction"
+                required
+                data-testid="input-org-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-slug">Slug</Label>
+              <Input
+                id="org-slug"
+                value={newOrgSlug}
+                onChange={(e) => setNewOrgSlug(e.target.value)}
+                placeholder="acme-construction"
+                data-testid="input-org-slug"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-trade">Trade Type</Label>
+              <Select value={newOrgTradeType} onValueChange={setNewOrgTradeType}>
+                <SelectTrigger data-testid="select-org-trade">
+                  <SelectValue placeholder="Select trade type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(tradeTypeLabels).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-region">Region</Label>
+              <Input
+                id="org-region"
+                value={newOrgRegion}
+                onChange={(e) => setNewOrgRegion(e.target.value)}
+                placeholder="Northeast US"
+                data-testid="input-org-region"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-email">Email</Label>
+              <Input
+                id="org-email"
+                type="email"
+                value={newOrgEmail}
+                onChange={(e) => setNewOrgEmail(e.target.value)}
+                placeholder="info@acme.com"
+                data-testid="input-org-email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-phone">Phone</Label>
+              <Input
+                id="org-phone"
+                value={newOrgPhone}
+                onChange={(e) => setNewOrgPhone(e.target.value)}
+                placeholder="(555) 123-4567"
+                data-testid="input-org-phone"
+              />
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)} data-testid="button-cancel-create-org">
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!newOrgName.trim() || createOrgMutation.isPending} data-testid="button-submit-create-org">
+                {createOrgMutation.isPending ? "Creating..." : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,11 +1,13 @@
 import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
-import { users, organizations, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications } from "@shared/schema";
-import { requireAuth, type AuthRequest, generateToken } from "./auth";
+import { users, organizations, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema } from "@shared/schema";
+import { requireAuth, hashPassword, type AuthRequest, generateToken } from "./auth";
 import { eq, count, desc, and, isNotNull } from "drizzle-orm";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { logAudit } from "./auditLogger";
+import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
+import { z } from "zod";
 
 const router = Router();
 
@@ -15,6 +17,67 @@ function requireSuperAdmin(req: AuthRequest, res: any, next: any) {
   }
   next();
 }
+
+const platformCreateUserSchema = insertUserSchema.omit({ passwordHash: true }).extend({
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  organizationId: z.string().min(1, "Organization is required"),
+});
+
+router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const sanitizedBody = {
+      ...req.body,
+      firstName: sanitizeShortText(req.body.firstName),
+      lastName: sanitizeShortText(req.body.lastName),
+      email: sanitizeEmail(req.body.email),
+      phone: req.body.phone ? sanitizePhone(req.body.phone) : undefined,
+      password: req.body.password,
+    };
+
+    const validationResult = platformCreateUserSchema.safeParse(sanitizedBody);
+
+    if (!validationResult.success) {
+      return res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
+    }
+
+    const { firstName, lastName, email, phone, role, password, organizationId } = validationResult.data;
+
+    const [org] = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const passwordHash = await hashPassword(password);
+
+    const [newUser] = await db.insert(users).values({
+      firstName,
+      lastName,
+      email,
+      phone: phone || null,
+      role: role || "HOURLY_EMPLOYEE",
+      isActive: true,
+      passwordHash,
+      organizationId,
+    }).returning();
+
+    await logAudit({
+      action: "CREATE",
+      entityType: "users",
+      entityId: newUser.id,
+      userId: req.user!.id,
+      newValue: JSON.stringify({ email, firstName, lastName, role: role || "HOURLY_EMPLOYEE", organizationId }),
+    }, req);
+
+    const { passwordHash: _, tokenVersion, ...userWithoutPassword } = newUser;
+    res.status(201).json(userWithoutPassword);
+  } catch (error: any) {
+    console.error("Platform create user error:", error.message);
+    if (error.code === '23505') {
+      return res.status(409).json({ error: "Email already exists" });
+    }
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
 
 router.get("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {

@@ -137,6 +137,44 @@ router.get("/platform/organizations", requireAuth, requireSuperAdmin, async (req
   }
 });
 
+router.post("/platform/organizations", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { name, slug, tradeType, region, email, phone } = req.body;
+
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ error: "Organization name is required" });
+    }
+
+    const finalSlug = (slug && typeof slug === "string" && slug.trim().length > 0)
+      ? slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "")
+      : name.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+
+    const [existingSlug] = await db.select({ id: organizations.id })
+      .from(organizations)
+      .where(eq(organizations.slug, finalSlug));
+
+    if (existingSlug) {
+      return res.status(409).json({ error: "An organization with this slug already exists" });
+    }
+
+    const [newOrg] = await db.insert(organizations).values({
+      name: name.trim(),
+      slug: finalSlug,
+      tradeType: tradeType || "GENERAL_CONTRACTOR",
+      region: region || null,
+      email: email || null,
+      phone: phone || null,
+      onboardingStatus: "NOT_STARTED",
+      isActive: true,
+    }).returning();
+
+    res.status(201).json(newOrg);
+  } catch (error: any) {
+    console.error("Create organization error:", error.message);
+    res.status(500).json({ error: "Failed to create organization" });
+  }
+});
+
 router.get("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
     const { orgId } = req.params;
@@ -437,6 +475,55 @@ router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: Au
   } catch (error: any) {
     console.error("Platform analytics error:", error.message);
     res.status(500).json({ error: "Failed to fetch analytics" });
+  }
+});
+
+router.get("/platform/organizations/:orgId/activity", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const offset = (page - 1) * limit;
+
+    const [org] = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, orgId));
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const entries = await db
+      .select({
+        id: auditLog.id,
+        action: auditLog.action,
+        entityType: auditLog.entityType,
+        entityId: auditLog.entityId,
+        oldValue: auditLog.oldValue,
+        newValue: auditLog.newValue,
+        createdAt: auditLog.createdAt,
+        userName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+        userEmail: users.email,
+      })
+      .from(auditLog)
+      .innerJoin(users, eq(auditLog.userId, users.id))
+      .where(eq(users.organizationId, orgId))
+      .orderBy(desc(auditLog.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(auditLog)
+      .innerJoin(users, eq(auditLog.userId, users.id))
+      .where(eq(users.organizationId, orgId));
+
+    res.json({
+      entries,
+      total: totalResult.count,
+      page,
+      limit,
+    });
+  } catch (error: any) {
+    console.error("Platform organization activity error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organization activity" });
   }
 });
 

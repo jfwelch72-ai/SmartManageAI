@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, organizations, auditLog, organizationSubscriptions, organizationAddOns, organizationUsage } from "@shared/schema";
+import { users, organizations, auditLog, organizationSubscriptions, organizationAddOns, organizationUsage, subscriptionEvents } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { eq, count, desc, sql, and, ilike } from "drizzle-orm";
 import { logAudit } from "./auditLogger";
@@ -249,6 +249,58 @@ router.get("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, asy
   }
 });
 
+router.get("/platform/subscriptions/:orgId/history", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const offset = (page - 1) * limit;
+
+    const [totalRow] = await db.select({ count: count() })
+      .from(subscriptionEvents)
+      .where(eq(subscriptionEvents.organizationId, orgId));
+
+    const events = await db.select({
+      id: subscriptionEvents.id,
+      eventType: subscriptionEvents.eventType,
+      previousValue: subscriptionEvents.previousValue,
+      newValue: subscriptionEvents.newValue,
+      description: subscriptionEvents.description,
+      performedBy: subscriptionEvents.performedBy,
+      createdAt: subscriptionEvents.createdAt,
+    })
+    .from(subscriptionEvents)
+    .where(eq(subscriptionEvents.organizationId, orgId))
+    .orderBy(desc(subscriptionEvents.createdAt))
+    .limit(limit)
+    .offset(offset);
+
+    const performerIds = [...new Set(events.filter(e => e.performedBy).map(e => e.performedBy!))];
+    let performerMap: Record<string, string> = {};
+    if (performerIds.length > 0) {
+      const performers = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(sql`${users.id} IN (${sql.join(performerIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const p of performers) {
+        performerMap[p.id] = `${p.firstName} ${p.lastName}`;
+      }
+    }
+
+    const eventsWithPerformer = events.map(e => ({
+      ...e,
+      performerName: e.performedBy ? performerMap[e.performedBy] || "Unknown" : null,
+    }));
+
+    res.json({
+      events: eventsWithPerformer,
+      pagination: { page, limit, total: totalRow.count, totalPages: Math.ceil(totalRow.count / limit) },
+    });
+  } catch (error: any) {
+    console.error("Subscription history error:", error.message);
+    res.status(500).json({ error: "Failed to fetch subscription history" });
+  }
+});
+
 router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
     const { orgId } = req.params;
@@ -293,6 +345,27 @@ router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, a
       },
       req
     );
+
+    if (updates.planTier) {
+      await db.insert(subscriptionEvents).values({
+        organizationId: orgId,
+        eventType: "plan_change",
+        previousValue: subscription.planTier,
+        newValue: updates.planTier,
+        description: `Plan changed from ${subscription.planTier} to ${updates.planTier}`,
+        performedBy: req.user!.id,
+      });
+    }
+    if (updates.status) {
+      await db.insert(subscriptionEvents).values({
+        organizationId: orgId,
+        eventType: "status_change",
+        previousValue: subscription.status,
+        newValue: updates.status,
+        description: `Status changed from ${subscription.status} to ${updates.status}`,
+        performedBy: req.user!.id,
+      });
+    }
 
     res.json({ subscription: updated, changes });
   } catch (error: any) {
@@ -340,6 +413,15 @@ router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, req
       },
       req
     );
+
+    await db.insert(subscriptionEvents).values({
+      organizationId: orgId,
+      eventType: "addon_change",
+      previousValue: existing ? existing.status : null,
+      newValue: status,
+      description: `Add-on "${addonKey.replace(/_/g, " ")}" ${status === "active" ? "enabled" : "disabled"}`,
+      performedBy: req.user!.id,
+    });
 
     res.json({ addon: result });
   } catch (error: any) {
@@ -398,6 +480,15 @@ router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (re
       req
     );
 
+    await db.insert(subscriptionEvents).values({
+      organizationId,
+      eventType: "created",
+      previousValue: null,
+      newValue: planTier,
+      description: `Subscription created with ${planTier} plan for ${org.name}`,
+      performedBy: req.user!.id,
+    });
+
     res.status(201).json({ subscription: newSub });
   } catch (error: any) {
     console.error("Create subscription error:", error.message);
@@ -434,6 +525,15 @@ router.delete("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, 
       },
       req
     );
+
+    await db.insert(subscriptionEvents).values({
+      organizationId: orgId,
+      eventType: "canceled",
+      previousValue: existing.planTier,
+      newValue: null,
+      description: `Subscription deleted (was ${existing.planTier} / ${existing.status})`,
+      performedBy: req.user!.id,
+    });
 
     res.json({ success: true, message: "Subscription deleted" });
   } catch (error: any) {

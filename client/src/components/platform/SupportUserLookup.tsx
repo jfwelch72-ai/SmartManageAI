@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Mail, Building2, KeyRound, Trash2, LogIn, ShieldCheck, ShieldX } from "lucide-react";
+import { Search, Mail, Building2, KeyRound, Trash2, LogIn, ShieldCheck, ShieldX, UserPlus } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,6 +20,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -58,6 +67,15 @@ export function SupportUserLookup() {
   const [selectedUserOrgId, setSelectedUserOrgId] = useState<string>("");
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [newUserForm, setNewUserForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    password: "",
+    organizationId: "",
+    role: "HOURLY_EMPLOYEE",
+  });
 
   const { data: organizations } = useQuery<Organization[]>({
     queryKey: ["/api/platform/organizations"],
@@ -65,6 +83,21 @@ export function SupportUserLookup() {
 
   const { data: users, isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/platform/users"],
+  });
+
+  const createUserMutation = useMutation({
+    mutationFn: async (data: typeof newUserForm) => {
+      return apiRequest("POST", "/api/platform/users", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
+      setCreateDialogOpen(false);
+      setNewUserForm({ firstName: "", lastName: "", email: "", password: "", organizationId: "", role: "HOURLY_EMPLOYEE" });
+      toast({ title: "User created", description: "The new user account has been created successfully" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create user", description: error.message, variant: "destructive" });
+    },
   });
 
   const resetPasswordMutation = useMutation({
@@ -151,8 +184,120 @@ export function SupportUserLookup() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Platform Users</CardTitle>
-        <CardDescription>Select an organization to view and manage its users</CardDescription>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle>Platform Users</CardTitle>
+            <CardDescription>Select an organization to view and manage its users</CardDescription>
+          </div>
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button data-testid="button-create-user">
+                <UserPlus className="h-4 w-4 mr-2" />
+                Create User
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Create New User</DialogTitle>
+                <DialogDescription>Create a user account for any organization</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>First Name</Label>
+                    <Input
+                      value={newUserForm.firstName}
+                      onChange={(e) => setNewUserForm(f => ({ ...f, firstName: e.target.value }))}
+                      placeholder="First name"
+                      data-testid="input-create-first-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Last Name</Label>
+                    <Input
+                      value={newUserForm.lastName}
+                      onChange={(e) => setNewUserForm(f => ({ ...f, lastName: e.target.value }))}
+                      placeholder="Last name"
+                      data-testid="input-create-last-name"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={newUserForm.email}
+                    onChange={(e) => setNewUserForm(f => ({ ...f, email: e.target.value }))}
+                    placeholder="user@example.com"
+                    data-testid="input-create-email"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password</Label>
+                  <Input
+                    type="password"
+                    value={newUserForm.password}
+                    onChange={(e) => setNewUserForm(f => ({ ...f, password: e.target.value }))}
+                    placeholder="Minimum 8 characters"
+                    data-testid="input-create-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Organization</Label>
+                  <Select
+                    value={newUserForm.organizationId}
+                    onValueChange={(val) => setNewUserForm(f => ({ ...f, organizationId: val }))}
+                  >
+                    <SelectTrigger data-testid="select-create-organization">
+                      <SelectValue placeholder="Select an organization..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {organizations?.map((org) => (
+                        <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select
+                    value={newUserForm.role}
+                    onValueChange={(val) => setNewUserForm(f => ({ ...f, role: val }))}
+                  >
+                    <SelectTrigger data-testid="select-create-role">
+                      <SelectValue placeholder="Select a role..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ADMIN">Admin</SelectItem>
+                      <SelectItem value="MANAGER">Manager</SelectItem>
+                      <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
+                      <SelectItem value="ESTIMATOR">Estimator</SelectItem>
+                      <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
+                      <SelectItem value="HOURLY_EMPLOYEE">Hourly Employee</SelectItem>
+                      <SelectItem value="MAINTENANCE_MANAGER">Maintenance Manager</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setCreateDialogOpen(false)}
+                  data-testid="button-cancel-create-user"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => createUserMutation.mutate(newUserForm)}
+                  disabled={createUserMutation.isPending || !newUserForm.firstName || !newUserForm.lastName || !newUserForm.email || !newUserForm.password || !newUserForm.organizationId}
+                  data-testid="button-submit-create-user"
+                >
+                  {createUserMutation.isPending ? "Creating..." : "Create User"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
         <div className="flex flex-wrap items-end gap-4 mt-4">
           <div className="space-y-2">
             <Label className="text-sm text-muted-foreground">Organization</Label>
