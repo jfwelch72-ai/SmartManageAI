@@ -90,6 +90,9 @@ import organizationDocumentRoutes from "./organizationDocumentRoutes";
 import aiBidDocumentRoutes from "./aiBidDocumentRoutes";
 import aiContractDocumentRoutes from "./aiContractDocumentRoutes";
 import sovRoutes from "./sovRoutes";
+import sovLineItemRoutes from "./sovLineItemRoutes";
+import sovPaymentRoutes from "./sovPaymentRoutes";
+import sovBillingRoutes from "./sovBillingRoutes";
 import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteBuilderRoutes from "./websiteBuilderRoutes";
@@ -257,7 +260,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", aiContractDocumentRoutes);
 
   // Register Schedule of Values (SOV) routes
+  // Payment/lien-waiver/billing routes must be registered BEFORE core SOV routes
+  // because they have paths like /sov/payments that would conflict with /sov/:id
+  app.use("/api", sovPaymentRoutes);
+  app.use("/api", sovBillingRoutes);
   app.use("/api", sovRoutes);
+  app.use("/api", sovLineItemRoutes);
 
   // Register Subcontract Agreement routes
   app.use("/api", subcontractRoutes);

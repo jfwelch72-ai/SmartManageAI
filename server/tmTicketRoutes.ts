@@ -5,35 +5,24 @@ import {
   tmTicketLaborEntries, 
   tmTicketEquipmentEntries, 
   tmTicketMaterialEntries,
-  tmInvoices,
   projects,
   users,
-  organizations,
   auditLog,
-  insertTMTicketSchema,
-  insertTMTicketLaborEntrySchema,
-  insertTMTicketEquipmentEntrySchema,
-  insertTMTicketMaterialEntrySchema,
-  insertTMInvoiceSchema,
 } from "@shared/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { registerTMApprovalRoutes } from "./tmApprovalRoutes";
+import { registerTMInvoiceRoutes } from "./tmInvoiceRoutes";
 
 function hasTMCreateAccess(role: string): boolean {
   return ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role);
 }
 
-function hasTMApprovalAccess(role: string): boolean {
-  return ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role);
-}
-
-function hasBillingApprovalAccess(role: string): boolean {
-  return ["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(role);
-}
-
 export function registerTMTicketRoutes(app: Express) {
-  // Get all T&M tickets for a project
+  registerTMApprovalRoutes(app);
+  registerTMInvoiceRoutes(app);
+
   app.get("/api/projects/:projectId/tm-tickets", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -44,7 +33,6 @@ export function registerTMTicketRoutes(app: Express) {
 
       const { projectId } = req.params;
       
-      // Verify project exists and check org access
       const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
@@ -59,7 +47,6 @@ export function registerTMTicketRoutes(app: Express) {
         orderBy: [desc(tmTickets.workDate), desc(tmTickets.createdAt)],
       });
       
-      // Get user info for each ticket
       const enrichedTickets = await Promise.all(tickets.map(async (ticket) => {
         const [rep, approvedBy, submittedBy, createdBy] = await Promise.all([
           db.query.users.findFirst({ where: eq(users.id, ticket.tfrRepresentativeId) }),
@@ -84,7 +71,6 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  // Get a single T&M ticket with all entries
   app.get("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { ticketId } = req.params;
@@ -97,14 +83,12 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
-      // Get all entries
       const [laborEntries, equipmentEntries, materialEntries] = await Promise.all([
         db.query.tmTicketLaborEntries.findMany({ where: eq(tmTicketLaborEntries.ticketId, ticketId) }),
         db.query.tmTicketEquipmentEntries.findMany({ where: eq(tmTicketEquipmentEntries.ticketId, ticketId) }),
         db.query.tmTicketMaterialEntries.findMany({ where: eq(tmTicketMaterialEntries.ticketId, ticketId) }),
       ]);
       
-      // Get related user info
       const [rep, project] = await Promise.all([
         db.query.users.findFirst({ where: eq(users.id, ticket.tfrRepresentativeId) }),
         db.query.projects.findFirst({ where: eq(projects.id, ticket.projectId) }),
@@ -124,7 +108,6 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  // Create a new T&M ticket
   app.post("/api/projects/:projectId/tm-tickets", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
@@ -134,7 +117,6 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(403).json({ error: "Insufficient permissions to create T&M tickets" });
       }
       
-      // Verify project exists
       const project = await db.query.projects.findFirst({
         where: eq(projects.id, projectId),
       });
@@ -143,7 +125,6 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "Project not found" });
       }
       
-      // Generate ticket number
       const existingTickets = await db.query.tmTickets.findMany({
         where: eq(tmTickets.projectId, projectId),
       });
@@ -154,9 +135,8 @@ export function registerTMTicketRoutes(app: Express) {
         equipmentEntries, 
         materialEntries, 
         description,
-        // Standardized scope fields
-        workTypeId, // Frontend sends organizationSowItemId here
-        organizationSowItemId, // Direct field if sent
+        workTypeId,
+        organizationSowItemId,
         workTypeCode,
         workTypeName,
         categoryName,
@@ -168,10 +148,8 @@ export function registerTMTicketRoutes(app: Express) {
         ...restTicketData 
       } = req.body;
       
-      // Use organizationSowItemId if provided, otherwise use workTypeId (frontend compatibility)
       const sowItemId = organizationSowItemId || workTypeId || null;
       
-      // Create the ticket with standardized scope data
       const [newTicket] = await db.insert(tmTickets).values({
         ...restTicketData,
         projectId,
@@ -179,14 +157,11 @@ export function registerTMTicketRoutes(app: Express) {
         createdById: userId,
         tfrRepresentativeId: restTicketData.tfrRepresentativeId || userId,
         scopeDescription: description || restTicketData.scopeDescription || "Work performed",
-        // Link to organization SOW item for unified tracking (Estimate → Project → T&M → Production Rates)
         organizationSowItemId: sowItemId,
-        // workTypeId is for scope_work_types category reference, not org SOW items
         workTypeId: null,
         workTypeCode: workTypeCode || null,
         workTypeName: workTypeName || null,
         categoryName: categoryName || null,
-        // Frontend sends these as JSON strings already
         scopeModifierIds: scopeModifierIds || null,
         scopeModifierNames: scopeModifierNames || null,
         canonicalName: canonicalName || null,
@@ -195,7 +170,6 @@ export function registerTMTicketRoutes(app: Express) {
         status: "DRAFT",
       }).returning();
       
-      // Insert labor entries (map frontend fields to database columns)
       if (laborEntries && laborEntries.length > 0) {
         await db.insert(tmTicketLaborEntries).values(
           laborEntries.map((entry: any) => {
@@ -220,7 +194,6 @@ export function registerTMTicketRoutes(app: Express) {
         );
       }
       
-      // Insert equipment entries (map frontend fields to database columns)
       if (equipmentEntries && equipmentEntries.length > 0) {
         await db.insert(tmTicketEquipmentEntries).values(
           equipmentEntries.map((entry: any) => {
@@ -241,7 +214,6 @@ export function registerTMTicketRoutes(app: Express) {
         );
       }
       
-      // Insert material entries (map frontend fields to database columns)
       if (materialEntries && materialEntries.length > 0) {
         await db.insert(tmTicketMaterialEntries).values(
           materialEntries.map((entry: any) => {
@@ -261,10 +233,8 @@ export function registerTMTicketRoutes(app: Express) {
         );
       }
       
-      // Recalculate totals
       await recalculateTicketTotals(newTicket.id);
       
-      // Audit log
       await db.insert(auditLog).values({
         userId,
         action: "CREATE",
@@ -280,7 +250,6 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  // Update a T&M ticket
   app.put("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { ticketId } = req.params;
@@ -294,7 +263,6 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
-      // Only allow editing of DRAFT or REJECTED tickets
       if (ticket.status !== "DRAFT" && ticket.status !== "REJECTED") {
         return res.status(400).json({ error: "Cannot edit a submitted or approved ticket" });
       }
@@ -305,11 +273,10 @@ export function registerTMTicketRoutes(app: Express) {
       
       const { laborEntries, equipmentEntries, materialEntries, ...ticketData } = req.body;
       
-      // Update ticket
       const [updatedTicket] = await db.update(tmTickets)
         .set({
           ...ticketData,
-          status: "DRAFT", // Reset to draft if rejected
+          status: "DRAFT",
           rejectedAt: null,
           rejectedById: null,
           rejectionReason: null,
@@ -318,7 +285,6 @@ export function registerTMTicketRoutes(app: Express) {
         .where(eq(tmTickets.id, ticketId))
         .returning();
       
-      // Replace labor entries
       await db.delete(tmTicketLaborEntries).where(eq(tmTicketLaborEntries.ticketId, ticketId));
       if (laborEntries && laborEntries.length > 0) {
         await db.insert(tmTicketLaborEntries).values(
@@ -335,7 +301,6 @@ export function registerTMTicketRoutes(app: Express) {
         );
       }
       
-      // Replace equipment entries
       await db.delete(tmTicketEquipmentEntries).where(eq(tmTicketEquipmentEntries.ticketId, ticketId));
       if (equipmentEntries && equipmentEntries.length > 0) {
         await db.insert(tmTicketEquipmentEntries).values(
@@ -350,7 +315,6 @@ export function registerTMTicketRoutes(app: Express) {
         );
       }
       
-      // Replace material entries
       await db.delete(tmTicketMaterialEntries).where(eq(tmTicketMaterialEntries.ticketId, ticketId));
       if (materialEntries && materialEntries.length > 0) {
         await db.insert(tmTicketMaterialEntries).values(
@@ -365,10 +329,8 @@ export function registerTMTicketRoutes(app: Express) {
         );
       }
       
-      // Recalculate totals
       await recalculateTicketTotals(ticketId);
       
-      // Audit log
       await db.insert(auditLog).values({
         userId,
         action: "UPDATE",
@@ -384,196 +346,6 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  // Submit a T&M ticket for approval
-  app.post("/api/tm-tickets/:ticketId/submit", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { ticketId } = req.params;
-      const userId = req.user!.id;
-      
-      const ticket = await db.query.tmTickets.findFirst({
-        where: eq(tmTickets.id, ticketId),
-      });
-      
-      if (!ticket) {
-        return res.status(404).json({ error: "T&M ticket not found" });
-      }
-      
-      if (ticket.status !== "DRAFT" && ticket.status !== "REJECTED") {
-        return res.status(400).json({ error: "Ticket is already submitted or approved" });
-      }
-      
-      const [updatedTicket] = await db.update(tmTickets)
-        .set({
-          status: "SUBMITTED",
-          submittedAt: new Date(),
-          submittedById: userId,
-          updatedAt: new Date(),
-        })
-        .where(eq(tmTickets.id, ticketId))
-        .returning();
-      
-      // Audit log
-      await db.insert(auditLog).values({
-        userId,
-        action: "SUBMIT",
-        entityType: "tm_ticket",
-        entityId: ticketId,
-        newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber }),
-      });
-      
-      res.json(updatedTicket);
-    } catch (error) {
-      console.error("Error submitting T&M ticket:", error);
-      res.status(500).json({ error: "Failed to submit T&M ticket" });
-    }
-  });
-
-  // Approve a T&M ticket
-  app.post("/api/tm-tickets/:ticketId/approve", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { ticketId } = req.params;
-      const userId = req.user!.id;
-      
-      if (!hasTMApprovalAccess(req.user!.role)) {
-        return res.status(403).json({ error: "Insufficient permissions to approve T&M tickets" });
-      }
-      
-      const ticket = await db.query.tmTickets.findFirst({
-        where: eq(tmTickets.id, ticketId),
-      });
-      
-      if (!ticket) {
-        return res.status(404).json({ error: "T&M ticket not found" });
-      }
-      
-      if (ticket.status !== "SUBMITTED") {
-        return res.status(400).json({ error: "Only submitted tickets can be approved" });
-      }
-      
-      const [updatedTicket] = await db.update(tmTickets)
-        .set({
-          status: "APPROVED",
-          billingStatus: "PENDING",
-          approvedAt: new Date(),
-          approvedById: userId,
-          updatedAt: new Date(),
-        })
-        .where(eq(tmTickets.id, ticketId))
-        .returning();
-      
-      // Audit log
-      await db.insert(auditLog).values({
-        userId,
-        action: "APPROVE",
-        entityType: "tm_ticket",
-        entityId: ticketId,
-        newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber, grandTotal: ticket.grandTotal }),
-      });
-      
-      res.json(updatedTicket);
-    } catch (error) {
-      console.error("Error approving T&M ticket:", error);
-      res.status(500).json({ error: "Failed to approve T&M ticket" });
-    }
-  });
-
-  // Reject a T&M ticket
-  app.post("/api/tm-tickets/:ticketId/reject", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { ticketId } = req.params;
-      const { reason } = req.body;
-      const userId = req.user!.id;
-      
-      if (!hasTMApprovalAccess(req.user!.role)) {
-        return res.status(403).json({ error: "Insufficient permissions to reject T&M tickets" });
-      }
-      
-      const ticket = await db.query.tmTickets.findFirst({
-        where: eq(tmTickets.id, ticketId),
-      });
-      
-      if (!ticket) {
-        return res.status(404).json({ error: "T&M ticket not found" });
-      }
-      
-      if (ticket.status !== "SUBMITTED") {
-        return res.status(400).json({ error: "Only submitted tickets can be rejected" });
-      }
-      
-      const [updatedTicket] = await db.update(tmTickets)
-        .set({
-          status: "REJECTED",
-          rejectedAt: new Date(),
-          rejectedById: userId,
-          rejectionReason: reason || null,
-          updatedAt: new Date(),
-        })
-        .where(eq(tmTickets.id, ticketId))
-        .returning();
-      
-      // Audit log
-      await db.insert(auditLog).values({
-        userId,
-        action: "REJECT",
-        entityType: "tm_ticket",
-        entityId: ticketId,
-        newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber, reason }),
-      });
-      
-      res.json(updatedTicket);
-    } catch (error) {
-      console.error("Error rejecting T&M ticket:", error);
-      res.status(500).json({ error: "Failed to reject T&M ticket" });
-    }
-  });
-
-  // Upload signed document
-  app.post("/api/tm-tickets/:ticketId/signed-document", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { ticketId } = req.params;
-      const { url, fileName, objectKey } = req.body;
-      const userId = req.user!.id;
-      
-      if (!hasTMApprovalAccess(req.user!.role)) {
-        return res.status(403).json({ error: "Insufficient permissions to upload signed documents" });
-      }
-      
-      const ticket = await db.query.tmTickets.findFirst({
-        where: eq(tmTickets.id, ticketId),
-      });
-      
-      if (!ticket) {
-        return res.status(404).json({ error: "T&M ticket not found" });
-      }
-      
-      const [updatedTicket] = await db.update(tmTickets)
-        .set({
-          signedDocumentUrl: url,
-          signedDocumentFileName: fileName,
-          signedDocumentObjectKey: objectKey,
-          signedDocumentUploadedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(tmTickets.id, ticketId))
-        .returning();
-      
-      // Audit log
-      await db.insert(auditLog).values({
-        userId,
-        action: "UPDATE",
-        entityType: "tm_ticket",
-        entityId: ticketId,
-        newValue: JSON.stringify({ action: "signed_document_upload", fileName }),
-      });
-      
-      res.json(updatedTicket);
-    } catch (error) {
-      console.error("Error uploading signed document:", error);
-      res.status(500).json({ error: "Failed to upload signed document" });
-    }
-  });
-
-  // Delete a T&M ticket
   app.delete("/api/tm-tickets/:ticketId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { ticketId } = req.params;
@@ -587,7 +359,6 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
-      // Only allow deletion of DRAFT tickets or by admin
       if (ticket.status !== "DRAFT" && req.user!.role !== "ADMIN") {
         return res.status(400).json({ error: "Only draft tickets can be deleted" });
       }
@@ -598,7 +369,6 @@ export function registerTMTicketRoutes(app: Express) {
       
       await db.delete(tmTickets).where(eq(tmTickets.id, ticketId));
       
-      // Audit log
       await db.insert(auditLog).values({
         userId,
         action: "DELETE",
@@ -614,7 +384,6 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  // Generate PDF-ready HTML for a T&M ticket
   app.get("/api/tm-tickets/:ticketId/pdf", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { ticketId } = req.params;
@@ -627,7 +396,6 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
-      // Get all entries and related info
       const [laborEntries, equipmentEntries, materialEntries, project, rep, createdBy] = await Promise.all([
         db.query.tmTicketLaborEntries.findMany({ where: eq(tmTicketLaborEntries.ticketId, ticketId) }),
         db.query.tmTicketEquipmentEntries.findMany({ where: eq(tmTicketEquipmentEntries.ticketId, ticketId) }),
@@ -647,7 +415,6 @@ export function registerTMTicketRoutes(app: Express) {
         return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
       };
       
-      // Generate HTML document for PDF
       const html = `
 <!DOCTYPE html>
 <html>
@@ -879,7 +646,6 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  // Get T&M summary for a project (for financial overview)
   app.get("/api/projects/:projectId/tm-summary", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
@@ -909,474 +675,8 @@ export function registerTMTicketRoutes(app: Express) {
       res.status(500).json({ error: "Failed to fetch T&M summary" });
     }
   });
-
-  // ============== BILLING WORKFLOW ENDPOINTS ==============
-
-  // Get tickets pending billing approval (approved work tickets that haven't been billed)
-  app.get("/api/tm-billing/pending", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (mustDenyAccess || !hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      // Get all approved tickets pending billing
-      const tickets = await db.query.tmTickets.findMany({
-        where: and(
-          eq(tmTickets.status, "APPROVED"),
-          eq(tmTickets.billingStatus, "PENDING")
-        ),
-        orderBy: [desc(tmTickets.workDate)],
-      });
-
-      // Filter by organization if needed
-      const projectIdSet = new Set(tickets.map(t => t.projectId));
-      const projectIds = Array.from(projectIdSet);
-      const projectsData = projectIds.length > 0 
-        ? await db.query.projects.findMany({ where: inArray(projects.id, projectIds) })
-        : [];
-      
-      const projectMap = new Map(projectsData.map(p => [p.id, p]));
-      
-      let filteredTickets = tickets;
-      if (shouldFilter && orgId) {
-        filteredTickets = tickets.filter(t => {
-          const project = projectMap.get(t.projectId);
-          return project?.gcOrganizationId === orgId;
-        });
-      }
-
-      // Enrich with project and user info
-      const enrichedTickets = await Promise.all(filteredTickets.map(async (ticket) => {
-        const project = projectMap.get(ticket.projectId);
-        const createdBy = await db.query.users.findFirst({ where: eq(users.id, ticket.createdById) });
-        
-        return {
-          ...ticket,
-          project: project ? { id: project.id, name: project.name, clientName: project.clientName } : null,
-          createdBy: createdBy ? { id: createdBy.id, firstName: createdBy.firstName, lastName: createdBy.lastName } : null,
-        };
-      }));
-
-      res.json(enrichedTickets);
-    } catch (error) {
-      console.error("Error fetching pending billing tickets:", error);
-      res.status(500).json({ error: "Failed to fetch pending billing tickets" });
-    }
-  });
-
-  // Approve ticket for billing
-  app.post("/api/tm-tickets/:ticketId/approve-for-billing", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { ticketId } = req.params;
-      const { billingNotes } = req.body;
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (!hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied - requires billing approval permission" });
-      }
-
-      const ticket = await db.query.tmTickets.findFirst({ where: eq(tmTickets.id, ticketId) });
-      if (!ticket) {
-        return res.status(404).json({ error: "Ticket not found" });
-      }
-
-      if (ticket.status !== "APPROVED") {
-        return res.status(400).json({ error: "Ticket must be approved before billing approval" });
-      }
-
-      if (ticket.billingStatus !== "PENDING") {
-        return res.status(400).json({ error: "Ticket has already been processed for billing" });
-      }
-
-      const [updated] = await db.update(tmTickets)
-        .set({
-          billingStatus: "APPROVED_FOR_BILLING",
-          billingApprovedAt: new Date(),
-          billingApprovedById: req.user!.id,
-          billingNotes: billingNotes || null,
-          updatedAt: new Date(),
-        })
-        .where(eq(tmTickets.id, ticketId))
-        .returning();
-
-      // Create audit log
-      await db.insert(auditLog).values({
-        userId: req.user!.id,
-        action: "UPDATE",
-        entityType: "tm_ticket",
-        entityId: ticketId,
-        newValue: JSON.stringify({ billingStatus: "APPROVED_FOR_BILLING", billingNotes }),
-        ipAddress: req.ip || "unknown",
-      });
-
-      res.json(updated);
-    } catch (error) {
-      console.error("Error approving ticket for billing:", error);
-      res.status(500).json({ error: "Failed to approve ticket for billing" });
-    }
-  });
-
-  // Get tickets approved for billing (ready to invoice)
-  app.get("/api/tm-billing/approved", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (mustDenyAccess || !hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      const tickets = await db.query.tmTickets.findMany({
-        where: eq(tmTickets.billingStatus, "APPROVED_FOR_BILLING"),
-        orderBy: [desc(tmTickets.workDate)],
-      });
-
-      // Filter by organization
-      const projectIdSet = new Set(tickets.map(t => t.projectId));
-      const projectIds = Array.from(projectIdSet);
-      const projectsData = projectIds.length > 0 
-        ? await db.query.projects.findMany({ where: inArray(projects.id, projectIds) })
-        : [];
-      
-      const projectMap = new Map(projectsData.map(p => [p.id, p]));
-      
-      let filteredTickets = tickets;
-      if (shouldFilter && orgId) {
-        filteredTickets = tickets.filter(t => {
-          const project = projectMap.get(t.projectId);
-          return project?.gcOrganizationId === orgId;
-        });
-      }
-
-      const enrichedTickets = await Promise.all(filteredTickets.map(async (ticket) => {
-        const project = projectMap.get(ticket.projectId);
-        return {
-          ...ticket,
-          project: project ? { id: project.id, name: project.name, clientName: project.clientName } : null,
-        };
-      }));
-
-      res.json(enrichedTickets);
-    } catch (error) {
-      console.error("Error fetching approved billing tickets:", error);
-      res.status(500).json({ error: "Failed to fetch approved billing tickets" });
-    }
-  });
-
-  // Generate invoice from approved tickets
-  app.post("/api/tm-invoices", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { ticketIds, projectId, clientName, clientAddress, clientEmail, dueDate, notes, taxRate } = req.body;
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (!hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      if (!ticketIds || !Array.isArray(ticketIds) || ticketIds.length === 0) {
-        return res.status(400).json({ error: "At least one ticket is required" });
-      }
-
-      // Verify all tickets exist and are approved for billing
-      const tickets = await db.query.tmTickets.findMany({
-        where: inArray(tmTickets.id, ticketIds),
-      });
-
-      if (tickets.length !== ticketIds.length) {
-        return res.status(400).json({ error: "One or more tickets not found" });
-      }
-
-      const invalidTickets = tickets.filter(t => t.billingStatus !== "APPROVED_FOR_BILLING");
-      if (invalidTickets.length > 0) {
-        return res.status(400).json({ error: "All tickets must be approved for billing" });
-      }
-
-      // Get project info
-      const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId || tickets[0].projectId) });
-      if (!project) {
-        return res.status(404).json({ error: "Project not found" });
-      }
-
-      // Calculate totals
-      const subtotal = tickets.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0);
-      const tax = taxRate ? subtotal * (Number(taxRate) / 100) : 0;
-      const total = subtotal + tax;
-
-      // Generate invoice number
-      const orgId = project.gcOrganizationId;
-      const existingInvoices = await db.query.tmInvoices.findMany({
-        where: eq(tmInvoices.organizationId, orgId),
-      });
-      const invoiceNumber = `TM-${String(existingInvoices.length + 1).padStart(5, "0")}`;
-
-      // Create invoice
-      const [invoice] = await db.insert(tmInvoices).values({
-        organizationId: orgId,
-        projectId: project.id,
-        invoiceNumber,
-        invoiceDate: new Date().toISOString().split("T")[0],
-        dueDate: dueDate || null,
-        clientName: clientName || project.clientName || "Client",
-        clientAddress: clientAddress || null,
-        clientEmail: clientEmail || null,
-        subtotal: String(subtotal),
-        taxRate: taxRate ? String(taxRate) : "0",
-        taxAmount: String(tax),
-        total: String(total),
-        status: "DRAFT",
-        notes: notes || null,
-        createdById: req.user!.id,
-      }).returning();
-
-      // Update tickets to link to invoice
-      await db.update(tmTickets)
-        .set({
-          billingStatus: "INVOICED",
-          invoiceId: invoice.id,
-          updatedAt: new Date(),
-        })
-        .where(inArray(tmTickets.id, ticketIds));
-
-      // Create audit log
-      await db.insert(auditLog).values({
-        userId: req.user!.id,
-        action: "CREATE",
-        entityType: "tm_invoice",
-        entityId: invoice.id,
-        newValue: JSON.stringify({ ticketIds, invoiceNumber, total }),
-        ipAddress: req.ip || "unknown",
-      });
-
-      res.json({ ...invoice, tickets });
-    } catch (error) {
-      console.error("Error creating invoice:", error);
-      res.status(500).json({ error: "Failed to create invoice" });
-    }
-  });
-
-  // Get all invoices for organization
-  app.get("/api/tm-invoices", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (mustDenyAccess || !hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      let invoices;
-      if (shouldFilter && orgId) {
-        invoices = await db.query.tmInvoices.findMany({
-          where: eq(tmInvoices.organizationId, orgId),
-          orderBy: [desc(tmInvoices.invoiceDate)],
-        });
-      } else {
-        invoices = await db.query.tmInvoices.findMany({
-          orderBy: [desc(tmInvoices.invoiceDate)],
-        });
-      }
-
-      // Enrich with project and ticket count
-      const enrichedInvoices = await Promise.all(invoices.map(async (invoice) => {
-        const project = await db.query.projects.findFirst({ where: eq(projects.id, invoice.projectId) });
-        const tickets = await db.query.tmTickets.findMany({ where: eq(tmTickets.invoiceId, invoice.id) });
-        
-        return {
-          ...invoice,
-          project: project ? { id: project.id, name: project.name } : null,
-          ticketCount: tickets.length,
-        };
-      }));
-
-      res.json(enrichedInvoices);
-    } catch (error) {
-      console.error("Error fetching invoices:", error);
-      res.status(500).json({ error: "Failed to fetch invoices" });
-    }
-  });
-
-  // Get single invoice with tickets
-  app.get("/api/tm-invoices/:invoiceId", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { invoiceId } = req.params;
-      
-      const invoice = await db.query.tmInvoices.findFirst({ where: eq(tmInvoices.id, invoiceId) });
-      if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
-      }
-
-      const [project, tickets, createdBy] = await Promise.all([
-        db.query.projects.findFirst({ where: eq(projects.id, invoice.projectId) }),
-        db.query.tmTickets.findMany({ where: eq(tmTickets.invoiceId, invoiceId) }),
-        db.query.users.findFirst({ where: eq(users.id, invoice.createdById) }),
-      ]);
-
-      res.json({
-        ...invoice,
-        project: project ? { id: project.id, name: project.name, clientName: project.clientName } : null,
-        tickets,
-        createdBy: createdBy ? { id: createdBy.id, firstName: createdBy.firstName, lastName: createdBy.lastName } : null,
-      });
-    } catch (error) {
-      console.error("Error fetching invoice:", error);
-      res.status(500).json({ error: "Failed to fetch invoice" });
-    }
-  });
-
-  // Mark invoice as sent
-  app.post("/api/tm-invoices/:invoiceId/send", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { invoiceId } = req.params;
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (!hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      const invoice = await db.query.tmInvoices.findFirst({ where: eq(tmInvoices.id, invoiceId) });
-      if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
-      }
-
-      const [updated] = await db.update(tmInvoices)
-        .set({
-          status: "SENT",
-          sentAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(tmInvoices.id, invoiceId))
-        .returning();
-
-      res.json(updated);
-    } catch (error) {
-      console.error("Error sending invoice:", error);
-      res.status(500).json({ error: "Failed to send invoice" });
-    }
-  });
-
-  // Mark invoice as paid (marks all tickets as BILLED)
-  app.post("/api/tm-invoices/:invoiceId/mark-paid", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { invoiceId } = req.params;
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (!hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      const invoice = await db.query.tmInvoices.findFirst({ where: eq(tmInvoices.id, invoiceId) });
-      if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
-      }
-
-      // Update invoice status
-      const [updated] = await db.update(tmInvoices)
-        .set({
-          status: "PAID",
-          paidAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(tmInvoices.id, invoiceId))
-        .returning();
-
-      // Update all tickets to BILLED
-      await db.update(tmTickets)
-        .set({
-          billingStatus: "BILLED",
-          billedAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(tmTickets.invoiceId, invoiceId));
-
-      // Create audit log
-      await db.insert(auditLog).values({
-        userId: req.user!.id,
-        action: "UPDATE",
-        entityType: "tm_invoice",
-        entityId: invoiceId,
-        newValue: JSON.stringify({ status: "PAID", invoiceNumber: invoice.invoiceNumber, total: invoice.total }),
-        ipAddress: req.ip || "unknown",
-      });
-
-      res.json(updated);
-    } catch (error) {
-      console.error("Error marking invoice as paid:", error);
-      res.status(500).json({ error: "Failed to mark invoice as paid" });
-    }
-  });
-
-  // Get billing summary/dashboard data
-  app.get("/api/tm-billing/summary", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      const effectiveRole = req.user?.effectiveRole || req.user?.role;
-      
-      if (mustDenyAccess || !hasBillingApprovalAccess(effectiveRole || "")) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      // Get all tickets with billing status
-      const allTickets = await db.query.tmTickets.findMany({
-        where: eq(tmTickets.status, "APPROVED"),
-      });
-
-      // Filter by org if needed
-      let filteredTickets = allTickets;
-      if (shouldFilter && orgId) {
-        const projectIdSet = new Set(allTickets.map(t => t.projectId));
-        const projectIds = Array.from(projectIdSet);
-        const projectsData = projectIds.length > 0 
-          ? await db.query.projects.findMany({ where: inArray(projects.id, projectIds) })
-          : [];
-        const projectMap = new Map(projectsData.map(p => [p.id, p]));
-        
-        filteredTickets = allTickets.filter(t => {
-          const project = projectMap.get(t.projectId);
-          return project?.gcOrganizationId === orgId;
-        });
-      }
-
-      // Get invoices
-      let invoices;
-      if (shouldFilter && orgId) {
-        invoices = await db.query.tmInvoices.findMany({
-          where: eq(tmInvoices.organizationId, orgId),
-        });
-      } else {
-        invoices = await db.query.tmInvoices.findMany();
-      }
-
-      const pending = filteredTickets.filter(t => t.billingStatus === "PENDING");
-      const approvedForBilling = filteredTickets.filter(t => t.billingStatus === "APPROVED_FOR_BILLING");
-      const invoiced = filteredTickets.filter(t => t.billingStatus === "INVOICED");
-      const billed = filteredTickets.filter(t => t.billingStatus === "BILLED");
-
-      res.json({
-        pendingCount: pending.length,
-        pendingTotal: pending.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0),
-        approvedForBillingCount: approvedForBilling.length,
-        approvedForBillingTotal: approvedForBilling.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0),
-        invoicedCount: invoiced.length,
-        invoicedTotal: invoiced.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0),
-        billedCount: billed.length,
-        billedTotal: billed.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0),
-        draftInvoices: invoices.filter(i => i.status === "DRAFT").length,
-        sentInvoices: invoices.filter(i => i.status === "SENT").length,
-        paidInvoices: invoices.filter(i => i.status === "PAID").length,
-        totalInvoiced: invoices.reduce((sum, i) => sum + Number(i.total || 0), 0),
-        totalPaid: invoices.filter(i => i.status === "PAID").reduce((sum, i) => sum + Number(i.total || 0), 0),
-      });
-    } catch (error) {
-      console.error("Error fetching billing summary:", error);
-      res.status(500).json({ error: "Failed to fetch billing summary" });
-    }
-  });
 }
 
-// Helper function to recalculate ticket totals
 async function recalculateTicketTotals(ticketId: string) {
   const [laborEntries, equipmentEntries, materialEntries] = await Promise.all([
     db.query.tmTicketLaborEntries.findMany({ where: eq(tmTicketLaborEntries.ticketId, ticketId) }),
