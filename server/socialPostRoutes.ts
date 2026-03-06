@@ -1,13 +1,13 @@
 import { Router, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, desc, asc, gte, lte, sql, or, ilike } from "drizzle-orm";
-import { socialAccounts, socialMediaPosts, socialPostAnalytics, organizations } from "@shared/schema";
+import { eq, and, desc, gte, lte, ilike, sql } from "drizzle-orm";
+import { socialAccounts, socialMediaPosts } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { randomUUID } from "crypto";
 import crypto from "crypto";
-import { openai } from "./ai/openaiClient";
-import { publishToPlatform, validateToken, refreshToken } from "./social/publishService";
+import { publishToPlatform } from "./social/publishService";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
+import { openai } from "./ai/openaiClient";
 
 const objectStorage = new ObjectStorageService();
 
@@ -24,21 +24,6 @@ function encrypt(text: string): string {
   return iv.toString("hex") + ":" + encrypted;
 }
 
-function decrypt(text: string): string {
-  try {
-    const key = crypto.scryptSync(ENCRYPTION_KEY, "salt", 32);
-    const parts = text.split(":");
-    const iv = Buffer.from(parts[0], "hex");
-    const encrypted = parts[1];
-    const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
-    let decrypted = decipher.update(encrypted, "hex", "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
-  } catch {
-    return "";
-  }
-}
-
 function getOrgId(req: AuthRequest): string | null {
   return req.user?.organizationId || null;
 }
@@ -46,123 +31,6 @@ function getOrgId(req: AuthRequest): string | null {
 function isAdmin(req: AuthRequest): boolean {
   return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(req.user?.role || "");
 }
-
-function getPlatformCredentials(platform: string): { clientId: string; clientSecret: string } {
-  switch (platform) {
-    case "FACEBOOK":
-    case "INSTAGRAM":
-      return { clientId: process.env.FB_APP_ID || "", clientSecret: process.env.FB_APP_SECRET || "" };
-    case "LINKEDIN":
-      return { clientId: process.env.LINKEDIN_CLIENT_ID || "", clientSecret: process.env.LINKEDIN_CLIENT_SECRET || "" };
-    case "TWITTER":
-      return { clientId: process.env.TWITTER_CLIENT_ID || "", clientSecret: process.env.TWITTER_CLIENT_SECRET || "" };
-    default:
-      return { clientId: "", clientSecret: "" };
-  }
-}
-
-router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const accounts = await db.query.socialAccounts.findMany({
-      where: eq(socialAccounts.organizationId, orgId),
-      orderBy: [asc(socialAccounts.platform)],
-    });
-
-    const sanitized = accounts.map(a => ({
-      ...a,
-      accessTokenEncrypted: a.accessTokenEncrypted ? "***" : null,
-      refreshTokenEncrypted: a.refreshTokenEncrypted ? "***" : null,
-    }));
-
-    res.json(sanitized);
-  } catch (error) {
-    console.error("Error fetching social accounts:", error);
-    res.status(500).json({ error: "Failed to fetch social accounts" });
-  }
-});
-
-router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { platform, accountName, accountId, accessToken, refreshToken, permissionScopes } = req.body;
-    if (!platform) return res.status(400).json({ error: "Platform is required" });
-
-    const [account] = await db.insert(socialAccounts).values({
-      organizationId: orgId,
-      platform,
-      accountName: accountName || null,
-      accountId: accountId || null,
-      status: accessToken ? "CONNECTED" : "DISCONNECTED",
-      accessTokenEncrypted: accessToken ? encrypt(accessToken) : null,
-      refreshTokenEncrypted: refreshToken ? encrypt(refreshToken) : null,
-      permissionScopes: permissionScopes || null,
-      connectedById: req.user!.id,
-    }).returning();
-
-    res.json({ ...account, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" });
-  } catch (error) {
-    console.error("Error creating social account:", error);
-    res.status(500).json({ error: "Failed to create social account" });
-  }
-});
-
-router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { id } = req.params;
-    const { accountName, accessToken, refreshToken, status } = req.body;
-
-    const updates: any = { updatedAt: new Date() };
-    if (accountName !== undefined) updates.accountName = accountName;
-    if (status) updates.status = status;
-    if (accessToken) {
-      updates.accessTokenEncrypted = encrypt(accessToken);
-      updates.status = "CONNECTED";
-    }
-    if (refreshToken) {
-      updates.refreshTokenEncrypted = encrypt(refreshToken);
-    }
-
-    const [updated] = await db.update(socialAccounts)
-      .set(updates)
-      .where(and(eq(socialAccounts.id, id), eq(socialAccounts.organizationId, orgId)))
-      .returning();
-
-    if (!updated) return res.status(404).json({ error: "Account not found" });
-    res.json({ ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" });
-  } catch (error) {
-    console.error("Error updating social account:", error);
-    res.status(500).json({ error: "Failed to update social account" });
-  }
-});
-
-router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { id } = req.params;
-    const [deleted] = await db.delete(socialAccounts)
-      .where(and(eq(socialAccounts.id, id), eq(socialAccounts.organizationId, orgId)))
-      .returning();
-
-    if (!deleted) return res.status(404).json({ error: "Account not found" });
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting social account:", error);
-    res.status(500).json({ error: "Failed to delete social account" });
-  }
-});
 
 router.get("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -187,7 +55,9 @@ router.get("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
       offset,
     });
 
-    const countResult = await db.execute(sql`SELECT COUNT(*) as total FROM social_media_posts WHERE organization_id = ${orgId}`);
+    const countResult = await db.execute(
+      sql`SELECT COUNT(*) as total FROM social_media_posts WHERE organization_id = ${orgId}`
+    );
     const total = parseInt(countResult.rows[0]?.total as string) || 0;
 
     res.json({ data: posts, total, limit, offset });
@@ -580,178 +450,6 @@ router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res:
   }
 });
 
-router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { month, year } = req.query;
-    const m = parseInt(month as string) || new Date().getMonth() + 1;
-    const y = parseInt(year as string) || new Date().getFullYear();
-
-    const startDate = new Date(y, m - 1, 1);
-    const endDate = new Date(y, m, 0, 23, 59, 59);
-
-    const posts = await db.query.socialMediaPosts.findMany({
-      where: and(
-        eq(socialMediaPosts.organizationId, orgId),
-        or(
-          and(gte(socialMediaPosts.scheduledAt, startDate), lte(socialMediaPosts.scheduledAt, endDate)),
-          and(gte(socialMediaPosts.publishedAt, startDate), lte(socialMediaPosts.publishedAt, endDate)),
-          and(gte(socialMediaPosts.createdAt, startDate), lte(socialMediaPosts.createdAt, endDate))
-        )
-      ),
-      orderBy: [asc(socialMediaPosts.scheduledAt)],
-    });
-
-    const grouped: Record<string, any[]> = {};
-    posts.forEach(post => {
-      const date = post.scheduledAt || post.publishedAt || post.createdAt;
-      const key = new Date(date).toISOString().split("T")[0];
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(post);
-    });
-
-    res.json({ month: m, year: y, posts: grouped });
-  } catch (error) {
-    console.error("Error fetching social calendar:", error);
-    res.status(500).json({ error: "Failed to fetch calendar data" });
-  }
-});
-
-router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const now = new Date();
-    const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisWeekStart = new Date(now);
-    thisWeekStart.setDate(now.getDate() - now.getDay());
-    thisWeekStart.setHours(0, 0, 0, 0);
-
-    const allPosts = await db.query.socialMediaPosts.findMany({
-      where: eq(socialMediaPosts.organizationId, orgId),
-    });
-
-    const total = allPosts.length;
-    const drafts = allPosts.filter(p => p.status === "DRAFT").length;
-    const scheduled = allPosts.filter(p => p.status === "SCHEDULED").length;
-    const posted = allPosts.filter(p => p.status === "POSTED").length;
-    const failed = allPosts.filter(p => p.status === "FAILED").length;
-    const pendingApproval = allPosts.filter(p => p.status === "PENDING_APPROVAL").length;
-
-    const publishedThisMonth = allPosts.filter(p =>
-      p.status === "POSTED" && p.publishedAt && new Date(p.publishedAt) >= thisMonthStart
-    ).length;
-
-    const publishedThisWeek = allPosts.filter(p =>
-      p.status === "POSTED" && p.publishedAt && new Date(p.publishedAt) >= thisWeekStart
-    ).length;
-
-    const byPlatform: Record<string, number> = {};
-    allPosts.forEach(p => {
-      const plat = p.platform || "UNKNOWN";
-      byPlatform[plat] = (byPlatform[plat] || 0) + 1;
-    });
-
-    const accounts = await db.query.socialAccounts.findMany({
-      where: eq(socialAccounts.organizationId, orgId),
-    });
-
-    res.json({
-      total, drafts, scheduled, posted, failed, pendingApproval,
-      publishedThisMonth, publishedThisWeek,
-      byPlatform,
-      connectedAccounts: accounts.length,
-      accountsByPlatform: accounts.reduce((acc: Record<string, string>, a) => {
-        acc[a.platform] = a.status;
-        return acc;
-      }, {}),
-    });
-  } catch (error) {
-    console.error("Error fetching social stats:", error);
-    res.status(500).json({ error: "Failed to fetch social stats" });
-  }
-});
-
-router.post("/posts/generate", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { platform, topic, tone, saveAsDraft } = req.body;
-    if (!platform || !topic) return res.status(400).json({ error: "Platform and topic are required" });
-
-    const org = await db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-    });
-
-    const platformGuides: Record<string, string> = {
-      FACEBOOK: "Write for Facebook. Can be longer (up to 500 words), conversational, encourage engagement.",
-      INSTAGRAM: "Write for Instagram. Focus on visuals, use emojis, max 2200 characters, include call-to-action.",
-      LINKEDIN: "Write for LinkedIn. Professional tone, industry insights, thought leadership, 1300 character limit.",
-      TWITTER: "Write for X/Twitter. Concise (280 chars max), punchy, include relevant hashtags.",
-      TIKTOK: "Write for TikTok. Casual, trendy, engaging, focus on video caption format.",
-      YOUTUBE: "Write for YouTube. Video description style, include relevant keywords, call-to-action for subscribe.",
-      PINTEREST: "Write for Pinterest. Descriptive, keyword-rich, inspiring, include call-to-action.",
-    };
-
-    const prompt = `Create a social media post for a ${org?.tradeType || "construction"} company called "${org?.name || "Our Company"}".
-
-Platform: ${platform}
-Topic: ${topic}
-Tone: ${tone || "professional"}
-${platformGuides[platform] || ""}
-
-Return a JSON object with:
-{
-  "content": "The full post content",
-  "hashtags": ["hashtag1", "hashtag2", "hashtag3"],
-  "suggestedImagePrompt": "Description for an AI image generator if applicable",
-  "bestTimeToPost": "Suggested posting time",
-  "engagementTips": "Tips to boost engagement",
-  "title": "A short internal title/label for this post"
-}`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are a social media marketing expert for the construction industry." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 1000,
-      response_format: { type: "json_object" },
-    });
-
-    const postContent = JSON.parse(response.choices[0]?.message?.content || "{}");
-
-    if (saveAsDraft) {
-      const [saved] = await db.insert(socialMediaPosts).values({
-        organizationId: orgId,
-        title: postContent.title || topic,
-        content: postContent.content || "",
-        platform: platform as any,
-        status: "DRAFT",
-        hashtags: postContent.hashtags || [],
-        tone: tone || "professional",
-        aiGenerated: true,
-        aiPrompt: topic,
-        suggestedImagePrompt: postContent.suggestedImagePrompt || null,
-        createdById: req.user!.id,
-      }).returning();
-
-      return res.json({ ...postContent, savedPost: saved });
-    }
-
-    res.json(postContent);
-  } catch (error) {
-    console.error("Error generating social post:", error);
-    res.status(500).json({ error: "Failed to generate social post" });
-  }
-});
-
 router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
@@ -785,87 +483,6 @@ router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Resp
   } catch (error) {
     console.error("Error rejecting social post:", error);
     res.status(500).json({ error: "Failed to reject social post" });
-  }
-});
-
-router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { id } = req.params;
-    const account = await db.query.socialAccounts.findFirst({
-      where: and(eq(socialAccounts.id, id), eq(socialAccounts.organizationId, orgId)),
-    });
-    if (!account) return res.status(404).json({ error: "Account not found" });
-
-    if (!account.accessTokenEncrypted) {
-      return res.json({ valid: false, error: "No access token configured", expiresAt: null });
-    }
-
-    const token = decrypt(account.accessTokenEncrypted);
-    if (!token) {
-      return res.json({ valid: false, error: "Token decryption failed", expiresAt: null });
-    }
-
-    const result = await validateToken(account.platform, token, account.accountId || undefined);
-    res.json({
-      valid: result.valid,
-      error: result.error || null,
-      expiresAt: account.tokenExpiresAt || null,
-    });
-  } catch (error) {
-    console.error("Error checking account status:", error);
-    res.status(500).json({ error: "Failed to check account status" });
-  }
-});
-
-router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const { id } = req.params;
-    const account = await db.query.socialAccounts.findFirst({
-      where: and(eq(socialAccounts.id, id), eq(socialAccounts.organizationId, orgId)),
-    });
-    if (!account) return res.status(404).json({ error: "Account not found" });
-
-    if (!account.refreshTokenEncrypted) {
-      return res.status(400).json({ error: "No refresh token available. Please reconnect the account." });
-    }
-
-    const platformCreds = getPlatformCredentials(account.platform);
-    const result = await refreshToken(account.platform, account.refreshTokenEncrypted, platformCreds.clientId, platformCreds.clientSecret);
-    if (!result) {
-      await db.update(socialAccounts)
-        .set({ status: "EXPIRED", updatedAt: new Date() })
-        .where(eq(socialAccounts.id, id));
-      return res.status(400).json({ error: "Token refresh failed. Please reconnect the account." });
-    }
-
-    const expiresAt = result.expiresIn ? new Date(Date.now() + result.expiresIn * 1000) : null;
-    const [updated] = await db.update(socialAccounts)
-      .set({
-        accessTokenEncrypted: encrypt(result.accessToken),
-        tokenExpiresAt: expiresAt,
-        status: "CONNECTED",
-        lastSyncAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(socialAccounts.id, id))
-      .returning();
-
-    res.json({
-      success: true,
-      status: "CONNECTED",
-      expiresAt,
-      account: { ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" },
-    });
-  } catch (error) {
-    console.error("Error refreshing token:", error);
-    res.status(500).json({ error: "Failed to refresh token" });
   }
 });
 

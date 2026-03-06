@@ -37,8 +37,26 @@ describe("Route Module Structure", () => {
     expect(mod.default.stack).toBeDefined();
   });
 
-  it("should export notificationCrewRoutes as a router", async () => {
-    const mod = await import("../notificationCrewRoutes");
+  it("should export notificationRoutes2 as a router", async () => {
+    const mod = await import("../notificationRoutes2");
+    expect(mod.default).toBeDefined();
+    expect(mod.default.stack).toBeDefined();
+  });
+
+  it("should export auditBillingStorageRoutes as a router", async () => {
+    const mod = await import("../auditBillingStorageRoutes");
+    expect(mod.default).toBeDefined();
+    expect(mod.default.stack).toBeDefined();
+  });
+
+  it("should export crewRoutes2 as a router", async () => {
+    const mod = await import("../crewRoutes2");
+    expect(mod.default).toBeDefined();
+    expect(mod.default.stack).toBeDefined();
+  });
+
+  it("should export skillRoutes as a router", async () => {
+    const mod = await import("../skillRoutes");
     expect(mod.default).toBeDefined();
     expect(mod.default.stack).toBeDefined();
   });

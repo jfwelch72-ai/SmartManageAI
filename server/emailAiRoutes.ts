@@ -4,38 +4,19 @@ import {
   emailThreads, 
   emailMessages,
   emailAttachments,
-  tasks,
-  emailSummaries,
   emailAccounts,
-  type EmailThread,
-  type EmailMessage,
-  type Task,
+  tasks,
+  emailThreadStatusEnum,
   emailClassificationEnum,
-  emailThreadStatusEnum
 } from "@shared/schema";
-import { eq, and, desc, gte, lte, sql, inArray, or, isNotNull } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
-import { logCreate, logUpdate, logAudit } from "./auditLogger";
+import { logUpdate } from "./auditLogger";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
-import { 
-  analyzeEmail, 
-  summarizeThread, 
-  suggestReplies,
-  generateEmailSummary,
-  matchEmailToEntities,
-  createTaskFromEmail,
-  type EmailAnalysisResult
-} from "./ai/emailAi";
-import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
-// ==========================================
-// EMAIL THREADS ROUTES
-// ==========================================
-
-// GET /api/email/threads - List email threads
 router.get("/threads", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -49,15 +30,6 @@ router.get("/threads", requireAuth, async (req: AuthRequest, res) => {
 
     const { status, classification, projectId, limit = '50', offset = '0' } = req.query;
 
-    let query = db
-      .select()
-      .from(emailThreads)
-      .where(eq(emailThreads.organizationId, orgId))
-      .orderBy(desc(emailThreads.lastMessageAt))
-      .limit(Math.min(parseInt(limit as string) || 50, 100))
-      .offset(parseInt(offset as string) || 0);
-
-    // Build conditions
     const conditions = [eq(emailThreads.organizationId, orgId)];
     
     if (status && emailThreadStatusEnum.enumValues.includes(status as any)) {
@@ -87,7 +59,6 @@ router.get("/threads", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/email/threads/:id - Get single thread with messages
 router.get("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -114,14 +85,12 @@ router.get("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Thread not found" });
     }
 
-    // Get messages for this thread
     const messages = await db
       .select()
       .from(emailMessages)
       .where(eq(emailMessages.threadId, thread.id))
       .orderBy(emailMessages.receivedAt);
 
-    // Get tasks linked to this thread (using unified tasks table with sourceType filter)
     const linkedTasks = await db
       .select()
       .from(tasks)
@@ -144,7 +113,6 @@ router.get("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// PATCH /api/email/threads/:id - Update thread (status, link to project, etc.)
 router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -185,8 +153,6 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
 
     const data = parseResult.data;
 
-    // Verify linked entities belong to the same organization (mustDenyAccess pattern)
-    // Projects and bids use gcOrganizationId (General Contractor mode) for multi-tenant isolation
     if (data.projectId) {
       const { projects } = await import("@shared/schema");
       const [project] = await db
@@ -198,7 +164,6 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
       }
-      // Enforce multi-tenant isolation using gcOrganizationId
       if (project.gcOrganizationId && project.gcOrganizationId !== orgId) {
         return res.status(403).json({ error: "Access denied: Project belongs to another organization" });
       }
@@ -215,13 +180,11 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
       }
-      // Enforce multi-tenant isolation using gcOrganizationId
       if (bid.gcOrganizationId && bid.gcOrganizationId !== orgId) {
         return res.status(403).json({ error: "Access denied: Bid belongs to another organization" });
       }
     }
 
-    // Vendors (CRM organisations) use organizationId for multi-tenant isolation
     if (data.vendorId) {
       const { crmOrganisations } = await import("@shared/schema");
       const [vendor] = await db
@@ -263,11 +226,6 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// ==========================================
-// EMAIL MESSAGES ROUTES
-// ==========================================
-
-// GET /api/email/messages - List messages (optionally filtered by thread)
 router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -302,7 +260,6 @@ router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/email/messages/:id - Get single message with attachments
 router.get("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -329,7 +286,6 @@ router.get("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    // Get attachments
     const attachments = await db
       .select()
       .from(emailAttachments)
@@ -345,717 +301,6 @@ router.get("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/email/messages/:id/analyze - Run AI analysis on a message
-router.post("/messages/:id/analyze", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const [message] = await db
-      .select()
-      .from(emailMessages)
-      .where(
-        and(
-          eq(emailMessages.id, req.params.id),
-          eq(emailMessages.organizationId, orgId)
-        )
-      )
-      .limit(1);
-
-    if (!message) {
-      return res.status(404).json({ error: "Message not found" });
-    }
-
-    // Run AI analysis
-    const governedAnalysis = await governedAiCall<EmailAnalysisResult>({
-      orgId,
-      userId: req.user.id,
-      actionType: "email_message_analysis",
-      inputRefs: { messageId: message.id },
-      fn: async () => {
-        const result = await analyzeEmail(
-          message.subject,
-          message.bodyText || message.bodyHtml || '',
-          message.fromAddress,
-          orgId
-        );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
-      },
-    });
-
-    if (governedAnalysis.blocked) {
-      return res.status(429).json({ error: governedAnalysis.reason || "AI rate limit reached" });
-    }
-
-    const analysis = governedAnalysis.result;
-
-    // Match to existing entities
-    const matchedEntities = await matchEmailToEntities(analysis, orgId);
-
-    // Update message with classification
-    await db
-      .update(emailMessages)
-      .set({
-        classification: analysis.classification as any,
-        aiMetadata: JSON.stringify(analysis),
-        aiAnalyzedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(emailMessages.id, message.id));
-
-    // Update thread with primary classification if not set
-    const [thread] = await db
-      .select()
-      .from(emailThreads)
-      .where(eq(emailThreads.id, message.threadId))
-      .limit(1);
-
-    if (thread && !thread.primaryClassification) {
-      await db
-        .update(emailThreads)
-        .set({
-          primaryClassification: analysis.classification as any,
-          projectId: matchedEntities.projectId || thread.projectId,
-          bidId: matchedEntities.bidId || thread.bidId,
-          vendorId: matchedEntities.vendorId || thread.vendorId,
-          updatedAt: new Date(),
-        })
-        .where(eq(emailThreads.id, thread.id));
-    }
-
-    // Create task if needed
-    let taskId: string | null = null;
-    if (analysis.requiresResponse && analysis.suggestedTaskTitle) {
-      taskId = await createTaskFromEmail(
-        analysis,
-        message.id,
-        message.threadId,
-        orgId,
-        req.user.id,
-        matchedEntities
-      );
-
-      if (taskId) {
-        await logCreate(req.user.id, "EMAIL_TASK", taskId, {
-          source: "AI_ANALYSIS",
-          messageId: message.id,
-        }, req);
-      }
-    }
-
-    // Audit log
-    await logAudit({
-      userId: req.user.id,
-      entityType: "EMAIL_MESSAGE",
-      entityId: message.id,
-      action: "UPDATE",
-      oldValue: null,
-      newValue: JSON.stringify({ classification: analysis.classification }),
-    }, req);
-
-    return res.json({
-      analysis,
-      matchedEntities,
-      taskCreated: taskId ? true : false,
-      taskId,
-    });
-  } catch (error) {
-    console.error("Error analyzing email:", error);
-    return res.status(500).json({ error: "Failed to analyze email" });
-  }
-});
-
-// POST /api/email/messages/:id/suggest-reply - Get AI-generated reply suggestions
-router.post("/messages/:id/suggest-reply", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const toneSchema = z.object({
-      tones: z.array(z.enum(['professional', 'casual', 'firm'])).default(['professional']),
-    });
-
-    const parseResult = toneSchema.safeParse(req.body);
-    const tones = parseResult.success ? parseResult.data.tones : ['professional'] as const;
-
-    const [message] = await db
-      .select()
-      .from(emailMessages)
-      .where(
-        and(
-          eq(emailMessages.id, req.params.id),
-          eq(emailMessages.organizationId, orgId)
-        )
-      )
-      .limit(1);
-
-    if (!message) {
-      return res.status(404).json({ error: "Message not found" });
-    }
-
-    const governedReplies = await governedAiCall<import("./ai/emailAi").ReplyDraft[]>({
-      orgId,
-      userId: req.user.id,
-      actionType: "email_suggest_reply",
-      inputRefs: { messageId: message.id },
-      fn: async () => {
-        const result = await suggestReplies(
-          {
-            subject: message.subject,
-            body: message.bodyText || message.bodyHtml || '',
-            fromAddress: message.fromAddress,
-          },
-          tones as Array<'professional' | 'casual' | 'firm'>
-        );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
-      },
-    });
-
-    if (governedReplies.blocked) {
-      return res.status(429).json({ error: governedReplies.reason || "AI rate limit reached" });
-    }
-
-    const drafts = governedReplies.result;
-
-    return res.json({ drafts });
-  } catch (error) {
-    console.error("Error generating reply suggestions:", error);
-    return res.status(500).json({ error: "Failed to generate reply suggestions" });
-  }
-});
-
-// ==========================================
-// THREAD SUMMARY & AI FEATURES
-// ==========================================
-
-// POST /api/email/threads/:id/summarize - Get AI summary of a thread
-router.post("/threads/:id/summarize", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const [thread] = await db
-      .select()
-      .from(emailThreads)
-      .where(
-        and(
-          eq(emailThreads.id, req.params.id),
-          eq(emailThreads.organizationId, orgId)
-        )
-      )
-      .limit(1);
-
-    if (!thread) {
-      return res.status(404).json({ error: "Thread not found" });
-    }
-
-    // Get messages for summarization
-    const messages = await db
-      .select()
-      .from(emailMessages)
-      .where(eq(emailMessages.threadId, thread.id))
-      .orderBy(emailMessages.receivedAt);
-
-    if (messages.length === 0) {
-      return res.json({ summary: "No messages in this thread." });
-    }
-
-    const governedSummary = await governedAiCall<import("./ai/emailAi").ThreadSummaryResult>({
-      orgId,
-      userId: req.user.id,
-      actionType: "email_thread_summary",
-      inputRefs: { threadId: thread.id },
-      fn: async () => {
-        const result = await summarizeThread(
-          messages.map(m => ({
-            fromAddress: m.fromAddress,
-            fromName: m.fromName ?? undefined,
-            subject: m.subject,
-            bodyText: m.bodyText ?? undefined,
-            receivedAt: m.receivedAt,
-          }))
-        );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
-      },
-    });
-
-    if (governedSummary.blocked) {
-      return res.status(429).json({ error: governedSummary.reason || "AI rate limit reached" });
-    }
-
-    const summary = governedSummary.result;
-
-    // Save summary to thread
-    await db
-      .update(emailThreads)
-      .set({
-        aiSummary: summary.summary,
-        aiMetadata: JSON.stringify(summary),
-        updatedAt: new Date(),
-      })
-      .where(eq(emailThreads.id, thread.id));
-
-    return res.json(summary);
-  } catch (error) {
-    console.error("Error summarizing thread:", error);
-    return res.status(500).json({ error: "Failed to summarize thread" });
-  }
-});
-
-// ==========================================
-// EMAIL SUMMARIES (DAILY/WEEKLY)
-// ==========================================
-
-// POST /api/email/summary/daily - Generate daily email summary
-router.post("/summary/daily", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    // Get emails from last 24 hours
-    const oneDayAgo = new Date();
-    oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-
-    const recentMessages = await db
-      .select({
-        id: emailMessages.id,
-        threadId: emailMessages.threadId,
-        subject: emailMessages.subject,
-        fromAddress: emailMessages.fromAddress,
-        snippet: emailMessages.snippet,
-        classification: emailMessages.classification,
-        receivedAt: emailMessages.receivedAt,
-      })
-      .from(emailMessages)
-      .where(
-        and(
-          eq(emailMessages.organizationId, orgId),
-          gte(emailMessages.receivedAt, oneDayAgo)
-        )
-      )
-      .orderBy(desc(emailMessages.receivedAt))
-      .limit(100);
-
-    if (recentMessages.length === 0) {
-      return res.json({
-        periodDescription: "Last 24 hours",
-        totalEmails: 0,
-        byClassification: {},
-        highlights: [],
-        actionNeeded: [],
-        summaryNarrative: "No new emails in the last 24 hours.",
-      });
-    }
-
-    const governedDaily = await governedAiCall<import("./ai/emailAi").EmailSummaryDigest>({
-      orgId,
-      userId: req.user.id,
-      actionType: "email_daily_summary",
-      inputRefs: { messageCount: recentMessages.length },
-      fn: async () => {
-        const result = await generateEmailSummary(
-          recentMessages.map(m => ({
-            classification: m.classification ?? undefined,
-            subject: m.subject,
-            fromAddress: m.fromAddress,
-            snippet: m.snippet ?? undefined,
-            threadId: m.threadId,
-            receivedAt: m.receivedAt,
-          })),
-          'DAILY'
-        );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
-      },
-    });
-
-    if (governedDaily.blocked) {
-      return res.status(429).json({ error: governedDaily.reason || "AI rate limit reached" });
-    }
-
-    const summary = governedDaily.result;
-
-    // Save summary
-    await db.insert(emailSummaries).values({
-      organizationId: orgId,
-      userId: req.user.id,
-      summaryType: 'DAILY',
-      periodStart: oneDayAgo,
-      periodEnd: new Date(),
-      summaryContent: summary.summaryNarrative,
-      highlightsJson: JSON.stringify(summary.highlights),
-      emailCount: summary.totalEmails,
-      tasksCreated: 0,
-    });
-
-    return res.json(summary);
-  } catch (error) {
-    console.error("Error generating daily summary:", error);
-    return res.status(500).json({ error: "Failed to generate daily summary" });
-  }
-});
-
-// POST /api/email/summary/weekly - Generate weekly email summary
-router.post("/summary/weekly", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    // Get emails from last 7 days
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    const recentMessages = await db
-      .select({
-        id: emailMessages.id,
-        threadId: emailMessages.threadId,
-        subject: emailMessages.subject,
-        fromAddress: emailMessages.fromAddress,
-        snippet: emailMessages.snippet,
-        classification: emailMessages.classification,
-        receivedAt: emailMessages.receivedAt,
-      })
-      .from(emailMessages)
-      .where(
-        and(
-          eq(emailMessages.organizationId, orgId),
-          gte(emailMessages.receivedAt, oneWeekAgo)
-        )
-      )
-      .orderBy(desc(emailMessages.receivedAt))
-      .limit(200);
-
-    if (recentMessages.length === 0) {
-      return res.json({
-        periodDescription: "Last 7 days",
-        totalEmails: 0,
-        byClassification: {},
-        highlights: [],
-        actionNeeded: [],
-        summaryNarrative: "No new emails in the last 7 days.",
-      });
-    }
-
-    const governedWeekly = await governedAiCall<import("./ai/emailAi").EmailSummaryDigest>({
-      orgId,
-      userId: req.user.id,
-      actionType: "email_weekly_summary",
-      inputRefs: { messageCount: recentMessages.length },
-      fn: async () => {
-        const result = await generateEmailSummary(
-          recentMessages.map(m => ({
-            classification: m.classification ?? undefined,
-            subject: m.subject,
-            fromAddress: m.fromAddress,
-            snippet: m.snippet ?? undefined,
-            threadId: m.threadId,
-            receivedAt: m.receivedAt,
-          })),
-          'WEEKLY'
-        );
-        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
-      },
-    });
-
-    if (governedWeekly.blocked) {
-      return res.status(429).json({ error: governedWeekly.reason || "AI rate limit reached" });
-    }
-
-    const summary = governedWeekly.result;
-
-    // Save summary
-    await db.insert(emailSummaries).values({
-      organizationId: orgId,
-      userId: req.user.id,
-      summaryType: 'WEEKLY',
-      periodStart: oneWeekAgo,
-      periodEnd: new Date(),
-      summaryContent: summary.summaryNarrative,
-      highlightsJson: JSON.stringify(summary.highlights),
-      emailCount: summary.totalEmails,
-      tasksCreated: 0,
-    });
-
-    return res.json(summary);
-  } catch (error) {
-    console.error("Error generating weekly summary:", error);
-    return res.status(500).json({ error: "Failed to generate weekly summary" });
-  }
-});
-
-// GET /api/email/summary/latest - Get latest summaries
-router.get("/summary/latest", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const summaries = await db
-      .select()
-      .from(emailSummaries)
-      .where(
-        and(
-          eq(emailSummaries.organizationId, orgId),
-          eq(emailSummaries.userId, req.user.id)
-        )
-      )
-      .orderBy(desc(emailSummaries.createdAt))
-      .limit(5);
-
-    return res.json(summaries);
-  } catch (error) {
-    console.error("Error fetching summaries:", error);
-    return res.status(500).json({ error: "Failed to fetch summaries" });
-  }
-});
-
-// ==========================================
-// EMAIL TASKS (using unified tasks table)
-// ==========================================
-
-// GET /api/email/tasks - List email-linked tasks
-router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const { status, projectId, limit = '50', offset = '0' } = req.query;
-
-    // Query unified tasks table filtering by email source types (backward-compatible)
-    const conditions = [
-      eq(tasks.organizationId, orgId),
-      or(
-        eq(tasks.sourceType, 'EMAIL'),
-        eq(tasks.sourceType, 'AI_GENERATED'),
-        eq(tasks.sourceType, 'SYSTEM'),
-        isNotNull(tasks.emailThreadId)
-      )
-    ];
-    
-    if (status && ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'DISMISSED'].includes(status as string)) {
-      conditions.push(eq(tasks.status, status as "PENDING" | "IN_PROGRESS" | "COMPLETED" | "DISMISSED"));
-    }
-    
-    if (projectId && typeof projectId === 'string') {
-      conditions.push(eq(tasks.projectId, projectId));
-    }
-
-    const taskResults = await db
-      .select()
-      .from(tasks)
-      .where(and(...conditions))
-      .orderBy(desc(tasks.createdAt))
-      .limit(Math.min(parseInt(limit as string) || 50, 100))
-      .offset(parseInt(offset as string) || 0);
-
-    return res.json(taskResults);
-  } catch (error) {
-    console.error("Error fetching email tasks:", error);
-    return res.status(500).json({ error: "Failed to fetch email tasks" });
-  }
-});
-
-// POST /api/email/tasks - Create a task from email (uses unified tasks table)
-router.post("/tasks", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const taskSchema = z.object({
-      title: z.string().min(1).max(200),
-      description: z.string().max(2000).optional(),
-      priority: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).default('MEDIUM'),
-      dueDate: z.string().datetime().optional(),
-      emailThreadId: z.string().uuid().optional(),
-      emailMessageId: z.string().uuid().optional(),
-      projectId: z.string().uuid().optional(),
-      bidId: z.string().uuid().optional(),
-      vendorId: z.string().uuid().optional(),
-      assignedToId: z.string().uuid().optional(),
-      sourceType: z.enum(['MANUAL', 'EMAIL', 'AI_GENERATED', 'SYSTEM']).default('EMAIL'),
-    });
-
-    const parseResult = taskSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      return res.status(400).json({ error: fromZodError(parseResult.error).message });
-    }
-
-    const data = parseResult.data;
-
-    const [task] = await db
-      .insert(tasks)
-      .values({
-        organizationId: orgId,
-        createdById: req.user.id,
-        title: data.title,
-        description: data.description,
-        priority: data.priority,
-        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-        emailThreadId: data.emailThreadId,
-        emailMessageId: data.emailMessageId,
-        projectId: data.projectId,
-        bidId: data.bidId,
-        vendorId: data.vendorId,
-        assignedToId: data.assignedToId,
-        status: 'PENDING',
-        sourceType: data.sourceType,
-      })
-      .returning();
-
-    await logCreate(req.user.id, "TASK", task.id, { title: task.title, sourceType: task.sourceType }, req);
-
-    return res.status(201).json(task);
-  } catch (error) {
-    console.error("Error creating email task:", error);
-    return res.status(500).json({ error: "Failed to create email task" });
-  }
-});
-
-// PATCH /api/email/tasks/:id - Update a task (uses unified tasks table)
-router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      return res.status(403).json({ error: "Organization required" });
-    }
-
-    const updateSchema = z.object({
-      title: z.string().min(1).max(200).optional(),
-      description: z.string().max(2000).optional(),
-      status: z.enum(['PENDING', 'IN_PROGRESS', 'COMPLETED', 'DISMISSED']).optional(),
-      priority: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']).optional(),
-      dueDate: z.string().datetime().nullable().optional(),
-      assignedToId: z.string().uuid().nullable().optional(),
-      projectId: z.string().uuid().nullable().optional(),
-      bidId: z.string().uuid().nullable().optional(),
-      vendorId: z.string().uuid().nullable().optional(),
-    });
-
-    const parseResult = updateSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      return res.status(400).json({ error: fromZodError(parseResult.error).message });
-    }
-
-    const [existing] = await db
-      .select()
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.id, req.params.id),
-          eq(tasks.organizationId, orgId)
-        )
-      )
-      .limit(1);
-
-    if (!existing) {
-      return res.status(404).json({ error: "Task not found" });
-    }
-
-    const data = parseResult.data;
-    const updateData: Partial<Task> & { updatedAt: Date } = {
-      updatedAt: new Date(),
-    };
-
-    if (data.title !== undefined) updateData.title = data.title;
-    if (data.description !== undefined) updateData.description = data.description;
-    if (data.status !== undefined) updateData.status = data.status;
-    if (data.priority !== undefined) updateData.priority = data.priority;
-    if (data.assignedToId !== undefined) updateData.assignedToId = data.assignedToId;
-    if (data.projectId !== undefined) updateData.projectId = data.projectId;
-    if (data.bidId !== undefined) updateData.bidId = data.bidId;
-    if (data.vendorId !== undefined) updateData.vendorId = data.vendorId;
-
-    if (data.dueDate !== undefined) {
-      updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null;
-    }
-
-    if (data.status === 'COMPLETED') {
-      updateData.completedAt = new Date();
-      updateData.completedById = req.user.id;
-    }
-
-    if (data.status === 'DISMISSED') {
-      updateData.dismissedAt = new Date();
-      updateData.dismissedById = req.user.id;
-    }
-
-    const [updated] = await db
-      .update(tasks)
-      .set(updateData)
-      .where(eq(tasks.id, req.params.id))
-      .returning();
-
-    await logUpdate(
-      req.user.id,
-      "TASK",
-      updated.id,
-      { status: existing.status },
-      { status: updated.status },
-      req
-    );
-
-    return res.json(updated);
-  } catch (error) {
-    console.error("Error updating email task:", error);
-    return res.status(500).json({ error: "Failed to update email task" });
-  }
-});
-
-// ==========================================
-// EMAIL SYNC (Manual trigger)
-// ==========================================
-
-// POST /api/email/sync - Trigger email sync for current user
 router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -1067,7 +312,6 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
       return res.status(403).json({ error: "Organization required" });
     }
 
-    // Get active email accounts for this user
     const accounts = await db
       .select()
       .from(emailAccounts)
@@ -1087,17 +331,12 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    // For now, just update lastSyncedAt - actual sync implementation
-    // would go through emailIngestService for each account
     for (const account of accounts) {
       await db
         .update(emailAccounts)
         .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
         .where(eq(emailAccounts.id, account.id));
     }
-
-    // Note: Real implementation would call emailIngestService here
-    // This is a placeholder that marks accounts as synced
 
     return res.json({
       success: true,

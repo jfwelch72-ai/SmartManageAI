@@ -96,12 +96,16 @@ import sovBillingRoutes from "./sovBillingRoutes";
 import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteBuilderRoutes from "./websiteBuilderRoutes";
-import socialMediaRoutes from "./socialMediaRoutes";
+import socialAccountRoutes from "./socialAccountRoutes";
+import socialPostRoutes from "./socialPostRoutes";
+import socialAnalyticsRoutes from "./socialAnalyticsRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
 import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
 import emailAiRoutes from "./emailAiRoutes";
+import emailAnalysisRoutes from "./emailAnalysisRoutes";
+import emailTaskRoutes from "./emailTaskRoutes";
 import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
 import libraryRoutes from "./libraryRoutes";
 import opsRoutes from "./opsRoutes";
@@ -154,7 +158,10 @@ import vendorPricingRoutes from "./vendorPricingRoutes";
 import scopeConfigRoutes from "./scopeConfigRoutes";
 import projectContentRoutes from "./projectContentRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
-import notificationCrewRoutes from "./notificationCrewRoutes";
+import notificationRoutes2 from "./notificationRoutes2";
+import auditBillingStorageRoutes from "./auditBillingStorageRoutes";
+import crewRoutes2 from "./crewRoutes2";
+import skillRoutes from "./skillRoutes";
 import takeoffSubRoutes from "./takeoffSubRoutes";
 import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
@@ -278,7 +285,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Website Builder routes
   app.use("/api/website", websiteBuilderRoutes);
-  app.use("/api/social", socialMediaRoutes);
+  app.use("/api/social", socialAccountRoutes);
+  app.use("/api/social", socialPostRoutes);
+  app.use("/api/social", socialAnalyticsRoutes);
 
   // Register Labor Rate routes
   app.use("/api/labor-rates", laborRateRoutes);
@@ -287,8 +296,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/email", emailAccountRoutes);
   app.use("/api/kpis", kpiRoutes);
 
-  // Register Email AI routes (threads, messages, tasks, summaries)
+  // Register Email AI routes (threads, messages, sync)
   app.use("/api/email", emailAiRoutes);
+  // Register Email Analysis routes (AI analysis, summarization, digests)
+  app.use("/api/email", emailAnalysisRoutes);
+  // Register Email Task routes (task CRUD from email)
+  app.use("/api/email", emailTaskRoutes);
 
   // Register Dashboard Customization routes
   app.use("/api/dashboard", dashboardCustomizationRoutes);
@@ -477,8 +490,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Project Operations Routes (Receipts, Plan Documents, File Permissions, Change Orders, Change Order Line Items, Calendar Events)
   app.use(projectOpsRoutes);
 
-  // Notifications, Billing Events, Audit Log, Object Storage, Crews & Skills Routes
-  app.use(notificationCrewRoutes);
+  // Notifications Routes
+  app.use(notificationRoutes2);
+  // Audit Log, Billing Events, Object Storage Routes
+  app.use(auditBillingStorageRoutes);
+  // Crews & Crew Assignments Routes
+  app.use(crewRoutes2);
+  // Skills & User Skills Routes
+  app.use(skillRoutes);
 
   // Subcontractor, Data Quality, Takeoff/Estimating, Quantity Category routes
   app.use(takeoffSubRoutes);
