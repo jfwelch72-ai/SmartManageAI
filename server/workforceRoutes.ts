@@ -969,7 +969,9 @@ const router = Router();
           expiresAt,
         });
 
-        const baseUrl = process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+        const baseUrl = process.env.REPLIT_DEV_DOMAIN
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+          : process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
         const resetLink = `${baseUrl}/reset-password?token=${token}`;
 
         const emailSent = await sendEmail({
