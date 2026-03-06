@@ -23,7 +23,7 @@ import type { Website, SocialLinks, ContactSubmission, AnalyticsSummary, Website
 import { WEBSITE_TEMPLATES } from "@/components/website-builder/types";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -137,6 +137,24 @@ export default function WebsiteBuilderPage() {
   const [bodyComponentsConfig, setBodyComponentsConfig] = useState<BodyComponentsConfig>(getDefaultBodyConfig());
   const [globalComponentsConfig, setGlobalComponentsConfig] = useState<BodyComponentsConfig>({ components: [] });
   const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [previewDevice, setPreviewDevice] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [showAIWizard, setShowAIWizard] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardForm, setWizardForm] = useState({
+    companyName: "",
+    industry: "",
+    companyDescription: "",
+    services: "",
+    goals: "",
+    style: "",
+    phone: "",
+    email: "",
+    address: "",
+  });
+  const [wizardGenerating, setWizardGenerating] = useState(false);
+  const [wizardProgress, setWizardProgress] = useState(0);
+  const [wizardResult, setWizardResult] = useState<any>(null);
+  const [wizardError, setWizardError] = useState<string | null>(null);
 
   const [socialForm, setSocialForm] = useState<SocialLinks>({
     facebookUrl: null,
