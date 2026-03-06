@@ -23,7 +23,7 @@ import type { Website, SocialLinks, ContactSubmission, AnalyticsSummary, Website
 import { WEBSITE_TEMPLATES } from "@/components/website-builder/types";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
