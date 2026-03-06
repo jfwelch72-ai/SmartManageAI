@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,11 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   FileCheck, Upload, Clock, Scale, FileText,
   Eye, Calendar, DollarSign, Shield, AlertCircle,
-  FileWarning, Download, Sparkles, AlertTriangle
+  FileWarning, Download, Sparkles, AlertTriangle, Trash2
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -46,7 +47,7 @@ function getDocTypeBadge(docType: string) {
   }
 }
 
-function ContractFilteredTable({ analyses, openResult, isMobile, testPrefix }: { analyses: ContractDocumentAnalysis[]; openResult: (a: ContractDocumentAnalysis) => void; isMobile: boolean; testPrefix: string }) {
+function ContractFilteredTable({ analyses, openResult, deleteMutation, isMobile, testPrefix }: { analyses: ContractDocumentAnalysis[]; openResult: (a: ContractDocumentAnalysis) => void; deleteMutation: { mutate: (id: string) => void; isPending: boolean }; isMobile: boolean; testPrefix: string }) {
   if (isMobile) {
     return (
       <div className="space-y-3">
@@ -55,7 +56,24 @@ function ContractFilteredTable({ analyses, openResult, isMobile, testPrefix }: {
             <CardContent className="p-4 space-y-2">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium text-sm truncate">{analysis.fileName}</p>
-                <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openResult(analysis); }} data-testid={`button-view-${testPrefix}-${analysis.id}`}><Eye className="h-4 w-4" /></Button>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); openResult(analysis); }} data-testid={`button-view-${testPrefix}-${analysis.id}`}><Eye className="h-4 w-4" /></Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="text-destructive" disabled={deleteMutation.isPending} onClick={(e) => e.stopPropagation()} data-testid={`button-delete-${testPrefix}-${analysis.id}`}><Trash2 className="h-4 w-4" /></Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this analysis?</AlertDialogTitle>
+                        <AlertDialogDescription>This will permanently delete the analysis for "{analysis.fileName}". This action cannot be undone.</AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => deleteMutation.mutate(analysis.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
               <p className="text-sm text-muted-foreground">{analysis.projectCode}</p>
               <div className="flex items-center gap-2 flex-wrap">
@@ -78,7 +96,26 @@ function ContractFilteredTable({ analyses, openResult, isMobile, testPrefix }: {
             <TableCell>{analysis.projectCode}</TableCell>
             <TableCell>{getStatusBadge(analysis.analysisStatus)}</TableCell>
             <TableCell>{analysis.analyzedAt ? format(new Date(analysis.analyzedAt), "MMM d, yyyy") : "\u2014"}</TableCell>
-            <TableCell className="text-right"><Button size="sm" variant="outline" onClick={() => openResult(analysis)} data-testid={`button-view-${testPrefix}-table-${analysis.id}`}><Eye className="h-4 w-4" /></Button></TableCell>
+            <TableCell className="text-right">
+              <div className="flex items-center justify-end gap-1">
+                <Button size="sm" variant="outline" onClick={() => openResult(analysis)} data-testid={`button-view-${testPrefix}-table-${analysis.id}`}><Eye className="h-4 w-4" /></Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="text-destructive" disabled={deleteMutation.isPending} data-testid={`button-delete-${testPrefix}-table-${analysis.id}`}><Trash2 className="h-4 w-4" /></Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete this analysis?</AlertDialogTitle>
+                      <AlertDialogDescription>This will permanently delete the analysis for "{analysis.fileName}". This action cannot be undone.</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => deleteMutation.mutate(analysis.id)} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+            </TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -101,11 +138,28 @@ export default function AIContractAnalysisPage() {
   const { data: projects = [] } = useQuery<EntityItem[]>({ queryKey: ["/api/ai-contract-document/projects"], enabled: !!user && roles.includes(user.role) });
   const { data: analyses = [], isLoading } = useQuery<ContractDocumentAnalysis[]>({ queryKey: ["/api/ai-contract-document"], enabled: !!user && roles.includes(user.role) });
 
+  const queryClient = useQueryClient();
+
   const mutations = useDocumentAnalysisMutations({
     analysesEndpoint: "/api/ai-contract-document",
     analyzeEndpoint: "/api/ai-contract-document/analyze",
     reanalyzeEndpointFn: (id) => `/api/ai-contract-document/${id}/reanalyze`,
     onAnalyzeSuccess: () => { setShowUploadDialog(false); setSelectedProjectId(""); setSelectedDocType("CONTRACT"); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/ai/contract-document-analysis/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed to delete analysis");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-contract-document"] });
+      toast({ title: "Analysis deleted successfully" });
+    },
+    onError: () => {
+      toast({ title: "Delete failed", description: "Could not delete the analysis", variant: "destructive" });
+    },
   });
 
   const handleDownload = async (analysisId: string, fileName: string, inline: boolean = false) => {
@@ -159,13 +213,13 @@ export default function AIContractAnalysisPage() {
           <TabsTrigger value="awards" data-testid="tab-awards"><FileText className="h-4 w-4 mr-2" />Award Letters</TabsTrigger>
         </TabsList>
         <TabsContent value="recent" className="mt-6">
-          <RecentAnalysisList analyses={analyses} loading={isLoading} onUpload={() => setShowUploadDialog(true)} openResult={openResult} emptyIcon={FileCheck} emptyLabel="Upload a contract or award letter for AI-powered analysis" firstButtonTestId="button-first-contract" />
+          <RecentAnalysisList analyses={analyses} loading={isLoading} onUpload={() => setShowUploadDialog(true)} openResult={openResult} archiveMutation={deleteMutation} emptyIcon={FileCheck} emptyLabel="Upload a contract or award letter for AI-powered analysis" firstButtonTestId="button-first-contract" />
         </TabsContent>
         <TabsContent value="contracts" className="mt-6">
-          <ContractFilteredTable analyses={analyses.filter(a => a.documentType === "CONTRACT")} openResult={openResult} isMobile={isMobile} testPrefix="contract" />
+          <ContractFilteredTable analyses={analyses.filter(a => a.documentType === "CONTRACT")} openResult={openResult} deleteMutation={deleteMutation} isMobile={isMobile} testPrefix="contract" />
         </TabsContent>
         <TabsContent value="awards" className="mt-6">
-          <ContractFilteredTable analyses={analyses.filter(a => a.documentType === "AWARD_LETTER")} openResult={openResult} isMobile={isMobile} testPrefix="award" />
+          <ContractFilteredTable analyses={analyses.filter(a => a.documentType === "AWARD_LETTER")} openResult={openResult} deleteMutation={deleteMutation} isMobile={isMobile} testPrefix="award" />
         </TabsContent>
       </Tabs>
 
