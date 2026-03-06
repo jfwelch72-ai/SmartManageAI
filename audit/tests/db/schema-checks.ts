@@ -1,33 +1,39 @@
 import type { AuditCheck } from '../../types';
 import { createCheck } from '../../utils/base';
 
-const MULTI_TENANT_TABLES = [
+const DIRECT_ORG_TABLES = [
   'projects',
   'bids',
-  'estimates',
   'tasks',
-  'timecards',
-  'time_entries',
-  'invoices',
-  'vendors',
-  'contacts',
-  'messages',
-  'media',
-  'notes',
-  'change_orders',
-  'takeoffs',
   'crews',
   'equipment',
-  'receipts',
-  'plan_documents',
   'organization_documents',
-  'estimate_line_items',
-  'bid_attachments',
-  'ai_tasks',
   'conversations',
-  'notifications',
-  'audit_log',
 ];
+
+const FK_TO_PARENT: Record<string, string> = {
+  'project_id': 'projects',
+  'bid_id': 'bids',
+  'estimate_id': 'estimates',
+  'conversation_id': 'conversations',
+  'user_id': 'users',
+  'organization_id': 'organizations',
+};
+
+const INDIRECT_ORG_TABLES: Record<string, string[]> = {
+  'estimates': ['project_id', 'bid_id'],
+  'time_entries': ['project_id'],
+  'change_orders': ['project_id'],
+  'receipts': ['project_id'],
+  'media': ['project_id'],
+  'plan_documents': ['project_id'],
+  'estimate_line_items': ['estimate_id'],
+  'ai_tasks': ['organization_id', 'project_id'],
+  'messages': ['conversation_id'],
+  'time_clock_shifts': ['project_id'],
+  'notifications': ['user_id'],
+  'audit_log': ['user_id'],
+};
 
 const ORG_COLUMN_NAMES = ['organization_id', 'gc_organization_id', 'tenant_id'];
 
@@ -48,16 +54,92 @@ export async function runSchemaChecks(): Promise<AuditCheck[]> {
 
     const tablesWithOrgId = new Set(result.rows.map((r: any) => r.table_name));
 
-    for (const table of MULTI_TENANT_TABLES) {
+    const allColumns = await db.execute(sql`
+      SELECT table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+      ORDER BY table_name
+    `);
+    const tableColumns = new Map<string, Set<string>>();
+    for (const row of allColumns.rows as any[]) {
+      if (!tableColumns.has(row.table_name)) tableColumns.set(row.table_name, new Set());
+      tableColumns.get(row.table_name)!.add(row.column_name);
+    }
+
+    for (const table of DIRECT_ORG_TABLES) {
       const hasOrgColumn = tablesWithOrgId.has(table);
+      const tableExists = tableColumns.has(table);
       checks.push(createCheck(
         `schema-org-column-${table}`,
         `Table ${table} has organization scoping column`,
         'database',
-        hasOrgColumn ? 'pass' : 'warn',
+        !tableExists ? 'warn' : hasOrgColumn ? 'pass' : 'warn',
         {
-          message: hasOrgColumn 
-            ? 'Table has organization scoping column' 
+          message: !tableExists
+            ? `Table ${table} does not exist in database`
+            : hasOrgColumn 
+              ? 'Table has direct organization scoping column' 
+              : 'Table may be missing organization scoping - verify if needed',
+        }
+      ));
+    }
+
+    for (const [table, parentCols] of Object.entries(INDIRECT_ORG_TABLES)) {
+      const hasOrgColumn = tablesWithOrgId.has(table);
+      const cols = tableColumns.get(table);
+      const tableExists = cols !== undefined;
+
+      if (!tableExists) {
+        checks.push(createCheck(
+          `schema-org-column-${table}`,
+          `Table ${table} has organization scoping`,
+          'database',
+          'warn',
+          { message: `Table ${table} does not exist in database` }
+        ));
+        continue;
+      }
+
+      if (hasOrgColumn) {
+        checks.push(createCheck(
+          `schema-org-column-${table}`,
+          `Table ${table} has organization scoping`,
+          'database',
+          'pass',
+          { message: 'Table has direct organization scoping column' }
+        ));
+        continue;
+      }
+
+      const presentFKs = parentCols.filter(c => cols!.has(c));
+      const isOrgScoped = (tbl: string, visited = new Set<string>()): boolean => {
+        if (visited.has(tbl)) return false;
+        visited.add(tbl);
+        if (tbl === 'organizations' || tbl === 'users') return true;
+        if (tablesWithOrgId.has(tbl) || DIRECT_ORG_TABLES.includes(tbl)) return true;
+        const indirectFKs = INDIRECT_ORG_TABLES[tbl];
+        if (!indirectFKs) return false;
+        return indirectFKs.some(fk => {
+          const parent = FK_TO_PARENT[fk];
+          return parent ? isOrgScoped(parent, visited) : false;
+        });
+      };
+
+      const verifiedFKs = presentFKs.filter(fkCol => {
+        const parentTable = FK_TO_PARENT[fkCol];
+        if (!parentTable) return false;
+        return isOrgScoped(parentTable);
+      });
+
+      const isScoped = verifiedFKs.length > 0;
+      checks.push(createCheck(
+        `schema-org-column-${table}`,
+        `Table ${table} has organization scoping`,
+        'database',
+        isScoped ? 'pass' : 'warn',
+        {
+          message: isScoped
+            ? `Indirectly scoped via ${verifiedFKs.join(', ')} → ${verifiedFKs.map(f => FK_TO_PARENT[f]).join(', ')} (verified org-scoped parent)`
             : 'Table may be missing organization scoping - verify if needed',
         }
       ));
@@ -89,6 +171,8 @@ export async function runSchemaChecks(): Promise<AuditCheck[]> {
       }
     ));
 
+    const allMultiTenantTables = [...DIRECT_ORG_TABLES, ...Object.keys(INDIRECT_ORG_TABLES)];
+
     const uniqueIndexResult = await db.execute(sql`
       SELECT
         t.relname as table_name,
@@ -113,7 +197,7 @@ export async function runSchemaChecks(): Promise<AuditCheck[]> {
       const cols = row.columns;
       if (!cols || !Array.isArray(cols)) continue;
       
-      if (MULTI_TENANT_TABLES.includes(row.table_name)) {
+      if (allMultiTenantTables.includes(row.table_name)) {
         const hasOrgInIndex = cols.some((c: string) => 
           ORG_COLUMN_NAMES.includes(c)
         );

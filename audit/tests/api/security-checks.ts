@@ -20,7 +20,12 @@ export async function runApiSecurityChecks(): Promise<AuditCheck[]> {
         }
       ));
 
-      const hasRateLimiting = indexContent.includes('rateLimit') || indexContent.includes('express-rate-limit');
+      const rateLimitFiles = ['server/index.ts', 'server/routes.ts', 'server/rateLimiter.ts'];
+      const hasRateLimiting = rateLimitFiles.some(f => {
+        if (!existsSync(f)) return false;
+        const c = readFileSync(f, 'utf-8');
+        return c.includes('rateLimit') || c.includes('express-rate-limit');
+      });
       checks.push(createCheck(
         'api-rate-limiting',
         'Rate limiting is configured',
@@ -31,7 +36,12 @@ export async function runApiSecurityChecks(): Promise<AuditCheck[]> {
         }
       ));
 
-      const hasSecureCookies = indexContent.includes('httpOnly') || indexContent.includes('secure:') || indexContent.includes('sameSite');
+      const cookieFiles = ['server/index.ts', 'server/auth.ts'];
+      const hasSecureCookies = cookieFiles.some(f => {
+        if (!existsSync(f)) return false;
+        const c = readFileSync(f, 'utf-8');
+        return c.includes('httpOnly') || c.includes('secure:') || c.includes('sameSite');
+      });
       checks.push(createCheck(
         'api-secure-cookies',
         'Secure cookie configuration',
