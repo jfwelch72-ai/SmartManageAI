@@ -4,6 +4,7 @@ import { hustlerOrganizations, organizations, users, hustlerLinkRequests, hustle
 import { eq, and, or, desc, isNull, inArray, sql, count, sum } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logInfo, logError } from "./utils/logger";
+import { sendEmail } from "./email";
 import { z } from "zod";
 import crypto from "crypto";
 
@@ -641,6 +642,47 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
 
     logInfo(`[Hustler] Invite created: org=${req.user.organizationId} email=${hustlerEmail}`);
 
+    const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, req.user.organizationId));
+    const orgName = org?.name || "an organization";
+    const inviterName = [req.user.firstName, req.user.lastName].filter(Boolean).join(" ") || req.user.email;
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+    const inviteLink = `${baseUrl}/hustler/accept-invite/${token}`;
+
+    try {
+      await sendEmail({
+        to: hustlerEmail.toLowerCase(),
+        subject: `You've been invited to join ${orgName} on SmartManageAI`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+              <h1 style="color: #1a1a1a; font-size: 24px; margin: 0;">SmartManageAI</h1>
+            </div>
+            <div style="background: #f9fafb; border-radius: 8px; padding: 24px; margin-bottom: 24px;">
+              <h2 style="color: #1a1a1a; font-size: 20px; margin-top: 0;">You've Been Invited!</h2>
+              <p style="color: #4b5563; font-size: 16px; line-height: 1.5;">
+                <strong>${inviterName}</strong> has invited you to join <strong>${orgName}</strong> on SmartManageAI.
+              </p>
+              ${message ? `<p style="color: #4b5563; font-size: 14px; line-height: 1.5; background: #fff; padding: 12px; border-radius: 6px; border-left: 3px solid #f59e0b;"><em>"${message}"</em></p>` : ""}
+              ${roleOverride ? `<p style="color: #6b7280; font-size: 14px;">Role: <strong>${roleOverride}</strong></p>` : ""}
+              <div style="text-align: center; margin: 24px 0;">
+                <a href="${inviteLink}" style="background-color: #f59e0b; color: #fff; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px; display: inline-block;">Accept Invitation</a>
+              </div>
+              <p style="color: #9ca3af; font-size: 12px; text-align: center;">This invitation expires in 7 days.</p>
+            </div>
+            <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+              If you didn't expect this invitation, you can safely ignore this email.
+            </p>
+          </div>
+        `,
+        text: `You've been invited to join ${orgName} on SmartManageAI by ${inviterName}. ${message ? `Message: "${message}" ` : ""}Accept the invitation here: ${inviteLink} - This invitation expires in 7 days.`,
+      });
+      logInfo(`[Hustler] Invite email sent to ${hustlerEmail}`);
+    } catch (emailError: any) {
+      logError(`[Hustler] Failed to send invite email to ${hustlerEmail}: ${emailError.message}`);
+    }
+
     res.json({
       success: true,
       request: {
@@ -649,9 +691,9 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
         status: newRequest.status,
         expiresAt: newRequest.expiresAt,
       },
-      inviteToken: token, // Return token for admin to share
+      inviteToken: token,
       inviteLink: `/hustler/accept-invite/${token}`,
-      message: "Invite created. Share the link with the HUSTLER user.",
+      message: "Invite created and email sent to the user.",
     });
   } catch (error: any) {
     logError(`[Hustler] Failed to create invite: ${error.message}`);
