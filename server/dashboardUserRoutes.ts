@@ -650,6 +650,38 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
   }
 });
 
+router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      password: z.string().min(8, "Password must be at least 8 characters"),
+    });
+
+    const data = schema.parse(req.body);
+
+    const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const accountAge = Date.now() - new Date(user.createdAt!).getTime();
+    if (accountAge > 24 * 60 * 60 * 1000) {
+      return res.status(403).json({ error: "Initial password setup window has expired. Use change password instead." });
+    }
+
+    const newPasswordHash = await hashPassword(data.password);
+
+    await db
+      .update(users)
+      .set({ passwordHash: newPasswordHash, updatedAt: new Date() })
+      .where(eq(users.id, req.user!.id));
+
+    res.json({ success: true, message: "Password set successfully" });
+  } catch (error) {
+    console.error("Set initial password error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ====================
 // Dashboard Trend Chart Data
 // ====================

@@ -5,6 +5,7 @@ import { eq, and, or, desc, isNull, inArray, sql, count, sum } from "drizzle-orm
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { sendEmail } from "./email";
+import { sensitiveLimiter } from "./rateLimiter";
 import { z } from "zod";
 import crypto from "crypto";
 
@@ -900,7 +901,128 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, async (req
   }
 });
 
-// Accept invite via token (for email links)
+// Accept invite via token (public - for email links, auto-creates user if needed)
+router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token) {
+      return res.status(400).json({ error: "Token required" });
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const [request] = await db
+      .select()
+      .from(hustlerLinkRequests)
+      .where(eq(hustlerLinkRequests.inviteTokenHash, tokenHash));
+
+    if (!request) {
+      return res.status(404).json({ error: "Invalid or expired invite link" });
+    }
+
+    if (request.status !== "PENDING") {
+      return res.status(400).json({ error: `This invite has already been ${request.status.toLowerCase()}` });
+    }
+
+    if (request.expiresAt && new Date(request.expiresAt) < new Date()) {
+      await db.update(hustlerLinkRequests)
+        .set({ status: "EXPIRED", updatedAt: new Date() })
+        .where(eq(hustlerLinkRequests.id, request.id));
+      return res.status(400).json({ error: "This invite has expired" });
+    }
+
+    const email = request.hustlerEmail.toLowerCase();
+    let [existingUser] = await db.select().from(users).where(eq(users.email, email));
+
+    let userId: string;
+    let requiresPasswordSetup = false;
+
+    if (existingUser) {
+      if (!existingUser.isActive) {
+        return res.status(403).json({ error: "Your account has been deactivated. Please contact support." });
+      }
+      userId = existingUser.id;
+    } else {
+      const { hashPassword } = await import("./auth");
+      const tempPassword = crypto.randomBytes(16).toString("hex");
+      const passwordHash = await hashPassword(tempPassword);
+      const emailPrefix = email.split("@")[0].replace(/[^a-zA-Z]/g, " ").trim();
+      const firstName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1) || "User";
+
+      const [newUser] = await db.insert(users).values({
+        email,
+        passwordHash,
+        firstName,
+        lastName: "",
+        role: "HUSTLER",
+        organizationId: request.organizationId,
+        isActive: true,
+        emailVerified: true,
+      }).returning();
+
+      userId = newUser.id;
+      existingUser = newUser;
+      requiresPasswordSetup = true;
+      logInfo(`[Hustler] Auto-created user for invite: ${email} (id=${userId})`);
+    }
+
+    const [existingLink] = await db
+      .select()
+      .from(hustlerOrganizations)
+      .where(
+        and(
+          eq(hustlerOrganizations.userId, userId),
+          eq(hustlerOrganizations.organizationId, request.organizationId)
+        )
+      );
+
+    if (existingLink) {
+      await db.update(hustlerOrganizations)
+        .set({ isActive: true, roleOverride: request.roleOverride })
+        .where(eq(hustlerOrganizations.id, existingLink.id));
+    } else {
+      await db.insert(hustlerOrganizations).values({
+        userId,
+        organizationId: request.organizationId,
+        roleOverride: request.roleOverride,
+        isActive: true,
+      });
+    }
+
+    await db.update(hustlerLinkRequests)
+      .set({
+        status: "APPROVED",
+        respondedAt: new Date(),
+        respondedByUserId: userId,
+        hustlerUserId: userId,
+        inviteToken: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(hustlerLinkRequests.id, request.id));
+
+    const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, request.organizationId));
+
+    const { generateToken, setAuthCookie } = await import("./auth");
+    const jwtToken = generateToken(userId, existingUser.tokenVersion ?? 0);
+    setAuthCookie(res, jwtToken);
+
+    logInfo(`[Hustler] Invite accepted via email link: user=${userId} org=${request.organizationId}`);
+
+    const { passwordHash: _, tokenVersion: __, ...sanitizedUser } = existingUser;
+    res.json({
+      success: true,
+      requiresPasswordSetup,
+      user: sanitizedUser,
+      organization: { name: org?.name || "Organization" },
+      message: `Successfully joined ${org?.name || "the organization"}!`,
+    });
+  } catch (error: any) {
+    logError(`[Hustler] Failed to accept invite via link: ${error.message}`);
+    res.status(500).json({ error: "Failed to accept invite" });
+  }
+});
+
+// Accept invite via token (authenticated - for logged-in users)
 router.post("/hustler/link-requests/accept-token", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {

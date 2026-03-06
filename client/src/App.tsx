@@ -17,6 +17,7 @@ import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
 import ImpersonatePage from "@/pages/impersonate";
+import AcceptHustlerInvitePage from "@/pages/accept-hustler-invite";
 import DashboardPage from "@/pages/dashboard";
 import ProfilePage from "@/pages/profile";
 import UsersPage from "@/pages/users";
@@ -312,6 +313,9 @@ function Router() {
       <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/audit" component={() => <ProtectedRoute component={PlatformAuditDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       
+      {/* Hustler invite acceptance (public) */}
+      <Route path="/hustler/accept-invite/:token" component={AcceptHustlerInvitePage} />
+      
       {/* Hustler Multi-Organization routes (HUSTLER only) */}
       <Route path="/hustler/inbox" component={() => <ProtectedRoute component={HustlerUnifiedInbox} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
       <Route path="/hustler/benchmarking" component={() => <ProtectedRoute component={HustlerBenchmarking} permission={(role) => role === 'HUSTLER'} skipOnboardingCheck />} />
@@ -363,7 +367,7 @@ function AppContent() {
   
   const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal');
 
-  const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password'].some(
+  const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/hustler/accept-invite'].some(
     route => location === route || (route !== '/' && location.startsWith(route))
   ) || isStandaloneRoute;
 
