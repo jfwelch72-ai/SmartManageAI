@@ -428,6 +428,12 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
             onRecurringFrequencyChange={(val) => setForm(prev => ({ ...prev, recurringFrequency: val }))}
             onRecurringIntervalChange={(val) => setForm(prev => ({ ...prev, recurringInterval: val }))}
             onNotesChange={(val) => setForm(prev => ({ ...prev, notes: val }))}
+            hashtags={form.hashtags}
+            hashtagInput={form.hashtagInput}
+            campaignTag={form.campaignTag}
+            onHashtagsChange={(tags) => setForm(prev => ({ ...prev, hashtags: tags }))}
+            onHashtagInputChange={(val) => setForm(prev => ({ ...prev, hashtagInput: val }))}
+            onCampaignTagChange={(val) => setForm(prev => ({ ...prev, campaignTag: val }))}
           />
         </div>
 
