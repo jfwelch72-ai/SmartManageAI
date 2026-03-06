@@ -19,7 +19,7 @@ router.get("/platform/health", requireAuth, requireSuperAdmin, async (req: AuthR
 
   try {
     const dbStart = Date.now();
-    const [dbResult] = await db.execute(sql`SELECT 1 AS ok`);
+    await db.execute(sql`SELECT 1 AS ok`);
     checks.database = { status: "healthy", latencyMs: Date.now() - dbStart };
   } catch (err: any) {
     checks.database = { status: "unhealthy", detail: err.message };
