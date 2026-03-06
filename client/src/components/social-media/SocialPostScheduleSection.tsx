@@ -1,10 +1,11 @@
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Clock } from "lucide-react";
+import { Clock, Plus } from "lucide-react";
 
 interface ScheduleSectionProps {
   scheduleMode: "now" | "schedule";
@@ -13,21 +14,72 @@ interface ScheduleSectionProps {
   recurringFrequency: string;
   recurringInterval: number;
   notes: string;
+  hashtags: string[];
+  hashtagInput: string;
+  campaignTag: string;
   onScheduleModeChange: (mode: "now" | "schedule") => void;
   onScheduledAtChange: (val: string) => void;
   onIsRecurringChange: (val: boolean) => void;
   onRecurringFrequencyChange: (val: string) => void;
   onRecurringIntervalChange: (val: number) => void;
   onNotesChange: (val: string) => void;
+  onHashtagsChange: (tags: string[]) => void;
+  onHashtagInputChange: (val: string) => void;
+  onCampaignTagChange: (val: string) => void;
 }
 
 export function SocialPostScheduleSection({
   scheduleMode, scheduledAt, isRecurring, recurringFrequency, recurringInterval, notes,
+  hashtags, hashtagInput, campaignTag,
   onScheduleModeChange, onScheduledAtChange, onIsRecurringChange,
   onRecurringFrequencyChange, onRecurringIntervalChange, onNotesChange,
+  onHashtagsChange, onHashtagInputChange, onCampaignTagChange,
 }: ScheduleSectionProps) {
+  const addHashtag = () => {
+    const tag = hashtagInput.trim().replace(/^#/, "");
+    if (tag && !hashtags.includes(tag)) {
+      onHashtagsChange([...hashtags, tag]);
+      onHashtagInputChange("");
+    }
+  };
+
   return (
     <>
+      <div>
+        <Label>Hashtags</Label>
+        <div className="flex gap-2 mb-2">
+          <Input
+            placeholder="Add hashtag..."
+            value={hashtagInput}
+            onChange={e => onHashtagInputChange(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addHashtag(); } }}
+            data-testid="input-hashtag"
+          />
+          <Button variant="outline" size="sm" onClick={addHashtag} data-testid="button-add-hashtag">
+            <Plus className="h-4 w-4" />
+          </Button>
+        </div>
+        {hashtags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {hashtags.map((tag, i) => (
+              <Badge key={i} variant="secondary" className="text-xs cursor-pointer" onClick={() => onHashtagsChange(hashtags.filter((_, j) => j !== i))}>
+                #{tag} ×
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <Label>Campaign Tag</Label>
+        <Input
+          placeholder="e.g. Spring 2026 Campaign"
+          value={campaignTag}
+          onChange={e => onCampaignTagChange(e.target.value)}
+          data-testid="input-campaign"
+        />
+      </div>
+
       <Separator />
 
       <div className="space-y-3">
