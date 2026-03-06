@@ -116,6 +116,8 @@ import submittalRoutes from "./submittalRoutes";
 import submittalWorkflowRoutes from "./submittalWorkflowRoutes";
 import portalRoutes from "./portalRoutes";
 import portalChatRoutes from "./portalChatRoutes";
+import subChatRoutes from "./subChatRoutes";
+import clientChatRoutes from "./clientChatRoutes";
 import integrationRoutes from "./integrationRoutes";
 import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
@@ -295,6 +297,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use("/api", portalRoutes);
   app.use("/api", portalChatRoutes);
+  app.use("/api", subChatRoutes);
+  app.use("/api", clientChatRoutes);
 
   app.use("/api/billing", billingRoutes);
 
