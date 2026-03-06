@@ -123,7 +123,7 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
       newValue: JSON.stringify({ adminPasswordReset: true, targetEmail: user.email }),
     }, req);
 
-    console.log(`Admin-initiated password reset for user: ${user.email} by admin: ${req.user!.email}`);
+    console.log(`Admin-initiated credential reset for user: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `Password reset email sent to ${user.email}` });
   } catch (error: any) {
     console.error("Admin password reset error:", error.message);

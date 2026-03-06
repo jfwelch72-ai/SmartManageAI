@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 import type { AuditCheck } from '../../types';
 import { createCheck } from '../../utils/base';
 
@@ -146,9 +146,17 @@ export async function runApiSecurityChecks(): Promise<AuditCheck[]> {
       { pattern: /console\.log.*apiKey/i, message: 'Potential API key logging' },
     ];
 
-    const serverFiles = ['server/routes.ts', 'server/auth.ts', 'server/index.ts'];
     let sensitiveLogFound = false;
     let sensitiveLogDetails = '';
+
+    const serverDir = 'server';
+    let serverFiles: string[] = [];
+    try {
+      const entries = readdirSync(serverDir);
+      serverFiles = entries.filter(f => f.endsWith('.ts')).map(f => `${serverDir}/${f}`);
+    } catch {
+      serverFiles = ['server/routes.ts', 'server/auth.ts', 'server/index.ts'];
+    }
 
     for (const file of serverFiles) {
       if (existsSync(file)) {
@@ -160,6 +168,7 @@ export async function runApiSecurityChecks(): Promise<AuditCheck[]> {
             break;
           }
         }
+        if (sensitiveLogFound) break;
       }
     }
 

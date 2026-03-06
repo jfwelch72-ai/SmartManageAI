@@ -967,7 +967,8 @@ function mapCategoryToLegacyEnum(categoryName: string): { legacyEnum: string; is
   }
   
   // Fallback to OTHER for unmatched categories
-  console.log(`[WorkCategories] Unmapped category: "${categoryName}" (tokens: ${inputTokens.join(', ')}) -> defaulting to OTHER`);
+  const partCount = inputTokens.length;
+  console.log(`[WorkCategories] Unmapped category: "${categoryName}" (${partCount} parts) -> defaulting to OTHER`);
   return { legacyEnum: "OTHER", isInferred: true };
 }
 

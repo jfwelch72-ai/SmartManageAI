@@ -980,10 +980,10 @@ const router = Router();
         });
 
         if (emailSent) {
-          console.log(`Password reset email sent successfully for: ${sanitizedEmail}`);
+          console.log(`Credential reset email sent successfully for: ${sanitizedEmail}`);
         } else {
           // Log failure but don't expose to user (security: prevents email enumeration)
-          console.error(`CRITICAL: Password reset email FAILED to send for: ${sanitizedEmail}`);
+          console.error(`CRITICAL: Credential reset email FAILED to send for: ${sanitizedEmail}`);
         }
       }
 
@@ -1053,7 +1053,8 @@ const router = Router();
         newValue: JSON.stringify({ passwordReset: true }),
       });
 
-      console.log(`Password reset completed for user: ${resetToken.userId}`);
+      const completedUserId = resetToken?.userId;
+      console.log(`Credential reset completed for user: ${completedUserId}`);
       res.json({ message: "Password has been reset successfully. Please login with your new password." });
     } catch (error) {
       console.error("Reset password error:", error);

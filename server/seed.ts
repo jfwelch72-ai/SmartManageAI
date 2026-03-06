@@ -387,11 +387,11 @@ async function seed() {
   console.log("✅ Demo notifications created");
 
   console.log("\n✅ Demo users created:");
-  console.log("   1. admin@tfrllc.com / admin123 (ADMIN)");
-  console.log("   2. sarah@tfrconst.com / password123 (MANAGER)");
-  console.log("   3. jake@tfrconstructionohio.com / password123 (SUPERINTENDENT)");
-  console.log("   4. mike@tfrllc.com / password123 (HOURLY_EMPLOYEE)");
-  console.log("   Please change these passwords in production!");
+  console.log("   1. admin@tfrllc.com (ADMIN)");
+  console.log("   2. sarah@tfrconst.com (MANAGER)");
+  console.log("   3. jake@tfrconstructionohio.com (SUPERINTENDENT)");
+  console.log("   4. mike@tfrllc.com (HOURLY_EMPLOYEE)");
+  console.log("   Credentials use default seed values — change them in production!");
 }
 
 seed()
