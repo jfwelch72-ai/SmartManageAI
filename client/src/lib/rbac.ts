@@ -822,6 +822,12 @@ export const PlatformAdminNavConfig = {
       testId: "nav-platform-support",
       visible: (role?: string) => isSuperAdmin(role),
     },
+    {
+      href: "/admin/audit",
+      label: "Security Audit",
+      testId: "nav-platform-audit",
+      visible: (role?: string) => isSuperAdmin(role),
+    },
   ],
 };
 

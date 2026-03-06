@@ -9,6 +9,7 @@ import { RoutePermissions } from "@/lib/rbac";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
 import LoginPage from "@/pages/login";
@@ -346,6 +347,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
     <SidebarProvider style={sidebarStyle}>
       <AppSidebar />
       <SidebarInset className="flex flex-col min-h-screen">
+        <ImpersonationBanner />
         <TopHeader />
         <main className="flex-1 overflow-auto">
           {children}

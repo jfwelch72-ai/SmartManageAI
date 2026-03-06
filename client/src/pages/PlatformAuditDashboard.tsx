@@ -19,8 +19,17 @@ import {
   Globe,
   Cpu,
   Link2,
-  Clock
+  Clock,
+  Download,
+  FileJson,
+  FileSpreadsheet
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -123,6 +132,42 @@ function CategoryCard({ category, stats }: { category: string; stats: { passed: 
       </CardContent>
     </Card>
   );
+}
+
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportAsJson(report: AuditReport) {
+  const timestamp = new Date(report.timestamp).toISOString().slice(0, 10);
+  downloadFile(JSON.stringify(report, null, 2), `audit-report-${timestamp}.json`, 'application/json');
+}
+
+function exportAsCsv(report: AuditReport) {
+  const headers = ['ID', 'Name', 'Category', 'Status', 'Message', 'Details', 'File', 'Line'];
+  const escCsv = (val: string | number | undefined | null) => {
+    if (val == null) return '';
+    const s = String(val);
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  };
+  const rows = report.checks.map(c => [
+    escCsv(c.id), escCsv(c.name), escCsv(c.category), escCsv(c.status),
+    escCsv(c.message), escCsv(c.details), escCsv(c.file), escCsv(c.line)
+  ].join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const timestamp = new Date(report.timestamp).toISOString().slice(0, 10);
+  downloadFile(csv, `audit-report-${timestamp}.csv`, 'text/csv');
 }
 
 export default function PlatformAuditDashboard() {
@@ -245,14 +290,34 @@ export default function PlatformAuditDashboard() {
             Duration: {report.duration}ms
           </p>
         </div>
-        <Button 
-          onClick={() => runAuditMutation.mutate()} 
-          disabled={runAuditMutation.isPending}
-          data-testid="button-run-audit"
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${runAuditMutation.isPending ? 'animate-spin' : ''}`} />
-          Run Audit
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" data-testid="button-export-audit">
+                <Download className="h-4 w-4 mr-2" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => exportAsJson(report)} data-testid="button-export-json">
+                <FileJson className="h-4 w-4 mr-2" />
+                Export as JSON
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportAsCsv(report)} data-testid="button-export-csv">
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export as CSV
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button 
+            onClick={() => runAuditMutation.mutate()} 
+            disabled={runAuditMutation.isPending}
+            data-testid="button-run-audit"
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${runAuditMutation.isPending ? 'animate-spin' : ''}`} />
+            Run Audit
+          </Button>
+        </div>
       </div>
 
       <div className={`p-4 rounded-lg ${overallStatus === 'healthy' ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'}`}>

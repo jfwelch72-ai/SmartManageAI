@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
-import { eq, count, desc, sql, and, gte, isNotNull } from "drizzle-orm";
+import { eq, count, desc, sql, and, gte, lte, isNotNull } from "drizzle-orm";
 
 const router = Router();
 
@@ -12,6 +12,52 @@ function requireSuperAdmin(req: AuthRequest, res: any, next: any) {
   }
   next();
 }
+
+router.get("/platform/health", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  const startTime = Date.now();
+  const checks: Record<string, { status: string; latencyMs?: number; detail?: string }> = {};
+
+  try {
+    const dbStart = Date.now();
+    const [dbResult] = await db.execute(sql`SELECT 1 AS ok`);
+    checks.database = { status: "healthy", latencyMs: Date.now() - dbStart };
+  } catch (err: any) {
+    checks.database = { status: "unhealthy", detail: err.message };
+  }
+
+  try {
+    const [lastAction] = await db
+      .select({ createdAt: auditLog.createdAt })
+      .from(auditLog)
+      .orderBy(desc(auditLog.createdAt))
+      .limit(1);
+    checks.backgroundJobs = {
+      status: lastAction ? "healthy" : "unknown",
+      detail: lastAction
+        ? `Last activity: ${lastAction.createdAt?.toISOString()}`
+        : "No recent activity recorded",
+    };
+  } catch (err: any) {
+    checks.backgroundJobs = { status: "unhealthy", detail: err.message };
+  }
+
+  const uptimeSeconds = Math.floor(process.uptime());
+  const memUsage = process.memoryUsage();
+
+  const overall = Object.values(checks).every((c) => c.status === "healthy")
+    ? "healthy"
+    : Object.values(checks).some((c) => c.status === "unhealthy")
+      ? "unhealthy"
+      : "degraded";
+
+  res.json({
+    status: overall,
+    uptimeSeconds,
+    memoryUsageMb: Math.round(memUsage.rss / 1024 / 1024),
+    responseTimeMs: Date.now() - startTime,
+    checks,
+  });
+});
 
 router.get("/platform/stats", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
@@ -273,11 +319,16 @@ router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, a
 
 router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const days = parseInt(req.query.days as string) || 30;
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 20;
+
+    const now = new Date();
+    const startDate = new Date();
+    startDate.setDate(now.getDate() - days);
 
     const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setDate(now.getDate() - 7);
 
     const [recentAuditCount] = await db.select({ count: count() })
       .from(auditLog)
@@ -285,16 +336,73 @@ router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: Au
 
     const [projectsCreated] = await db.select({ count: count() })
       .from(projects)
-      .where(gte(projects.createdAt, thirtyDaysAgo));
+      .where(gte(projects.createdAt, startDate));
 
     const [bidsCreated] = await db.select({ count: count() })
       .from(bids)
-      .where(gte(bids.createdAt, thirtyDaysAgo));
+      .where(gte(bids.createdAt, startDate));
 
     const [shiftsLogged] = await db.select({ count: count() })
       .from(timeClockShifts)
-      .where(gte(timeClockShifts.clockIn, thirtyDaysAgo));
+      .where(gte(timeClockShifts.clockIn, startDate));
 
+    const subscriptionsByPlan = await db.select({
+      planTier: organizationSubscriptions.planTier,
+      status: organizationSubscriptions.status,
+      count: count(),
+    })
+    .from(organizationSubscriptions)
+    .groupBy(organizationSubscriptions.planTier, organizationSubscriptions.status);
+
+    const planPrices: Record<string, number> = {
+      free: 0,
+      starter: 49,
+      professional: 149,
+      enterprise: 499,
+    };
+
+    let mrr = 0;
+    let activeSubscriptions = 0;
+    const planBreakdown: Record<string, number> = {};
+
+    for (const sub of subscriptionsByPlan) {
+      if (sub.status === "active" || sub.status === "trialing") {
+        activeSubscriptions += sub.count;
+        mrr += (planPrices[sub.planTier] || 0) * sub.count;
+      }
+      planBreakdown[`${sub.planTier}_${sub.status}`] = sub.count;
+    }
+
+    const trendPoints: Array<{ date: string; orgs: number; users: number }> = [];
+    const bucketCount = Math.min(days, 12);
+    const bucketSize = Math.ceil(days / bucketCount);
+
+    for (let i = 0; i < bucketCount; i++) {
+      const bucketEnd = new Date(now);
+      bucketEnd.setDate(now.getDate() - (i * bucketSize));
+      const bucketStart = new Date(bucketEnd);
+      bucketStart.setDate(bucketEnd.getDate() - bucketSize);
+
+      const [orgsBucket] = await db.select({ count: count() })
+        .from(organizations)
+        .where(and(gte(organizations.createdAt, bucketStart), lte(organizations.createdAt, bucketEnd)));
+
+      const [usersBucket] = await db.select({ count: count() })
+        .from(users)
+        .where(and(gte(users.createdAt, bucketStart), lte(users.createdAt, bucketEnd), isNotNull(users.organizationId)));
+
+      trendPoints.unshift({
+        date: bucketStart.toISOString().split("T")[0],
+        orgs: orgsBucket.count,
+        users: usersBucket.count,
+      });
+    }
+
+    const [totalActivityCount] = await db.select({ count: count() })
+      .from(auditLog)
+      .where(gte(auditLog.createdAt, startDate));
+
+    const offset = (page - 1) * pageSize;
     const recentActivity = await db.select({
       id: auditLog.id,
       action: auditLog.action,
@@ -306,15 +414,25 @@ router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: Au
       createdAt: auditLog.createdAt,
     })
     .from(auditLog)
+    .where(gte(auditLog.createdAt, startDate))
     .orderBy(desc(auditLog.createdAt))
-    .limit(50);
+    .limit(pageSize)
+    .offset(offset);
 
     res.json({
       weeklyActions: recentAuditCount.count,
       monthlyProjectsCreated: projectsCreated.count,
       monthlyBidsCreated: bidsCreated.count,
       monthlyShiftsLogged: shiftsLogged.count,
+      mrr,
+      activeSubscriptions,
+      planBreakdown,
+      trend: trendPoints,
       recentActivity,
+      activityTotal: totalActivityCount.count,
+      activityPage: page,
+      activityPageSize: pageSize,
+      days,
     });
   } catch (error: any) {
     console.error("Platform analytics error:", error.message);

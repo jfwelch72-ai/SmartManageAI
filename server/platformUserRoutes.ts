@@ -131,6 +131,8 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
   }
 });
 
+const impersonationCodes = new Map<string, { token: string; adminEmail: string; targetEmail: string; expiresAt: number }>();
+
 router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
     const { userId } = req.params;
@@ -150,6 +152,16 @@ router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmi
     }
 
     const impersonationToken = generateToken(user.id, user.tokenVersion);
+    const code = crypto.randomBytes(32).toString("hex");
+    
+    impersonationCodes.set(code, {
+      token: impersonationToken,
+      adminEmail: req.user!.email,
+      targetEmail: user.email,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    setTimeout(() => impersonationCodes.delete(code), 60_000);
 
     await logAudit({
       action: "UPDATE",
@@ -168,12 +180,54 @@ router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmi
     console.log(`SECURITY: Admin ${req.user!.email} impersonating user ${user.email} (${user.id})`);
     
     res.json({ 
-      token: impersonationToken,
-      message: `Impersonation token generated for ${user.email}` 
+      code,
+      message: `Impersonation code generated for ${user.email}` 
     });
   } catch (error: any) {
     console.error("Impersonate user error:", error.message);
     res.status(500).json({ error: "Failed to generate impersonation token" });
+  }
+});
+
+router.post("/platform/impersonate/exchange", async (req, res) => {
+  try {
+    const { code } = req.body;
+    if (!code || typeof code !== "string") {
+      return res.status(400).json({ error: "Code is required" });
+    }
+
+    const entry = impersonationCodes.get(code);
+    if (!entry) {
+      return res.status(404).json({ error: "Invalid or expired impersonation code" });
+    }
+
+    if (Date.now() > entry.expiresAt) {
+      impersonationCodes.delete(code);
+      return res.status(410).json({ error: "Impersonation code has expired" });
+    }
+
+    impersonationCodes.delete(code);
+
+    res.cookie("token", entry.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    res.cookie("impersonation_info", JSON.stringify({ adminEmail: entry.adminEmail, targetEmail: entry.targetEmail }), {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Impersonation exchange error:", error.message);
+    res.status(500).json({ error: "Failed to exchange impersonation code" });
   }
 });
 

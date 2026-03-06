@@ -10,32 +10,44 @@ export default function ImpersonatePage() {
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get("token");
+    const code = urlParams.get("code");
 
-    if (!token) {
+    if (!code) {
       setStatus("error");
-      setMessage("No authentication token provided");
+      setMessage("No authentication code provided");
       return;
     }
 
-    // Set the token as a cookie and redirect to dashboard
-    document.cookie = `token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Strict`;
-    
-    setStatus("success");
-    setMessage("Logged in successfully. Redirecting...");
-    
-    // Clear the URL and redirect to dashboard after a short delay
-    setTimeout(() => {
-      window.history.replaceState({}, document.title, "/");
-      setLocation("/dashboard");
-    }, 1000);
+    window.history.replaceState({}, document.title, "/impersonate");
+
+    fetch("/api/platform/impersonate/exchange", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+      credentials: "include",
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Code expired or invalid");
+        return res.json();
+      })
+      .then(() => {
+        setStatus("success");
+        setMessage("Logged in successfully. Redirecting...");
+        setTimeout(() => {
+          setLocation("/dashboard");
+        }, 1000);
+      })
+      .catch((err) => {
+        setStatus("error");
+        setMessage(err.message || "Failed to authenticate");
+      });
   }, [setLocation]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
+    <div className="min-h-screen flex items-center justify-center bg-background" data-testid="impersonate-page">
       <Card className="w-[400px]">
         <CardHeader>
-          <CardTitle className="text-center">
+          <CardTitle className="text-center" data-testid="text-impersonate-status">
             {status === "loading" && "Logging In..."}
             {status === "success" && "Login Successful"}
             {status === "error" && "Login Failed"}
@@ -45,7 +57,7 @@ export default function ImpersonatePage() {
           {status === "loading" && (
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           )}
-          <p className="text-muted-foreground text-center">{message}</p>
+          <p className="text-muted-foreground text-center" data-testid="text-impersonate-message">{message}</p>
         </CardContent>
       </Card>
     </div>

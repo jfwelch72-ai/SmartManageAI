@@ -49,6 +49,7 @@ import {
   Sparkles,
   Zap,
   HardHat,
+  FileSearch,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -158,6 +159,7 @@ export function AppSidebar() {
                         {item.href === "/admin/subscriptions" && <DollarSign className="w-4 h-4" />}
                         {item.href === "/admin/analytics" && <Briefcase className="w-4 h-4" />}
                         {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
+                        {item.href === "/admin/audit" && <FileSearch className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>

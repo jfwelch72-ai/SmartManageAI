@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,10 +16,48 @@ interface PlatformStats {
   usersByRole: Array<{ role: string; count: number }>;
 }
 
+interface SubscriptionStats {
+  totalSubscriptions: number;
+  estimatedMrr: number;
+  byPlanTier: Array<{ planTier: string; count: number }>;
+  byStatus: Array<{ status: string; count: number }>;
+  addonStats: Array<{ addonKey: string; count: number }>;
+}
+
+interface HealthCheck {
+  status: string;
+  latencyMs?: number;
+  detail?: string;
+}
+
+interface PlatformHealth {
+  status: string;
+  uptimeSeconds: number;
+  memoryUsageMb: number;
+  responseTimeMs: number;
+  checks: Record<string, HealthCheck>;
+}
+
+function formatUptime(seconds: number): string {
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
 export default function PlatformAdminDashboard() {
   const { user, logout, organizationName } = useAuth();
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/platform/stats"],
+  });
+  const { data: health } = useQuery<PlatformHealth>({
+    queryKey: ["/api/platform/health"],
+    refetchInterval: 30000,
+  });
+  const { data: subStats } = useQuery<SubscriptionStats>({
+    queryKey: ["/api/platform/subscriptions/stats"],
   });
 
   const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
@@ -96,7 +134,7 @@ export default function PlatformAdminDashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">Total Organizations</CardTitle>
@@ -125,6 +163,19 @@ export default function PlatformAdminDashboard() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+            <CardTitle className="text-sm font-medium">Monthly Revenue</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold" data-testid="text-mrr">${(subStats?.estimatedMrr || 0).toLocaleString()}</div>
+            <p className="text-xs text-muted-foreground">
+              {subStats?.totalSubscriptions || 0} active subscriptions
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">Trade Types</CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
@@ -142,13 +193,104 @@ export default function PlatformAdminDashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">Active</div>
-            <p className="text-xs text-muted-foreground">
-              All systems operational
+            <div
+              className={`text-2xl font-bold ${
+                health?.status === "healthy"
+                  ? "text-green-600 dark:text-green-400"
+                  : health?.status === "unhealthy"
+                    ? "text-red-600 dark:text-red-400"
+                    : health?.status === "degraded"
+                      ? "text-yellow-600 dark:text-yellow-400"
+                      : "text-muted-foreground"
+              }`}
+              data-testid="text-health-status"
+            >
+              {health?.status === "healthy"
+                ? "Healthy"
+                : health?.status === "unhealthy"
+                  ? "Unhealthy"
+                  : health?.status === "degraded"
+                    ? "Degraded"
+                    : "Checking..."}
+            </div>
+            <p className="text-xs text-muted-foreground" data-testid="text-health-uptime">
+              {health ? `Uptime: ${formatUptime(health.uptimeSeconds)}` : "Loading..."}
             </p>
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Server className="h-5 w-5" />
+            System Health Details
+          </CardTitle>
+          <CardDescription>Real-time infrastructure status</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="flex items-center gap-3">
+              <Database className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Database</p>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={health?.checks?.database?.status === "healthy" ? "default" : "destructive"}
+                    data-testid="badge-db-status"
+                  >
+                    {health?.checks?.database?.status || "checking"}
+                  </Badge>
+                  {health?.checks?.database?.latencyMs != null && (
+                    <span className="text-xs text-muted-foreground" data-testid="text-db-latency">
+                      {health.checks.database.latencyMs}ms
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Clock className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Background Jobs</p>
+                <div className="flex flex-col gap-1">
+                  <Badge
+                    variant={
+                      health?.checks?.backgroundJobs?.status === "healthy"
+                        ? "default"
+                        : health?.checks?.backgroundJobs?.status === "unknown"
+                          ? "secondary"
+                          : "destructive"
+                    }
+                    data-testid="badge-jobs-status"
+                  >
+                    {health?.checks?.backgroundJobs?.status || "checking"}
+                  </Badge>
+                  {health?.checks?.backgroundJobs?.detail && (
+                    <span className="text-xs text-muted-foreground" data-testid="text-jobs-detail">
+                      {health.checks.backgroundJobs.detail}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Activity className="h-5 w-5 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Server</p>
+                <div className="flex flex-col gap-1">
+                  <Badge variant="default" data-testid="badge-server-status">running</Badge>
+                  <span className="text-xs text-muted-foreground" data-testid="text-server-memory">
+                    Memory: {health?.memoryUsageMb || "—"} MB
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>

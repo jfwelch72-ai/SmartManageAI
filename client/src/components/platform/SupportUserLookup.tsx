@@ -123,7 +123,7 @@ export function SupportUserLookup() {
     onSuccess: (data, userId) => {
       const impersonatedUser = users?.find(u => u.id === userId);
       const baseUrl = window.location.origin;
-      const impersonationUrl = `${baseUrl}/impersonate?token=${encodeURIComponent(data.token)}`;
+      const impersonationUrl = `${baseUrl}/impersonate?code=${encodeURIComponent(data.code)}`;
       window.open(impersonationUrl, '_blank');
       toast({ 
         title: "Login session started", 
