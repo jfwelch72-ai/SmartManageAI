@@ -135,6 +135,7 @@ export default function WebsiteBuilderPage() {
   const [footerComponentsConfig, setFooterComponentsConfig] = useState<FooterComponentsConfig>(getDefaultFooterConfig());
   const [bodyComponentsConfig, setBodyComponentsConfig] = useState<BodyComponentsConfig>(getDefaultBodyConfig());
   const [globalComponentsConfig, setGlobalComponentsConfig] = useState<BodyComponentsConfig>({ components: [] });
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
 
   const [socialForm, setSocialForm] = useState<SocialLinks>({
     facebookUrl: null,
