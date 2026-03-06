@@ -7,11 +7,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
-  Maximize, Minimize, Trash2
+  Maximize, Minimize, Trash2, Plus
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -24,6 +25,7 @@ import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
+import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +79,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const [renameValue, setRenameValue] = useState("");
   const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [scaleModalOpen, setScaleModalOpen] = useState(false);
   const [addendaOverlays, setAddendaOverlays] = useState<Record<string, { visible: boolean; opacity: number; imageUrl?: string }>>({});
   const [addendaImages, setAddendaImages] = useState<Record<string, HTMLImageElement>>({});
   const [verifyMode, setVerifyMode] = useState<"idle" | "first-point" | "second-point">("idle");
@@ -425,6 +428,18 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
             )}
           </div>
           <div className="flex items-center gap-2">
+            {selectedSheet && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setScaleModalOpen(true)}
+                className="gap-1.5"
+                data-testid="button-add-scale"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{currentSheet?.scalePxPerFoot ? "Set Scale" : "Add Scale"}</span>
+              </Button>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -970,6 +985,28 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
         sheets={sheets}
         importPlanMutation={importPlanMutation}
         workspaceRef={workspaceRef}
+      />
+
+      <PlanScaleModal
+        open={scaleModalOpen}
+        onClose={() => setScaleModalOpen(false)}
+        onApplyScale={async (pxPerFoot, scaleUnits, label) => {
+          if (!selectedSheet) return;
+          try {
+            await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: pxPerFoot, units: scaleUnits });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+            toast({ title: "Scale Applied", description: `Scale set to ${label}` });
+          } catch (error: any) {
+            toast({ title: "Error", description: error?.message || "Failed to apply scale", variant: "destructive" });
+          }
+        }}
+        onStartCalibration={() => {
+          setCalibrationMode("first-point");
+          setCalibrationPoints([]);
+          setCalibrationDistance("");
+          setActiveTool("calibrate");
+        }}
+        currentScalePxPerFoot={currentSheet?.scalePxPerFoot ?? null}
       />
     </div>
   );
