@@ -96,10 +96,16 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
         )
       );
 
-    // Tasks aggregation skipped - organization_id column may not exist in some deployments
-    const tasksResult = { count: 0 };
+    const [tasksResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tasks)
+      .where(
+        and(
+          inArray(tasks.organizationId, orgIds),
+          inArray(tasks.status, ["PENDING", "IN_PROGRESS"])
+        )
+      );
 
-    // Get organization breakdown with individual stats
     const orgBreakdown = await Promise.all(orgIds.map(async (orgId) => {
       const [org] = await db
         .select({ name: organizations.name, tradeType: organizations.tradeType, logoUrl: organizations.logoUrl })
@@ -122,14 +128,31 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
         .from(users)
         .where(and(eq(users.organizationId, orgId), eq(users.isActive, true)));
 
+      const [pendingTasks] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(tasks)
+        .where(
+          and(
+            eq(tasks.organizationId, orgId),
+            inArray(tasks.status, ["PENDING", "IN_PROGRESS"])
+          )
+        );
+
+      const ap = activeProjects?.count || 0;
+      const ob = openBids?.count || 0;
+      const pt = pendingTasks?.count || 0;
+      const healthStatus = ap > 0 ? "ACTIVE" : ob > 0 ? "BIDDING" : pt > 0 ? "PENDING_TASKS" : "IDLE";
+
       return {
         id: orgId,
         name: org?.name || "Unknown",
         tradeType: org?.tradeType || "OTHER",
         logoUrl: org?.logoUrl,
-        activeProjects: activeProjects?.count || 0,
-        openBids: openBids?.count || 0,
+        activeProjects: ap,
+        openBids: ob,
         employees: employees?.count || 0,
+        pendingTasks: pt,
+        healthStatus,
       };
     }));
 

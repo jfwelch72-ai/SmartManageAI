@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle, Download, Target } from "lucide-react";
+import { Building2, Users, ArrowRightLeft, Plus, MapPin, Mail, Check, X, Loader2, UserPlus, Crown, Briefcase, TrendingUp, FileText, DollarSign, ClipboardList, Lightbulb, AlertCircle, Download, Target, ListChecks, BarChart3 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link, useLocation } from "wouter";
@@ -33,6 +33,8 @@ interface PortfolioStats {
     activeProjects: number;
     openBids: number;
     employees: number;
+    pendingTasks: number;
+    healthStatus: "ACTIVE" | "BIDDING" | "PENDING_TASKS" | "IDLE";
   }>;
 }
 
@@ -337,7 +339,7 @@ export default function HustlerDashboard() {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 mb-6">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 mb-6">
           <Card data-testid="card-stat-orgs">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium">Organizations</CardTitle>
@@ -402,6 +404,22 @@ export default function HustlerDashboard() {
             </CardContent>
           </Card>
 
+          <Card data-testid="card-stat-tasks">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
+              <CardTitle className="text-sm font-medium">Pending Tasks</CardTitle>
+              <ListChecks className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {loadingStats ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <div className="text-2xl font-bold" data-testid="text-stat-tasks">
+                  {portfolioStats?.totalPendingTasks || 0}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card data-testid="card-stat-bid-value">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
               <CardTitle className="text-sm font-medium">Bid Pipeline</CardTitle>
@@ -459,14 +477,15 @@ export default function HustlerDashboard() {
                       <th className="text-center py-2 font-medium">Trade</th>
                       <th className="text-center py-2 font-medium">Active Projects</th>
                       <th className="text-center py-2 font-medium">Open Bids</th>
+                      <th className="text-center py-2 font-medium">Tasks</th>
                       <th className="text-center py-2 font-medium">Employees</th>
                       <th className="text-center py-2 font-medium">Health</th>
                     </tr>
                   </thead>
                   <tbody>
                     {portfolioStats.organizationBreakdown.map((org) => {
-                      const healthScore = org.activeProjects > 0 ? "ACTIVE" : org.openBids > 0 ? "BIDDING" : "IDLE";
                       const isLoading = switchingOrgId === org.id;
+                      const hs = org.healthStatus || "IDLE";
                       return (
                         <tr 
                           key={org.id} 
@@ -498,15 +517,18 @@ export default function HustlerDashboard() {
                           <td className="text-center py-3" data-testid={`text-org-bids-${org.id}`}>
                             {org.openBids}
                           </td>
+                          <td className="text-center py-3" data-testid={`text-org-tasks-${org.id}`}>
+                            {org.pendingTasks}
+                          </td>
                           <td className="text-center py-3" data-testid={`text-org-employees-${org.id}`}>
                             {org.employees}
                           </td>
                           <td className="text-center py-3">
                             <Badge 
-                              variant={healthScore === "ACTIVE" ? "default" : healthScore === "BIDDING" ? "secondary" : "outline"}
+                              variant={hs === "ACTIVE" ? "default" : hs === "BIDDING" || hs === "PENDING_TASKS" ? "secondary" : "outline"}
                               data-testid={`badge-org-health-${org.id}`}
                             >
-                              {healthScore}
+                              {hs === "PENDING_TASKS" ? "TASKS" : hs}
                             </Badge>
                           </td>
                         </tr>
@@ -543,42 +565,63 @@ export default function HustlerDashboard() {
                   <Skeleton className="h-4 w-4/6" />
                 </div>
               ) : (
-                <div className="grid gap-4 md:grid-cols-2">
-                  {/* Insights */}
-                  {aiSummary?.insights && aiSummary.insights.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
-                        <TrendingUp className="h-4 w-4 text-blue-500" />
-                        Key Insights
-                      </h4>
-                      <ul className="space-y-1">
-                        {aiSummary.insights.map((insight, i) => (
-                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-blue-500 mt-1">•</span>
-                            {insight}
-                          </li>
-                        ))}
-                      </ul>
+                <div className="space-y-4">
+                  {aiSummary?.metrics && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 rounded-lg bg-muted/50">
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground">Active Projects</p>
+                        <p className="text-lg font-bold" data-testid="text-ai-metric-active">{aiSummary.metrics.projects.active}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground">Planning</p>
+                        <p className="text-lg font-bold" data-testid="text-ai-metric-planning">{aiSummary.metrics.projects.planning}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground">Total Bids</p>
+                        <p className="text-lg font-bold" data-testid="text-ai-metric-bids">{aiSummary.metrics.bids.total}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-muted-foreground">Pending Approvals</p>
+                        <p className="text-lg font-bold" data-testid="text-ai-metric-approvals">{aiSummary.metrics.pendingApprovals}</p>
+                      </div>
                     </div>
                   )}
 
-                  {/* Recommendations */}
-                  {aiSummary?.recommendations && aiSummary.recommendations.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
-                        <AlertCircle className="h-4 w-4 text-orange-500" />
-                        Recommendations
-                      </h4>
-                      <ul className="space-y-1">
-                        {aiSummary.recommendations.map((rec, i) => (
-                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-orange-500 mt-1">•</span>
-                            {rec}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {aiSummary?.insights && aiSummary.insights.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                          <TrendingUp className="h-4 w-4 text-blue-500" />
+                          Key Insights
+                        </h4>
+                        <ul className="space-y-1">
+                          {aiSummary.insights.map((insight, i) => (
+                            <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-blue-500 mt-1">•</span>
+                              {insight}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {aiSummary?.recommendations && aiSummary.recommendations.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                          <AlertCircle className="h-4 w-4 text-orange-500" />
+                          Recommendations
+                        </h4>
+                        <ul className="space-y-1">
+                          {aiSummary.recommendations.map((rec, i) => (
+                            <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-orange-500 mt-1">•</span>
+                              {rec}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </CardContent>
