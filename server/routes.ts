@@ -144,6 +144,9 @@ import { getOrgIdForFilter, verifyOrgAccess, verifyUserOrgAccess, isSuperAdmin }
 import bidRoutes2 from "./bidRoutes2";
 import dashboardUserRoutes from "./dashboardUserRoutes";
 import projectCoreRoutes from "./projectCoreRoutes";
+import scopeItemRoutes from "./scopeItemRoutes";
+import materialTrackingRoutes from "./materialTrackingRoutes";
+import productionRateRoutes from "./productionRateRoutes";
 import crmVendorRoutes from "./crmVendorRoutes";
 import crmContactRoutes from "./crmContactRoutes";
 import vendorEnrollmentRoutes from "./vendorEnrollmentRoutes";
@@ -452,8 +455,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(bidRoutes2);
 
 
-  // Project Routes (extracted to projectCoreRoutes.ts)
+  // Project Routes (extracted to projectCoreRoutes.ts, scopeItemRoutes.ts, materialTrackingRoutes.ts, productionRateRoutes.ts)
   app.use(projectCoreRoutes);
+  app.use(scopeItemRoutes);
+  app.use(materialTrackingRoutes);
+  app.use(productionRateRoutes);
 
 
   // CRM + Vendor Routes (extracted to crmVendorRoutes.ts, crmContactRoutes.ts, vendorEnrollmentRoutes.ts, vendorPricingRoutes.ts)
