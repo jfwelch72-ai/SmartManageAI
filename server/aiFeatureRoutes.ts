@@ -14,44 +14,22 @@ import {
   jobsiteAnalysisPhotos,
   vendorPricebooks,
   vendorPricebookItems,
-  vendorPriceHistory,
-  clientPortalAccess,
-  clientPortalActivity,
   aiCoDrafts,
-  mobileDevices,
-  mobileSyncLog,
-  mobilePendingUploads,
   organizations,
   projects,
   takeoffSheets,
-  crews,
   changeOrders,
-  crmOrganisations,
   organizationSowItems,
   projectInspections,
   projectDelays,
-  timeClockShifts,
-  timeClockEvents,
   scopeItems,
   media,
-  users,
-  type AiTakeoffAnalysis,
-  type ProjectSchedule,
-  type ProjectScheduleTask,
-  type JobsiteAnalysisBatch,
-  type VendorPricebook,
-  type ClientPortalAccess,
-  type AiCoDraft,
-  type MobileDevice,
 } from "@shared/schema";
-import { eq, sql, and, desc, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, desc, gte } from "drizzle-orm";
 import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { z } from "zod";
-import { sanitizeText, sanitizeShortText } from "./sanitization";
-import crypto from "crypto";
-import { sendEmail } from "./email";
-import { authLimiter } from "./rateLimiter";
 import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 
 const router = Router();
@@ -250,12 +228,18 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
         const tradePrompt = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
         const focusAreaPrompt = focusAreas?.length ? `Focus especially on: ${focusAreas.join(", ")}. ` : "";
         
-        const visionResponse = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
-          messages: [
-            {
-              role: "system",
-              content: `You are a construction takeoff specialist analyzing blueprints and construction drawings. 
+        const govResult = await governedAiCall({
+          orgId: analysis.organizationId,
+          userId: analysis.createdByUserId,
+          actionType: "takeoff_analysis",
+          inputRefs: { projectId: analysis.projectId },
+          fn: async () => {
+            const completion = await openai.chat.completions.create({
+              model: AI_MODEL_GPT4O,
+              messages: [
+                {
+                  role: "system",
+                  content: `You are a construction takeoff specialist analyzing blueprints and construction drawings. 
 ${tradePrompt}
 ${focusAreaPrompt}
 Analyze the image and extract all measurable quantities for a construction estimate.
@@ -280,27 +264,34 @@ Return your analysis as JSON with this exact structure:
   },
   "summary": "string (brief summary of what was detected)"
 }`
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image_url",
-                  image_url: { url: imageUrl, detail: "high" }
                 },
                 {
-                  type: "text",
-                  text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. Extract all measurable quantities.`
+                  role: "user",
+                  content: [
+                    {
+                      type: "image_url",
+                      image_url: { url: imageUrl, detail: "high" }
+                    },
+                    {
+                      type: "text",
+                      text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. Extract all measurable quantities.`
+                    }
+                  ]
                 }
-              ]
-            }
-          ],
-          max_tokens: 4096,
-          temperature: 0.3,
-          response_format: { type: "json_object" },
+              ],
+              max_tokens: 4096,
+              temperature: 0.3,
+              response_format: { type: "json_object" },
+            });
+            return { result: completion.choices[0]?.message?.content, completion };
+          },
         });
 
-        const responseContent = visionResponse.choices[0]?.message?.content || "";
+        if (govResult.blocked) {
+          throw new Error(govResult.reason || "AI usage limit reached");
+        }
+
+        const responseContent = govResult.result || "";
         
         // Parse the JSON response
         const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
@@ -909,12 +900,18 @@ router.post("/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, r
         // Analyze first photo (can extend to multiple)
         const imageUrl = photos[0].fileUrl;
         
-        const visionResponse = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
-          messages: [
-            {
-              role: "system",
-              content: `You are a construction site safety and progress inspector for ${tradeType} trade work.
+        const govResult = await governedAiCall({
+          orgId: batch.organizationId,
+          userId: req.user?.id || null,
+          actionType: "jobsite_analysis",
+          inputRefs: { projectId: batch.projectId },
+          fn: async () => {
+            const completion = await openai.chat.completions.create({
+              model: AI_MODEL_GPT4O,
+              messages: [
+                {
+                  role: "system",
+                  content: `You are a construction site safety and progress inspector for ${tradeType} trade work.
 ${tradeContext}
 
 Analyze the jobsite photo and provide a comprehensive assessment.
@@ -955,26 +952,33 @@ Return your analysis as JSON with this exact structure:
   },
   "notes": "overall summary of findings"
 }`
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image_url",
-                  image_url: { url: imageUrl, detail: "high" }
                 },
                 {
-                  type: "text",
-                  text: `Analyze this construction jobsite photo for ${tradeType} trade work. Focus on safety hazards, work progress, and crew activity.`
+                  role: "user",
+                  content: [
+                    {
+                      type: "image_url",
+                      image_url: { url: imageUrl, detail: "high" }
+                    },
+                    {
+                      type: "text",
+                      text: `Analyze this construction jobsite photo for ${tradeType} trade work. Focus on safety hazards, work progress, and crew activity.`
+                    }
+                  ]
                 }
-              ]
-            }
-          ],
-          max_tokens: 4096,
-          temperature: 0.3,
+              ],
+              max_tokens: 4096,
+              temperature: 0.3,
+            });
+            return { result: completion.choices[0]?.message?.content, completion };
+          },
         });
 
-        const responseContent = visionResponse.choices[0]?.message?.content || "";
+        if (govResult.blocked) {
+          return res.status(429).json({ error: govResult.reason });
+        }
+
+        const responseContent = govResult.result || "";
         
         // Parse the JSON response
         const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
@@ -1249,105 +1253,6 @@ router.get("/vendors/pricebooks", requireAuth, async (req: AuthRequest, res) => 
 });
 
 // ============================================
-// FEATURE E: CLIENT PORTAL ROUTES
-// ============================================
-
-const portalAccessSchema = z.object({
-  projectId: z.string(),
-  email: z.string().email(),
-  name: z.string().optional(),
-});
-
-// POST /api/ai-features/portal/access/create - Create portal access
-router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const organizationId = req.user?.organizationId;
-    if (!userId || !organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const parsed = portalAccessSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
-    }
-
-    const { projectId, email, name } = parsed.data;
-
-    // Generate access token
-    const accessToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(accessToken).digest("hex");
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
-
-    const [access] = await db.insert(clientPortalAccess).values({
-      organizationId,
-      projectId,
-      email,
-      name,
-      accessTokenHash: tokenHash,
-      tokenExpiresAt: expiresAt,
-      createdByUserId: userId,
-    }).returning();
-
-    res.json({
-      success: true,
-      accessId: access.id,
-      accessToken, // In production, this would be sent via email
-      expiresAt: expiresAt.toISOString(),
-    });
-  } catch (error) {
-    console.error("Create portal access error:", error);
-    res.status(500).json({ error: "Failed to create access" });
-  }
-});
-
-// GET /api/ai-features/portal/access/:projectId - List portal access for project
-router.get("/portal/access/:projectId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const accessList = await db.select()
-      .from(clientPortalAccess)
-      .where(and(
-        eq(clientPortalAccess.projectId, req.params.projectId),
-        eq(clientPortalAccess.organizationId, organizationId)
-      ))
-      .orderBy(desc(clientPortalAccess.createdAt));
-
-    res.json({ accessList });
-  } catch (error) {
-    console.error("Get portal access error:", error);
-    res.status(500).json({ error: "Failed to get access list" });
-  }
-});
-
-// DELETE /api/ai-features/portal/access/:accessId - Revoke access
-router.delete("/portal/access/:accessId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    if (!organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    await db.update(clientPortalAccess)
-      .set({ isActive: false })
-      .where(and(
-        eq(clientPortalAccess.id, req.params.accessId),
-        eq(clientPortalAccess.organizationId, organizationId)
-      ));
-
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Revoke portal access error:", error);
-    res.status(500).json({ error: "Failed to revoke access" });
-  }
-});
-
-// ============================================
 // FEATURE F: AI CHANGE ORDER GENERATOR ROUTES
 // ============================================
 
@@ -1536,763 +1441,6 @@ router.post("/change-orders/drafts/:draftId/convert", requireAuth, requireRole("
   } catch (error) {
     console.error("Convert CO draft error:", error);
     res.status(500).json({ error: "Failed to convert draft" });
-  }
-});
-
-// ============================================
-// FEATURE G: MOBILE/OFFLINE SYNC ROUTES
-// ============================================
-
-const deviceRegisterSchema = z.object({
-  deviceId: z.string(),
-  platform: z.enum(["IOS", "ANDROID", "WEB"]),
-  appVersion: z.string().optional(),
-  deviceModel: z.string().optional(),
-  pushToken: z.string().optional(),
-});
-
-// POST /api/ai-features/mobile/register - Register mobile device
-router.post("/mobile/register", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const organizationId = req.user?.organizationId;
-    if (!userId || !organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const parsed = deviceRegisterSchema.safeParse(req.body);
-    if (!parsed.success) {
-      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
-    }
-
-    const { deviceId, platform, appVersion, deviceModel, pushToken } = parsed.data;
-    const syncToken = crypto.randomBytes(16).toString("hex");
-
-    // Upsert device
-    const existing = await db.select()
-      .from(mobileDevices)
-      .where(eq(mobileDevices.deviceId, deviceId))
-      .limit(1);
-
-    let device;
-    if (existing.length > 0) {
-      [device] = await db.update(mobileDevices)
-        .set({
-          platform: platform as any,
-          appVersion,
-          deviceModel,
-          pushToken,
-          syncToken,
-          isActive: true,
-          updatedAt: new Date(),
-        })
-        .where(eq(mobileDevices.deviceId, deviceId))
-        .returning();
-    } else {
-      [device] = await db.insert(mobileDevices).values({
-        organizationId,
-        userId,
-        deviceId,
-        platform: platform as any,
-        appVersion,
-        deviceModel,
-        pushToken,
-        syncToken,
-      }).returning();
-    }
-
-    res.json({
-      success: true,
-      registrationId: device.id,
-      syncToken,
-      syncEndpoint: "/api/ai-features/mobile/sync",
-    });
-  } catch (error) {
-    console.error("Device register error:", error);
-    res.status(500).json({ error: "Failed to register device" });
-  }
-});
-
-// GET /api/ai-features/mobile/sync - Get changes since last sync
-router.get("/mobile/sync", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const organizationId = req.user?.organizationId;
-    if (!userId || !organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { lastSyncAt, deviceId } = req.query;
-    const syncTime = lastSyncAt ? new Date(lastSyncAt as string) : new Date(0);
-    const nextSyncToken = crypto.randomBytes(8).toString("hex");
-
-    // Get projects updated since last sync (projects linked to this org via gcOrganizationId)
-    const projectChanges = await db.select()
-      .from(projects)
-      .where(and(
-        eq(projects.gcOrganizationId, organizationId),
-        gte(projects.updatedAt, syncTime)
-      ))
-      .limit(50);
-
-    // Get time clock shifts for the user
-    const shiftChanges = await db.select()
-      .from(timeClockShifts)
-      .where(and(
-        eq(timeClockShifts.userId, userId),
-        gte(timeClockShifts.updatedAt, syncTime)
-      ))
-      .limit(100);
-
-    // Update device last sync time
-    if (deviceId) {
-      await db.update(mobileDevices)
-        .set({ lastSyncAt: new Date(), syncToken: nextSyncToken })
-        .where(eq(mobileDevices.deviceId, deviceId as string));
-    }
-
-    res.json({
-      syncedAt: new Date().toISOString(),
-      nextSyncToken,
-      changes: {
-        projects: {
-          created: projectChanges.filter(p => p.createdAt >= syncTime),
-          updated: projectChanges.filter(p => p.createdAt < syncTime),
-          deleted: [],
-        },
-        timeClock: {
-          shifts: shiftChanges,
-          events: [],
-        },
-      },
-    });
-  } catch (error) {
-    console.error("Mobile sync error:", error);
-    res.status(500).json({ error: "Failed to sync" });
-  }
-});
-
-// POST /api/ai-features/mobile/sync - Upload local changes
-router.post("/mobile/sync", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const organizationId = req.user?.organizationId;
-    if (!userId || !organizationId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { deviceId, changes } = req.body;
-    const processed: any = { timeClockEvents: [], dailyLogs: [], photos: [] };
-
-    // Process time clock events
-    if (changes?.timeClockEvents) {
-      for (const event of changes.timeClockEvents) {
-        // Store as pending upload for processing
-        await db.insert(mobilePendingUploads).values({
-          deviceId,
-          localId: event.localId,
-          recordType: "TIME_CLOCK_EVENT",
-          recordDataJson: JSON.stringify(event),
-          status: "PENDING",
-        });
-        processed.timeClockEvents.push({
-          localId: event.localId,
-          status: "QUEUED",
-        });
-      }
-    }
-
-    res.json({
-      success: true,
-      processed,
-      conflicts: [],
-      serverTime: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error("Mobile upload sync error:", error);
-    res.status(500).json({ error: "Failed to upload changes" });
-  }
-});
-
-// GET /api/ai-features/mobile/devices - List user's devices
-router.get("/mobile/devices", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const devices = await db.select()
-      .from(mobileDevices)
-      .where(and(
-        eq(mobileDevices.userId, userId),
-        eq(mobileDevices.isActive, true)
-      ))
-      .orderBy(desc(mobileDevices.lastSyncAt));
-
-    res.json({ devices });
-  } catch (error) {
-    console.error("Get devices error:", error);
-    res.status(500).json({ error: "Failed to get devices" });
-  }
-});
-
-// ============================================================================
-// FEATURE E: CLIENT PORTAL
-// ============================================================================
-
-// GET /api/ai-features/client-portal/:projectId - List portal access for a project
-router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const orgId = req.user?.organizationId;
-    if (!userId || !orgId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const projectId = req.params.projectId;
-
-    const accessList = await db
-      .select({
-        access: clientPortalAccess,
-        projectName: projects.name,
-      })
-      .from(clientPortalAccess)
-      .leftJoin(projects, eq(clientPortalAccess.projectId, projects.id))
-      .where(
-        and(
-          eq(clientPortalAccess.projectId, projectId),
-          eq(clientPortalAccess.organizationId, orgId)
-        )
-      )
-      .orderBy(desc(clientPortalAccess.createdAt));
-
-    const formatted = accessList.map((row) => {
-      let permissions = {
-        viewProgress: true,
-        viewPhotos: true,
-        viewSchedule: true,
-        viewDocuments: false,
-        viewInvoices: false,
-        submitRequests: false,
-      };
-      try {
-        if (row.access.permissionsJson) {
-          permissions = JSON.parse(row.access.permissionsJson);
-        }
-      } catch {}
-
-      return {
-        id: row.access.id,
-        projectId: row.access.projectId,
-        projectName: row.projectName || "Unknown Project",
-        email: row.access.email,
-        name: row.access.name || "",
-        accessType: row.access.accessType || "STAKEHOLDER",
-        permissions,
-        isActive: row.access.isActive,
-        lastAccessedAt: row.access.lastAccessedAt?.toISOString(),
-        expiresAt: row.access.tokenExpiresAt?.toISOString(),
-        createdAt: row.access.createdAt.toISOString(),
-      };
-    });
-
-    const activeCount = formatted.filter((a) => a.isActive).length;
-    const lastActivity = formatted.reduce((latest: string | null, a) => {
-      if (!a.lastAccessedAt) return latest;
-      if (!latest) return a.lastAccessedAt;
-      return a.lastAccessedAt > latest ? a.lastAccessedAt : latest;
-    }, null);
-
-    const host = req.get("host") || "";
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
-    const portalUrl = `${protocol}://${host}/portal/${projectId}`;
-
-    res.json({
-      accessList: formatted,
-      stats: {
-        totalAccess: formatted.length,
-        activeUsers: activeCount,
-        lastActivity,
-      },
-      portalUrl,
-    });
-  } catch (error) {
-    console.error("Error fetching client portal access:", error);
-    res.status(500).json({ error: "Failed to fetch portal access" });
-  }
-});
-
-// POST /api/ai-features/client-portal/invite - Send portal invitation
-router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const orgId = req.user?.organizationId;
-    if (!userId || !orgId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const { projectId, email, name, accessType, permissions } = req.body;
-
-    if (!projectId || !email || !name) {
-      return res.status(400).json({ error: "Project ID, email, and name are required" });
-    }
-
-    const validAccessTypes = ["OWNER_REP", "GC_REP", "STAKEHOLDER", "VIEWER"];
-    const resolvedAccessType = validAccessTypes.includes(accessType) ? accessType : "STAKEHOLDER";
-
-    const [existingProject] = await db
-      .select()
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)))
-      .limit(1);
-
-    if (!existingProject) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-
-    const [existing] = await db
-      .select()
-      .from(clientPortalAccess)
-      .where(
-        and(
-          eq(clientPortalAccess.projectId, projectId),
-          eq(clientPortalAccess.organizationId, orgId),
-          eq(clientPortalAccess.email, email.trim().toLowerCase())
-        )
-      )
-      .limit(1);
-
-    if (existing) {
-      return res.status(409).json({ error: "This email already has portal access for this project" });
-    }
-
-    const permissionsJson = permissions
-      ? JSON.stringify(permissions)
-      : JSON.stringify({
-          viewProgress: true,
-          viewPhotos: true,
-          viewSchedule: true,
-          viewDocuments: false,
-          viewInvoices: false,
-          submitRequests: false,
-        });
-
-    const [newAccess] = await db
-      .insert(clientPortalAccess)
-      .values({
-        organizationId: orgId,
-        projectId,
-        email: email.trim().toLowerCase(),
-        name: name.trim(),
-        accessType: resolvedAccessType,
-        permissionsJson,
-        isActive: true,
-        createdByUserId: userId,
-      })
-      .returning();
-
-    let parsedPermissions;
-    try {
-      parsedPermissions = JSON.parse(newAccess.permissionsJson || "{}");
-    } catch {
-      parsedPermissions = {};
-    }
-
-    const host = req.get("host") || "";
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
-    const portalLink = `${protocol}://${host}/portal/${projectId}`;
-
-    const [invitingUser] = await db
-      .select({ firstName: users.firstName, lastName: users.lastName })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-
-    const [org] = await db
-      .select({ name: organizations.name })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .limit(1);
-
-    const inviterName = invitingUser
-      ? `${invitingUser.firstName || ""} ${invitingUser.lastName || ""}`.trim()
-      : "Your project team";
-    const orgName = org?.name || "your contractor";
-
-    const accessTypeLabels: Record<string, string> = {
-      OWNER_REP: "Owner Representative",
-      GC_REP: "GC Representative",
-      STAKEHOLDER: "Stakeholder",
-      VIEWER: "Viewer",
-    };
-    const accessLabel = accessTypeLabels[resolvedAccessType] || "Stakeholder";
-
-    const permissionsList = [];
-    if (parsedPermissions.viewProgress) permissionsList.push("Progress Updates");
-    if (parsedPermissions.viewPhotos) permissionsList.push("Photos & Media");
-    if (parsedPermissions.viewSchedule) permissionsList.push("Schedule");
-    if (parsedPermissions.viewDocuments) permissionsList.push("Documents");
-    if (parsedPermissions.viewInvoices) permissionsList.push("Invoices");
-    if (parsedPermissions.submitRequests) permissionsList.push("Submit Requests");
-
-    const permissionsHtml = permissionsList.length > 0
-      ? `<ul style="margin: 8px 0; padding-left: 20px; color: #333333;">${permissionsList.map(p => `<li style="margin: 4px 0;">${p}</li>`).join("")}</ul>`
-      : `<p style="color: #666666;">View access to project information</p>`;
-
-    const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Client Portal Invitation</title>
-</head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px;">
-  <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-    <div style="background-color: #1a365d; padding: 24px; text-align: center;">
-      <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Client Portal Invitation</h1>
-    </div>
-    <div style="padding: 32px 24px;">
-      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
-        Hi ${name.trim()},
-      </p>
-      <p style="color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;">
-        ${inviterName} from <strong>${orgName}</strong> has invited you to access the client portal for project <strong>${existingProject.name}</strong>.
-      </p>
-      <div style="background-color: #f8f9fa; border-radius: 6px; padding: 16px; margin: 16px 0;">
-        <p style="color: #333333; font-size: 14px; margin: 0 0 8px;"><strong>Access Level:</strong> ${accessLabel}</p>
-        <p style="color: #333333; font-size: 14px; margin: 0 0 4px;"><strong>You can view:</strong></p>
-        ${permissionsHtml}
-      </div>
-      <div style="text-align: center; margin: 32px 0;">
-        <a href="${portalLink}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;">
-          View Project Portal
-        </a>
-      </div>
-      <p style="color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;">
-        If you have questions, please reach out to your project team directly.
-      </p>
-    </div>
-    <div style="background-color: #f8f9fa; padding: 16px 24px; text-align: center; border-top: 1px solid #e5e7eb;">
-      <p style="color: #999999; font-size: 12px; margin: 0;">
-        Sent via SmartManageAI Construction Management Platform
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
-
-    try {
-      await sendEmail({
-        to: email.trim().toLowerCase(),
-        subject: `Client Portal Invitation - ${existingProject.name}`,
-        html: emailHtml,
-        text: `Hi ${name.trim()}, ${inviterName} from ${orgName} has invited you to access the client portal for project "${existingProject.name}". Your access level: ${accessLabel}. Visit: ${portalLink}`,
-      });
-    } catch (emailErr) {
-      console.error("Failed to send portal invitation email:", emailErr);
-    }
-
-    res.status(201).json({
-      id: newAccess.id,
-      projectId: newAccess.projectId,
-      projectName: existingProject.name,
-      email: newAccess.email,
-      name: newAccess.name,
-      accessType: newAccess.accessType,
-      permissions: parsedPermissions,
-      isActive: newAccess.isActive,
-      createdAt: newAccess.createdAt.toISOString(),
-    });
-  } catch (error) {
-    console.error("Error creating portal invitation:", error);
-    res.status(500).json({ error: "Failed to send invitation" });
-  }
-});
-
-// PATCH /api/ai-features/client-portal/access/:id - Update portal access
-router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const orgId = req.user?.organizationId;
-    if (!userId || !orgId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const accessId = req.params.id;
-
-    const [existing] = await db
-      .select()
-      .from(clientPortalAccess)
-      .where(
-        and(
-          eq(clientPortalAccess.id, accessId),
-          eq(clientPortalAccess.organizationId, orgId)
-        )
-      )
-      .limit(1);
-
-    if (!existing) {
-      return res.status(404).json({ error: "Portal access not found" });
-    }
-
-    const updates: Record<string, any> = {};
-    if (req.body.accessType) updates.accessType = req.body.accessType;
-    if (req.body.permissions) updates.permissionsJson = JSON.stringify(req.body.permissions);
-    if (typeof req.body.isActive === "boolean") updates.isActive = req.body.isActive;
-    if (req.body.name) updates.name = req.body.name;
-
-    const [updated] = await db
-      .update(clientPortalAccess)
-      .set(updates)
-      .where(eq(clientPortalAccess.id, accessId))
-      .returning();
-
-    res.json({
-      id: updated.id,
-      accessType: updated.accessType,
-      isActive: updated.isActive,
-      name: updated.name,
-    });
-  } catch (error) {
-    console.error("Error updating portal access:", error);
-    res.status(500).json({ error: "Failed to update portal access" });
-  }
-});
-
-// DELETE /api/ai-features/client-portal/access/:id - Revoke portal access
-router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user?.id;
-    const orgId = req.user?.organizationId;
-    if (!userId || !orgId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const accessId = req.params.id;
-
-    const [existing] = await db
-      .select()
-      .from(clientPortalAccess)
-      .where(
-        and(
-          eq(clientPortalAccess.id, accessId),
-          eq(clientPortalAccess.organizationId, orgId)
-        )
-      )
-      .limit(1);
-
-    if (!existing) {
-      return res.status(404).json({ error: "Portal access not found" });
-    }
-
-    await db
-      .delete(clientPortalAccess)
-      .where(eq(clientPortalAccess.id, accessId));
-
-    res.json({ success: true, message: "Portal access revoked" });
-  } catch (error) {
-    console.error("Error revoking portal access:", error);
-    res.status(500).json({ error: "Failed to revoke portal access" });
-  }
-});
-
-// ============================================================================
-// PUBLIC CLIENT PORTAL (no auth required - for invited external users)
-// ============================================================================
-
-// POST /api/ai-features/client-portal/public/verify - Verify email access
-router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
-  try {
-    const { projectId, email } = req.body;
-
-    if (!projectId || !email) {
-      return res.status(400).json({ error: "Project ID and email are required" });
-    }
-
-    const [access] = await db
-      .select({
-        access: clientPortalAccess,
-        projectName: projects.name,
-        projectStatus: projects.status,
-        orgName: organizations.name,
-      })
-      .from(clientPortalAccess)
-      .leftJoin(projects, eq(clientPortalAccess.projectId, projects.id))
-      .leftJoin(organizations, eq(clientPortalAccess.organizationId, organizations.id))
-      .where(
-        and(
-          eq(clientPortalAccess.projectId, projectId),
-          eq(clientPortalAccess.email, email.trim().toLowerCase()),
-          eq(clientPortalAccess.isActive, true)
-        )
-      )
-      .limit(1);
-
-    if (!access) {
-      return res.status(403).json({ error: "No portal access found for this email" });
-    }
-
-    let permissions = {
-      viewProgress: true,
-      viewPhotos: true,
-      viewSchedule: true,
-      viewDocuments: false,
-      viewInvoices: false,
-      submitRequests: false,
-    };
-    try {
-      if (access.access.permissionsJson) {
-        permissions = JSON.parse(access.access.permissionsJson);
-      }
-    } catch {}
-
-    await db
-      .update(clientPortalAccess)
-      .set({ lastAccessedAt: new Date() })
-      .where(eq(clientPortalAccess.id, access.access.id));
-
-    res.json({
-      verified: true,
-      accessId: access.access.id,
-      projectName: access.projectName || "Unknown Project",
-      projectStatus: access.projectStatus || "ACTIVE",
-      organizationName: access.orgName || "",
-      accessType: access.access.accessType || "STAKEHOLDER",
-      name: access.access.name || "",
-      permissions,
-    });
-  } catch (error) {
-    console.error("Error verifying portal access:", error);
-    res.status(500).json({ error: "Failed to verify portal access" });
-  }
-});
-
-// POST /api/ai-features/client-portal/public/data - Get portal data after verification
-router.post("/client-portal/public/data", authLimiter, async (req, res) => {
-  try {
-    const { projectId, email } = req.body;
-
-    if (!projectId || !email) {
-      return res.status(400).json({ error: "Project ID and email are required" });
-    }
-
-    const [access] = await db
-      .select()
-      .from(clientPortalAccess)
-      .where(
-        and(
-          eq(clientPortalAccess.projectId, projectId),
-          eq(clientPortalAccess.email, email.trim().toLowerCase()),
-          eq(clientPortalAccess.isActive, true)
-        )
-      )
-      .limit(1);
-
-    if (!access) {
-      return res.status(403).json({ error: "No portal access" });
-    }
-
-    let permissions = {
-      viewProgress: true,
-      viewPhotos: true,
-      viewSchedule: true,
-      viewDocuments: false,
-      viewInvoices: false,
-      submitRequests: false,
-    };
-    try {
-      if (access.permissionsJson) {
-        permissions = JSON.parse(access.permissionsJson);
-      }
-    } catch {}
-
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId))
-      .limit(1);
-
-    if (!project) {
-      return res.status(404).json({ error: "Project not found" });
-    }
-
-    const result: Record<string, any> = {
-      project: {
-        name: project.name,
-        status: project.status,
-        startDate: project.startDate,
-        endDate: project.endDate,
-        address: project.locationAddress,
-        city: project.city,
-        state: project.state,
-      },
-    };
-
-    if (permissions.viewProgress) {
-      const progressItems = await db
-        .select()
-        .from(scopeItems)
-        .where(eq(scopeItems.projectId, projectId))
-        .orderBy(desc(scopeItems.updatedAt));
-
-      result.progress = progressItems.map((item) => ({
-        description: item.description,
-        status: item.billingStatus || "NOT_STARTED",
-        completionPercentage: item.completedQuantity && item.totalQuantity
-          ? Math.round((parseFloat(item.completedQuantity) / parseFloat(item.totalQuantity)) * 100)
-          : 0,
-        updatedAt: item.updatedAt,
-      }));
-    }
-
-    if (permissions.viewPhotos) {
-      const photos = await db
-        .select()
-        .from(media)
-        .where(eq(media.projectId, projectId))
-        .orderBy(desc(media.uploadedAt))
-        .limit(50);
-
-      result.photos = photos.map((p) => ({
-        id: p.id,
-        fileName: p.fileName,
-        fileUrl: p.fileUrl,
-        fileType: p.mimeType,
-        description: p.caption,
-        createdAt: p.uploadedAt,
-      }));
-    }
-
-    if (permissions.viewSchedule) {
-      const schedules = await db
-        .select()
-        .from(projectSchedules)
-        .where(eq(projectSchedules.projectId, projectId))
-        .limit(1);
-
-      if (schedules.length > 0) {
-        const tasks = await db
-          .select()
-          .from(projectScheduleTasks)
-          .where(eq(projectScheduleTasks.scheduleId, schedules[0].id))
-          .orderBy(projectScheduleTasks.plannedStartDate);
-
-        result.schedule = tasks.map((t) => ({
-          name: t.name,
-          startDate: t.plannedStartDate,
-          endDate: t.plannedEndDate,
-          status: t.status,
-          progress: t.percentComplete,
-        }));
-      }
-    }
-
-    res.json(result);
-  } catch (error) {
-    console.error("Error fetching portal data:", error);
-    res.status(500).json({ error: "Failed to fetch portal data" });
   }
 });
 

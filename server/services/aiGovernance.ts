@@ -115,6 +115,63 @@ export async function executeAiAction(params: AiActionParams): Promise<AiActionR
   return result;
 }
 
+const GPT4O_INPUT_COST_PER_TOKEN = 0.0000025;
+const GPT4O_OUTPUT_COST_PER_TOKEN = 0.00001;
+const GPT4O_MINI_INPUT_COST_PER_TOKEN = 0.00000015;
+const GPT4O_MINI_OUTPUT_COST_PER_TOKEN = 0.0000006;
+
+function estimateCost(model: string, tokensIn: number, tokensOut: number): number {
+  const isMini = model.includes("mini");
+  const inputCost = tokensIn * (isMini ? GPT4O_MINI_INPUT_COST_PER_TOKEN : GPT4O_INPUT_COST_PER_TOKEN);
+  const outputCost = tokensOut * (isMini ? GPT4O_MINI_OUTPUT_COST_PER_TOKEN : GPT4O_OUTPUT_COST_PER_TOKEN);
+  return Math.round((inputCost + outputCost) * 1000000) / 1000000;
+}
+
+export async function governedAiCall<T>(opts: {
+  orgId: string;
+  userId: string | null;
+  actionType: string;
+  inputRefs?: Record<string, any>;
+  fn: () => Promise<{ result: T; completion: { usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string } }>;
+}): Promise<{ result: T; blocked?: boolean; reason?: string }> {
+  const limitCheck = await checkOrgLimits(opts.orgId);
+  if (!limitCheck.allowed) {
+    logWarn("AI action blocked by limits", { orgId: opts.orgId, actionType: opts.actionType, reason: limitCheck.reason });
+    return { result: null as T, blocked: true, reason: limitCheck.reason };
+  }
+
+  const startTime = Date.now();
+  const { result, completion } = await opts.fn();
+  const durationMs = Date.now() - startTime;
+
+  const tokensIn = completion.usage?.prompt_tokens || 0;
+  const tokensOut = completion.usage?.completion_tokens || 0;
+  const model = completion.model || "gpt-4o";
+  const cost = estimateCost(model, tokensIn, tokensOut);
+
+  try {
+    await db.insert(aiActionAudit).values({
+      organizationId: opts.orgId,
+      actorUserId: opts.userId,
+      actionType: opts.actionType,
+      model,
+      tokensIn,
+      tokensOut,
+      costEstimate: String(cost),
+      inputRefs: opts.inputRefs || {},
+      outputRefs: { tracked: true },
+      rationale: null,
+      approvalRequired: false,
+      approvalStatus: null,
+      durationMs,
+    });
+  } catch (err) {
+    logError("Failed to record AI audit", { error: String(err) });
+  }
+
+  return { result };
+}
+
 export async function getAiAuditLog(orgId: string, limit: number = 50, offset: number = 0) {
   return db.select().from(aiActionAudit)
     .where(eq(aiActionAudit.organizationId, orgId))

@@ -17,6 +17,7 @@ import {
 import { eq, sql, ilike, or, and } from "drizzle-orm";
 import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import { type AuthRequest } from "./auth";
+import { governedAiCall } from "./services/aiGovernance";
 import { z } from "zod";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 
@@ -209,23 +210,37 @@ ${tradeType ? `Trade type: ${tradeType}` : ''}
 
 Analyze and suggest the properly formatted SOW item.`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-      max_tokens: 1000,
+    const governed = await governedAiCall<SOWSuggestion>({
+      orgId: req.user.organizationId || '',
+      userId: req.user.id?.toString() || null,
+      actionType: "sow_assistant",
+      inputRefs: { userInput, tradeType },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.3,
+          max_tokens: 1000,
+        });
+
+        const content = completion.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('No response from AI');
+        }
+
+        return { result: JSON.parse(content) as SOWSuggestion, completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from AI');
+    if (governed.blocked) {
+      return res.status(429).json({ error: "AI rate limit reached", reason: governed.reason });
     }
 
-    const suggestion = JSON.parse(content) as SOWSuggestion;
+    const suggestion = governed.result;
 
     // Return suggestion with similar items for duplicate detection
     res.json({
@@ -390,23 +405,37 @@ Respond with a JSON object:
 
 Analyze and suggest the properly formatted UOM, or explain if a similar one already exists.`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.2,
-      max_tokens: 500,
+    const governed = await governedAiCall<UOMSuggestion>({
+      orgId: req.user.organizationId || '',
+      userId: req.user.id?.toString() || null,
+      actionType: "uom_assistant",
+      inputRefs: { userInput },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.2,
+          max_tokens: 500,
+        });
+
+        const content = completion.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error('No response from AI');
+        }
+
+        return { result: JSON.parse(content) as UOMSuggestion, completion };
+      },
     });
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('No response from AI');
+    if (governed.blocked) {
+      return res.status(429).json({ error: "AI rate limit reached", reason: governed.reason });
     }
 
-    const suggestion = JSON.parse(content) as UOMSuggestion;
+    const suggestion = governed.result;
 
     res.json({
       success: true,

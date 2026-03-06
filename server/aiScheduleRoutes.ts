@@ -8,6 +8,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { openai } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -259,17 +260,31 @@ Generate a realistic schedule that:
 5. Identifies critical path tasks
 6. Includes key milestones`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 4000,
+    const governed = await governedAiCall({
+      orgId: orgId,
+      userId: req.user?.id || null,
+      actionType: "schedule_generation",
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 4000,
+        });
+        const result = completion.choices[0]?.message?.content;
+        return { result, completion };
+      },
     });
 
-    const responseContent = completion.choices[0]?.message?.content;
+    if (governed.blocked) {
+      res.status(429).json({ error: governed.reason || "AI usage limit reached" });
+      return;
+    }
+
+    const responseContent = governed.result;
     if (!responseContent) {
       res.status(500).json({ error: "No response from AI" });
       return;

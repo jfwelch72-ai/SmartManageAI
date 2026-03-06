@@ -27,6 +27,7 @@ import {
   createTaskFromEmail,
   type EmailAnalysisResult
 } from "./ai/emailAi";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -372,12 +373,27 @@ router.post("/messages/:id/analyze", requireAuth, async (req: AuthRequest, res) 
     }
 
     // Run AI analysis
-    const analysis = await analyzeEmail(
-      message.subject,
-      message.bodyText || message.bodyHtml || '',
-      message.fromAddress,
-      orgId
-    );
+    const governedAnalysis = await governedAiCall<EmailAnalysisResult>({
+      orgId,
+      userId: req.user.id,
+      actionType: "email_message_analysis",
+      inputRefs: { messageId: message.id },
+      fn: async () => {
+        const result = await analyzeEmail(
+          message.subject,
+          message.bodyText || message.bodyHtml || '',
+          message.fromAddress,
+          orgId
+        );
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+      },
+    });
+
+    if (governedAnalysis.blocked) {
+      return res.status(429).json({ error: governedAnalysis.reason || "AI rate limit reached" });
+    }
+
+    const analysis = governedAnalysis.result;
 
     // Match to existing entities
     const matchedEntities = await matchEmailToEntities(analysis, orgId);
@@ -489,14 +505,29 @@ router.post("/messages/:id/suggest-reply", requireAuth, async (req: AuthRequest,
       return res.status(404).json({ error: "Message not found" });
     }
 
-    const drafts = await suggestReplies(
-      {
-        subject: message.subject,
-        body: message.bodyText || message.bodyHtml || '',
-        fromAddress: message.fromAddress,
+    const governedReplies = await governedAiCall<import("./ai/emailAi").ReplyDraft[]>({
+      orgId,
+      userId: req.user.id,
+      actionType: "email_suggest_reply",
+      inputRefs: { messageId: message.id },
+      fn: async () => {
+        const result = await suggestReplies(
+          {
+            subject: message.subject,
+            body: message.bodyText || message.bodyHtml || '',
+            fromAddress: message.fromAddress,
+          },
+          tones as Array<'professional' | 'casual' | 'firm'>
+        );
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
       },
-      tones as Array<'professional' | 'casual' | 'firm'>
-    );
+    });
+
+    if (governedReplies.blocked) {
+      return res.status(429).json({ error: governedReplies.reason || "AI rate limit reached" });
+    }
+
+    const drafts = governedReplies.result;
 
     return res.json({ drafts });
   } catch (error) {
@@ -547,15 +578,30 @@ router.post("/threads/:id/summarize", requireAuth, async (req: AuthRequest, res)
       return res.json({ summary: "No messages in this thread." });
     }
 
-    const summary = await summarizeThread(
-      messages.map(m => ({
-        fromAddress: m.fromAddress,
-        fromName: m.fromName ?? undefined,
-        subject: m.subject,
-        bodyText: m.bodyText ?? undefined,
-        receivedAt: m.receivedAt,
-      }))
-    );
+    const governedSummary = await governedAiCall<import("./ai/emailAi").ThreadSummaryResult>({
+      orgId,
+      userId: req.user.id,
+      actionType: "email_thread_summary",
+      inputRefs: { threadId: thread.id },
+      fn: async () => {
+        const result = await summarizeThread(
+          messages.map(m => ({
+            fromAddress: m.fromAddress,
+            fromName: m.fromName ?? undefined,
+            subject: m.subject,
+            bodyText: m.bodyText ?? undefined,
+            receivedAt: m.receivedAt,
+          }))
+        );
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+      },
+    });
+
+    if (governedSummary.blocked) {
+      return res.status(429).json({ error: governedSummary.reason || "AI rate limit reached" });
+    }
+
+    const summary = governedSummary.result;
 
     // Save summary to thread
     await db
@@ -625,17 +671,32 @@ router.post("/summary/daily", requireAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const summary = await generateEmailSummary(
-      recentMessages.map(m => ({
-        classification: m.classification ?? undefined,
-        subject: m.subject,
-        fromAddress: m.fromAddress,
-        snippet: m.snippet ?? undefined,
-        threadId: m.threadId,
-        receivedAt: m.receivedAt,
-      })),
-      'DAILY'
-    );
+    const governedDaily = await governedAiCall<import("./ai/emailAi").EmailSummaryDigest>({
+      orgId,
+      userId: req.user.id,
+      actionType: "email_daily_summary",
+      inputRefs: { messageCount: recentMessages.length },
+      fn: async () => {
+        const result = await generateEmailSummary(
+          recentMessages.map(m => ({
+            classification: m.classification ?? undefined,
+            subject: m.subject,
+            fromAddress: m.fromAddress,
+            snippet: m.snippet ?? undefined,
+            threadId: m.threadId,
+            receivedAt: m.receivedAt,
+          })),
+          'DAILY'
+        );
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+      },
+    });
+
+    if (governedDaily.blocked) {
+      return res.status(429).json({ error: governedDaily.reason || "AI rate limit reached" });
+    }
+
+    const summary = governedDaily.result;
 
     // Save summary
     await db.insert(emailSummaries).values({
@@ -704,17 +765,32 @@ router.post("/summary/weekly", requireAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const summary = await generateEmailSummary(
-      recentMessages.map(m => ({
-        classification: m.classification ?? undefined,
-        subject: m.subject,
-        fromAddress: m.fromAddress,
-        snippet: m.snippet ?? undefined,
-        threadId: m.threadId,
-        receivedAt: m.receivedAt,
-      })),
-      'WEEKLY'
-    );
+    const governedWeekly = await governedAiCall<import("./ai/emailAi").EmailSummaryDigest>({
+      orgId,
+      userId: req.user.id,
+      actionType: "email_weekly_summary",
+      inputRefs: { messageCount: recentMessages.length },
+      fn: async () => {
+        const result = await generateEmailSummary(
+          recentMessages.map(m => ({
+            classification: m.classification ?? undefined,
+            subject: m.subject,
+            fromAddress: m.fromAddress,
+            snippet: m.snippet ?? undefined,
+            threadId: m.threadId,
+            receivedAt: m.receivedAt,
+          })),
+          'WEEKLY'
+        );
+        return { result, completion: { usage: { prompt_tokens: 0, completion_tokens: 0 }, model: "gpt-4o" } };
+      },
+    });
+
+    if (governedWeekly.blocked) {
+      return res.status(429).json({ error: governedWeekly.reason || "AI rate limit reached" });
+    }
+
+    const summary = governedWeekly.result;
 
     // Save summary
     await db.insert(emailSummaries).values({

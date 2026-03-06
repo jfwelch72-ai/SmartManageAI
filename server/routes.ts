@@ -74,6 +74,9 @@ import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
 import aiRoutes from "./aiRoutes";
+import aiOnboardingRoutes from "./aiOnboardingRoutes";
+import aiScopeRoutes from "./aiScopeRoutes";
+import aiInsightsRoutes from "./aiInsightsRoutes";
 import notesRoutes from "./notesRoutes";
 import aiNotesRoutes from "./aiNotesRoutes";
 import taskRoutes from "./taskRoutes";
@@ -151,6 +154,7 @@ import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
 import rentalEquipmentRoutes from "./rentalEquipmentRoutes";
 import equipmentPlanRoutes from "./equipmentPlanRoutes";
 import mobileSyncRoutes from "./mobileSyncRoutes";
+import clientPortalRoutes from "./clientPortalRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
 
@@ -201,6 +205,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI PM + CFO routes
   app.use("/api", aiRoutes);
+
+  // Register AI Onboarding & Walkthrough routes
+  app.use("/api", aiOnboardingRoutes);
+
+  // Register AI Trade Discovery & Scope Prediction routes
+  app.use("/api", aiScopeRoutes);
+
+  // Register AI Insights routes
+  app.use("/api", aiInsightsRoutes);
 
   // Register onboarding library routes (read-only reference data)
   app.use(onboardingLibraryRoutes);
@@ -468,6 +481,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Mobile & Offline Sync Routes
   app.use(mobileSyncRoutes);
+
+  // Client Portal Routes (extracted from aiFeatureRoutes)
+  app.use("/api/ai-features", clientPortalRoutes);
 
   // Reports Routes (Takeoff & Estimate Reports)
   app.use(reportRoutes);

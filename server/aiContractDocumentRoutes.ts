@@ -8,6 +8,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import OpenAI from "openai";
 import { openai } from "./ai/openaiClient";
 import { ObjectStorageService } from "./objectStorage";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -54,7 +55,9 @@ interface ContractDocumentAnalysisResult {
 async function analyzeContractWithAI(
   documentUrl: string,
   documentName: string,
-  tradeType?: string
+  tradeType?: string,
+  orgId?: string,
+  userId?: string | null
 ): Promise<ContractDocumentAnalysisResult> {
   try {
     const tradeContext = tradeType ? `The analyzing organization specializes in ${tradeType.replace(/_/g, ' ').toLowerCase()} construction work.` : '';
@@ -187,6 +190,38 @@ Analyze the document and return the structured JSON with all contract details.`;
       });
     }
 
+    if (orgId) {
+      const governed = await governedAiCall({
+        orgId,
+        userId: userId ?? null,
+        actionType: "contract_document_analysis",
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages,
+            response_format: { type: 'json_object' },
+            temperature: 0.3,
+            max_tokens: 6000,
+          });
+
+          const content = completion.choices[0]?.message?.content;
+          if (!content) throw new Error('No response from OpenAI');
+
+          const parsed = JSON.parse(content) as ContractDocumentAnalysisResult;
+          return { result: parsed, completion };
+        },
+      });
+
+      if (governed.blocked) {
+        const err = new Error(governed.reason || "AI rate limit exceeded");
+        (err as any).governed = true;
+        (err as any).reason = governed.reason;
+        throw err;
+      }
+
+      return governed.result;
+    }
+
     const completion = await openai.chat.completions.create({
       model: AI_MODEL_GPT4O,
       messages,
@@ -201,6 +236,9 @@ Analyze the document and return the structured JSON with all contract details.`;
     const parsed = JSON.parse(content);
     return parsed as ContractDocumentAnalysisResult;
   } catch (error) {
+    if ((error as any)?.governed) {
+      throw error;
+    }
     console.error("AI contract document analysis error:", error);
     return {
       contractType: null,
@@ -418,7 +456,7 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
     // Background AI analysis
     (async () => {
       try {
-        const result = await analyzeContractWithAI(fileUrl, fileName, documentType || "CONTRACT");
+        const result = await analyzeContractWithAI(fileUrl, fileName, documentType || "CONTRACT", project.gcOrganizationId!, req.user?.id);
         
         await db
           .update(aiContractDocumentAnalysis)
@@ -467,6 +505,9 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
 
         console.log(`AI contract document analysis completed for: ${fileName}`);
       } catch (error) {
+        if ((error as any)?.governed) {
+          console.warn("AI contract analysis blocked by governance:", (error as any).reason);
+        }
         console.error("Background AI contract analysis error:", error);
         await db
           .update(aiContractDocumentAnalysis)
@@ -480,6 +521,9 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
     })();
 
   } catch (error) {
+    if ((error as any)?.governed) {
+      return res.status(429).json({ error: (error as any).reason || "AI rate limit exceeded" });
+    }
     console.error("Create AI contract document analysis error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -519,7 +563,7 @@ router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUP
     // Background reanalysis
     (async () => {
       try {
-        const result = await analyzeContractWithAI(existing.documentUrl, existing.documentName, existing.documentType || "CONTRACT");
+        const result = await analyzeContractWithAI(existing.documentUrl, existing.documentName, existing.documentType || "CONTRACT", existing.organizationId, req.user?.id);
         
         await db
           .update(aiContractDocumentAnalysis)
@@ -568,6 +612,9 @@ router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUP
 
         console.log(`AI contract document reanalysis completed for: ${existing.documentName}`);
       } catch (error) {
+        if ((error as any)?.governed) {
+          console.warn("AI contract reanalysis blocked by governance:", (error as any).reason);
+        }
         console.error("Background AI contract reanalysis error:", error);
         await db
           .update(aiContractDocumentAnalysis)
@@ -581,6 +628,9 @@ router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUP
     })();
 
   } catch (error) {
+    if ((error as any)?.governed) {
+      return res.status(429).json({ error: (error as any).reason || "AI rate limit exceeded" });
+    }
     console.error("Reanalyze AI contract document error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -754,7 +804,7 @@ router.post("/ai/contract-document-analysis", requireAuth, requireRole("SUPER_AD
 
     (async () => {
       try {
-        const result = await analyzeContractWithAI(documentUrl, documentName, org?.tradeType || undefined);
+        const result = await analyzeContractWithAI(documentUrl, documentName, org?.tradeType || undefined, targetOrgId, req.user?.id);
         
         await db
           .update(aiContractDocumentAnalysis)
@@ -803,6 +853,9 @@ router.post("/ai/contract-document-analysis", requireAuth, requireRole("SUPER_AD
 
         console.log(`AI contract document analysis completed for: ${documentName}`);
       } catch (error) {
+        if ((error as any)?.governed) {
+          console.warn("AI contract analysis blocked by governance:", (error as any).reason);
+        }
         console.error("Background AI contract analysis error:", error);
         await db
           .update(aiContractDocumentAnalysis)
@@ -866,7 +919,9 @@ router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, require
         const result = await analyzeContractWithAI(
           existingAnalysis.documentUrl, 
           existingAnalysis.documentName,
-          org?.tradeType || undefined
+          org?.tradeType || undefined,
+          existingAnalysis.organizationId,
+          req.user?.id
         );
         
         await db
@@ -916,6 +971,9 @@ router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, require
 
         console.log(`AI contract document re-analysis completed for: ${existingAnalysis.documentName}`);
       } catch (error) {
+        if ((error as any)?.governed) {
+          console.warn("AI contract re-analysis blocked by governance:", (error as any).reason);
+        }
         console.error("Background AI contract re-analysis error:", error);
         await db
           .update(aiContractDocumentAnalysis)

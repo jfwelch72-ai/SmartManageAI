@@ -13,6 +13,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import { extractDocumentContent } from "./ai/documentExtractor";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -63,7 +64,7 @@ interface BidDocumentAnalysisResult {
   confidenceScore: number;
 }
 
-async function analyzeDocumentWithAI(documentUrl: string, documentName: string, tradeType?: string): Promise<BidDocumentAnalysisResult> {
+async function analyzeDocumentWithAI(documentUrl: string, documentName: string, tradeType?: string, governanceOpts?: { userId: string | null; orgId: string }): Promise<BidDocumentAnalysisResult> {
   const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
   
   const userPrompt = `Analyze this bid/scope document and extract all relevant information.
@@ -129,6 +130,31 @@ Respond with JSON in this format:
         role: 'user',
         content: `${userPrompt}\n\nNote: The document could not be visually rendered. Analyze based on the document name and any available context.`
       });
+    }
+
+    if (governanceOpts) {
+      const governed = await governedAiCall({
+        orgId: governanceOpts.orgId,
+        userId: governanceOpts.userId,
+        actionType: "bid_document_analysis",
+        inputRefs: { documentName, documentUrl },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages,
+            response_format: { type: 'json_object' },
+            temperature: 0.3,
+            max_tokens: 4096,
+          });
+          const content = completion.choices[0]?.message?.content;
+          if (!content) throw new Error('No response from OpenAI');
+          return { result: JSON.parse(content) as BidDocumentAnalysisResult, completion };
+        },
+      });
+      if (governed.blocked) {
+        throw new Error(`AI_GOVERNANCE_BLOCKED:${governed.reason}`);
+      }
+      return governed.result;
     }
 
     const completion = await openai.chat.completions.create({
@@ -342,7 +368,7 @@ router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIM
     // Background AI analysis
     (async () => {
       try {
-        const result = await analyzeDocumentWithAI(fileUrl, fileName, org?.tradeType || undefined);
+        const result = await analyzeDocumentWithAI(fileUrl, fileName, org?.tradeType || undefined, { userId: req.user?.id || null, orgId: targetOrgId });
         
         await db
           .update(aiBidDocumentAnalysis)
@@ -428,7 +454,7 @@ router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", 
           .where(eq(organizations.id, existing.organizationId))
           .limit(1);
 
-        const result = await analyzeDocumentWithAI(existing.documentUrl, existing.documentName, org?.tradeType || undefined);
+        const result = await analyzeDocumentWithAI(existing.documentUrl, existing.documentName, org?.tradeType || undefined, { userId: req.user?.id || null, orgId: existing.organizationId });
         
         await db
           .update(aiBidDocumentAnalysis)
@@ -1086,20 +1112,32 @@ Be thorough in extracting scope items. Include quantities and units when availab
         });
       }
 
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT4O,
-        messages,
-        temperature: 0.3,
-        max_tokens: 4096,
-        response_format: { type: "json_object" },
+      const governed = await governedAiCall({
+        orgId: orgId || "",
+        userId: req.user?.id || null,
+        actionType: "bid_document_reanalysis",
+        inputRefs: { documentCount: documents.length, documentNames: documents.map((d: any) => d.name) },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages,
+            temperature: 0.3,
+            max_tokens: 4096,
+            response_format: { type: "json_object" },
+          });
+          const content = completion.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error('No response from AI');
+          }
+          return { result: JSON.parse(content), completion };
+        },
       });
 
-      const content = completion.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response from AI');
+      if (governed.blocked) {
+        return res.status(429).json({ error: "AI rate limit exceeded", reason: governed.reason });
       }
 
-      const result = JSON.parse(content);
+      const result = governed.result;
       
       console.log(`[AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
       

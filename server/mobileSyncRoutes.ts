@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
-import { mobileDevices, offlineSyncQueue } from "@shared/schema";
-import { eq, and, count, max, desc } from "drizzle-orm";
+import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts } from "@shared/schema";
+import { eq, and, count, max, desc, gte } from "drizzle-orm";
+import { z } from "zod";
+import crypto from "crypto";
 
 const router = Router();
 
@@ -215,6 +217,190 @@ router.patch("/api/ai-features/mobile-sync/conflicts/:id", requireAuth, async (r
   } catch (error: any) {
     console.error("Resolve conflict error:", error.message);
     res.status(500).json({ error: "Failed to resolve conflict" });
+  }
+});
+
+const deviceRegisterSchema = z.object({
+  deviceId: z.string(),
+  platform: z.enum(["IOS", "ANDROID", "WEB"]),
+  appVersion: z.string().optional(),
+  deviceModel: z.string().optional(),
+  pushToken: z.string().optional(),
+});
+
+router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const organizationId = req.user?.organizationId;
+    if (!userId || !organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const parsed = deviceRegisterSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+
+    const { deviceId, platform, appVersion, deviceModel, pushToken } = parsed.data;
+    const syncToken = crypto.randomBytes(16).toString("hex");
+
+    const existing = await db.select()
+      .from(mobileDevices)
+      .where(eq(mobileDevices.deviceId, deviceId))
+      .limit(1);
+
+    let device;
+    if (existing.length > 0) {
+      [device] = await db.update(mobileDevices)
+        .set({
+          platform: platform as any,
+          appVersion,
+          deviceModel,
+          pushToken,
+          syncToken,
+          isActive: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(mobileDevices.deviceId, deviceId))
+        .returning();
+    } else {
+      [device] = await db.insert(mobileDevices).values({
+        organizationId,
+        userId,
+        deviceId,
+        platform: platform as any,
+        appVersion,
+        deviceModel,
+        pushToken,
+        syncToken,
+      }).returning();
+    }
+
+    res.json({
+      success: true,
+      registrationId: device.id,
+      syncToken,
+      syncEndpoint: "/api/ai-features/mobile/sync",
+    });
+  } catch (error) {
+    console.error("Device register error:", error);
+    res.status(500).json({ error: "Failed to register device" });
+  }
+});
+
+router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const organizationId = req.user?.organizationId;
+    if (!userId || !organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { lastSyncAt, deviceId } = req.query;
+    const syncTime = lastSyncAt ? new Date(lastSyncAt as string) : new Date(0);
+    const nextSyncToken = crypto.randomBytes(8).toString("hex");
+
+    const projectChanges = await db.select()
+      .from(projects)
+      .where(and(
+        eq(projects.gcOrganizationId, organizationId),
+        gte(projects.updatedAt, syncTime)
+      ))
+      .limit(50);
+
+    const shiftChanges = await db.select()
+      .from(timeClockShifts)
+      .where(and(
+        eq(timeClockShifts.userId, userId),
+        gte(timeClockShifts.updatedAt, syncTime)
+      ))
+      .limit(100);
+
+    if (deviceId) {
+      await db.update(mobileDevices)
+        .set({ lastSyncAt: new Date(), syncToken: nextSyncToken })
+        .where(eq(mobileDevices.deviceId, deviceId as string));
+    }
+
+    res.json({
+      syncedAt: new Date().toISOString(),
+      nextSyncToken,
+      changes: {
+        projects: {
+          created: projectChanges.filter(p => p.createdAt >= syncTime),
+          updated: projectChanges.filter(p => p.createdAt < syncTime),
+          deleted: [],
+        },
+        timeClock: {
+          shifts: shiftChanges,
+          events: [],
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Mobile sync error:", error);
+    res.status(500).json({ error: "Failed to sync" });
+  }
+});
+
+router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    const organizationId = req.user?.organizationId;
+    if (!userId || !organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { deviceId, changes } = req.body;
+    const processed: any = { timeClockEvents: [], dailyLogs: [], photos: [] };
+
+    if (changes?.timeClockEvents) {
+      for (const event of changes.timeClockEvents) {
+        await db.insert(mobilePendingUploads).values({
+          deviceId,
+          localId: event.localId,
+          recordType: "TIME_CLOCK_EVENT",
+          recordDataJson: JSON.stringify(event),
+          status: "PENDING",
+        });
+        processed.timeClockEvents.push({
+          localId: event.localId,
+          status: "QUEUED",
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      processed,
+      conflicts: [],
+      serverTime: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Mobile upload sync error:", error);
+    res.status(500).json({ error: "Failed to upload changes" });
+  }
+});
+
+router.get("/api/ai-features/mobile/devices", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const devices = await db.select()
+      .from(mobileDevices)
+      .where(and(
+        eq(mobileDevices.userId, userId),
+        eq(mobileDevices.isActive, true)
+      ))
+      .orderBy(desc(mobileDevices.lastSyncAt));
+
+    res.json({ devices });
+  } catch (error) {
+    console.error("Get devices error:", error);
+    res.status(500).json({ error: "Failed to get devices" });
   }
 });
 
