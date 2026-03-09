@@ -751,12 +751,6 @@ export const NavigationConfig = {
       testId: "nav-enterprise-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
-    {
-      href: "/kpi-management",
-      label: "KPI Management",
-      testId: "nav-kpi-management",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" || role === "HR_MANAGER",
-    },
   ],
 
   toolsMenu: [
@@ -764,12 +758,6 @@ export const NavigationConfig = {
       href: "/calculator",
       label: "Calculator",
       testId: "nav-calculator",
-      visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
-      href: "/my-kpis",
-      label: "My KPIs",
-      testId: "nav-my-kpis",
       visible: (role?: string) => hasContractorAccess(role),
     },
     {

@@ -27,6 +27,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Progress } from "@/components/ui/progress";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Link } from "wouter";
+import KpiManagementPage from "@/pages/kpi-management";
+import MyKpisPage from "@/pages/my-kpis";
 import {
   Search,
   Eye,
@@ -1345,6 +1347,7 @@ export default function ManageWorkersPage() {
   const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
   const canManageWorkers = isAdmin || isManager;
   const canViewAnalytics = isAdmin || isManager;
+  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER";
   const defaultTab = canManageWorkers ? "workers" : "ratings";
   const [activeTab, setActiveTab] = useState(defaultTab);
 
@@ -1354,8 +1357,10 @@ export default function ManageWorkersPage() {
     opts.push({ value: "ratings", label: "Ratings" });
     opts.push({ value: "rewards", label: "Rewards" });
     if (canViewAnalytics) opts.push({ value: "analytics", label: "Analytics" });
+    if (canManageKpis) opts.push({ value: "kpi-management", label: "KPI Management" });
+    opts.push({ value: "my-kpis", label: "My KPIs" });
     return opts;
-  }, [canManageWorkers, canViewAnalytics]);
+  }, [canManageWorkers, canViewAnalytics, canManageKpis]);
 
   if (!user) return <div className="p-6 space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /></div>;
 
@@ -1391,12 +1396,16 @@ export default function ManageWorkersPage() {
               <TabsTrigger value="ratings" data-testid="tab-ratings"><Star className="w-4 h-4 mr-1.5" />Ratings</TabsTrigger>
               <TabsTrigger value="rewards" data-testid="tab-rewards"><Gift className="w-4 h-4 mr-1.5" />Rewards</TabsTrigger>
               {canViewAnalytics && <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>}
+              {canManageKpis && <TabsTrigger value="kpi-management" data-testid="tab-kpi-management"><Target className="w-4 h-4 mr-1.5" />KPI Management</TabsTrigger>}
+              <TabsTrigger value="my-kpis" data-testid="tab-my-kpis"><Target className="w-4 h-4 mr-1.5" />My KPIs</TabsTrigger>
             </TabsList>
           )}
           {canManageWorkers && <TabsContent value="workers"><WorkersTab /></TabsContent>}
           <TabsContent value="ratings"><RatingTab /></TabsContent>
           <TabsContent value="rewards"><RewardsTab /></TabsContent>
           {canViewAnalytics && <TabsContent value="analytics"><AnalyticsTab /></TabsContent>}
+          {canManageKpis && <TabsContent value="kpi-management"><KpiManagementPage /></TabsContent>}
+          <TabsContent value="my-kpis"><MyKpisPage /></TabsContent>
         </Tabs>
       </div>
     </div>
