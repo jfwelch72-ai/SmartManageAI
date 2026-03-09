@@ -84,7 +84,7 @@ export default function CostBuilderSidebar({
             })}
           </nav>
 
-          <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 border-t lg:border-t-0 lg:border-l bg-muted/30 shrink-0">
+          <div className="flex flex-col items-start gap-1 px-4 py-2.5 border-t lg:border-t-0 lg:border-l bg-muted/30 shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">Direct Cost</span>
               <span className="font-mono text-xs font-medium">${directCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
