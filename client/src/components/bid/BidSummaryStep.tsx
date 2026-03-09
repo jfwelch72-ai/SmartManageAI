@@ -58,7 +58,7 @@ export default function BidSummaryStep({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
-            Step 5: Bid Summary & Pricing
+            Step 6: Bid Summary & Pricing
           </CardTitle>
           <CardDescription>Review costs and set your overhead and profit margins</CardDescription>
         </CardHeader>
@@ -184,7 +184,7 @@ export default function BidSummaryStep({
           )}
 
           <div className="flex justify-between pt-4">
-            <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-5">
+            <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-6">
               Back to Subcontractors
             </Button>
             {canEdit && (

@@ -50,7 +50,7 @@ export default function BidMaterialsStep({
         <div>
           <CardTitle className="flex items-center gap-2">
             <Package className="w-5 h-5" />
-            Step 2: Material & Supply Quotes
+            Step 3: Material & Supply Quotes
           </CardTitle>
           <CardDescription>Get quotes from suppliers for materials identified in the Scope of Work</CardDescription>
         </div>
@@ -185,10 +185,10 @@ export default function BidMaterialsStep({
               ))}
             </div>
             <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-2">
+              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-3">
                 Back to Scope of Work
               </Button>
-              <Button onClick={onNextStep} data-testid="button-next-step-2">
+              <Button onClick={onNextStep} data-testid="button-next-step-3">
                 Continue to Equipment
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>

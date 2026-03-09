@@ -43,7 +43,7 @@ export default function BidEquipmentStep({
         <div>
           <CardTitle className="flex items-center gap-2">
             <Truck className="w-5 h-5" />
-            Step 3: Equipment Selection
+            Step 4: Equipment Selection
           </CardTitle>
           <CardDescription>Select equipment identified in the Scope of Work from your fleet or rentals</CardDescription>
         </div>
@@ -157,10 +157,10 @@ export default function BidEquipmentStep({
               ))}
             </div>
             <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-3">
+              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-4">
                 Back to Materials
               </Button>
-              <Button onClick={onNextStep} data-testid="button-next-step-3">
+              <Button onClick={onNextStep} data-testid="button-next-step-4">
                 Continue to Subcontractors
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>

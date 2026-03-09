@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Check, ChevronRight, FileText, Package, Truck, Users, Calculator } from "lucide-react";
 
-type CostBuilderStep = 1 | 2 | 3 | 4 | 5;
+type CostBuilderStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface StepDef {
   id: number;

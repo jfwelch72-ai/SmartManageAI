@@ -102,6 +102,27 @@ export const planDocuments = pgTable("plan_documents", {
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
 });
 
+export const bidDocuments = pgTable("bid_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  type: documentTypeEnum("type").notNull().default("OTHER"),
+  title: text("title").notNull(),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  objectKey: text("object_key"),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+});
+
+export const insertBidDocumentSchema = createInsertSchema(bidDocuments).omit({
+  id: true,
+  uploadedAt: true,
+});
+export type InsertBidDocument = z.infer<typeof insertBidDocumentSchema>;
+export type BidDocument = typeof bidDocuments.$inferSelect;
+
 // Time Entries table
 export const timeEntries = pgTable("time_entries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

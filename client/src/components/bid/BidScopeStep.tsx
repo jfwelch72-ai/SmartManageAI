@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calculator, Plus, FileText, ChevronRight } from "lucide-react";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 
 interface BidScopeStepProps {
@@ -12,6 +12,7 @@ interface BidScopeStepProps {
   createEstimatePending: boolean;
   onCreateEstimate: () => void;
   onNavigateEstimate: () => void;
+  onPrevStep?: () => void;
   onNextStep: () => void;
 }
 
@@ -23,6 +24,7 @@ export default function BidScopeStep({
   createEstimatePending,
   onCreateEstimate,
   onNavigateEstimate,
+  onPrevStep,
   onNextStep,
 }: BidScopeStepProps) {
   return (
@@ -31,7 +33,7 @@ export default function BidScopeStep({
         <div>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
-            Step 1: Scope of Work
+            Step 2: Scope of Work
           </CardTitle>
           <CardDescription>Start by defining the work scope - this will auto-populate material, equipment, and subcontractor requirements</CardDescription>
         </div>
@@ -125,11 +127,19 @@ export default function BidScopeStep({
               Edit Estimate Line Items
             </Button>
 
-            <div className="flex justify-end pt-4">
-              <Button onClick={onNextStep} data-testid="button-next-step-1">
-                Continue to Materials
-                <ChevronRight className="w-4 h-4 ml-2" />
-              </Button>
+            <div className="flex justify-between pt-4">
+              {onPrevStep && (
+                <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-2">
+                  <ChevronLeft className="w-4 h-4 mr-2" />
+                  Back to Plans
+                </Button>
+              )}
+              <div className="ml-auto">
+                <Button onClick={onNextStep} data-testid="button-next-step-2">
+                  Continue to Materials
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
             </div>
           </div>
         )}

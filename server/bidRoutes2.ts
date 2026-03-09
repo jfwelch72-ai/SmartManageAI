@@ -4,7 +4,7 @@ import {
   bids, estimates, estimateLineItems, projects, users,
   insertBidSchema, scopeItems,
   subcontractors, subcontractorContracts,
-  bidEquipmentSelections,
+  bidEquipmentSelections, bidDocuments,
 } from "@shared/schema";
 import { eq, desc, inArray, sql, and, or } from "drizzle-orm";
 import { z } from "zod";
@@ -1782,6 +1782,80 @@ router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN
     pdfStream.pipe(res);
   } catch (error) {
     console.error("Generate customer quote PDF error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================
+// Bid Documents (Plans & Takeoff)
+// ==================
+
+router.get("/api/bids/:code/documents", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const docs = await db.select().from(bidDocuments).where(eq(bidDocuments.bidId, bid.id)).orderBy(desc(bidDocuments.uploadedAt));
+    res.json(docs);
+  } catch (error) {
+    console.error("Get bid documents error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const bodySchema = z.object({
+      title: z.string().min(1),
+      fileName: z.string().min(1),
+      fileUrl: z.string().min(1),
+      objectKey: z.string().optional(),
+      fileSize: z.number().optional(),
+      mimeType: z.string().optional(),
+      type: z.enum(["PLANS", "SPECS", "TAKEOFF", "OTHER"]).default("OTHER"),
+    });
+
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
+    const data = parsed.data;
+
+    const [doc] = await db.insert(bidDocuments).values({
+      bidId: bid.id,
+      title: data.title,
+      fileName: data.fileName,
+      fileUrl: data.fileUrl,
+      objectKey: data.objectKey,
+      fileSize: data.fileSize,
+      mimeType: data.mimeType,
+      type: data.type,
+      uploadedById: req.user!.id,
+    }).returning();
+
+    res.status(201).json(doc);
+  } catch (error) {
+    console.error("Create bid document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const [doc] = await db.select().from(bidDocuments).where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id))).limit(1);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    await db.delete(bidDocuments).where(eq(bidDocuments.id, req.params.docId));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete bid document error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

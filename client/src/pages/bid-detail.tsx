@@ -2,7 +2,7 @@ import { useState } from "react";
 import { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Edit, FileText, Package, Truck, Users, Calculator } from "lucide-react";
+import { Edit, FileText, Package, Truck, Users, Calculator, Upload } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -18,6 +18,7 @@ import { format } from "date-fns";
 import type { UploadResult } from "@uppy/core";
 import { apiRequest } from "@/lib/queryClient";
 
+import BidPlansStep from "@/components/bid/BidPlansStep";
 import BidScopeStep from "@/components/bid/BidScopeStep";
 import BidMaterialsStep from "@/components/bid/BidMaterialsStep";
 import BidEquipmentStep from "@/components/bid/BidEquipmentStep";
@@ -35,7 +36,7 @@ interface OwnedEquipment { id: string; equipmentCode: string; name: string; type
 interface RentalEquipment { id: string; vendorId: string; name: string; equipmentType: string; make: string | null; model: string | null; hourlyRate: string | null; dailyRate: string | null; weeklyRate: string | null; monthlyRate: string | null; deliveryFee: string | null; vendorName: string; vendorCode: string; }
 interface UserOption { id: string; firstName: string; lastName: string; role: string; isActive: boolean; }
 
-type CostBuilderStep = 1 | 2 | 3 | 4 | 5;
+type CostBuilderStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 export default function BidDetailPage() {
   const [, setLocation] = useLocation();
@@ -83,6 +84,7 @@ export default function BidDetailPage() {
     onEstimateCreated: () => { setLocation(`/bids/${bidCode}/estimate`); },
   });
 
+  const { data: bidDocuments = [] } = useQuery<{ id: string }[]>({ queryKey: ["/api/bids", bidCode, "documents"], enabled: !!bidCode });
   const { data: quotes = [], isLoading: quotesLoading } = useQuery<BidSubcontractorQuote[]>({ queryKey: ["/api/bids", bidCode, "quotes"], enabled: !!bidCode });
   const { data: materialQuotes = [], isLoading: materialQuotesLoading } = useQuery<BidMaterialQuote[]>({ queryKey: ["/api/bids", bidCode, "material-quotes"], enabled: !!bidCode });
   const { data: equipmentSelections = [], isLoading: equipmentLoading } = useQuery<BidEquipmentSelection[]>({ queryKey: ["/api/bids", bid?.id, "equipment"], enabled: !!bid?.id });
@@ -205,13 +207,14 @@ export default function BidDetailPage() {
   const finalBidAmount = directCost + overheadAmount + profitAmount;
 
   const steps = [
-    { id: 1, name: "Scope of Work", icon: FileText, cost: estimateTotals.laborCost + estimateTotals.materialCost },
-    { id: 2, name: "Materials & Supplies", icon: Package, cost: totalMaterialCost },
-    { id: 3, name: "Equipment", icon: Truck, cost: totalEquipmentCostCalc },
-    { id: 4, name: "Subcontractors", icon: Users, cost: totalSubcontractorCost },
-    { id: 5, name: "Bid Summary", icon: Calculator, cost: finalBidAmount },
+    { id: 1, name: "Plans & Takeoff", icon: Upload, cost: 0 },
+    { id: 2, name: "Scope of Work", icon: FileText, cost: estimateTotals.laborCost + estimateTotals.materialCost },
+    { id: 3, name: "Materials & Supplies", icon: Package, cost: totalMaterialCost },
+    { id: 4, name: "Equipment", icon: Truck, cost: totalEquipmentCostCalc },
+    { id: 5, name: "Subcontractors", icon: Users, cost: totalSubcontractorCost },
+    { id: 6, name: "Bid Summary", icon: Calculator, cost: finalBidAmount },
   ];
-  const stepStatus: Record<number, boolean> = { 1: (estimate?.lineItems?.length || 0) > 0, 2: materialQuotes.length > 0, 3: equipmentSelections.length > 0, 4: quotes.length > 0, 5: true };
+  const stepStatus: Record<number, boolean> = { 1: bidDocuments.length > 0, 2: (estimate?.lineItems?.length || 0) > 0, 3: materialQuotes.length > 0, 4: equipmentSelections.length > 0, 5: quotes.length > 0, 6: true };
 
   const derivedMaterialRequirements = estimate?.lineItems?.filter(item => Number(item.materialCost) > 0 || ["CONCRETE", "FLATWORK", "EXCAVATION", "GRADING", "STONE", "REBAR", "WIRE_MESH"].includes(item.category)).map(item => ({ id: item.id, category: item.category, description: item.description, unit: item.unit, quantity: Number(item.quantity), materialCost: Number(item.materialCost), needsVendorSelection: !materialQuotes.some(mq => mq.materialName?.toLowerCase().includes(item.description.toLowerCase())) })) || [];
   const derivedEquipmentRequirements = estimate?.lineItems?.filter(item => Number(item.equipmentCost) > 0 || ["EXCAVATION", "GRADING", "DEMOLITION", "HAULING"].includes(item.category)).map(item => ({ id: item.id, category: item.category, description: item.description, equipmentCost: Number(item.equipmentCost), needsEquipmentSelection: !equipmentSelections.some(eq => eq.notes?.toLowerCase().includes(item.description.toLowerCase())) })) || [];
@@ -258,11 +261,12 @@ export default function BidDetailPage() {
           <CostBuilderSidebar currentStep={currentStep} onStepChange={setCurrentStep} steps={steps} stepStatus={stepStatus} directCost={directCost} overheadPercent={overheadPercent} overheadAmount={overheadAmount} profitPercent={profitPercent} profitAmount={profitAmount} finalBidAmount={finalBidAmount} />
 
           <div className="flex-1 min-w-0 space-y-6">
-            {currentStep === 1 && <BidScopeStep estimate={estimate} estimateLoading={estimateLoading} canEdit={canEdit} bidCode={bidCode} createEstimatePending={mutations.createEstimateMutation.isPending} onCreateEstimate={() => mutations.createEstimateMutation.mutate()} onNavigateEstimate={() => setLocation(`/bids/${bidCode}/estimate`)} onNextStep={() => setCurrentStep(2)} />}
-            {currentStep === 2 && <BidMaterialsStep materialQuotes={materialQuotes} materialQuotesLoading={materialQuotesLoading} totalMaterialCost={totalMaterialCost} derivedMaterialRequirements={derivedMaterialRequirements} canEdit={canEdit} toggleSelectionPending={mutations.toggleMaterialQuoteSelection.isPending} onAddQuote={handleAddMaterialQuote} onEditQuote={handleEditMaterialQuote} onDeleteQuote={handleDeleteMaterialQuote} onToggleSelection={(qId, sel) => mutations.toggleMaterialQuoteSelection.mutate({ quoteId: qId, isSelected: sel })} onPrevStep={() => setCurrentStep(1)} onNextStep={() => setCurrentStep(3)} />}
-            {currentStep === 3 && <BidEquipmentStep equipmentSelections={equipmentSelections} equipmentLoading={equipmentLoading} totalEquipmentCost={totalEquipmentCostCalc} derivedEquipmentRequirements={derivedEquipmentRequirements} canEdit={canEdit} onAddEquipment={handleAddEquipment} onEditEquipment={handleEditEquipmentSelection} onDeleteEquipment={handleDeleteEquipmentSelection} onPrevStep={() => setCurrentStep(2)} onNextStep={() => setCurrentStep(4)} />}
-            {currentStep === 4 && <BidSubcontractorsStep quotes={quotes} quotesLoading={quotesLoading} totalSubcontractorCost={totalSubcontractorCost} derivedSubRequirements={derivedSubRequirements} canEdit={canEdit} toggleSelectionPending={mutations.toggleQuoteSelection.isPending} onAddQuote={handleAddQuote} onEditQuote={handleEditQuote} onDeleteQuote={handleDeleteQuote} onToggleSelection={(qId, sel) => mutations.toggleQuoteSelection.mutate({ quoteId: qId, isSelected: sel })} onPrevStep={() => setCurrentStep(3)} onNextStep={() => setCurrentStep(5)} />}
-            {currentStep === 5 && <BidSummaryStep bid={bid} bidCode={bidCode} totalMaterialCost={totalMaterialCost} totalEquipmentCost={totalEquipmentCostCalc} laborCost={estimateTotals.laborCost} totalSubcontractorCost={totalSubcontractorCost} directCost={directCost} overheadPercent={overheadPercent} overheadAmount={overheadAmount} profitPercent={profitPercent} profitAmount={profitAmount} finalBidAmount={finalBidAmount} canEdit={canEdit} canGeneratePDFs={canGenerateBidPDFs(user?.role)} userRole={user?.role || ""} onOverheadChange={setOverheadPercent} onProfitChange={setProfitPercent} onPrevStep={() => setCurrentStep(4)} onAwardBid={() => setShowAwardDialog(true)} onNavigateEstimate={() => setLocation(`/bids/${bidCode}/estimate`)} />}
+            {currentStep === 1 && <BidPlansStep bidId={bid.id} bidCode={bidCode} canEdit={canEdit} onNextStep={() => setCurrentStep(2)} />}
+            {currentStep === 2 && <BidScopeStep estimate={estimate} estimateLoading={estimateLoading} canEdit={canEdit} bidCode={bidCode} createEstimatePending={mutations.createEstimateMutation.isPending} onCreateEstimate={() => mutations.createEstimateMutation.mutate()} onNavigateEstimate={() => setLocation(`/bids/${bidCode}/estimate`)} onPrevStep={() => setCurrentStep(1)} onNextStep={() => setCurrentStep(3)} />}
+            {currentStep === 3 && <BidMaterialsStep materialQuotes={materialQuotes} materialQuotesLoading={materialQuotesLoading} totalMaterialCost={totalMaterialCost} derivedMaterialRequirements={derivedMaterialRequirements} canEdit={canEdit} toggleSelectionPending={mutations.toggleMaterialQuoteSelection.isPending} onAddQuote={handleAddMaterialQuote} onEditQuote={handleEditMaterialQuote} onDeleteQuote={handleDeleteMaterialQuote} onToggleSelection={(qId, sel) => mutations.toggleMaterialQuoteSelection.mutate({ quoteId: qId, isSelected: sel })} onPrevStep={() => setCurrentStep(2)} onNextStep={() => setCurrentStep(4)} />}
+            {currentStep === 4 && <BidEquipmentStep equipmentSelections={equipmentSelections} equipmentLoading={equipmentLoading} totalEquipmentCost={totalEquipmentCostCalc} derivedEquipmentRequirements={derivedEquipmentRequirements} canEdit={canEdit} onAddEquipment={handleAddEquipment} onEditEquipment={handleEditEquipmentSelection} onDeleteEquipment={handleDeleteEquipmentSelection} onPrevStep={() => setCurrentStep(3)} onNextStep={() => setCurrentStep(5)} />}
+            {currentStep === 5 && <BidSubcontractorsStep quotes={quotes} quotesLoading={quotesLoading} totalSubcontractorCost={totalSubcontractorCost} derivedSubRequirements={derivedSubRequirements} canEdit={canEdit} toggleSelectionPending={mutations.toggleQuoteSelection.isPending} onAddQuote={handleAddQuote} onEditQuote={handleEditQuote} onDeleteQuote={handleDeleteQuote} onToggleSelection={(qId, sel) => mutations.toggleQuoteSelection.mutate({ quoteId: qId, isSelected: sel })} onPrevStep={() => setCurrentStep(4)} onNextStep={() => setCurrentStep(6)} />}
+            {currentStep === 6 && <BidSummaryStep bid={bid} bidCode={bidCode} totalMaterialCost={totalMaterialCost} totalEquipmentCost={totalEquipmentCostCalc} laborCost={estimateTotals.laborCost} totalSubcontractorCost={totalSubcontractorCost} directCost={directCost} overheadPercent={overheadPercent} overheadAmount={overheadAmount} profitPercent={profitPercent} profitAmount={profitAmount} finalBidAmount={finalBidAmount} canEdit={canEdit} canGeneratePDFs={canGenerateBidPDFs(user?.role)} userRole={user?.role || ""} onOverheadChange={setOverheadPercent} onProfitChange={setProfitPercent} onPrevStep={() => setCurrentStep(5)} onAwardBid={() => setShowAwardDialog(true)} onNavigateEstimate={() => setLocation(`/bids/${bidCode}/estimate`)} />}
           </div>
         </div>
       </main>

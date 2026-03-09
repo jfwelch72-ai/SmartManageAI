@@ -48,7 +48,7 @@ export default function BidSubcontractorsStep({
         <div>
           <CardTitle className="flex items-center gap-2">
             <Users className="w-5 h-5" />
-            Step 4: Subcontractor Quotes
+            Step 5: Subcontractor Quotes
           </CardTitle>
           <CardDescription>Get quotes from subcontractors for specialized work</CardDescription>
         </div>
@@ -167,10 +167,10 @@ export default function BidSubcontractorsStep({
               ))}
             </div>
             <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-4">
+              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-5">
                 Back to Equipment
               </Button>
-              <Button onClick={onNextStep} data-testid="button-next-step-4">
+              <Button onClick={onNextStep} data-testid="button-next-step-5">
                 Continue to Bid Summary
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>
