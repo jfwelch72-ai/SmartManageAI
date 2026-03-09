@@ -254,28 +254,55 @@ export default function PayrollManagementPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="flex w-full max-w-2xl overflow-x-auto whitespace-nowrap">
-          <TabsTrigger value="overview" data-testid="tab-overview">
+        <div className="block md:hidden mb-4">
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="w-full" data-testid="select-payroll-tab-mobile">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="overview" data-testid="select-tab-overview">
+                <span className="flex items-center gap-1.5"><TrendingUp className="w-4 h-4" /> Overview</span>
+              </SelectItem>
+              <SelectItem value="time-entries" data-testid="select-tab-time-entries">
+                <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" /> Time Entries</span>
+              </SelectItem>
+              <SelectItem value="workers" data-testid="select-tab-workers">
+                <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> Workers</span>
+              </SelectItem>
+              <SelectItem value="pay-runs" data-testid="select-tab-pay-runs">
+                <span className="flex items-center gap-1.5"><Receipt className="w-4 h-4" /> Pay Runs</span>
+              </SelectItem>
+              <SelectItem value="deductions" data-testid="select-tab-deductions">
+                <span className="flex items-center gap-1.5"><Shield className="w-4 h-4" /> Deductions</span>
+              </SelectItem>
+              <SelectItem value="archived" data-testid="select-tab-archived">
+                <span className="flex items-center gap-1.5"><Archive className="w-4 h-4" /> Archived</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <TabsList className="hidden md:flex w-full">
+          <TabsTrigger value="overview" className="flex-1" data-testid="tab-overview">
             <TrendingUp className="w-4 h-4 mr-1.5" />
             Overview
           </TabsTrigger>
-          <TabsTrigger value="time-entries" data-testid="tab-time-entries">
+          <TabsTrigger value="time-entries" className="flex-1" data-testid="tab-time-entries">
             <Clock className="w-4 h-4 mr-1.5" />
             Time Entries
           </TabsTrigger>
-          <TabsTrigger value="workers" data-testid="tab-workers">
+          <TabsTrigger value="workers" className="flex-1" data-testid="tab-workers">
             <Users className="w-4 h-4 mr-1.5" />
             Workers
           </TabsTrigger>
-          <TabsTrigger value="pay-runs" data-testid="tab-pay-runs">
+          <TabsTrigger value="pay-runs" className="flex-1" data-testid="tab-pay-runs">
             <Receipt className="w-4 h-4 mr-1.5" />
             Pay Runs
           </TabsTrigger>
-          <TabsTrigger value="deductions" data-testid="tab-deductions">
+          <TabsTrigger value="deductions" className="flex-1" data-testid="tab-deductions">
             <Shield className="w-4 h-4 mr-1.5" />
             Deductions
           </TabsTrigger>
-          <TabsTrigger value="archived" data-testid="tab-archived">
+          <TabsTrigger value="archived" className="flex-1" data-testid="tab-archived">
             <Archive className="w-4 h-4 mr-1.5" />
             Archived
           </TabsTrigger>
