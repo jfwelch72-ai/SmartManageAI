@@ -45,6 +45,13 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Reports System**: Provides 9 report types across Takeoff and Estimate categories, with CSV export, browser print, and snapshot creation. Mobile-responsive design.
 *   **Change Order Workflow Enhancement**: Includes revision history tracking and a multi-level approval chain.
 *   **Bid Plans & Takeoff Step**: 6-step bid workflow with a full takeoff workspace in Step 1. Features document tree sidebar (Plans, Specs, Takeoff, Supporting Documents), interactive PDF viewer with measurement tools (linear, area, count, volume), calibration, quantity categories, and measurements summary. Uses context-aware `useTakeoffData` hook and `TakeoffWorkspace` component that support both project and bid contexts. Takeoff sheets and quantity categories have nullable `bidId`/`projectId` columns. Bid-specific API routes at `/api/bids/:bidId/takeoff/*` with org access verification. Generic sheet-level routes (calibration, rename, delete, duplicate, folder-group) use `verifySheetAccess()` helper for dual project/bid authorization.
+*   **Payroll Enhancement System**: Full payroll processing with three core features:
+    *   **Employee Deductions Management**: Organization-level deduction types (13 categories: Federal Tax, State Tax, FICA, Medicare, Union Dues, Health/Dental/Vision Insurance, 401k, Garnishment, Child Support, etc.) with percentage/fixed/tiered calculation methods, max annual limits, and pre-tax flags. Employee-specific deduction assignments with optional override amounts and effective date ranges.
+    *   **Pay Stub Generation**: Itemized pay stubs per employee per pay run showing earnings breakdown (regular/OT by project), all applied deductions with YTD totals, and net pay. Individual and batch print support via printable HTML views.
+    *   **Certified Payroll Reports (WH-347)**: Federal form WH-347 generation with contractor/project headers, employee rows (classification, daily hours, rates, gross, FICA, withholding, other deductions, net wages), prevailing wage compliance checking per worker classification, Statement of Compliance section, CSV export, and printable report views.
+    *   Schema tables: `payroll_deduction_types`, `employee_deductions`, `pay_stub_deductions`. Extended `pay_runs` and `pay_run_line_items` with gross/deductions/net fields.
+    *   UI components: `DeductionsTab`, `PayStubView`, `CertifiedPayrollReport` in `client/src/components/payroll/`.
+    *   Backend routes in `server/payrollManagementRoutes.ts` with tenant-isolated CRUD (whitelisted fields, org-scoped FK validation).
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

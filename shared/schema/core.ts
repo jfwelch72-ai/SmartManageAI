@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, onboardingStatusEnum, payRunStatusEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, onboardingStatusEnum, payRunStatusEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -168,6 +168,9 @@ export const payRuns = pgTable("pay_runs", {
   totalRegularHours: decimal("total_regular_hours", { precision: 10, scale: 2 }).notNull().default("0"),
   totalOvertimeHours: decimal("total_overtime_hours", { precision: 10, scale: 2 }).notNull().default("0"),
   totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalGrossAmount: decimal("total_gross_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalDeductions: decimal("total_deductions", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalNetAmount: decimal("total_net_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   totalWorkers: integer("total_workers").notNull().default(0),
   notes: text("notes"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
@@ -197,6 +200,9 @@ export const payRunLineItems = pgTable("pay_run_line_items", {
   regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  grossAmount: decimal("gross_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalDeductions: decimal("total_deductions", { precision: 12, scale: 2 }).notNull().default("0"),
+  netAmount: decimal("net_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   timeEntryIds: text("time_entry_ids").array(),
   wageType: text("wage_type").default("STANDARD"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -209,6 +215,65 @@ export const payRunLineItems = pgTable("pay_run_line_items", {
 export const insertPayRunLineItemSchema = createInsertSchema(payRunLineItems).omit({ id: true, createdAt: true });
 export type InsertPayRunLineItem = z.infer<typeof insertPayRunLineItemSchema>;
 export type PayRunLineItem = typeof payRunLineItems.$inferSelect;
+
+export const payrollDeductionTypes = pgTable("payroll_deduction_types", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: deductionCategoryEnum("category").notNull(),
+  calculationMethod: deductionCalculationMethodEnum("calculation_method").notNull().default("FIXED_AMOUNT"),
+  rate: decimal("rate", { precision: 8, scale: 4 }),
+  amount: decimal("amount", { precision: 12, scale: 2 }),
+  maxAnnualAmount: decimal("max_annual_amount", { precision: 12, scale: 2 }),
+  isPreTax: boolean("is_pre_tax").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("payroll_deduction_types_org_idx").on(table.organizationId),
+}));
+
+export const insertPayrollDeductionTypeSchema = createInsertSchema(payrollDeductionTypes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPayrollDeductionType = z.infer<typeof insertPayrollDeductionTypeSchema>;
+export type PayrollDeductionType = typeof payrollDeductionTypes.$inferSelect;
+
+export const employeeDeductions = pgTable("employee_deductions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  deductionTypeId: varchar("deduction_type_id").notNull().references(() => payrollDeductionTypes.id, { onDelete: "cascade" }),
+  overrideAmount: decimal("override_amount", { precision: 12, scale: 2 }),
+  effectiveDate: date("effective_date").notNull(),
+  endDate: date("end_date"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("employee_deductions_org_idx").on(table.organizationId),
+  userIdx: index("employee_deductions_user_idx").on(table.userId),
+  typeIdx: index("employee_deductions_type_idx").on(table.deductionTypeId),
+}));
+
+export const insertEmployeeDeductionSchema = createInsertSchema(employeeDeductions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEmployeeDeduction = z.infer<typeof insertEmployeeDeductionSchema>;
+export type EmployeeDeduction = typeof employeeDeductions.$inferSelect;
+
+export const payStubDeductions = pgTable("pay_stub_deductions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  payRunLineItemId: varchar("pay_run_line_item_id").notNull().references(() => payRunLineItems.id, { onDelete: "cascade" }),
+  deductionTypeId: varchar("deduction_type_id").notNull().references(() => payrollDeductionTypes.id),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  ytdAmount: decimal("ytd_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  lineItemIdx: index("pay_stub_deductions_line_item_idx").on(table.payRunLineItemId),
+  typeIdx: index("pay_stub_deductions_type_idx").on(table.deductionTypeId),
+}));
+
+export const insertPayStubDeductionSchema = createInsertSchema(payStubDeductions).omit({ id: true, createdAt: true });
+export type InsertPayStubDeduction = z.infer<typeof insertPayStubDeductionSchema>;
+export type PayStubDeduction = typeof payStubDeductions.$inferSelect;
 
 // Users table
 export const users = pgTable("users", {

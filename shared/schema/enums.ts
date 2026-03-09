@@ -486,4 +486,15 @@ export const retentionActionEnum = pgEnum("retention_action", ["DELETE", "ARCHIV
 export const dataSubjectRequestTypeEnum = pgEnum("data_subject_request_type", ["ACCESS", "DELETION", "PORTABILITY", "RECTIFICATION", "OBJECTION"]);
 export const dataSubjectRequestStatusEnum = pgEnum("data_subject_request_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "DENIED"]);
 
+// Payroll deduction enums
+export const deductionCategoryEnum = pgEnum("deduction_category", [
+  "FEDERAL_TAX", "STATE_TAX", "LOCAL_TAX", "FICA", "MEDICARE",
+  "UNION_DUES", "HEALTH_INSURANCE", "DENTAL_INSURANCE", "VISION_INSURANCE",
+  "RETIREMENT_401K", "GARNISHMENT", "CHILD_SUPPORT", "OTHER"
+]);
+
+export const deductionCalculationMethodEnum = pgEnum("deduction_calculation_method", [
+  "PERCENTAGE", "FIXED_AMOUNT", "TIERED"
+]);
+
 // Table: data_processing_records (ROPA - Record of Processing Activities)

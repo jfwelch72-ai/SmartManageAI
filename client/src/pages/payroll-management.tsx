@@ -34,7 +34,11 @@ import {
   TrendingUp,
   Trash2,
   Archive,
+  Shield,
 } from "lucide-react";
+import DeductionsTab from "@/components/payroll/DeductionsTab";
+import PayStubView from "@/components/payroll/PayStubView";
+import { CertifiedPayrollButton } from "@/components/payroll/CertifiedPayrollReport";
 
 interface PayrollOverview {
   currentPeriod: { start: string; end: string; workWeekStart: string };
@@ -52,6 +56,9 @@ interface PayRun {
   totalRegularHours: string;
   totalOvertimeHours: string;
   totalLaborCost: string;
+  totalGrossAmount: string;
+  totalDeductions: string;
+  totalNetAmount: string;
   totalWorkers: number;
   notes: string | null;
   createdById: string;
@@ -134,7 +141,7 @@ export default function PayrollManagementPage() {
   });
 
   useEffect(() => {
-    if (urlTab && ["overview", "time-entries", "workers", "pay-runs", "archived"].includes(urlTab)) {
+    if (urlTab && ["overview", "time-entries", "workers", "pay-runs", "deductions", "archived"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -263,6 +270,10 @@ export default function PayrollManagementPage() {
           <TabsTrigger value="pay-runs" data-testid="tab-pay-runs">
             <Receipt className="w-4 h-4 mr-1.5" />
             Pay Runs
+          </TabsTrigger>
+          <TabsTrigger value="deductions" data-testid="tab-deductions">
+            <Shield className="w-4 h-4 mr-1.5" />
+            Deductions
           </TabsTrigger>
           <TabsTrigger value="archived" data-testid="tab-archived">
             <Archive className="w-4 h-4 mr-1.5" />
@@ -696,6 +707,10 @@ export default function PayrollManagementPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="deductions" className="mt-6">
+          <DeductionsTab />
+        </TabsContent>
+
         <TabsContent value="archived" className="mt-6 space-y-4">
           <Card>
             <CardHeader className="pb-3">
@@ -873,7 +888,7 @@ export default function PayrollManagementPage() {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 py-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 py-4">
                 <div className="bg-muted rounded-md p-3">
                   <p className="text-xs text-muted-foreground">Workers</p>
                   <p className="text-lg font-bold">{payRunDetail.totalWorkers}</p>
@@ -887,8 +902,16 @@ export default function PayrollManagementPage() {
                   <p className="text-lg font-bold">{formatHours(payRunDetail.totalOvertimeHours)}</p>
                 </div>
                 <div className="bg-muted rounded-md p-3">
-                  <p className="text-xs text-muted-foreground">Total Cost</p>
-                  <p className="text-lg font-bold">{formatCurrency(payRunDetail.totalLaborCost)}</p>
+                  <p className="text-xs text-muted-foreground">Gross Pay</p>
+                  <p className="text-lg font-bold">{formatCurrency(payRunDetail.totalGrossAmount || payRunDetail.totalLaborCost)}</p>
+                </div>
+                <div className="bg-muted rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Deductions</p>
+                  <p className="text-lg font-bold text-red-600">{parseFloat(payRunDetail.totalDeductions || "0") > 0 ? `-${formatCurrency(payRunDetail.totalDeductions)}` : "$0.00"}</p>
+                </div>
+                <div className="bg-muted rounded-md p-3">
+                  <p className="text-xs text-muted-foreground">Net Pay</p>
+                  <p className="text-lg font-bold text-green-600">{formatCurrency(payRunDetail.totalNetAmount || payRunDetail.totalLaborCost)}</p>
                 </div>
               </div>
 
@@ -931,7 +954,12 @@ export default function PayrollManagementPage() {
                 </div>
               )}
 
+              <div className="border-t pt-4">
+                <PayStubView payRunId={payRunDetail.id} payRunNumber={payRunDetail.runNumber} />
+              </div>
+
               <DialogFooter className="flex-wrap gap-2">
+                <CertifiedPayrollButton payRunId={payRunDetail.id} payRunNumber={payRunDetail.runNumber} />
                 {payRunDetail.status !== "PAID" && payRunDetail.status !== "VOIDED" && (
                   <Button
                     variant="destructive"

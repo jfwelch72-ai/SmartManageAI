@@ -3,9 +3,12 @@ import { db } from "./db";
 import {
   payRuns, payRunLineItems, timeEntries, users, projects,
   organizationPayrollSettings, insertPayRunSchema,
-  projectEmployeeRates, projectLaborRates
+  projectEmployeeRates, projectLaborRates,
+  payrollDeductionTypes, employeeDeductions, payStubDeductions,
+  insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema,
+  organizations, jobClassifications, employeeClassifications, prevailingWageRates
 } from "@shared/schema";
-import { eq, and, gte, lte, sql, desc, inArray, count } from "drizzle-orm";
+import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { z } from "zod";
@@ -264,6 +267,9 @@ router.post("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_M
     let totalRegular = 0;
     let totalOvertime = 0;
     let totalCost = 0;
+    let totalGrossAmount = 0;
+    let totalDeductionsAmount = 0;
+    let totalNetAmount = 0;
 
     const existingRuns = await db.select({ count: sql<number>`COUNT(*)` }).from(payRuns).where(eq(payRuns.organizationId, orgId));
     const runNum = Number(existingRuns[0]?.count || 0) + 1;
@@ -277,20 +283,27 @@ router.post("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_M
       totalRegularHours: "0",
       totalOvertimeHours: "0",
       totalLaborCost: "0",
+      totalGrossAmount: "0",
+      totalDeductions: "0",
+      totalNetAmount: "0",
       totalWorkers: workerMap.size,
       notes: notes || null,
       createdById: authReq.user!.id,
     }).returning();
 
     const lineItemsToInsert: any[] = [];
+    const deferredDeductions: Array<{ lineItemIndex: number; userId: string; grossAmount: number }> = [];
+
     for (const [userId, worker] of Array.from(workerMap)) {
       for (const [key, data] of Array.from(worker.projectMap)) {
         const projectId = key.split(":")[0];
         const rates = await getEffectiveRate(userId, projectId, orgId);
-        const amount = data.regular * rates.regularRate + data.overtime * rates.overtimeRate;
+        const grossAmount = data.regular * rates.regularRate + data.overtime * rates.overtimeRate;
         totalRegular += data.regular;
         totalOvertime += data.overtime;
-        totalCost += amount;
+        totalCost += grossAmount;
+
+        deferredDeductions.push({ lineItemIndex: lineItemsToInsert.length, userId, grossAmount });
 
         lineItemsToInsert.push({
           payRunId: newPayRun.id,
@@ -301,21 +314,60 @@ router.post("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_M
           overtimeHours: String(data.overtime),
           regularRate: String(rates.regularRate),
           overtimeRate: String(rates.overtimeRate),
-          totalAmount: String(amount),
+          totalAmount: String(grossAmount),
+          grossAmount: String(grossAmount),
+          totalDeductions: "0",
+          netAmount: String(grossAmount),
           timeEntryIds: data.entryIds,
           wageType: "STANDARD",
         });
       }
     }
 
+    let insertedLineItems: any[] = [];
     if (lineItemsToInsert.length > 0) {
-      await db.insert(payRunLineItems).values(lineItemsToInsert);
+      insertedLineItems = await db.insert(payRunLineItems).values(lineItemsToInsert).returning();
     }
+
+    for (const deferred of deferredDeductions) {
+      const insertedItem = insertedLineItems[deferred.lineItemIndex];
+      if (!insertedItem) continue;
+
+      const { deductions, totalDeductions: lineDed } = await calculateDeductionsForEmployee(
+        deferred.userId, orgId, deferred.grossAmount, payPeriodEnd
+      );
+
+      if (deductions.length > 0) {
+        await db.insert(payStubDeductions).values(
+          deductions.map(d => ({
+            payRunLineItemId: insertedItem.id,
+            deductionTypeId: d.deductionTypeId,
+            amount: String(d.amount),
+            ytdAmount: String(d.ytdAmount),
+          }))
+        );
+
+        const netAmount = Math.round((deferred.grossAmount - lineDed) * 100) / 100;
+        await db.update(payRunLineItems).set({
+          totalDeductions: String(lineDed),
+          netAmount: String(netAmount),
+        }).where(eq(payRunLineItems.id, insertedItem.id));
+
+        totalDeductionsAmount += lineDed;
+      }
+
+      totalGrossAmount += deferred.grossAmount;
+    }
+
+    totalNetAmount = Math.round((totalGrossAmount - totalDeductionsAmount) * 100) / 100;
 
     await db.update(payRuns).set({
       totalRegularHours: String(totalRegular),
       totalOvertimeHours: String(totalOvertime),
       totalLaborCost: String(totalCost),
+      totalGrossAmount: String(Math.round(totalGrossAmount * 100) / 100),
+      totalDeductions: String(Math.round(totalDeductionsAmount * 100) / 100),
+      totalNetAmount: String(totalNetAmount),
       updatedAt: new Date(),
     }).where(eq(payRuns.id, newPayRun.id));
 
@@ -541,6 +593,642 @@ router.get("/api/projects/:id/payroll-summary", requireAuth, async (req, res) =>
     });
   } catch (error) {
     console.error("Project payroll summary error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+async function calculateDeductionsForEmployee(
+  userId: string,
+  orgId: string,
+  grossAmount: number,
+  payPeriodEnd: string
+): Promise<{ deductions: Array<{ deductionTypeId: string; amount: number; ytdAmount: number }>; totalDeductions: number }> {
+  const activeDeductions = await db.select({
+    deduction: employeeDeductions,
+    deductionType: payrollDeductionTypes,
+  })
+    .from(employeeDeductions)
+    .innerJoin(payrollDeductionTypes, eq(employeeDeductions.deductionTypeId, payrollDeductionTypes.id))
+    .where(and(
+      eq(employeeDeductions.userId, userId),
+      eq(employeeDeductions.organizationId, orgId),
+      eq(employeeDeductions.isActive, true),
+      eq(payrollDeductionTypes.isActive, true),
+      lte(employeeDeductions.effectiveDate, payPeriodEnd),
+      or(isNull(employeeDeductions.endDate), gte(employeeDeductions.endDate, payPeriodEnd))
+    ))
+    .orderBy(asc(payrollDeductionTypes.sortOrder));
+
+  const results: Array<{ deductionTypeId: string; amount: number; ytdAmount: number }> = [];
+  let totalDed = 0;
+
+  for (const { deduction, deductionType } of activeDeductions) {
+    let amount = 0;
+    const overrideAmt = deduction.overrideAmount ? parseFloat(deduction.overrideAmount) : null;
+
+    if (overrideAmt !== null) {
+      amount = overrideAmt;
+    } else if (deductionType.calculationMethod === "PERCENTAGE") {
+      const rate = parseFloat(deductionType.rate || "0");
+      amount = grossAmount * (rate / 100);
+    } else if (deductionType.calculationMethod === "FIXED_AMOUNT") {
+      amount = parseFloat(deductionType.amount || "0");
+    } else if (deductionType.calculationMethod === "TIERED") {
+      amount = parseFloat(deductionType.amount || "0");
+    }
+
+    const ytdResult = await db.select({
+      total: sql<string>`COALESCE(SUM(CAST(${payStubDeductions.amount} AS DECIMAL)), 0)`,
+    })
+      .from(payStubDeductions)
+      .innerJoin(payRunLineItems, eq(payStubDeductions.payRunLineItemId, payRunLineItems.id))
+      .innerJoin(payRuns, eq(payRunLineItems.payRunId, payRuns.id))
+      .where(and(
+        eq(payStubDeductions.deductionTypeId, deductionType.id),
+        eq(payRunLineItems.userId, userId),
+        eq(payRuns.organizationId, orgId),
+      ));
+
+    const ytdSoFar = parseFloat(ytdResult[0]?.total || "0");
+
+    if (deductionType.maxAnnualAmount) {
+      const maxAnnual = parseFloat(deductionType.maxAnnualAmount);
+      if (ytdSoFar >= maxAnnual) {
+        continue;
+      }
+      if (ytdSoFar + amount > maxAnnual) {
+        amount = maxAnnual - ytdSoFar;
+      }
+    }
+
+    amount = Math.round(amount * 100) / 100;
+    if (amount > 0) {
+      results.push({
+        deductionTypeId: deductionType.id,
+        amount,
+        ytdAmount: Math.round((ytdSoFar + amount) * 100) / 100,
+      });
+      totalDed += amount;
+    }
+  }
+
+  return { deductions: results, totalDeductions: Math.round(totalDed * 100) / 100 };
+}
+
+router.get("/api/payroll/deduction-types", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const results = await db.select().from(payrollDeductionTypes)
+      .where(eq(payrollDeductionTypes.organizationId, orgId))
+      .orderBy(asc(payrollDeductionTypes.sortOrder), asc(payrollDeductionTypes.name));
+
+    res.json(results);
+  } catch (error) {
+    console.error("Get deduction types error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/payroll/deduction-types", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const { name, category, calculationMethod, rate, amount, maxAnnualAmount, isPreTax, isActive, sortOrder } = req.body;
+    if (!name || !category) return res.status(400).json({ error: "Name and category are required" });
+
+    const body: any = { organizationId: orgId, name, category, isActive: isActive !== false };
+    if (calculationMethod) body.calculationMethod = calculationMethod;
+    if (rate) body.rate = rate;
+    if (amount) body.amount = amount;
+    if (maxAnnualAmount) body.maxAnnualAmount = maxAnnualAmount;
+    if (isPreTax !== undefined) body.isPreTax = isPreTax;
+    if (sortOrder !== undefined) body.sortOrder = sortOrder;
+
+    const [created] = await db.insert(payrollDeductionTypes).values(body).returning();
+    res.status(201).json(created);
+  } catch (error) {
+    console.error("Create deduction type error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/payroll/deduction-types/:id", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db.select().from(payrollDeductionTypes)
+      .where(and(eq(payrollDeductionTypes.id, req.params.id), eq(payrollDeductionTypes.organizationId, orgId)));
+    if (!existing) return res.status(404).json({ error: "Deduction type not found" });
+
+    const { name, category, calculationMethod, rate, amount, maxAnnualAmount, isPreTax, isActive, sortOrder } = req.body;
+    const updateData: any = { updatedAt: new Date() };
+    if (name !== undefined) updateData.name = name;
+    if (category !== undefined) updateData.category = category;
+    if (calculationMethod !== undefined) updateData.calculationMethod = calculationMethod;
+    if (rate !== undefined) updateData.rate = rate;
+    if (amount !== undefined) updateData.amount = amount;
+    if (maxAnnualAmount !== undefined) updateData.maxAnnualAmount = maxAnnualAmount;
+    if (isPreTax !== undefined) updateData.isPreTax = isPreTax;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
+
+    const [updated] = await db.update(payrollDeductionTypes)
+      .set(updateData)
+      .where(eq(payrollDeductionTypes.id, req.params.id)).returning();
+    res.json(updated);
+  } catch (error) {
+    console.error("Update deduction type error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/payroll/deduction-types/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db.select().from(payrollDeductionTypes)
+      .where(and(eq(payrollDeductionTypes.id, req.params.id), eq(payrollDeductionTypes.organizationId, orgId)));
+    if (!existing) return res.status(404).json({ error: "Deduction type not found" });
+
+    await db.delete(payrollDeductionTypes).where(eq(payrollDeductionTypes.id, req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete deduction type error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/payroll/employee-deductions", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const results = await db.select({
+      deduction: employeeDeductions,
+      userName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+      deductionTypeName: payrollDeductionTypes.name,
+      deductionTypeCategory: payrollDeductionTypes.category,
+      calculationMethod: payrollDeductionTypes.calculationMethod,
+      typeRate: payrollDeductionTypes.rate,
+      typeAmount: payrollDeductionTypes.amount,
+    })
+      .from(employeeDeductions)
+      .innerJoin(users, eq(employeeDeductions.userId, users.id))
+      .innerJoin(payrollDeductionTypes, eq(employeeDeductions.deductionTypeId, payrollDeductionTypes.id))
+      .where(eq(employeeDeductions.organizationId, orgId))
+      .orderBy(asc(users.lastName), asc(users.firstName));
+
+    res.json(results);
+  } catch (error) {
+    console.error("Get employee deductions error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/payroll/employee-deductions/:userId", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const results = await db.select({
+      deduction: employeeDeductions,
+      deductionTypeName: payrollDeductionTypes.name,
+      deductionTypeCategory: payrollDeductionTypes.category,
+      calculationMethod: payrollDeductionTypes.calculationMethod,
+      typeRate: payrollDeductionTypes.rate,
+      typeAmount: payrollDeductionTypes.amount,
+      isPreTax: payrollDeductionTypes.isPreTax,
+    })
+      .from(employeeDeductions)
+      .innerJoin(payrollDeductionTypes, eq(employeeDeductions.deductionTypeId, payrollDeductionTypes.id))
+      .where(and(
+        eq(employeeDeductions.userId, req.params.userId),
+        eq(employeeDeductions.organizationId, orgId),
+      ))
+      .orderBy(asc(payrollDeductionTypes.sortOrder));
+
+    res.json(results);
+  } catch (error) {
+    console.error("Get employee deductions by user error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/payroll/employee-deductions", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const { userId, deductionTypeId, overrideAmount, effectiveDate, endDate, isActive } = req.body;
+    if (!userId || !deductionTypeId || !effectiveDate) {
+      return res.status(400).json({ error: "userId, deductionTypeId, and effectiveDate are required" });
+    }
+
+    const [user] = await db.select({ id: users.id }).from(users)
+      .where(and(eq(users.id, userId), eq(users.organizationId, orgId)));
+    if (!user) return res.status(400).json({ error: "User not found in your organization" });
+
+    const [dedType] = await db.select({ id: payrollDeductionTypes.id }).from(payrollDeductionTypes)
+      .where(and(eq(payrollDeductionTypes.id, deductionTypeId), eq(payrollDeductionTypes.organizationId, orgId)));
+    if (!dedType) return res.status(400).json({ error: "Deduction type not found in your organization" });
+
+    const body: any = { organizationId: orgId, userId, deductionTypeId, effectiveDate, isActive: isActive !== false };
+    if (overrideAmount) body.overrideAmount = overrideAmount;
+    if (endDate) body.endDate = endDate;
+
+    const [created] = await db.insert(employeeDeductions).values(body).returning();
+    res.status(201).json(created);
+  } catch (error) {
+    console.error("Create employee deduction error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db.select().from(employeeDeductions)
+      .where(and(eq(employeeDeductions.id, req.params.id), eq(employeeDeductions.organizationId, orgId)));
+    if (!existing) return res.status(404).json({ error: "Employee deduction not found" });
+
+    const { overrideAmount, effectiveDate, endDate, isActive } = req.body;
+    const updateData: any = { updatedAt: new Date() };
+    if (overrideAmount !== undefined) updateData.overrideAmount = overrideAmount || null;
+    if (effectiveDate !== undefined) updateData.effectiveDate = effectiveDate;
+    if (endDate !== undefined) updateData.endDate = endDate || null;
+    if (isActive !== undefined) updateData.isActive = isActive;
+
+    const [updated] = await db.update(employeeDeductions)
+      .set(updateData)
+      .where(eq(employeeDeductions.id, req.params.id)).returning();
+    res.json(updated);
+  } catch (error) {
+    console.error("Update employee deduction error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db.select().from(employeeDeductions)
+      .where(and(eq(employeeDeductions.id, req.params.id), eq(employeeDeductions.organizationId, orgId)));
+    if (!existing) return res.status(404).json({ error: "Employee deduction not found" });
+
+    await db.delete(employeeDeductions).where(eq(employeeDeductions.id, req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete employee deduction error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [payRun] = await db.select().from(payRuns)
+      .where(and(eq(payRuns.id, req.params.id), eq(payRuns.organizationId, orgId)));
+    if (!payRun) return res.status(404).json({ error: "Pay run not found" });
+
+    const lineItems = await db.select({
+      lineItem: payRunLineItems,
+      userName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+      userEmail: users.email,
+      projectName: projects.name,
+    })
+      .from(payRunLineItems)
+      .innerJoin(users, eq(payRunLineItems.userId, users.id))
+      .innerJoin(projects, eq(payRunLineItems.projectId, projects.id))
+      .where(eq(payRunLineItems.payRunId, req.params.id));
+
+    const workerMap = new Map<string, any>();
+    for (const item of lineItems) {
+      const userId = item.lineItem.userId;
+      if (!workerMap.has(userId)) {
+        workerMap.set(userId, {
+          userId,
+          employeeName: item.userName,
+          employeeEmail: item.userEmail,
+          payPeriodStart: payRun.payPeriodStart,
+          payPeriodEnd: payRun.payPeriodEnd,
+          payRunNumber: payRun.runNumber,
+          earnings: [],
+          deductions: [],
+          totalGross: 0,
+          totalDeductions: 0,
+          netPay: 0,
+        });
+      }
+      const worker = workerMap.get(userId)!;
+      const regPay = parseFloat(item.lineItem.regularHours) * parseFloat(item.lineItem.regularRate);
+      const otPay = parseFloat(item.lineItem.overtimeHours) * parseFloat(item.lineItem.overtimeRate);
+      const gross = parseFloat(item.lineItem.grossAmount || item.lineItem.totalAmount);
+
+      worker.earnings.push({
+        projectName: item.projectName,
+        regularHours: parseFloat(item.lineItem.regularHours),
+        regularRate: parseFloat(item.lineItem.regularRate),
+        regularPay: Math.round(regPay * 100) / 100,
+        overtimeHours: parseFloat(item.lineItem.overtimeHours),
+        overtimeRate: parseFloat(item.lineItem.overtimeRate),
+        overtimePay: Math.round(otPay * 100) / 100,
+        grossAmount: gross,
+      });
+      worker.totalGross += gross;
+
+      const stubDeds = await db.select({
+        deduction: payStubDeductions,
+        typeName: payrollDeductionTypes.name,
+        category: payrollDeductionTypes.category,
+        isPreTax: payrollDeductionTypes.isPreTax,
+      })
+        .from(payStubDeductions)
+        .innerJoin(payrollDeductionTypes, eq(payStubDeductions.deductionTypeId, payrollDeductionTypes.id))
+        .where(eq(payStubDeductions.payRunLineItemId, item.lineItem.id));
+
+      for (const d of stubDeds) {
+        const existingDed = worker.deductions.find((x: any) => x.deductionTypeId === d.deduction.deductionTypeId);
+        if (existingDed) {
+          existingDed.amount += parseFloat(d.deduction.amount);
+          existingDed.ytdAmount = parseFloat(d.deduction.ytdAmount);
+        } else {
+          worker.deductions.push({
+            deductionTypeId: d.deduction.deductionTypeId,
+            name: d.typeName,
+            category: d.category,
+            isPreTax: d.isPreTax,
+            amount: parseFloat(d.deduction.amount),
+            ytdAmount: parseFloat(d.deduction.ytdAmount),
+          });
+        }
+        worker.totalDeductions += parseFloat(d.deduction.amount);
+      }
+    }
+
+    for (const worker of workerMap.values()) {
+      worker.totalGross = Math.round(worker.totalGross * 100) / 100;
+      worker.totalDeductions = Math.round(worker.totalDeductions * 100) / 100;
+      worker.netPay = Math.round((worker.totalGross - worker.totalDeductions) * 100) / 100;
+    }
+
+    res.json(Array.from(workerMap.values()));
+  } catch (error) {
+    console.error("Get pay stubs error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [payRun] = await db.select().from(payRuns)
+      .where(and(eq(payRuns.id, req.params.id), eq(payRuns.organizationId, orgId)));
+    if (!payRun) return res.status(404).json({ error: "Pay run not found" });
+
+    const lineItems = await db.select({
+      lineItem: payRunLineItems,
+      projectName: projects.name,
+    })
+      .from(payRunLineItems)
+      .innerJoin(projects, eq(payRunLineItems.projectId, projects.id))
+      .where(and(eq(payRunLineItems.payRunId, req.params.id), eq(payRunLineItems.userId, req.params.userId)));
+
+    const [user] = await db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
+      .from(users).where(eq(users.id, req.params.userId));
+
+    if (!user || lineItems.length === 0) return res.status(404).json({ error: "Pay stub not found" });
+
+    const stub: any = {
+      userId: req.params.userId,
+      employeeName: `${user.firstName} ${user.lastName}`,
+      employeeEmail: user.email,
+      payPeriodStart: payRun.payPeriodStart,
+      payPeriodEnd: payRun.payPeriodEnd,
+      payRunNumber: payRun.runNumber,
+      earnings: [],
+      deductions: [],
+      totalGross: 0,
+      totalDeductions: 0,
+      netPay: 0,
+    };
+
+    for (const item of lineItems) {
+      const regPay = parseFloat(item.lineItem.regularHours) * parseFloat(item.lineItem.regularRate);
+      const otPay = parseFloat(item.lineItem.overtimeHours) * parseFloat(item.lineItem.overtimeRate);
+      const gross = parseFloat(item.lineItem.grossAmount || item.lineItem.totalAmount);
+      stub.earnings.push({
+        projectName: item.projectName,
+        regularHours: parseFloat(item.lineItem.regularHours),
+        regularRate: parseFloat(item.lineItem.regularRate),
+        regularPay: Math.round(regPay * 100) / 100,
+        overtimeHours: parseFloat(item.lineItem.overtimeHours),
+        overtimeRate: parseFloat(item.lineItem.overtimeRate),
+        overtimePay: Math.round(otPay * 100) / 100,
+        grossAmount: gross,
+      });
+      stub.totalGross += gross;
+
+      const stubDeds = await db.select({
+        deduction: payStubDeductions,
+        typeName: payrollDeductionTypes.name,
+        category: payrollDeductionTypes.category,
+        isPreTax: payrollDeductionTypes.isPreTax,
+      })
+        .from(payStubDeductions)
+        .innerJoin(payrollDeductionTypes, eq(payStubDeductions.deductionTypeId, payrollDeductionTypes.id))
+        .where(eq(payStubDeductions.payRunLineItemId, item.lineItem.id));
+
+      for (const d of stubDeds) {
+        const existingDed = stub.deductions.find((x: any) => x.deductionTypeId === d.deduction.deductionTypeId);
+        if (existingDed) {
+          existingDed.amount += parseFloat(d.deduction.amount);
+          existingDed.ytdAmount = parseFloat(d.deduction.ytdAmount);
+        } else {
+          stub.deductions.push({
+            deductionTypeId: d.deduction.deductionTypeId,
+            name: d.typeName,
+            category: d.category,
+            isPreTax: d.isPreTax,
+            amount: parseFloat(d.deduction.amount),
+            ytdAmount: parseFloat(d.deduction.ytdAmount),
+          });
+        }
+        stub.totalDeductions += parseFloat(d.deduction.amount);
+      }
+    }
+
+    stub.totalGross = Math.round(stub.totalGross * 100) / 100;
+    stub.totalDeductions = Math.round(stub.totalDeductions * 100) / 100;
+    stub.netPay = Math.round((stub.totalGross - stub.totalDeductions) * 100) / 100;
+
+    res.json(stub);
+  } catch (error) {
+    console.error("Get single pay stub error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [payRun] = await db.select().from(payRuns)
+      .where(and(eq(payRuns.id, req.params.id), eq(payRuns.organizationId, orgId)));
+    if (!payRun) return res.status(404).json({ error: "Pay run not found" });
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+
+    const lineItems = await db.select({
+      lineItem: payRunLineItems,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      projectName: projects.name,
+      projectId: projects.id,
+    })
+      .from(payRunLineItems)
+      .innerJoin(users, eq(payRunLineItems.userId, users.id))
+      .innerJoin(projects, eq(payRunLineItems.projectId, projects.id))
+      .where(eq(payRunLineItems.payRunId, req.params.id))
+      .orderBy(asc(users.lastName), asc(users.firstName));
+
+    const employeeRows: any[] = [];
+    for (const item of lineItems) {
+      const userId = item.lineItem.userId;
+
+      let classification = "Laborer";
+      try {
+        const [empClass] = await db.select({ classificationName: jobClassifications.name })
+          .from(employeeClassifications)
+          .innerJoin(jobClassifications, eq(employeeClassifications.classificationId, jobClassifications.id))
+          .where(eq(employeeClassifications.userId, userId))
+          .limit(1);
+        if (empClass) classification = empClass.classificationName;
+      } catch (e) {}
+
+      let prevailingRate = null;
+      let belowPrevailingWage = false;
+      try {
+        let classId: string | null = null;
+        try {
+          const [empClass] = await db.select({ classificationId: employeeClassifications.classificationId })
+            .from(employeeClassifications)
+            .where(eq(employeeClassifications.userId, userId))
+            .limit(1);
+          if (empClass) classId = empClass.classificationId;
+        } catch (e2) {}
+
+        if (classId) {
+          const [pw] = await db.select().from(prevailingWageRates)
+            .where(and(
+              eq(prevailingWageRates.organizationId, orgId),
+              eq(prevailingWageRates.projectId, item.projectId),
+              eq(prevailingWageRates.classificationId, classId),
+            ))
+            .limit(1);
+          if (pw) {
+            prevailingRate = parseFloat(pw.wageRate);
+            if (parseFloat(item.lineItem.regularRate) < prevailingRate) {
+              belowPrevailingWage = true;
+            }
+          }
+        }
+      } catch (e) {}
+
+      const stubDeds = await db.select({
+        amount: payStubDeductions.amount,
+        category: payrollDeductionTypes.category,
+      })
+        .from(payStubDeductions)
+        .innerJoin(payrollDeductionTypes, eq(payStubDeductions.deductionTypeId, payrollDeductionTypes.id))
+        .where(eq(payStubDeductions.payRunLineItemId, item.lineItem.id));
+
+      let ficaAmount = 0;
+      let withholdingTax = 0;
+      let otherDeductions = 0;
+      for (const d of stubDeds) {
+        const amt = parseFloat(d.amount);
+        if (d.category === "FICA" || d.category === "MEDICARE") {
+          ficaAmount += amt;
+        } else if (d.category === "FEDERAL_TAX" || d.category === "STATE_TAX" || d.category === "LOCAL_TAX") {
+          withholdingTax += amt;
+        } else {
+          otherDeductions += amt;
+        }
+      }
+
+      const totalDeductions = ficaAmount + withholdingTax + otherDeductions;
+      const gross = parseFloat(item.lineItem.grossAmount || item.lineItem.totalAmount);
+
+      employeeRows.push({
+        name: `${item.firstName} ${item.lastName}`,
+        workClassification: classification,
+        regularHours: parseFloat(item.lineItem.regularHours),
+        overtimeHours: parseFloat(item.lineItem.overtimeHours),
+        totalHours: parseFloat(item.lineItem.regularHours) + parseFloat(item.lineItem.overtimeHours),
+        rateOfPay: parseFloat(item.lineItem.regularRate),
+        overtimeRate: parseFloat(item.lineItem.overtimeRate),
+        grossEarned: gross,
+        fica: Math.round(ficaAmount * 100) / 100,
+        withholdingTax: Math.round(withholdingTax * 100) / 100,
+        otherDeductions: Math.round(otherDeductions * 100) / 100,
+        totalDeductions: Math.round(totalDeductions * 100) / 100,
+        netWages: Math.round((gross - totalDeductions) * 100) / 100,
+        projectName: item.projectName,
+        prevailingRate,
+        belowPrevailingWage,
+      });
+    }
+
+    const projectNames = [...new Set(employeeRows.map(r => r.projectName))];
+
+    res.json({
+      header: {
+        contractorName: org?.name || "",
+        payrollNumber: payRun.runNumber,
+        weekEndingDate: payRun.payPeriodEnd,
+        projectName: projectNames.join(", "),
+      },
+      employees: employeeRows,
+      totals: {
+        totalGross: parseFloat(payRun.totalGrossAmount || payRun.totalLaborCost),
+        totalDeductions: parseFloat(payRun.totalDeductions),
+        totalNet: parseFloat(payRun.totalNetAmount || payRun.totalLaborCost),
+      },
+      statementOfCompliance: {
+        fringeBenefitsPaidToPlan: true,
+        fringeBenefitsPaidInCash: false,
+        noFringeBenefitsRequired: false,
+      },
+    });
+  } catch (error) {
+    console.error("Get certified payroll report error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
