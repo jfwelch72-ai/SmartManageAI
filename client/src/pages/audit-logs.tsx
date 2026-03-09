@@ -100,7 +100,7 @@ export default function AuditLogsPage() {
 
   return (
     <FeatureGate feature="AUDIT_EXPORT">
-      <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6 max-w-6xl mx-auto">
+      <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">

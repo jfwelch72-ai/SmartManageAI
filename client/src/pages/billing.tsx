@@ -135,7 +135,7 @@ export default function BillingPage() {
   const growthAddons = plansData?.addons.filter(a => ADDON_INFO[a.key]?.category === "growth") || [];
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl mx-auto">
+    <div className="p-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold">Billing & Subscription</h1>

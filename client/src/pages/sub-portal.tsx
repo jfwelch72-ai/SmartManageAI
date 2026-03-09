@@ -155,7 +155,7 @@ export default function SubPortalPage() {
     <div className="min-h-screen bg-background" data-testid="container-portal">
       <SubPortalHeader portalInfo={portalInfo} />
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
+      <main className="px-4 py-6">
         <Tabs defaultValue="rfis" data-testid="tabs-portal">
           <TabsList data-testid="tabs-list">
             <TabsTrigger value="rfis" data-testid="tab-rfis">

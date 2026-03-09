@@ -225,7 +225,7 @@ export default function WorkerDetailPage() {
         </Link>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 md:px-6">
+      <div className="px-4 md:px-6">
         <div className="flex flex-col sm:flex-row items-start gap-4 -mt-12 mb-4">
           <Avatar className="h-24 w-24 border-4 border-background" data-testid="avatar-worker">
             <AvatarImage src={user.avatarUrl || undefined} />

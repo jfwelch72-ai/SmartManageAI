@@ -370,7 +370,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 p-4 md:p-6 max-w-7xl mx-auto overflow-auto h-full">
+    <div className="flex flex-col lg:flex-row gap-6 p-4 md:p-6 overflow-auto h-full">
       <div className="w-full lg:w-72 xl:w-80 shrink-0 space-y-4">
         <Card>
           <CardContent className="pt-6 flex flex-col items-center text-center">

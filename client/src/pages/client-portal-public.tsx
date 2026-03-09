@@ -180,7 +180,7 @@ export default function ClientPortalPublic() {
   return (
     <div className="min-h-screen bg-muted/30">
       <header className="bg-card border-b sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+        <div className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-lg">
               <Building2 className="w-5 h-5 text-primary" />
@@ -205,7 +205,7 @@ export default function ClientPortalPublic() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+      <main className="px-4 py-6 space-y-6">
         {project && <PortalProjectInfo project={project} />}
 
         {availableTabs.length > 0 ? (

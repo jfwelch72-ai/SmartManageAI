@@ -117,7 +117,7 @@ export default function ReportsPage({ embeddedProjectId }: ReportsPageProps = {}
       )}
 
       <div className="flex-1 overflow-auto">
-        <div className={`${isMobile ? "px-3 py-4" : "p-6"} max-w-6xl mx-auto space-y-4`}>
+        <div className={`${isMobile ? "px-3 py-4" : "p-6"} space-y-4`}>
           <div className={`flex ${isMobile ? "flex-col gap-3" : "items-center justify-between gap-4 flex-wrap"}`}>
             <div className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5 text-primary print:hidden" />

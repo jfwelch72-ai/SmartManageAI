@@ -143,7 +143,7 @@ export default function AIGovernancePage() {
   const maxBreakdownCost = Math.max(...(costBreakdown || []).map(e => Number(e.totalCost) || 0), 0.001);
 
   return (
-    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6 max-w-5xl mx-auto">
+    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-ai-governance-title">AI Governance</h1>
