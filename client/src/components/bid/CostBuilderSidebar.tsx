@@ -1,4 +1,5 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Check } from "lucide-react";
 
 type CostBuilderStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -35,11 +36,72 @@ export default function CostBuilderSidebar({
   profitAmount,
   finalBidAmount,
 }: CostBuilderSidebarProps) {
+  const activeStep = steps.find(s => s.id === currentStep);
+  const ActiveIcon = activeStep?.icon;
+
   return (
     <Card className="w-full">
       <CardContent className="p-0">
         <div className="flex flex-col lg:flex-row lg:items-stretch">
-          <nav className="flex flex-row flex-nowrap overflow-x-auto sm:flex-wrap flex-1 min-w-0 scrollbar-thin">
+          <div className="sm:hidden p-2">
+            <Select
+              value={String(currentStep)}
+              onValueChange={(v) => onStepChange(Number(v) as CostBuilderStep)}
+            >
+              <SelectTrigger className="w-full" data-testid="select-mobile-step">
+                <div className="flex items-center gap-2">
+                  {ActiveIcon && (
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full shrink-0 bg-primary text-primary-foreground">
+                      <ActiveIcon className="w-3 h-3" />
+                    </div>
+                  )}
+                  <span className="text-sm font-medium truncate">
+                    {activeStep?.name}
+                    {activeStep && activeStep.cost > 0 && (
+                      <span className="ml-2 font-mono text-xs text-muted-foreground">
+                        ${activeStep.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {steps.map((step) => {
+                  const StepIcon = step.icon;
+                  const isCompleted = stepStatus[step.id];
+                  return (
+                    <SelectItem
+                      key={step.id}
+                      value={String(step.id)}
+                      data-testid={`select-mobile-step-${step.id}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`flex items-center justify-center w-5 h-5 rounded-full shrink-0 ${
+                          isCompleted
+                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                            : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {isCompleted ? (
+                            <Check className="w-3 h-3" />
+                          ) : (
+                            <StepIcon className="w-3 h-3" />
+                          )}
+                        </div>
+                        <span className="text-sm">{step.name}</span>
+                        {step.cost > 0 && (
+                          <span className="font-mono text-xs text-muted-foreground">
+                            ${step.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                        )}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <nav className="hidden sm:flex flex-row flex-wrap flex-1 min-w-0">
             {steps.map((step) => {
               const StepIcon = step.icon;
               const isActive = currentStep === step.id;
@@ -49,14 +111,14 @@ export default function CostBuilderSidebar({
                 <button
                   key={step.id}
                   onClick={() => onStepChange(step.id as CostBuilderStep)}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2.5 text-left border-b-2 lg:border-b-2 lg:border-l-0 transition-colors shrink-0 sm:flex-1 sm:min-w-[120px] ${
+                  className={`flex items-center gap-2 px-3 py-2.5 text-left border-b-2 lg:border-b-2 lg:border-l-0 transition-colors flex-1 min-w-[120px] ${
                     isActive
                       ? 'border-b-primary bg-primary/5 text-foreground'
                       : 'border-b-transparent hover:bg-muted/50 text-muted-foreground'
                   }`}
                   data-testid={`step-${step.id}`}
                 >
-                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-full shrink-0 ${
+                  <div className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : isCompleted
@@ -64,13 +126,13 @@ export default function CostBuilderSidebar({
                         : 'bg-muted text-muted-foreground'
                   }`}>
                     {isCompleted && !isActive ? (
-                      <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <Check className="w-3.5 h-3.5" />
                     ) : (
-                      <StepIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <StepIcon className="w-3.5 h-3.5" />
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className={`text-[11px] sm:text-xs font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
+                    <p className={`text-xs font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
                       {step.name}
                     </p>
                     {step.cost > 0 && (
