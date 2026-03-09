@@ -44,16 +44,16 @@ export default function BidSubcontractorsStep({
 }: BidSubcontractorsStepProps) {
   return (
     <Card data-testid="card-subcontractor-quotes">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Users className="w-5 h-5 shrink-0" />
             Step 5: Subcontractor Quotes
           </CardTitle>
-          <CardDescription>Get quotes from subcontractors for specialized work</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">Get quotes from subcontractors for specialized work</CardDescription>
         </div>
         {canEdit && (
-          <Button onClick={onAddQuote} size="sm" data-testid="button-add-quote">
+          <Button onClick={onAddQuote} size="sm" className="w-full sm:w-auto" data-testid="button-add-quote">
             <Plus className="w-4 h-4 mr-2" />
             Add Quote
           </Button>
@@ -68,12 +68,12 @@ export default function BidSubcontractorsStep({
             </h4>
             <div className="space-y-2">
               {derivedSubRequirements.map((req) => (
-                <div key={req.id} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">{req.category}</Badge>
-                    <span className="text-muted-foreground">{req.description}</span>
+                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 text-sm">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <Badge variant="secondary" className="text-xs shrink-0">{req.category}</Badge>
+                    <span className="text-muted-foreground truncate">{req.description}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="font-mono">${req.subcontractCost.toLocaleString()}</span>
                     {req.needsSubSelection ? (
                       <Badge variant="outline" className="text-orange-600 border-orange-300">Needs Quote</Badge>
@@ -116,14 +116,14 @@ export default function BidSubcontractorsStep({
               {quotes.map((quote) => (
                 <div
                   key={quote.id}
-                  className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
+                  className={`flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 sm:p-4 border rounded-md transition-colors ${
                     (quote as any).isSelected
                       ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
                       : ''
                   }`}
                   data-testid={`quote-${quote.id}`}
                 >
-                  <div className="flex gap-3 flex-1">
+                  <div className="flex gap-3 flex-1 min-w-0">
                     <div className="pt-1">
                       <Checkbox
                         checked={(quote as any).isSelected || false}
@@ -134,9 +134,9 @@ export default function BidSubcontractorsStep({
                         data-testid={`checkbox-quote-${quote.id}`}
                       />
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <h4 className="font-medium">{quote.subcontractorName}</h4>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+                        <h4 className="font-medium text-sm sm:text-base">{quote.subcontractorName}</h4>
                         <Badge variant="outline" className="font-mono">
                           ${Number(quote.quoteAmount).toLocaleString()}
                         </Badge>
@@ -147,14 +147,14 @@ export default function BidSubcontractorsStep({
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground mb-1">{quote.scopeOfWork}</p>
+                      <p className="text-xs sm:text-sm text-muted-foreground mb-1">{quote.scopeOfWork}</p>
                       {quote.contactName && (
                         <p className="text-xs text-muted-foreground">Contact: {quote.contactName}</p>
                       )}
                     </div>
                   </div>
                   {canEdit && (
-                    <div className="flex gap-2 ml-4">
+                    <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
                       <Button size="icon" variant="ghost" onClick={() => onEditQuote(quote)}>
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -166,11 +166,11 @@ export default function BidSubcontractorsStep({
                 </div>
               ))}
             </div>
-            <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-5">
+            <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
+              <Button variant="outline" className="w-full sm:w-auto" onClick={onPrevStep} data-testid="button-prev-step-5">
                 Back to Equipment
               </Button>
-              <Button onClick={onNextStep} data-testid="button-next-step-5">
+              <Button className="w-full sm:w-auto" onClick={onNextStep} data-testid="button-next-step-5">
                 Continue to Bid Summary
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>

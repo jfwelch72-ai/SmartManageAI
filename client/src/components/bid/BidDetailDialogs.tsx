@@ -67,14 +67,14 @@ interface BidEditDialogProps {
 export function BidEditDialog({ open, onOpenChange, form, onSubmit, isPending }: BidEditDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Bid</DialogTitle>
           <DialogDescription>Update the bid details</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="name"
@@ -137,7 +137,7 @@ export function BidEditDialog({ open, onOpenChange, form, onSubmit, isPending }:
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
                 name="locationAddress"
@@ -289,7 +289,7 @@ export function SubcontractorQuoteDialog({
                 }}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="subcontractorName"
@@ -344,7 +344,7 @@ export function SubcontractorQuoteDialog({
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
                 name="contactName"
@@ -505,7 +505,7 @@ export function MaterialQuoteDialog({
                 }}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="materialName"
@@ -546,7 +546,7 @@ export function MaterialQuoteDialog({
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="specs"
@@ -574,7 +574,7 @@ export function MaterialQuoteDialog({
                 )}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="supplierName"
@@ -771,7 +771,7 @@ export function EquipmentSelectionDialog({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <FormField
                 control={form.control}
                 name="equipmentName"
@@ -800,7 +800,7 @@ export function EquipmentSelectionDialog({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <FormField
                 control={form.control}
                 name="plannedDays"

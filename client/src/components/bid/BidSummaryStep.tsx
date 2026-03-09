@@ -141,13 +141,13 @@ export default function BidSummaryStep({
             <p className="text-xs text-muted-foreground">Your target profit margin on this project</p>
           </div>
 
-          <div className="p-6 bg-primary/10 rounded-md border border-primary/20">
-            <div className="flex items-center justify-between">
+          <div className="p-4 sm:p-6 bg-primary/10 rounded-md border border-primary/20">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <span className="text-xl font-bold">Final Bid Amount</span>
-                <p className="text-sm text-muted-foreground mt-1">Direct Cost + Overhead + Profit</p>
+                <span className="text-lg sm:text-xl font-bold">Final Bid Amount</span>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">Direct Cost + Overhead + Profit</p>
               </div>
-              <span className="text-3xl font-bold font-mono" data-testid="text-final-bid-amount">
+              <span className="text-2xl sm:text-3xl font-bold font-mono" data-testid="text-final-bid-amount">
                 ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
@@ -159,9 +159,10 @@ export default function BidSummaryStep({
                 <FileText className="w-4 h-4" />
                 Generate Documents
               </h4>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3">
                 <Button
                   variant="outline"
+                  className="w-full sm:w-auto"
                   onClick={() => window.open(`/api/bids/${bidCode}/pdf/internal-summary`, '_blank')}
                   data-testid="button-download-internal-pdf"
                 >
@@ -170,6 +171,7 @@ export default function BidSummaryStep({
                 </Button>
                 <Button
                   variant="outline"
+                  className="w-full sm:w-auto"
                   onClick={() => window.open(`/api/bids/${bidCode}/pdf/customer-quote`, '_blank')}
                   data-testid="button-download-customer-pdf"
                 >
@@ -183,12 +185,12 @@ export default function BidSummaryStep({
             </div>
           )}
 
-          <div className="flex justify-between pt-4">
-            <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-6">
+          <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={onPrevStep} data-testid="button-prev-step-6">
               Back to Subcontractors
             </Button>
             {canEdit && (
-              <Button onClick={onAwardBid} data-testid="button-award-bid">
+              <Button className="w-full sm:w-auto" onClick={onAwardBid} data-testid="button-award-bid">
                 <CheckCircle2 className="w-4 h-4 mr-2" />
                 Award Bid & Create Project
               </Button>

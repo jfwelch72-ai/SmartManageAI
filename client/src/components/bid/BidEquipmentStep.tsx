@@ -39,16 +39,16 @@ export default function BidEquipmentStep({
 }: BidEquipmentStepProps) {
   return (
     <Card data-testid="card-equipment-selections">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Truck className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Truck className="w-5 h-5 shrink-0" />
             Step 4: Equipment Selection
           </CardTitle>
-          <CardDescription>Select equipment identified in the Scope of Work from your fleet or rentals</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">Select equipment identified in the Scope of Work from your fleet or rentals</CardDescription>
         </div>
         {canEdit && (
-          <Button onClick={onAddEquipment} size="sm" data-testid="button-add-equipment">
+          <Button onClick={onAddEquipment} size="sm" className="w-full sm:w-auto" data-testid="button-add-equipment">
             <Plus className="w-4 h-4 mr-2" />
             Add Equipment
           </Button>
@@ -63,12 +63,12 @@ export default function BidEquipmentStep({
             </h4>
             <div className="space-y-2">
               {derivedEquipmentRequirements.map((req) => (
-                <div key={req.id} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">{req.category}</Badge>
-                    <span className="text-muted-foreground">{req.description}</span>
+                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 text-sm">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <Badge variant="secondary" className="text-xs shrink-0">{req.category}</Badge>
+                    <span className="text-muted-foreground truncate">{req.description}</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="font-mono">${req.equipmentCost.toLocaleString()}</span>
                     {req.needsEquipmentSelection ? (
                       <Badge variant="outline" className="text-orange-600 border-orange-300">Needs Selection</Badge>
@@ -111,12 +111,12 @@ export default function BidEquipmentStep({
               {equipmentSelections.map((selection) => (
                 <div
                   key={selection.id}
-                  className="flex items-start justify-between p-4 border rounded-md"
+                  className="flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 sm:p-4 border rounded-md"
                   data-testid={`equipment-selection-${selection.id}`}
                 >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2 flex-wrap">
-                      <h4 className="font-medium">{selection.equipmentName}</h4>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+                      <h4 className="font-medium text-sm sm:text-base">{selection.equipmentName}</h4>
                       <Badge variant={selection.source === "OWNED" ? "default" : "secondary"}>
                         {selection.source === "OWNED" ? (
                           <><Wrench className="w-3 h-3 mr-1" />Owned</>
@@ -131,7 +131,7 @@ export default function BidEquipmentStep({
                         </Badge>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs text-muted-foreground">
                       {selection.plannedDays && (
                         <div><span className="font-medium">Days:</span> {selection.plannedDays}</div>
                       )}
@@ -144,7 +144,7 @@ export default function BidEquipmentStep({
                     </div>
                   </div>
                   {canEdit && (
-                    <div className="flex gap-2 ml-4">
+                    <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
                       <Button size="icon" variant="ghost" onClick={() => onEditEquipment(selection)}>
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -156,11 +156,11 @@ export default function BidEquipmentStep({
                 </div>
               ))}
             </div>
-            <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-4">
+            <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
+              <Button variant="outline" className="w-full sm:w-auto" onClick={onPrevStep} data-testid="button-prev-step-4">
                 Back to Materials
               </Button>
-              <Button onClick={onNextStep} data-testid="button-next-step-4">
+              <Button className="w-full sm:w-auto" onClick={onNextStep} data-testid="button-next-step-4">
                 Continue to Subcontractors
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>

@@ -46,16 +46,16 @@ export default function BidMaterialsStep({
 }: BidMaterialsStepProps) {
   return (
     <Card data-testid="card-material-quotes">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Package className="w-5 h-5 shrink-0" />
             Step 3: Material & Supply Quotes
           </CardTitle>
-          <CardDescription>Get quotes from suppliers for materials identified in the Scope of Work</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">Get quotes from suppliers for materials identified in the Scope of Work</CardDescription>
         </div>
         {canEdit && (
-          <Button onClick={onAddQuote} size="sm" data-testid="button-add-material-quote">
+          <Button onClick={onAddQuote} size="sm" className="w-full sm:w-auto" data-testid="button-add-material-quote">
             <Plus className="w-4 h-4 mr-2" />
             Add Quote
           </Button>
@@ -70,13 +70,13 @@ export default function BidMaterialsStep({
             </h4>
             <div className="space-y-2">
               {derivedMaterialRequirements.map((req) => (
-                <div key={req.id} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="text-xs">{req.category}</Badge>
-                    <span className="text-muted-foreground">{req.description}</span>
-                    <span className="text-muted-foreground">({req.quantity} {req.unit})</span>
+                <div key={req.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 text-sm">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <Badge variant="secondary" className="text-xs shrink-0">{req.category}</Badge>
+                    <span className="text-muted-foreground truncate">{req.description}</span>
+                    <span className="text-muted-foreground shrink-0">({req.quantity} {req.unit})</span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="font-mono">${req.materialCost.toLocaleString()}</span>
                     {req.needsVendorSelection ? (
                       <Badge variant="outline" className="text-orange-600 border-orange-300">Needs Quote</Badge>
@@ -119,14 +119,14 @@ export default function BidMaterialsStep({
               {materialQuotes.map((quote) => (
                 <div
                   key={quote.id}
-                  className={`flex items-start justify-between p-4 border rounded-md transition-colors ${
+                  className={`flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 sm:p-4 border rounded-md transition-colors ${
                     (quote as any).isSelected
                       ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
                       : ''
                   }`}
                   data-testid={`material-quote-${quote.id}`}
                 >
-                  <div className="flex gap-3 flex-1">
+                  <div className="flex gap-3 flex-1 min-w-0">
                     <div className="pt-1">
                       <Checkbox
                         checked={(quote as any).isSelected || false}
@@ -137,9 +137,9 @@ export default function BidMaterialsStep({
                         data-testid={`checkbox-material-quote-${quote.id}`}
                       />
                     </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2 flex-wrap">
-                        <h4 className="font-medium">{quote.materialName}</h4>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
+                        <h4 className="font-medium text-sm sm:text-base">{quote.materialName}</h4>
                         <Badge variant="outline" className="font-mono">
                           ${Number(quote.cost).toLocaleString()}
                         </Badge>
@@ -151,7 +151,7 @@ export default function BidMaterialsStep({
                         )}
                       </div>
                       {quote.description && (
-                        <p className="text-sm text-muted-foreground mb-2">{quote.description}</p>
+                        <p className="text-xs sm:text-sm text-muted-foreground mb-2">{quote.description}</p>
                       )}
                       {quote.supplierName && (
                         <p className="text-xs text-muted-foreground">Supplier: {quote.supplierName}</p>
@@ -162,7 +162,7 @@ export default function BidMaterialsStep({
                     </div>
                   </div>
                   {canEdit && (
-                    <div className="flex gap-2 ml-4">
+                    <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
                       <Button
                         size="icon"
                         variant="ghost"
@@ -184,11 +184,11 @@ export default function BidMaterialsStep({
                 </div>
               ))}
             </div>
-            <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-3">
+            <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
+              <Button variant="outline" className="w-full sm:w-auto" onClick={onPrevStep} data-testid="button-prev-step-3">
                 Back to Scope of Work
               </Button>
-              <Button onClick={onNextStep} data-testid="button-next-step-3">
+              <Button className="w-full sm:w-auto" onClick={onNextStep} data-testid="button-next-step-3">
                 Continue to Equipment
                 <ChevronRight className="w-4 h-4 ml-2" />
               </Button>

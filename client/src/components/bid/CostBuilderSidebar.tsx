@@ -39,7 +39,7 @@ export default function CostBuilderSidebar({
     <Card className="w-full">
       <CardContent className="p-0">
         <div className="flex flex-col lg:flex-row lg:items-stretch">
-          <nav className="flex flex-row flex-wrap flex-1 min-w-0">
+          <nav className="flex flex-row flex-nowrap overflow-x-auto sm:flex-wrap flex-1 min-w-0 scrollbar-thin">
             {steps.map((step) => {
               const StepIcon = step.icon;
               const isActive = currentStep === step.id;
@@ -49,14 +49,14 @@ export default function CostBuilderSidebar({
                 <button
                   key={step.id}
                   onClick={() => onStepChange(step.id as CostBuilderStep)}
-                  className={`flex items-center gap-2 px-3 py-2.5 text-left border-b-2 lg:border-b-2 lg:border-l-0 transition-colors flex-1 min-w-[120px] ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 sm:py-2.5 text-left border-b-2 lg:border-b-2 lg:border-l-0 transition-colors shrink-0 sm:flex-1 sm:min-w-[120px] ${
                     isActive
                       ? 'border-b-primary bg-primary/5 text-foreground'
                       : 'border-b-transparent hover:bg-muted/50 text-muted-foreground'
                   }`}
                   data-testid={`step-${step.id}`}
                 >
-                  <div className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${
+                  <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 rounded-full shrink-0 ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : isCompleted
@@ -64,13 +64,13 @@ export default function CostBuilderSidebar({
                         : 'bg-muted text-muted-foreground'
                   }`}>
                     {isCompleted && !isActive ? (
-                      <Check className="w-3.5 h-3.5" />
+                      <Check className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                     ) : (
-                      <StepIcon className="w-3.5 h-3.5" />
+                      <StepIcon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className={`text-xs font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
+                    <p className={`text-[11px] sm:text-xs font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
                       {step.name}
                     </p>
                     {step.cost > 0 && (
@@ -84,7 +84,7 @@ export default function CostBuilderSidebar({
             })}
           </nav>
 
-          <div className="flex flex-col items-start gap-1 px-4 py-2.5 border-t lg:border-t-0 lg:border-l bg-muted/30 shrink-0">
+          <div className="flex flex-col items-start gap-1 px-3 sm:px-4 py-2 sm:py-2.5 border-t lg:border-t-0 lg:border-l bg-muted/30 shrink-0">
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground">Direct Cost</span>
               <span className="font-mono text-xs font-medium">${directCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>

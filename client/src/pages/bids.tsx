@@ -390,7 +390,7 @@ export default function BidsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-8">
           <div>
             <h1 className="text-2xl font-bold text-foreground mb-1">Bid Board</h1>
@@ -439,8 +439,8 @@ export default function BidsPage() {
         </div>
 
         <div className="mb-6 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
+            <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Search bids by name, code, or client..."
@@ -451,43 +451,45 @@ export default function BidsPage() {
               />
             </div>
             
-            <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
-              <SelectTrigger className="w-[160px]" data-testid="select-due-date-filter">
-                <Calendar className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Due Date" />
-              </SelectTrigger>
-              <SelectContent>
-                {DUE_DATE_FILTERS.map(option => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[160px]" data-testid="select-status-filter">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                {ESTIMATE_STATUS_FILTERS.map(option => (
-                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            <Select value={estimatorFilter} onValueChange={setEstimatorFilter}>
-              <SelectTrigger className="w-[180px]" data-testid="select-estimator-filter">
-                <SelectValue placeholder="Estimator" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Estimators</SelectItem>
-                {users.map(u => (
-                  <SelectItem key={u.id} value={u.id}>
-                    {u.firstName} {u.lastName} - {u.role}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-2">
+              <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
+                <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-due-date-filter">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Due Date" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DUE_DATE_FILTERS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-status-filter">
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ESTIMATE_STATUS_FILTERS.map(option => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              <Select value={estimatorFilter} onValueChange={setEstimatorFilter}>
+                <SelectTrigger className="w-full sm:w-[180px]" data-testid="select-estimator-filter">
+                  <SelectValue placeholder="Estimator" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Estimators</SelectItem>
+                  {users.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName} - {u.role}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           
           {/* Active filter badges */}
@@ -551,7 +553,7 @@ export default function BidsPage() {
               : "No bids found. Click 'New Bid' to create your first bid."}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {filteredBids.map((bid) => (
               <BidCard
                 key={bid.id}

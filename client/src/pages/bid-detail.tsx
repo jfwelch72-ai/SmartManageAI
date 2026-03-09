@@ -222,14 +222,14 @@ export default function BidDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="mb-6">
-          <Button variant="ghost" onClick={() => setLocation('/bids')} data-testid="button-back">← Back to Bid Board</Button>
+      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8">
+        <div className="mb-4 sm:mb-6">
+          <Button variant="ghost" size="sm" onClick={() => setLocation('/bids')} data-testid="button-back">← Back to Bid Board</Button>
         </div>
 
-        <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <Badge variant="outline" className="font-mono">{bid.code}</Badge>
               {canEdit ? (
                 <Select value={bid.status} onValueChange={(v) => { if (v === "AWARDED") setShowAwardDialog(true); else mutations.updateBidStatus.mutate(v); }} disabled={mutations.updateBidStatus.isPending} data-testid="select-bid-status">
@@ -246,13 +246,13 @@ export default function BidDetailPage() {
                 <Badge className={bid.status === "AWARDED" ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" : bid.status === "LOST" ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" : bid.status === "CANCELLED" ? "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300" : bid.status === "ACTIVE" ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"}>{bid.status}</Badge>
               )}
             </div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">{bid.name}</h1>
-            <p className="text-sm text-muted-foreground">{bid.clientName} • {locationString}</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1 sm:mb-2">{bid.name}</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground">{bid.clientName} • {locationString}</p>
           </div>
           {canEdit && (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={handleEditBid} data-testid="button-edit-bid-header"><Edit className="w-4 h-4 mr-2" />Edit Bid Info</Button>
-              {bid.status !== "AWARDED" && <Button onClick={() => setShowAwardDialog(true)} data-testid="button-mark-awarded">Mark as Awarded</Button>}
+            <div className="flex gap-2 w-full sm:w-auto">
+              <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={handleEditBid} data-testid="button-edit-bid-header"><Edit className="w-4 h-4 mr-2" />Edit Bid Info</Button>
+              {bid.status !== "AWARDED" && <Button size="sm" className="flex-1 sm:flex-none" onClick={() => setShowAwardDialog(true)} data-testid="button-mark-awarded">Mark as Awarded</Button>}
             </div>
           )}
         </div>

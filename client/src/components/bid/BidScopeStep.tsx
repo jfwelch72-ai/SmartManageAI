@@ -29,15 +29,15 @@ export default function BidScopeStep({
 }: BidScopeStepProps) {
   return (
     <Card data-testid="card-bid-estimate">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <CardTitle className="flex items-center gap-2">
-            <Calculator className="w-5 h-5" />
+          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <Calculator className="w-5 h-5 shrink-0" />
             Step 2: Scope of Work
           </CardTitle>
-          <CardDescription>Start by defining the work scope - this will auto-populate material, equipment, and subcontractor requirements</CardDescription>
+          <CardDescription className="text-xs sm:text-sm">Start by defining the work scope - this will auto-populate material, equipment, and subcontractor requirements</CardDescription>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full sm:w-auto">
           {!estimate && canEdit && (
             <Button
               onClick={onCreateEstimate}
@@ -127,15 +127,15 @@ export default function BidScopeStep({
               Edit Estimate Line Items
             </Button>
 
-            <div className="flex justify-between pt-4">
+            <div className="flex flex-col sm:flex-row justify-between gap-2 pt-4">
               {onPrevStep && (
-                <Button variant="outline" onClick={onPrevStep} data-testid="button-prev-step-2">
+                <Button variant="outline" className="w-full sm:w-auto" onClick={onPrevStep} data-testid="button-prev-step-2">
                   <ChevronLeft className="w-4 h-4 mr-2" />
                   Back to Plans
                 </Button>
               )}
-              <div className="ml-auto">
-                <Button onClick={onNextStep} data-testid="button-next-step-2">
+              <div className="sm:ml-auto">
+                <Button className="w-full sm:w-auto" onClick={onNextStep} data-testid="button-next-step-2">
                   Continue to Materials
                   <ChevronRight className="w-4 h-4 ml-2" />
                 </Button>
