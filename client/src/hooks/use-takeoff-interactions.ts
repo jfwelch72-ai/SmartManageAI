@@ -25,6 +25,7 @@ import type { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 
 interface UseTakeoffInteractionsParams {
   projectId: string;
+  sheetsQueryKey?: string[];
   selectedSheet: string | null;
   currentSheet: TakeoffSheet | undefined;
   measurements: TakeoffMeasurement[];
@@ -97,7 +98,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const lastPinchCenterRef = useRef<{ x: number; y: number } | null>(null);
 
   const {
-    projectId, selectedSheet, currentSheet, measurements, activeTool, setActiveTool,
+    projectId, sheetsQueryKey, selectedSheet, currentSheet, measurements, activeTool, setActiveTool,
     isDrawing, setIsDrawing, drawingPoints, setDrawingPoints, currentDrawingTool, setCurrentDrawingTool,
     calibrationMode, setCalibrationMode, calibrationPoints, setCalibrationPoints,
     calibrationDistance, setCalibrationDistance, units,
@@ -563,7 +564,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     }
     try {
       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot, units });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
       toast({ title: "Success", description: "Calibration saved" });
       setCalibrationMode("idle");
       setCalibrationPoints([]);
@@ -573,7 +574,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       const errorMessage = error?.message || "Failed to save calibration";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
-  }, [selectedSheet, calibrationPoints, calibrationDistance, units, projectId, setCalibrationMode, setCalibrationPoints, setCalibrationDistance, setActiveTool, toast]);
+  }, [selectedSheet, calibrationPoints, calibrationDistance, units, projectId, sheetsQueryKey, setCalibrationMode, setCalibrationPoints, setCalibrationDistance, setActiveTool, toast]);
 
   const handleApplyPresetScale = useCallback(async (scaleCategory: string, selectedPresetScale: string, resetScaleState: () => void) => {
     if (!selectedSheet || !selectedPresetScale || !scaleCategory) {
@@ -592,14 +593,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     }
     try {
       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: scale.pxPerFoot, units: "ft" });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
       toast({ title: "Success", description: `Applied scale: ${scale.label}` });
       resetScaleState();
     } catch (error: any) {
       const errorMessage = error?.message || "Failed to apply scale";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
     }
-  }, [selectedSheet, projectId, toast]);
+  }, [selectedSheet, projectId, sheetsQueryKey, toast]);
 
   const toggleFullscreen = useCallback(async () => {
     if (!workspaceRef.current) return;

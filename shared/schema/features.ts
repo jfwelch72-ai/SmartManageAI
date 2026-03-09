@@ -292,7 +292,8 @@ export const projectPlans = pgTable("project_plans", {
 // Quantity Categories table (for organizing measurements by scope/type)
 export const quantityCategories = pgTable("quantity_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   color: text("color").notNull().default("#3b82f6"),
   displayOrder: integer("display_order").notNull().default(0),
@@ -300,12 +301,14 @@ export const quantityCategories = pgTable("quantity_categories", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   projectIdx: index("quantity_categories_project_idx").on(table.projectId),
+  bidIdx: index("quantity_categories_bid_idx").on(table.bidId),
 }));
 
 // Takeoff Sheets table (per-page images from PDFs)
 export const takeoffSheets = pgTable("takeoff_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
   planId: varchar("plan_id").references(() => projectPlans.id, { onDelete: "cascade" }),
   imageUrl: text("image_url").notNull(),
   sheetIndex: integer("sheet_index").notNull().default(0),
@@ -317,6 +320,7 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   projectIdx: index("takeoff_sheets_project_idx").on(table.projectId),
+  bidIdx: index("takeoff_sheets_bid_idx").on(table.bidId),
   planIdx: index("takeoff_sheets_plan_idx").on(table.planId),
 }));
 

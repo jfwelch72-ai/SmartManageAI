@@ -12,6 +12,56 @@ import { createArcSegment } from "@shared/utils/geometry";
 
 const router = Router();
 
+async function verifySheetAccess(sheetId: string, user: { id: string; orgId: string; role: string }): Promise<{ allowed: boolean; sheet: any | null; reason?: string }> {
+  const { takeoffSheets, projects, bids } = await import("@shared/schema");
+  const { isNull } = await import("drizzle-orm");
+
+  const [sheet] = await db
+    .select({
+      id: takeoffSheets.id,
+      projectId: takeoffSheets.projectId,
+      bidId: takeoffSheets.bidId,
+    })
+    .from(takeoffSheets)
+    .where(eq(takeoffSheets.id, sheetId))
+    .limit(1);
+
+  if (!sheet) return { allowed: false, sheet: null, reason: "Sheet not found" };
+
+  if (sheet.projectId) {
+    const [project] = await db
+      .select({ id: projects.id, orgId: projects.orgId })
+      .from(projects)
+      .where(and(eq(projects.id, sheet.projectId), eq(projects.orgId, user.orgId)))
+      .limit(1);
+    if (!project) return { allowed: false, sheet, reason: "Sheet not found" };
+
+    if (user.role !== "ADMIN" && user.role !== "MANAGER" && user.role !== "SUPER_ADMIN" && user.role !== "ESTIMATOR") {
+      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, sheet.projectId), eq(crewMembers.userId, user.id)))
+        .limit(1);
+      if (!assignment) return { allowed: false, sheet, reason: "Access denied" };
+    }
+    return { allowed: true, sheet };
+  }
+
+  if (sheet.bidId) {
+    const [bid] = await db
+      .select({ id: bids.id, orgId: bids.orgId })
+      .from(bids)
+      .where(and(eq(bids.id, sheet.bidId), eq(bids.orgId, user.orgId)))
+      .limit(1);
+    if (!bid) return { allowed: false, sheet, reason: "Sheet not found" };
+    return { allowed: true, sheet };
+  }
+
+  return { allowed: false, sheet, reason: "Sheet has no parent" };
+}
+
 // ====================
 // Subcontractor Routes
 // ====================
@@ -889,42 +939,10 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       return;
     }
 
-    // Validate that the sheet exists and belongs to a valid project
-    const sheetWithProject = await db
-      .select({
-        sheetId: takeoffSheets.id,
-        projectId: takeoffSheets.projectId,
-      })
-      .from(takeoffSheets)
-      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
-      .where(eq(takeoffSheets.id, id))
-      .limit(1);
-
-    if (!sheetWithProject || sheetWithProject.length === 0) {
-      res.status(404).json({ error: "Sheet not found or does not belong to a valid project" });
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
       return;
-    }
-
-    // Authorization check: Only ADMIN/MANAGER or users assigned to the project can calibrate
-    const userRole = req.user!.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER") {
-      // Check if user is assigned to this project via crew assignments
-      const userAssignment = await db
-        .select({ id: crewProjectAssignments.id })
-        .from(crewProjectAssignments)
-        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
-        .where(
-          and(
-            eq(crewProjectAssignments.projectId, sheetWithProject[0].projectId),
-            eq(crewMembers.userId, req.user!.id)
-          )
-        )
-        .limit(1);
-
-      if (!userAssignment || userAssignment.length === 0) {
-        res.status(403).json({ error: "You do not have access to this project" });
-        return;
-      }
     }
 
     // Update the calibration
@@ -1146,38 +1164,17 @@ router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequ
   try {
     const { id } = req.params;
     const { sheetName } = req.body;
-    const { takeoffSheets, projects } = await import("@shared/schema");
+    const { takeoffSheets } = await import("@shared/schema");
 
     if (!sheetName || typeof sheetName !== "string" || sheetName.trim().length === 0) {
       res.status(400).json({ error: "sheetName is required" });
       return;
     }
 
-    const [sheet] = await db
-      .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId })
-      .from(takeoffSheets)
-      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
-      .where(eq(takeoffSheets.id, id))
-      .limit(1);
-
-    if (!sheet) {
-      res.status(404).json({ error: "Sheet not found" });
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
       return;
-    }
-
-    const userRole = req.user!.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
-      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
-      const [assignment] = await db
-        .select({ id: crewProjectAssignments.id })
-        .from(crewProjectAssignments)
-        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
-        .where(and(eq(crewProjectAssignments.projectId, sheet.projectId), eq(crewMembers.userId, req.user!.id)))
-        .limit(1);
-      if (!assignment) {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
     }
 
     const [updated] = await db
@@ -1197,22 +1194,16 @@ router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: Au
   try {
     const { id } = req.params;
     const { folderGroup } = req.body;
-    const { takeoffSheets, projects } = await import("@shared/schema");
+    const { takeoffSheets } = await import("@shared/schema");
 
     if (!folderGroup || typeof folderGroup !== "string" || folderGroup.trim().length === 0) {
       res.status(400).json({ error: "folderGroup is required" });
       return;
     }
 
-    const [sheet] = await db
-      .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId })
-      .from(takeoffSheets)
-      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
-      .where(and(eq(takeoffSheets.id, id), eq(projects.orgId, req.user!.orgId)))
-      .limit(1);
-
-    if (!sheet) {
-      res.status(404).json({ error: "Sheet not found" });
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
       return;
     }
 
@@ -1293,7 +1284,13 @@ router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, asy
 router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { takeoffSheets, takeoffMeasurements, projects } = await import("@shared/schema");
+    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
+
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
 
     const [sourceSheet] = await db
       .select()
@@ -1306,25 +1303,16 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
       return;
     }
 
-    const userRole = req.user!.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
-      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
-      const [assignment] = await db
-        .select({ id: crewProjectAssignments.id })
-        .from(crewProjectAssignments)
-        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
-        .where(and(eq(crewProjectAssignments.projectId, sourceSheet.projectId), eq(crewMembers.userId, req.user!.id)))
-        .limit(1);
-      if (!assignment) {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
-    }
+    const parentFilter = sourceSheet.projectId
+      ? eq(takeoffSheets.projectId, sourceSheet.projectId)
+      : sourceSheet.bidId
+        ? eq(takeoffSheets.bidId, sourceSheet.bidId)
+        : eq(takeoffSheets.id, sourceSheet.id);
 
     const allSheets = await db
       .select({ sheetIndex: takeoffSheets.sheetIndex })
       .from(takeoffSheets)
-      .where(eq(takeoffSheets.projectId, sourceSheet.projectId));
+      .where(parentFilter);
 
     const maxIndex = allSheets.reduce((max, s) => Math.max(max, s.sheetIndex), 0);
 
@@ -1332,6 +1320,7 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
       .insert(takeoffSheets)
       .values({
         projectId: sourceSheet.projectId,
+        bidId: sourceSheet.bidId,
         planId: sourceSheet.planId,
         imageUrl: sourceSheet.imageUrl,
         sheetIndex: maxIndex + 1,
@@ -1381,33 +1370,12 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
 router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { takeoffSheets, projects } = await import("@shared/schema");
+    const { takeoffSheets } = await import("@shared/schema");
 
-    const [sheet] = await db
-      .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId })
-      .from(takeoffSheets)
-      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
-      .where(eq(takeoffSheets.id, id))
-      .limit(1);
-
-    if (!sheet) {
-      res.status(404).json({ error: "Sheet not found" });
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
       return;
-    }
-
-    const userRole = req.user!.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER" && userRole !== "SUPER_ADMIN") {
-      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
-      const [assignment] = await db
-        .select({ id: crewProjectAssignments.id })
-        .from(crewProjectAssignments)
-        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
-        .where(and(eq(crewProjectAssignments.projectId, sheet.projectId), eq(crewMembers.userId, req.user!.id)))
-        .limit(1);
-      if (!assignment) {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
     }
 
     await db.delete(takeoffSheets).where(eq(takeoffSheets.id, id));

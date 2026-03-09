@@ -6,9 +6,14 @@ import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 
+type TakeoffContext =
+  | { type: "project"; projectId: string; projectCode: string }
+  | { type: "bid"; bidId: string; bidCode: string };
+
 interface UseTakeoffDataParams {
   projectId: string;
   projectCode: string;
+  context?: TakeoffContext;
   selectedSheet: string | null;
   uploadDialogOpen: boolean;
   takeoffHistory: ReturnType<typeof useTakeoffHistory>;
@@ -30,6 +35,7 @@ interface UseTakeoffDataParams {
 export function useTakeoffData({
   projectId,
   projectCode,
+  context,
   selectedSheet,
   uploadDialogOpen,
   takeoffHistory,
@@ -38,21 +44,38 @@ export function useTakeoffData({
 }: UseTakeoffDataParams) {
   const { toast } = useToast();
 
+  const isBid = context?.type === "bid";
+  const ctxId = isBid ? context.bidId : projectId;
+  const ctxCode = isBid ? context.bidCode : projectCode;
+
+  const sheetsQueryKey = isBid
+    ? ["/api/bids", ctxId, "takeoff", "sheets"]
+    : ["/api/projects", ctxId, "takeoff", "sheets"];
+
+  const categoriesQueryKey = isBid
+    ? ["/api/bids", ctxId, "takeoff", "categories"]
+    : ["/api/projects", ctxCode, "quantity-categories"];
+
   const { data: sheets = [], isLoading: sheetsLoading } = useQuery<TakeoffSheet[]>({
-    queryKey: ["/api/projects", projectId, "takeoff", "sheets"],
+    queryKey: sheetsQueryKey,
   });
 
   const { data: planDocuments = [], isLoading: documentsLoading } = useQuery<PlanDocument[]>({
-    queryKey: ["/api/projects", projectCode, "documents"],
+    queryKey: isBid
+      ? ["/api/bids", ctxCode, "documents"]
+      : ["/api/projects", ctxCode, "documents"],
     enabled: uploadDialogOpen,
   });
 
   const importPlanMutation = useMutation({
     mutationFn: async (documentId: string) => {
-      return await apiRequest("POST", `/api/projects/${projectId}/takeoff/import-plan`, { documentId });
+      const url = isBid
+        ? `/api/bids/${ctxId}/takeoff/import-plan`
+        : `/api/projects/${ctxId}/takeoff/import-plan`;
+      return await apiRequest("POST", url, { documentId });
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
       callbacks.setUploadDialogOpen(false);
       if (data?.sheets?.[0]?.id) {
         callbacks.setSelectedSheet(data.sheets[0].id);
@@ -69,7 +92,8 @@ export function useTakeoffData({
   });
 
   const { data: projectAddenda = [] } = useQuery<AddendumOverlayData[]>({
-    queryKey: ["/api/projects", projectId, "addenda"],
+    queryKey: ["/api/projects", ctxId, "addenda"],
+    enabled: !isBid,
   });
 
   const { data: measurements = [], isLoading: measurementsLoading } = useQuery<TakeoffMeasurement[]>({
@@ -138,7 +162,7 @@ export function useTakeoffData({
   });
 
   const { data: categories = [] } = useQuery<QuantityCategory[]>({
-    queryKey: ["/api/projects", projectCode, "quantity-categories"],
+    queryKey: categoriesQueryKey,
   });
 
   const saveCategoryMutation = useMutation({
@@ -150,7 +174,10 @@ export function useTakeoffData({
           color: data.color
         });
       } else {
-        response = await apiRequest("POST", `/api/projects/${projectCode}/quantity-categories`, {
+        const url = isBid
+          ? `/api/bids/${ctxId}/takeoff/categories`
+          : `/api/projects/${ctxCode}/quantity-categories`;
+        response = await apiRequest("POST", url, {
           name: data.name,
           color: data.color,
           displayOrder: categories.length
@@ -159,7 +186,7 @@ export function useTakeoffData({
       return await response.json();
     },
     onSuccess: (data: any, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "quantity-categories"] });
+      queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
       callbacks.setCategoryDialogOpen(false);
       callbacks.setEditingCategory(null);
       callbacks.setCategoryName("");
@@ -184,7 +211,7 @@ export function useTakeoffData({
       return await apiRequest("DELETE", `/api/quantity-categories/${categoryId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "quantity-categories"] });
+      queryClient.invalidateQueries({ queryKey: categoriesQueryKey });
       toast({ title: "Success", description: "Category deleted" });
     },
     onError: () => {
@@ -192,13 +219,17 @@ export function useTakeoffData({
     },
   });
 
+  const sheetsInvalidateKey = isBid
+    ? `/api/bids/${ctxId}/takeoff/sheets`
+    : `/api/projects/${ctxId}/takeoff/sheets`;
+
   const renameSheetMutation = useMutation({
     mutationFn: async ({ sheetId, sheetName }: { sheetId: string; sheetName: string }) => {
       const res = await apiRequest("PATCH", `/api/takeoff/sheets/${sheetId}/rename`, { sheetName });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
       callbacks.setRenameDialogOpen(false);
       toast({ title: "Sheet renamed" });
     },
@@ -213,7 +244,7 @@ export function useTakeoffData({
       return res.json();
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
       if (data?.sheet?.id) callbacks.setSelectedSheet(data.sheet.id);
       toast({ title: "Sheet duplicated", description: `${data?.measurementsCopied || 0} measurements copied` });
     },
@@ -227,7 +258,7 @@ export function useTakeoffData({
       return await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
       callbacks.setSelectedSheet(sheets.length > 1 ? sheets.find(s => s.id !== selectedSheet)?.id || null : null);
       callbacks.setDeleteSheetConfirmOpen(false);
       toast({ title: "Sheet deleted" });
@@ -239,11 +270,14 @@ export function useTakeoffData({
 
   const reorderSheetsMutation = useMutation({
     mutationFn: async (order: { id: string; sheetIndex: number }[]) => {
-      const res = await apiRequest("PATCH", `/api/projects/${projectId}/takeoff/sheets/reorder`, { order });
+      const url = isBid
+        ? `/api/bids/${ctxId}/takeoff/sheets/reorder`
+        : `/api/projects/${ctxId}/takeoff/sheets/reorder`;
+      const res = await apiRequest("PATCH", url, { order });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/takeoff/sheets`] });
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to reorder sheets", variant: "destructive" });
@@ -329,6 +363,7 @@ export function useTakeoffData({
   return {
     sheets,
     sheetsLoading,
+    sheetsQueryKey,
     planDocuments,
     documentsLoading,
     projectAddenda,

@@ -44,7 +44,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Social Media Management System**: Comprehensive content management with scheduling, AI generation, and multi-platform support (FACEBOOK, INSTAGRAM, LINKEDIN, TWITTER, TIKTOK, YOUTUBE, PINTEREST), including a rich media picker and approval workflow.
 *   **Reports System**: Provides 9 report types across Takeoff and Estimate categories, with CSV export, browser print, and snapshot creation. Mobile-responsive design.
 *   **Change Order Workflow Enhancement**: Includes revision history tracking and a multi-level approval chain.
-*   **Bid Plans & Takeoff Step**: 6-step bid workflow starting with document upload (Plans, Specs, Takeoff files) before Scope of Work. Uses `bid_documents` table with CRUD endpoints and org-level access control.
+*   **Bid Plans & Takeoff Step**: 6-step bid workflow with a full takeoff workspace in Step 1. Features document tree sidebar (Plans, Specs, Takeoff, Supporting Documents), interactive PDF viewer with measurement tools (linear, area, count, volume), calibration, quantity categories, and measurements summary. Uses context-aware `useTakeoffData` hook and `TakeoffWorkspace` component that support both project and bid contexts. Takeoff sheets and quantity categories have nullable `bidId`/`projectId` columns. Bid-specific API routes at `/api/bids/:bidId/takeoff/*` with org access verification. Generic sheet-level routes (calibration, rename, delete, duplicate, folder-group) use `verifySheetAccess()` helper for dual project/bid authorization.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

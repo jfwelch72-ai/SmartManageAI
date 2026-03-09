@@ -29,12 +29,17 @@ import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 
+type TakeoffContext =
+  | { type: "project"; projectId: string; projectCode: string }
+  | { type: "bid"; bidId: string; bidCode: string };
+
 interface TakeoffWorkspaceProps {
-  projectId: string;
-  projectCode: string;
+  projectId?: string;
+  projectCode?: string;
+  context?: TakeoffContext;
 }
 
-export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId = "", projectCode = "", context }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
@@ -97,6 +102,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
   const data = useTakeoffData({
     projectId,
     projectCode,
+    context,
     selectedSheet,
     uploadDialogOpen,
     takeoffHistory,
@@ -119,6 +125,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
     sheets, sheetsLoading, planDocuments, documentsLoading,
     projectAddenda, measurements, measurementsLoading,
     categories, currentSheet, aggregatedMeasurements,
+    sheetsQueryKey,
     importPlanMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
     saveCategoryMutation, deleteCategoryMutation,
@@ -128,6 +135,7 @@ export default function TakeoffWorkspace({ projectId, projectCode }: TakeoffWork
 
   const interactions = useTakeoffInteractions({
     projectId,
+    sheetsQueryKey,
     selectedSheet,
     currentSheet,
     measurements,

@@ -18,7 +18,7 @@ import { format } from "date-fns";
 import type { UploadResult } from "@uppy/core";
 import { apiRequest } from "@/lib/queryClient";
 
-import BidPlansStep from "@/components/bid/BidPlansStep";
+import BidPlansTab from "@/components/bid/BidPlansTab";
 import BidScopeStep from "@/components/bid/BidScopeStep";
 import BidMaterialsStep from "@/components/bid/BidMaterialsStep";
 import BidEquipmentStep from "@/components/bid/BidEquipmentStep";
@@ -261,7 +261,7 @@ export default function BidDetailPage() {
           <CostBuilderSidebar currentStep={currentStep} onStepChange={setCurrentStep} steps={steps} stepStatus={stepStatus} directCost={directCost} overheadPercent={overheadPercent} overheadAmount={overheadAmount} profitPercent={profitPercent} profitAmount={profitAmount} finalBidAmount={finalBidAmount} />
 
           <div className="flex-1 min-w-0 space-y-6">
-            {currentStep === 1 && <BidPlansStep bidId={bid.id} bidCode={bidCode} canEdit={canEdit} onNextStep={() => setCurrentStep(2)} />}
+            {currentStep === 1 && <BidPlansTab bidId={bid.id} bidCode={bidCode} canEdit={canEdit} onNextStep={() => setCurrentStep(2)} />}
             {currentStep === 2 && <BidScopeStep estimate={estimate} estimateLoading={estimateLoading} canEdit={canEdit} bidCode={bidCode} createEstimatePending={mutations.createEstimateMutation.isPending} onCreateEstimate={() => mutations.createEstimateMutation.mutate()} onNavigateEstimate={() => setLocation(`/bids/${bidCode}/estimate`)} onPrevStep={() => setCurrentStep(1)} onNextStep={() => setCurrentStep(3)} />}
             {currentStep === 3 && <BidMaterialsStep materialQuotes={materialQuotes} materialQuotesLoading={materialQuotesLoading} totalMaterialCost={totalMaterialCost} derivedMaterialRequirements={derivedMaterialRequirements} canEdit={canEdit} toggleSelectionPending={mutations.toggleMaterialQuoteSelection.isPending} onAddQuote={handleAddMaterialQuote} onEditQuote={handleEditMaterialQuote} onDeleteQuote={handleDeleteMaterialQuote} onToggleSelection={(qId, sel) => mutations.toggleMaterialQuoteSelection.mutate({ quoteId: qId, isSelected: sel })} onPrevStep={() => setCurrentStep(2)} onNextStep={() => setCurrentStep(4)} />}
             {currentStep === 4 && <BidEquipmentStep equipmentSelections={equipmentSelections} equipmentLoading={equipmentLoading} totalEquipmentCost={totalEquipmentCostCalc} derivedEquipmentRequirements={derivedEquipmentRequirements} canEdit={canEdit} onAddEquipment={handleAddEquipment} onEditEquipment={handleEditEquipmentSelection} onDeleteEquipment={handleDeleteEquipmentSelection} onPrevStep={() => setCurrentStep(3)} onNextStep={() => setCurrentStep(5)} />}
