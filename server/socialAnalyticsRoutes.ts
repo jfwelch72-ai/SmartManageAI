@@ -4,6 +4,7 @@ import { eq, and, or, asc, gte, lte } from "drizzle-orm";
 import { socialAccounts, socialMediaPosts, organizations } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -150,17 +151,31 @@ Return a JSON object with:
   "title": "A short internal title/label for this post"
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are a social media marketing expert for the construction industry." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 1000,
-      response_format: { type: "json_object" },
+    const { result: postContent, blocked, reason } = await governedAiCall({
+      orgId,
+      userId: req.user!.id,
+      actionType: "social_post_generate",
+      inputRefs: { platform, topic, tone },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a social media marketing expert for the construction industry." },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 1000,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: JSON.parse(completion.choices[0]?.message?.content || "{}"),
+          completion,
+        };
+      },
     });
 
-    const postContent = JSON.parse(response.choices[0]?.message?.content || "{}");
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
 
     if (saveAsDraft) {
       const [saved] = await db.insert(socialMediaPosts).values({

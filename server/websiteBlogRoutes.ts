@@ -11,6 +11,7 @@ import { requireAuth, AuthRequest } from "./auth";
 import { logCreate, logUpdate } from "./auditLogger";
 import { openai } from "./ai/openaiClient";
 import { ObjectStorageService, objectStorageClient } from "./objectStorage";
+import { governedAiCall, estimateCost } from "./services/aiGovernance";
 
 const router = express.Router();
 
@@ -305,20 +306,37 @@ Return a JSON object with:
   "suggestedCategory": "category name"
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { 
-          role: "system", 
-          content: "You are a professional content writer specializing in the construction industry. Write engaging, SEO-optimized blog posts." 
-        },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 2500,
-      response_format: { type: "json_object" },
+    const govOrgId = user.organizationId || "system";
+    const { result: govResult, blocked, reason } = await governedAiCall({
+      orgId: govOrgId,
+      userId: user.id,
+      actionType: "blog_post_generate",
+      inputRefs: { topic, tone, length },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { 
+              role: "system", 
+              content: "You are a professional content writer specializing in the construction industry. Write engaging, SEO-optimized blog posts." 
+            },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 2500,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: completion.choices[0]?.message?.content,
+          completion,
+        };
+      },
     });
 
-    const rawContent = response.choices[0]?.message?.content;
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
+
+    const rawContent = govResult;
     if (!rawContent) {
       console.error("OpenAI returned empty content");
       return res.status(500).json({ error: "AI returned empty response. Please try again." });
@@ -371,16 +389,33 @@ router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: R
 
     const imagePrompt = `Professional, high-quality construction industry blog header image for an article titled "${title}"${category ? ` in the category "${category}"` : ""}. Modern, clean composition suitable for a professional construction management website. Photorealistic style, well-lit, no text overlays.`;
 
-    const imageResponse = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt: imagePrompt,
-      n: 1,
-      size: "1536x1024",
-      quality: "low",
-      output_format: "png",
-    } as any);
+    const { result: b64Data, blocked: imgBlocked, reason: imgReason } = await governedAiCall({
+      orgId,
+      userId: user.id,
+      actionType: "blog_image_generate",
+      inputRefs: { title, category },
+      fn: async () => {
+        const imageResponse = await openai.images.generate({
+          model: "gpt-image-1",
+          prompt: imagePrompt,
+          n: 1,
+          size: "1536x1024",
+          quality: "low",
+          output_format: "png",
+        } as any);
+        const model = "dall-e-3";
+        const cost = estimateCost(model, 0, 0);
+        return {
+          result: imageResponse.data?.[0]?.b64_json || null,
+          completion: { model, usage: { prompt_tokens: 0, completion_tokens: 0 } },
+        };
+      },
+    });
 
-    const b64Data = imageResponse.data?.[0]?.b64_json;
+    if (imgBlocked) {
+      return res.status(429).json({ error: imgReason || "AI usage limit reached" });
+    }
+
     if (!b64Data) {
       return res.status(500).json({ error: "Failed to generate image" });
     }

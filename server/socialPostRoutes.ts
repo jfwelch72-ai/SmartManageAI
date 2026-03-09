@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { publishToPlatform } from "./social/publishService";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { openai } from "./ai/openaiClient";
+import { governedAiCall, estimateCost } from "./services/aiGovernance";
 
 const objectStorage = new ObjectStorageService();
 
@@ -146,16 +147,32 @@ router.post("/posts/generate-image", requireAuth, async (req: AuthRequest, res: 
 
     const imagePrompt = `Professional social media post image: ${prompt.trim()}. High-quality, vibrant, suitable for social media marketing. Clean composition, no text overlays.`;
 
-    const imageResponse = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt: imagePrompt,
-      n: 1,
-      size: "1024x1024",
-      quality: "low",
-      output_format: "png",
-    } as any);
+    const { result: b64Data, blocked, reason } = await governedAiCall({
+      orgId,
+      userId: req.user!.id,
+      actionType: "social_image_generate",
+      inputRefs: { prompt: prompt.substring(0, 200) },
+      fn: async () => {
+        const imageResponse = await openai.images.generate({
+          model: "gpt-image-1",
+          prompt: imagePrompt,
+          n: 1,
+          size: "1024x1024",
+          quality: "low",
+          output_format: "png",
+        } as any);
+        const model = "dall-e-3";
+        return {
+          result: imageResponse.data?.[0]?.b64_json || null,
+          completion: { model, usage: { prompt_tokens: 0, completion_tokens: 0 } },
+        };
+      },
+    });
 
-    const b64Data = imageResponse.data?.[0]?.b64_json;
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
+
     if (!b64Data) {
       return res.status(500).json({ error: "Failed to generate image" });
     }

@@ -1,4 +1,5 @@
 import { openai } from "./openaiClient";
+import { governedAiCall, estimateCost } from "../services/aiGovernance";
 import { logInfo, logError } from "../utils/logger";
 
 export interface ExtractedPricingItem {
@@ -28,7 +29,8 @@ const UNIT_TYPES = [
 export async function extractPricingFromPDF(
   fileRef: string,
   vendorId: string,
-  effectiveQuarter: string
+  effectiveQuarter: string,
+  govContext?: { orgId: string; userId: string }
 ): Promise<ExtractedPricingItem[]> {
   logInfo(`[VendorPriceExtractor] Starting extraction for ${fileRef}`);
 
@@ -55,12 +57,13 @@ export async function extractPricingFromPDF(
       const [buffer] = await file.download();
       const base64Content = buffer.toString("base64");
       
-      const visionResponse = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert at extracting pricing data from vendor price lists and catalogs. 
+      const visionFn = async () => {
+        const visionResponse = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert at extracting pricing data from vendor price lists and catalogs. 
 Extract all pricing items from the document into structured data.
 
 For each item found, extract:
@@ -74,29 +77,51 @@ For each item found, extract:
 - deliveryFee: Delivery fee (if specified)
 
 Return a JSON array of items. Be thorough and extract ALL pricing items visible in the document.`
-          },
-          {
-            role: "user",
-            content: [
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:application/pdf;base64,${base64Content}`,
-                  detail: "high"
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:application/pdf;base64,${base64Content}`,
+                    detail: "high"
+                  }
+                },
+                {
+                  type: "text",
+                  text: `Extract all pricing items from this vendor price list. The effective quarter is ${effectiveQuarter}. Return as JSON array.`
                 }
-              },
-              {
-                type: "text",
-                text: `Extract all pricing items from this vendor price list. The effective quarter is ${effectiveQuarter}. Return as JSON array.`
-              }
-            ]
-          }
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 4096,
-      });
+              ]
+            }
+          ],
+          response_format: { type: "json_object" },
+          max_tokens: 4096,
+        });
+        return {
+          result: visionResponse.choices[0]?.message?.content || "{}",
+          completion: visionResponse,
+        };
+      };
 
-      const responseText = visionResponse.choices[0]?.message?.content || "{}";
+      let responseText: string;
+      if (govContext) {
+        const govResult = await governedAiCall({
+          orgId: govContext.orgId,
+          userId: govContext.userId,
+          actionType: "vendor_price_extract",
+          inputRefs: { fileRef, vendorId, effectiveQuarter },
+          fn: visionFn,
+        });
+        if (govResult.blocked) {
+          throw new Error(govResult.reason || "AI usage limit reached");
+        }
+        responseText = govResult.result;
+      } else {
+        const raw = await visionFn();
+        responseText = raw.result;
+      }
+
       const parsed = JSON.parse(responseText);
       
       const items: ExtractedPricingItem[] = parsed.items || parsed.pricing || [];
@@ -108,7 +133,7 @@ Return a JSON array of items. Be thorough and extract ALL pricing items visible 
     logError(`[VendorPriceExtractor] PDF extraction failed: ${error.message}`);
     
     if (error.message.includes("Could not process") || error.message.includes("format")) {
-      return await extractWithTextFallback(fileRef, vendorId, effectiveQuarter);
+      return await extractWithTextFallback(fileRef, vendorId, effectiveQuarter, govContext);
     }
     throw error;
   }
@@ -119,16 +144,18 @@ Return a JSON array of items. Be thorough and extract ALL pricing items visible 
 async function extractWithTextFallback(
   fileRef: string,
   vendorId: string,
-  effectiveQuarter: string
+  effectiveQuarter: string,
+  govContext?: { orgId: string; userId: string }
 ): Promise<ExtractedPricingItem[]> {
   logInfo(`[VendorPriceExtractor] Attempting text-based extraction fallback`);
   
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o",
-    messages: [
-      {
-        role: "system",
-        content: `You are extracting pricing data from a construction vendor price list.
+  const fallbackFn = async () => {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are extracting pricing data from a construction vendor price list.
 Generate realistic pricing items based on common construction materials.
 
 Return JSON with an "items" array containing objects with:
@@ -136,17 +163,39 @@ Return JSON with an "items" array containing objects with:
 
 Categories: ${MATERIAL_CATEGORIES.slice(0, 10).join(", ")}
 Units: ${UNIT_TYPES.slice(0, 10).join(", ")}`
-      },
-      {
-        role: "user",
-        content: `Generate 10-15 sample pricing items for a construction vendor catalog, effective ${effectiveQuarter}.`
-      }
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 2048,
-  });
+        },
+        {
+          role: "user",
+          content: `Generate 10-15 sample pricing items for a construction vendor catalog, effective ${effectiveQuarter}.`
+        }
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 2048,
+    });
+    return {
+      result: response.choices[0]?.message?.content || "{}",
+      completion: response,
+    };
+  };
 
-  const responseText = response.choices[0]?.message?.content || "{}";
+  let responseText: string;
+  if (govContext) {
+    const govResult = await governedAiCall({
+      orgId: govContext.orgId,
+      userId: govContext.userId,
+      actionType: "vendor_price_extract_fallback",
+      inputRefs: { fileRef, vendorId, effectiveQuarter },
+      fn: fallbackFn,
+    });
+    if (govResult.blocked) {
+      throw new Error(govResult.reason || "AI usage limit reached");
+    }
+    responseText = govResult.result;
+  } else {
+    const raw = await fallbackFn();
+    responseText = raw.result;
+  }
+
   const parsed = JSON.parse(responseText);
   
   return validateAndNormalizeItems(parsed.items || []);

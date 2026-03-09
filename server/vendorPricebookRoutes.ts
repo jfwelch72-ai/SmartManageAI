@@ -266,7 +266,8 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
       const extractedItems = await extractPricingFromPDF(
         job.fileRef,
         job.crmOrganisationId,
-        job.effectiveQuarter || getCurrentQuarter()
+        job.effectiveQuarter || getCurrentQuarter(),
+        { orgId: job.organizationId || req.user?.organizationId || "system", userId: req.user?.id || "system" }
       );
 
       const insertedItems = [];

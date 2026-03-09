@@ -1,4 +1,5 @@
 import { openai, AI_MODEL_GPT4O } from './openaiClient';
+import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
 import { masterSowItems, masterModifierCategories, masterModifiers, tradeTypeEnum } from '@shared/schema';
 import { eq, inArray } from 'drizzle-orm';
@@ -133,7 +134,7 @@ Respond with JSON matching this EXACT structure:
 
 const TRADE_DISCOVERY_PROMPT = buildTradeDiscoveryPrompt();
 
-export async function discoverTradesFromDescription(context: TradeMatchingContext): Promise<TradeDiscoveryResult> {
+export async function discoverTradesFromDescription(context: TradeMatchingContext, govContext?: { orgId: string; userId: string }): Promise<TradeDiscoveryResult> {
   console.log('[TradeDiscoveryService] Analyzing project for trade matching');
 
   const userPrompt = `Analyze the following project information and identify the most relevant construction trades:
@@ -147,18 +148,41 @@ ${context.bidDocumentExtracts?.length ? `Bid Document Extracts:\n${context.bidDo
 Identify the primary trade and all related trades that would be involved in this project.`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
-      messages: [
-        { role: 'system', content: TRADE_DISCOVERY_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-      max_tokens: 2048,
-    });
+    const aiCallFn = async () => {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_GPT4O,
+        messages: [
+          { role: 'system', content: TRADE_DISCOVERY_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 2048,
+      });
+      return {
+        result: completion.choices[0]?.message?.content,
+        completion,
+      };
+    };
 
-    const content = completion.choices[0]?.message?.content;
+    let content: string | null | undefined;
+    if (govContext) {
+      const govResult = await governedAiCall({
+        orgId: govContext.orgId,
+        userId: govContext.userId,
+        actionType: "trade_discovery",
+        inputRefs: { projectName: context.projectName, projectType: context.projectType },
+        fn: aiCallFn,
+      });
+      if (govResult.blocked) {
+        throw new Error(govResult.reason || "AI usage limit reached");
+      }
+      content = govResult.result;
+    } else {
+      const raw = await aiCallFn();
+      content = raw.result;
+    }
+
     if (!content) {
       throw new Error('No response from OpenAI');
     }
@@ -224,10 +248,10 @@ export async function getTradesWithSowCounts(): Promise<Array<{ tradeType: strin
   }));
 }
 
-export async function suggestTradesForBidDocument(documentText: string): Promise<TradeDiscoveryResult> {
+export async function suggestTradesForBidDocument(documentText: string, govContext?: { orgId: string; userId: string }): Promise<TradeDiscoveryResult> {
   return discoverTradesFromDescription({
-    bidDocumentExtracts: [documentText.slice(0, 10000)], // Limit to 10k chars for API
-  });
+    bidDocumentExtracts: [documentText.slice(0, 10000)],
+  }, govContext);
 }
 
 export async function getTradeModifierCategories(tradeTypes: string[]): Promise<Array<{

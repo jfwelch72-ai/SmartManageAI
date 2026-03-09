@@ -1,4 +1,5 @@
 import { openai, AI_MODEL_GPT4O } from './openaiClient';
+import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
 import { masterSowItems, masterModifiers, masterModifierCategories, organizationSowItems } from '@shared/schema';
 import { eq, inArray, and, like, or, sql } from 'drizzle-orm';
@@ -87,7 +88,8 @@ Focus on practical, commonly-used items for the given project type. Consider:
 
 export async function predictRelevantScopeItems(
   context: ScopePredictionContext,
-  limit: number = 20
+  limit: number = 20,
+  govContext?: { orgId: string; userId: string }
 ): Promise<ScopePredictionResult> {
   console.log(`[ScopePredictionEngine] Predicting scope for trade: ${context.tradeType}`);
 
@@ -190,23 +192,46 @@ ${JSON.stringify(itemsList, null, 2)}
 Rank the top ${limit} most relevant items and identify any missing scope areas.`;
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT4O,
-      messages: [
-        { role: 'system', content: SCOPE_PREDICTION_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3,
-      max_tokens: 2048,
-    });
+    const aiCallFn = async () => {
+      const completion = await openai.chat.completions.create({
+        model: AI_MODEL_GPT4O,
+        messages: [
+          { role: 'system', content: SCOPE_PREDICTION_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 2048,
+      });
+      return {
+        result: completion.choices[0]?.message?.content,
+        completion,
+      };
+    };
 
-    const content = completion.choices[0]?.message?.content;
-    if (!content) {
+    let rawContent: string | null | undefined;
+    if (govContext) {
+      const govResult = await governedAiCall({
+        orgId: govContext.orgId,
+        userId: govContext.userId,
+        actionType: "scope_prediction",
+        inputRefs: { tradeType: context.tradeType, projectType: context.projectType },
+        fn: aiCallFn,
+      });
+      if (govResult.blocked) {
+        throw new Error(govResult.reason || "AI usage limit reached");
+      }
+      rawContent = govResult.result;
+    } else {
+      const raw = await aiCallFn();
+      rawContent = raw.result;
+    }
+
+    if (!rawContent) {
       throw new Error('No response from OpenAI');
     }
 
-    const aiResult = JSON.parse(content);
+    const aiResult = JSON.parse(rawContent);
     
     const rankedItemMap = new Map<string, { relevanceScore: number; reason: string }>();
     for (const ranked of aiResult.rankedItemIds || []) {
@@ -426,12 +451,13 @@ export async function getScopeItemsForTrade(
 export async function suggestScopeFromBidDocument(
   documentText: string,
   tradeType: string,
-  limit: number = 30
+  limit: number = 30,
+  govContext?: { orgId: string; userId: string }
 ): Promise<ScopePredictionResult> {
   return predictRelevantScopeItems({
     tradeType,
-    projectDescription: documentText.slice(0, 8000), // Limit for API
-  }, limit);
+    projectDescription: documentText.slice(0, 8000),
+  }, limit, govContext);
 }
 
 export async function getModifiersForScopeItem(

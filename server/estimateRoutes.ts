@@ -17,6 +17,7 @@ import {
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 import { 
   calculateMaterials, 
   generateMaterialRequirementsJson, 
@@ -1025,13 +1026,19 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return acc;
       }, {} as Record<string, { count: number, totalCost: number, laborCost: number, materialCost: number }>);
 
-      // Call OpenAI for analysis
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: `You are an AI CFO analyzing a construction project estimate. Provide:
+      const govOrgId = req.user!.organizationId || "system";
+      const { result: analysisText, blocked, reason } = await governedAiCall({
+        orgId: govOrgId,
+        userId: req.user!.id,
+        actionType: "estimate_analyze",
+        inputRefs: { estimateId },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4",
+            messages: [
+              {
+                role: "system",
+                content: `You are an AI CFO analyzing a construction project estimate. Provide:
 1. Budget Health Assessment (Low/Medium/High risk)
 2. Key Insights (3-5 bullet points)
 3. Cost Distribution Analysis
@@ -1039,10 +1046,10 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 5. Recommendations (3-5 actionable items)
 
 Format as JSON with keys: riskLevel, insights (array), costAnalysis (string), profitabilityAnalysis (string), recommendations (array).`
-          },
-          {
-            role: "user",
-            content: `Analyze this estimate:
+              },
+              {
+                role: "user",
+                content: `Analyze this estimate:
 
 ${project ? `Project: ${project.name} (${project.status})
 Contract Amount: $${project.contractAmount || 'Not set'}` : 'Bid Estimate (not yet converted to project)'}
@@ -1069,13 +1076,22 @@ ACTUAL COSTS (if available):
 ${Number(actualLabor.total_hours) > 0 ? `- Labor Variance: ${((Number(actualLabor.total_labor_cost) - estimateSummary.laborCost) / estimateSummary.laborCost * 100).toFixed(1)}%` : ''}
 
 Provide comprehensive financial analysis and recommendations.`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 1500,
+              }
+            ],
+            temperature: 0.7,
+            max_tokens: 1500,
+          });
+          return {
+            result: completion.choices[0]?.message?.content,
+            completion,
+          };
+        },
       });
 
-      const analysisText = completion.choices[0]?.message?.content;
+      if (blocked) {
+        return res.status(429).json({ error: reason || "AI usage limit reached" });
+      }
+
       if (!analysisText) {
         throw new Error("No analysis generated");
       }

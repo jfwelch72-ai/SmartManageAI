@@ -51,12 +51,15 @@ router.post("/ai/trades/discover", sensitiveLimiter, requireAuth, async (req: Au
       projectType,
       existingScope,
       bidDocumentExtracts,
-    });
+    }, { orgId: req.user.organizationId || "system", userId: req.user.id });
 
     logInfo(`[AI Trades] Trade discovery completed for user ${req.user.id} | primaryTrade: ${result.primaryTrade} | relatedTrades: ${result.relatedTrades.length}`);
 
     res.json(result);
   } catch (error: any) {
+    if (error.message?.includes("limit reached") || error.message?.includes("blocked")) {
+      return res.status(429).json({ error: error.message });
+    }
     logError(`[AI Trades] Trade discovery error: ${error.message}`);
     res.status(500).json({ error: "Failed to discover trades" });
   }
@@ -77,12 +80,15 @@ router.post("/ai/scope/predict", sensitiveLimiter, requireAuth, async (req: Auth
       estimatedValue,
       existingScopeItems,
       relatedTrades,
-    }, limit || 20);
+    }, limit || 20, { orgId: req.user.organizationId || "system", userId: req.user.id });
 
     logInfo(`[AI Scope] Scope prediction completed for user ${req.user.id} | trade: ${tradeType} | items: ${result.predictedItems.length} | completeness: ${result.completenessScore}`);
 
     res.json(result);
   } catch (error: any) {
+    if (error.message?.includes("limit reached") || error.message?.includes("blocked")) {
+      return res.status(429).json({ error: error.message });
+    }
     logError(`[AI Scope] Scope prediction error: ${error.message}`);
     res.status(500).json({ error: "Failed to predict scope items" });
   }
@@ -174,13 +180,17 @@ router.post("/ai/scope/from-document", sensitiveLimiter, requireAuth, async (req
     const result = await suggestScopeFromBidDocument(
       documentText,
       tradeType,
-      limit || 30
+      limit || 30,
+      { orgId: req.user.organizationId || "system", userId: req.user.id }
     );
 
     logInfo(`[AI Scope] Scope from document completed for user ${req.user.id} | trade: ${tradeType} | items: ${result.predictedItems.length}`);
 
     res.json(result);
   } catch (error: any) {
+    if (error.message?.includes("limit reached") || error.message?.includes("blocked")) {
+      return res.status(429).json({ error: error.message });
+    }
     logError(`[AI Scope] Scope from document error: ${error.message}`);
     res.status(500).json({ error: "Failed to suggest scope from document" });
   }

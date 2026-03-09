@@ -1,4 +1,5 @@
 import { openai } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 import { db } from "./db";
 import { 
   projectNotes, 
@@ -168,22 +169,36 @@ Only include notes that have actionable items. Skip general observations or non-
 Return format: { "insights": [ ... ] }`;
 
     try {
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        temperature: 0.3,
-        response_format: { type: "json_object" }
+      const { result: responseText, blocked, reason } = await governedAiCall({
+        orgId: "system",
+        userId: null,
+        actionType: "notes_analysis",
+        inputRefs: { noteCount: notes.length },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            temperature: 0.3,
+            response_format: { type: "json_object" }
+          });
+          return {
+            result: completion.choices[0]?.message?.content,
+            completion,
+          };
+        },
       });
 
-      const responseText = completion.choices[0]?.message?.content;
+      if (blocked) {
+        throw new Error(reason || "AI usage limit reached");
+      }
+
       if (!responseText) {
         throw new Error("No response from OpenAI");
       }
 
-      // Parse and validate response
       const validInsights = this.parseAndValidateAIResponse(responseText, notes);
       console.log(`[AI Notes] Successfully validated ${validInsights.length} insights from OpenAI`);
 

@@ -11,6 +11,7 @@ import {
 import { requireAuth, AuthRequest } from "./auth";
 import { logCreate } from "./auditLogger";
 import { openai } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = express.Router();
 
@@ -70,20 +71,34 @@ Your capabilities:
 
 Be helpful, professional, and focused on helping contractors present themselves well online.`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message },
-      ],
-      max_tokens: 1500,
+    const govOrgId = user.organizationId || "system";
+    const { result: aiResponse, blocked, reason } = await governedAiCall({
+      orgId: govOrgId,
+      userId: user.id,
+      actionType: "website_assistant_ask",
+      inputRefs: { messageLength: message?.length },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: message },
+          ],
+          max_tokens: 1500,
+        });
+        return {
+          result: completion.choices[0]?.message?.content || "I couldn't generate a response.",
+          completion,
+        };
+      },
     });
 
-    const aiResponse = response.choices[0]?.message?.content || "I couldn't generate a response.";
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
 
     res.json({ 
       response: aiResponse,
-      usage: response.usage,
     });
   } catch (error) {
     console.error("Error in AI assistant:", error);
@@ -127,12 +142,19 @@ Include: Contact form, phone/email, business hours, service area map, FAQ.`,
 
     const prompt = pagePrompts[pageType] || `Create a ${pageType} page for a construction company.`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { 
-          role: "system", 
-          content: `You are a professional web designer. Generate complete page content as JSON with this structure:
+    const govOrgId = user.organizationId || "system";
+    const { result: pageContent, blocked, reason } = await governedAiCall({
+      orgId: govOrgId,
+      userId: user.id,
+      actionType: "website_generate_page",
+      inputRefs: { pageType },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { 
+              role: "system", 
+              content: `You are a professional web designer. Generate complete page content as JSON with this structure:
 {
   "pageTitle": "Page Title",
   "metaTitle": "SEO Title (60 chars max)",
@@ -147,14 +169,22 @@ Include: Contact form, phone/email, business hours, service area map, FAQ.`,
     }
   ]
 }`
-        },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 3000,
-      response_format: { type: "json_object" },
+            },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 3000,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: JSON.parse(completion.choices[0]?.message?.content || "{}"),
+          completion,
+        };
+      },
     });
 
-    const pageContent = JSON.parse(response.choices[0]?.message?.content || "{}");
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
 
     res.json(pageContent);
   } catch (error) {
@@ -205,17 +235,32 @@ Consider:
 - Accessibility (sufficient contrast)
 - Modern web design trends`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are a professional brand designer specializing in construction company branding." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 500,
-      response_format: { type: "json_object" },
+    const govOrgId = user.organizationId || "system";
+    const { result: colors, blocked, reason } = await governedAiCall({
+      orgId: govOrgId,
+      userId: user.id,
+      actionType: "website_suggest_colors",
+      inputRefs: { tradeType, style },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a professional brand designer specializing in construction company branding." },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 500,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: JSON.parse(completion.choices[0]?.message?.content || "{}"),
+          completion,
+        };
+      },
     });
 
-    const colors = JSON.parse(response.choices[0]?.message?.content || "{}");
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
 
     res.json(colors);
   } catch (error) {
@@ -356,17 +401,32 @@ Generate optimized SEO content. Return JSON:
   "suggestions": ["Additional SEO improvement suggestion 1", "suggestion 2"]
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are an SEO expert specializing in local business and construction company websites." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 1500,
-      response_format: { type: "json_object" },
+    const govOrgId = user.organizationId || "system";
+    const { result: seoContent, blocked, reason } = await governedAiCall({
+      orgId: govOrgId,
+      userId: user.id,
+      actionType: "seo_optimize",
+      inputRefs: { pageId },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are an SEO expert specializing in local business and construction company websites." },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 1500,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: JSON.parse(completion.choices[0]?.message?.content || "{}"),
+          completion,
+        };
+      },
     });
 
-    const seoContent = JSON.parse(response.choices[0]?.message?.content || "{}");
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
 
     res.json(seoContent);
   } catch (error) {
@@ -692,28 +752,47 @@ ${contactAddress ? `Address: ${contactAddress}` : ""}
 ${stylePreference ? `Style Preference: ${stylePreference}` : ""}
 ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_tokens: 8000,
+    const { result: aiResult, blocked: wizardBlocked, reason: wizardReason } = await governedAiCall({
+      orgId: orgId || "system",
+      userId: req.user!.id,
+      actionType: "ai_wizard_generate",
+      inputRefs: { companyName, industry },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+          max_tokens: 8000,
+        });
+
+        const content = completion.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error("AI did not return a response");
+        }
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(content);
+        } catch (parseErr) {
+          throw new Error("AI returned invalid JSON");
+        }
+        return {
+          result: parsed,
+          completion,
+        };
+      },
     });
 
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      return res.status(500).json({ error: "AI did not return a response" });
+    if (wizardBlocked) {
+      return res.status(429).json({ error: wizardReason || "AI usage limit reached" });
     }
 
-    let aiResult: any;
-    try {
-      aiResult = JSON.parse(content);
-    } catch (parseErr) {
-      console.error("Failed to parse AI wizard response:", parseErr);
-      return res.status(500).json({ error: "AI returned invalid JSON" });
+    if (!aiResult) {
+      return res.status(500).json({ error: "AI did not return a response" });
     }
 
     const { siteSettings, pages: aiPages } = aiResult;

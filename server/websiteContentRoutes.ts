@@ -19,6 +19,7 @@ import { logCreate, logUpdate } from "./auditLogger";
 import { openai } from "./ai/openaiClient";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { sendEmail } from "./services/emailService";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = express.Router();
 
@@ -506,17 +507,32 @@ Return a JSON object with:
   "keywords": ["keyword1", "keyword2"]
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { role: "system", content: "You are a professional construction project portfolio writer." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 1000,
-      response_format: { type: "json_object" },
+    const orgId = user.organizationId;
+    const { result: content, blocked, reason } = await governedAiCall({
+      orgId: orgId || "system",
+      userId: user.id,
+      actionType: "website_project_description_generate",
+      inputRefs: { title, serviceType, projectType },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You are a professional construction project portfolio writer." },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 1000,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: JSON.parse(completion.choices[0]?.message?.content || "{}"),
+          completion,
+        };
+      },
     });
 
-    const content = JSON.parse(response.choices[0]?.message?.content || "{}");
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
 
     res.json(content);
   } catch (error) {
@@ -632,20 +648,35 @@ Return a JSON object with:
   "engagementTips": "Tips to boost engagement"
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        { 
-          role: "system", 
-          content: "You are a social media marketing expert for the construction industry." 
-        },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 1000,
-      response_format: { type: "json_object" },
+    const govOrgId = user.organizationId || "system";
+    const { result: postContent, blocked: socialBlocked, reason: socialReason } = await governedAiCall({
+      orgId: govOrgId,
+      userId: user.id,
+      actionType: "social_post_generate",
+      inputRefs: { platform, topic, tone, sourceType },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { 
+              role: "system", 
+              content: "You are a social media marketing expert for the construction industry." 
+            },
+            { role: "user", content: prompt },
+          ],
+          max_tokens: 1000,
+          response_format: { type: "json_object" },
+        });
+        return {
+          result: JSON.parse(completion.choices[0]?.message?.content || "{}"),
+          completion,
+        };
+      },
     });
 
-    const postContent = JSON.parse(response.choices[0]?.message?.content || "{}");
+    if (socialBlocked) {
+      return res.status(429).json({ error: socialReason || "AI usage limit reached" });
+    }
 
     if (user.organizationId) {
       const hashtagsArray = postContent.hashtags || [];

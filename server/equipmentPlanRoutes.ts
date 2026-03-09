@@ -14,6 +14,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, ne, desc, and, or, sql } from "drizzle-orm";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
+import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -877,6 +878,8 @@ const router = Router();
       
       const { openai } = await import('./ai/openaiClient');
       
+      const equipOrgId = equipmentItem.organizationId || req.user?.organizationId || "system";
+
       const systemPrompt = `You are an expert equipment maintenance advisor for construction equipment. 
 You provide practical, actionable recommendations for repairs and preventative maintenance.
 Always respond in valid JSON format with the following structure:
@@ -924,23 +927,37 @@ Please provide:
 4. Urgency assessment
 5. Cost estimates`;
 
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.7,
-        max_tokens: 2048,
+      const { result: recommendations, blocked, reason } = await governedAiCall({
+        orgId: equipOrgId,
+        userId: req.user?.id || null,
+        actionType: "equipment_ai_recommendations",
+        inputRefs: { equipmentId, problemDescription: problemDescription?.substring(0, 200) },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.7,
+            max_tokens: 2048,
+          });
+          const content = completion.choices[0]?.message?.content;
+          if (!content) {
+            throw new Error('No response from OpenAI');
+          }
+          return {
+            result: JSON.parse(content),
+            completion,
+          };
+        },
       });
-      
-      const content = completion.choices[0]?.message?.content;
-      if (!content) {
-        throw new Error('No response from OpenAI');
+
+      if (blocked) {
+        return res.status(429).json({ error: reason || "AI usage limit reached" });
       }
-      
-      const recommendations = JSON.parse(content);
+
       res.json(recommendations);
     } catch (error) {
       console.error("AI recommendations error:", error);
