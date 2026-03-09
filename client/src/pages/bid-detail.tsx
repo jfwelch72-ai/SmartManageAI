@@ -257,10 +257,10 @@ export default function BidDetailPage() {
           )}
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-col gap-4">
           <CostBuilderSidebar currentStep={currentStep} onStepChange={setCurrentStep} steps={steps} stepStatus={stepStatus} directCost={directCost} overheadPercent={overheadPercent} overheadAmount={overheadAmount} profitPercent={profitPercent} profitAmount={profitAmount} finalBidAmount={finalBidAmount} />
 
-          <div className="flex-1 min-w-0 space-y-6">
+          <div className="w-full space-y-6">
             {currentStep === 1 && <BidPlansTab bidId={bid.id} bidCode={bidCode} canEdit={canEdit} onNextStep={() => setCurrentStep(2)} />}
             {currentStep === 2 && <BidScopeStep estimate={estimate} estimateLoading={estimateLoading} canEdit={canEdit} bidCode={bidCode} createEstimatePending={mutations.createEstimateMutation.isPending} onCreateEstimate={() => mutations.createEstimateMutation.mutate()} onNavigateEstimate={() => setLocation(`/bids/${bidCode}/estimate`)} onPrevStep={() => setCurrentStep(1)} onNextStep={() => setCurrentStep(3)} />}
             {currentStep === 3 && <BidMaterialsStep materialQuotes={materialQuotes} materialQuotesLoading={materialQuotesLoading} totalMaterialCost={totalMaterialCost} derivedMaterialRequirements={derivedMaterialRequirements} canEdit={canEdit} toggleSelectionPending={mutations.toggleMaterialQuoteSelection.isPending} onAddQuote={handleAddMaterialQuote} onEditQuote={handleEditMaterialQuote} onDeleteQuote={handleDeleteMaterialQuote} onToggleSelection={(qId, sel) => mutations.toggleMaterialQuoteSelection.mutate({ quoteId: qId, isSelected: sel })} onPrevStep={() => setCurrentStep(2)} onNextStep={() => setCurrentStep(4)} />}

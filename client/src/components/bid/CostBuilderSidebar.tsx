@@ -1,5 +1,5 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Check, ChevronRight, FileText, Package, Truck, Users, Calculator } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Check } from "lucide-react";
 
 type CostBuilderStep = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -36,14 +36,10 @@ export default function CostBuilderSidebar({
   finalBidAmount,
 }: CostBuilderSidebarProps) {
   return (
-    <div className="w-72 flex-shrink-0">
-      <Card className="sticky top-4">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Cost Builder</CardTitle>
-          <CardDescription>Build your bid step by step</CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
-          <nav className="flex flex-col">
+    <Card className="w-full">
+      <CardContent className="p-0">
+        <div className="flex flex-col lg:flex-row lg:items-stretch">
+          <nav className="flex flex-row flex-wrap flex-1 min-w-0">
             {steps.map((step) => {
               const StepIcon = step.icon;
               const isActive = currentStep === step.id;
@@ -53,14 +49,14 @@ export default function CostBuilderSidebar({
                 <button
                   key={step.id}
                   onClick={() => onStepChange(step.id as CostBuilderStep)}
-                  className={`flex items-center gap-3 px-4 py-3 text-left border-l-2 transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2.5 text-left border-b-2 lg:border-b-2 lg:border-l-0 transition-colors flex-1 min-w-[120px] ${
                     isActive
-                      ? 'border-l-primary bg-primary/5 text-foreground'
-                      : 'border-l-transparent hover:bg-muted/50 text-muted-foreground'
+                      ? 'border-b-primary bg-primary/5 text-foreground'
+                      : 'border-b-transparent hover:bg-muted/50 text-muted-foreground'
                   }`}
                   data-testid={`step-${step.id}`}
                 >
-                  <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                  <div className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : isCompleted
@@ -68,49 +64,46 @@ export default function CostBuilderSidebar({
                         : 'bg-muted text-muted-foreground'
                   }`}>
                     {isCompleted && !isActive ? (
-                      <Check className="w-4 h-4" />
+                      <Check className="w-3.5 h-3.5" />
                     ) : (
-                      <StepIcon className="w-4 h-4" />
+                      <StepIcon className="w-3.5 h-3.5" />
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${isActive ? 'text-foreground' : ''}`}>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-medium truncate ${isActive ? 'text-foreground' : ''}`}>
                       {step.name}
                     </p>
                     {step.cost > 0 && (
-                      <p className="text-xs font-mono text-muted-foreground">
+                      <p className="text-[10px] font-mono text-muted-foreground">
                         ${step.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                       </p>
                     )}
                   </div>
-                  {isActive && (
-                    <ChevronRight className="w-4 h-4 text-primary" />
-                  )}
                 </button>
               );
             })}
           </nav>
 
-          <div className="p-4 border-t bg-muted/30">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">Direct Cost</span>
-              <span className="font-mono text-sm">${directCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+          <div className="flex flex-row flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2.5 border-t lg:border-t-0 lg:border-l bg-muted/30 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">Direct Cost</span>
+              <span className="font-mono text-xs font-medium">${directCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">+ Overhead ({overheadPercent}%)</span>
-              <span className="font-mono text-sm">${overheadAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">+ Overhead ({overheadPercent}%)</span>
+              <span className="font-mono text-xs">${overheadAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-muted-foreground">+ Profit ({profitPercent}%)</span>
-              <span className="font-mono text-sm text-green-600 dark:text-green-400">${profitAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-muted-foreground">+ Profit ({profitPercent}%)</span>
+              <span className="font-mono text-xs text-green-600 dark:text-green-400">${profitAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
-            <div className="flex items-center justify-between pt-2 border-t">
-              <span className="text-sm font-semibold">Final Bid</span>
-              <span className="font-mono font-bold text-lg">${finalBidAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+            <div className="flex items-center gap-1.5 pl-2 border-l">
+              <span className="text-xs font-semibold">Final Bid</span>
+              <span className="font-mono font-bold text-sm">${finalBidAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
             </div>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
