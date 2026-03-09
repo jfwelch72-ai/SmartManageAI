@@ -221,7 +221,7 @@ export default function BidDetailPage() {
   const derivedSubRequirements = estimate?.lineItems?.filter(item => Number(item.subcontractCost) > 0 || ["PLUMBING", "ELECTRICAL", "HVAC", "LANDSCAPING", "FENCING", "MASONRY"].includes(item.category)).map(item => ({ id: item.id, category: item.category, description: item.description, subcontractCost: Number(item.subcontractCost), needsSubSelection: !quotes.some(q => q.scopeOfWork?.toLowerCase().includes(item.description.toLowerCase())) })) || [];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-x-hidden">
       <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8">
         <div className="mb-4 sm:mb-6">
           <Button variant="ghost" size="sm" onClick={() => setLocation('/bids')} data-testid="button-back">← Back to Bid Board</Button>
