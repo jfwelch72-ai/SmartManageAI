@@ -13,7 +13,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovHelpers";
 
 const router = Router();
-router.use(requireAuth, requireFeaturePermission('canAccessFinancials'));
+router.use("/sov", requireAuth, requireFeaturePermission('canAccessFinancials'));
 
 router.get("/sov", async (req: AuthRequest, res: Response) => {
   try {

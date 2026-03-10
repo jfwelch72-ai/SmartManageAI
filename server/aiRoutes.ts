@@ -36,7 +36,11 @@ import { aiInsights, aiGanttRecommendations, aiVendorComparisons } from "@shared
 import { equipment as equipmentTable } from "@shared/schema";
 
 const router = Router();
-router.use(requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/ai-settings", requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/ai-pm", requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/cfo", requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/ai-analyze", requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/ai/assistant", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 
 router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
