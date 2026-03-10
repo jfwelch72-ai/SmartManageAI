@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { DollarSign, Sparkles, RefreshCw, Download } from "lucide-react";
@@ -28,16 +29,23 @@ export default function CFODashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
+  const hasAiPermission = useFeaturePermission('canUseAiFeatures');
+
+  const canAccessCFO = !!user && (
+    user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPER_ADMIN" ||
+    hasFinancialsPermission || hasAiPermission
+  );
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
     queryKey: ["/api/cfo/profitability"],
-    enabled: !!user && (user.role === "ADMIN" || user.role === "MANAGER"),
+    enabled: canAccessCFO,
   });
 
   const { data: equipmentMetrics, isLoading: equipmentLoading } =
     useQuery<EquipmentMetricsData>({
       queryKey: ["/api/cfo/equipment-metrics"],
-      enabled: !!user && (user.role === "ADMIN" || user.role === "MANAGER"),
+      enabled: canAccessCFO,
     });
 
   const runFullAnalysis = useMutation({
@@ -153,12 +161,12 @@ export default function CFODashboard() {
     );
   }
 
-  if (user.role !== "ADMIN" && user.role !== "MANAGER") {
+  if (!canAccessCFO) {
     return (
       <div className="min-h-screen bg-background">
         <main className="p-8 text-center">
           <p className="text-muted-foreground">
-            Admin or Manager access required
+            You don't have permission to access the CFO Dashboard
           </p>
         </main>
       </div>

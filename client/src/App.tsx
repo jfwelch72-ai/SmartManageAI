@@ -120,7 +120,7 @@ function ProtectedRoute({
 }: { 
   component: () => JSX.Element | null;
   permission?: (role?: string) => boolean;
-  featurePerm?: FeaturePermissionKey;
+  featurePerm?: FeaturePermissionKey | FeaturePermissionKey[];
   skipOnboardingCheck?: boolean;
 }) {
   const { user, isLoading, organizationOnboardingStatus } = useAuth();
@@ -149,7 +149,8 @@ function ProtectedRoute({
   }
 
   const roleAllowed = permission ? permission(user.role) : !featurePerm;
-  const featureAllowed = featurePerm ? (permissions[featurePerm] ?? false) : false;
+  const permKeys = featurePerm ? (Array.isArray(featurePerm) ? featurePerm : [featurePerm]) : [];
+  const featureAllowed = permKeys.length > 0 ? permKeys.some(k => permissions[k]) : false;
   if ((permission || featurePerm) && !roleAllowed && !featureAllowed) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -235,7 +236,7 @@ function Router() {
       <Route path="/tm-billing" component={() => <ProtectedRoute component={TMBillingPage} permission={RoutePermissions.TM_BILLING} featurePerm="canAccessFinancials" />} />
       <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} featurePerm="canManagePayroll" />} />
       <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} permission={RoutePermissions.AI_PM} featurePerm="canUseAiFeatures" />} />
-      <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} featurePerm="canAccessFinancials" />} />
+      <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} featurePerm={["canAccessFinancials", "canUseAiFeatures"]} />} />
       <Route path="/production-rates" component={() => <ProtectedRoute component={ProductionRatesPage} permission={RoutePermissions.PRODUCTION_RATES} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
       <Route path="/scope-library" component={() => <ProtectedRoute component={ScopeLibraryPage} permission={RoutePermissions.SCOPE_LIBRARY} />} />

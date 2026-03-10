@@ -15,7 +15,7 @@ import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
-import { type AuthRequest, requireAuth, requireRole, requireFeaturePermission } from "./auth";
+import { type AuthRequest, requireAuth, requireRole, requireFeaturePermission, requireAnyFeaturePermission } from "./auth";
 import { openai } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
@@ -38,7 +38,7 @@ import { equipment as equipmentTable } from "@shared/schema";
 const router = Router();
 router.use("/ai-settings", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai-pm", requireAuth, requireFeaturePermission('canUseAiFeatures'));
-router.use("/cfo", requireAuth, requireFeaturePermission('canUseAiFeatures'));
+router.use("/cfo", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canAccessFinancials'));
 router.use("/ai-analyze", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai/assistant", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 

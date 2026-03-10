@@ -230,6 +230,47 @@ export function requireFeaturePermission(permKey: FeaturePermissionKey) {
   };
 }
 
+export function requireAnyFeaturePermission(...permKeys: FeaturePermissionKey[]) {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    if (!req.user) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+
+    const effectiveRole = req.user.effectiveRole || req.user.role;
+
+    if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
+      next();
+      return;
+    }
+
+    const roleDefaults = getRoleDefaults(effectiveRole);
+    if (permKeys.some(k => roleDefaults[k])) {
+      next();
+      return;
+    }
+
+    const orgId = req.user.organizationId;
+    if (orgId) {
+      try {
+        const [perm] = await db.select().from(userDashboardPermissions)
+          .where(and(
+            eq(userDashboardPermissions.organizationId, orgId),
+            eq(userDashboardPermissions.userId, req.user.id)
+          ));
+        if (perm && permKeys.some(k => perm[k])) {
+          next();
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking feature permission:', error);
+      }
+    }
+
+    res.status(403).json({ error: "Feature permission required: " + permKeys.join(' or ') });
+  };
+}
+
 export function requireRoleOrFeature(roles: UserRole[], permKey: FeaturePermissionKey) {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     if (!req.user) {
