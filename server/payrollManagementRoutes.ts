@@ -15,7 +15,8 @@ import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
-router.use(requireAuth, requireFeaturePermission('canManagePayroll'));
+router.use("/api/payroll", requireAuth, requireFeaturePermission('canManagePayroll'));
+router.use("/api/projects/:id/payroll-summary", requireAuth, requireFeaturePermission('canManagePayroll'));
 
 const DEFAULT_REGULAR_RATE = 45;
 const DEFAULT_OVERTIME_RATE = 67.5;

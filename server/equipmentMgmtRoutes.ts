@@ -13,7 +13,7 @@ import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
-router.use(requireAuth, requireFeaturePermission('canManageEquipment'));
+router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEquipment'));
 
   // ============================================================
   // EQUIPMENT & TOOL MANAGEMENT ROUTES

@@ -13,7 +13,10 @@ import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } 
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
-router.use(requireAuth, requireFeaturePermission('canManageProcurement'));
+router.use("/api/crm", requireAuth, requireFeaturePermission('canManageProcurement'));
+router.use("/api/vendor-pricing", requireAuth, requireFeaturePermission('canManageProcurement'));
+router.use("/api/rental-catalog", requireAuth, requireFeaturePermission('canManageProcurement'));
+router.use("/api/ai-features/vendor-pricebooks", requireAuth, requireFeaturePermission('canManageProcurement'));
 
 const upload = multer({
   storage: multer.memoryStorage(),

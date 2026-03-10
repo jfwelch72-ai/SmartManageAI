@@ -13,7 +13,7 @@ import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
-router.use(requireAuth, requireFeaturePermission('canAccessReports'));
+router.use("/api/reports", requireAuth, requireFeaturePermission('canAccessReports'));
 
 function getProjectFilter(req: AuthRequest, projectId?: string) {
   const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
