@@ -176,7 +176,7 @@ export default function CompanyCommunicationsPage() {
   const hasActiveFilters = authorFilter !== "all" || projectFilter !== "all" || startDateFilter || endDateFilter;
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="px-3 sm:px-6 py-6 space-y-6 mx-auto">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <MessageSquare className="w-8 h-8 text-primary" />
