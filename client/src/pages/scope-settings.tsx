@@ -6,15 +6,48 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Settings, Layers, Tag, ArrowLeft, Wrench, ChevronDown, ChevronRight, Search, Library, CheckSquare, Square, ArrowRight } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Settings,
+  Layers,
+  Tag,
+  ArrowLeft,
+  Wrench,
+  ChevronDown,
+  ChevronRight,
+  Search,
+  Library,
+  CheckSquare,
+  Square,
+  ArrowRight,
+} from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { getTradeDisplayName } from "@shared/tradeTypeUtils";
@@ -72,29 +105,189 @@ interface TradeConfigResponse {
 
 // Trade to sub-category mapping for hierarchical selection
 const TRADE_SUBCATEGORIES: Record<string, string[]> = {
-  CONCRETE: ["Flatwork", "Walls", "Foundations", "Footings", "Curb & Gutter", "Decorative", "Stamped", "Precast"],
-  EARTHWORK: ["Excavation", "Grading", "Backfill", "Compaction", "Trenching", "Site Prep", "Erosion Control"],
-  ASPHALT_PAVING: ["Paving", "Seal Coating", "Striping", "Patching", "Milling", "Overlay"],
-  ROOFING: ["Low Slope", "Steep Slope", "Metal Roofing", "Shingles", "Tile", "TPO/EPDM", "Built-Up", "Repairs"],
-  ELECTRICAL: ["Rough-In", "Trim-Out", "Panel Work", "Lighting", "Low Voltage", "Service Upgrade", "Generator"],
-  PLUMBING: ["Rough-In", "Trim-Out", "Water Heater", "Fixtures", "Drain/Sewer", "Gas Piping", "Water Service"],
-  HVAC: ["Ductwork", "Equipment", "Controls", "Refrigeration", "Ventilation", "Split Systems", "Package Units"],
-  CARPENTRY: ["Framing", "Rough Carpentry", "Finish Carpentry", "Trim", "Cabinets", "Doors", "Hardware"],
-  MASONRY: ["Block", "Brick", "Stone", "Veneer", "Fireplace", "Chimney", "Retaining Walls"],
-  DRYWALL: ["Hanging", "Finishing", "Texture", "Acoustical", "Metal Framing", "Insulation"],
-  PAINTING: ["Interior", "Exterior", "Prep Work", "Staining", "Specialty Coatings", "Wallcovering"],
-  FLOORING: ["Tile", "Hardwood", "LVP/LVT", "Carpet", "Epoxy", "Polished Concrete", "VCT"],
-  LANDSCAPING: ["Softscape", "Hardscape", "Irrigation", "Lighting", "Fencing", "Pavers", "Retaining Walls"],
-  DEMOLITION: ["Selective Demo", "Full Demo", "Hazmat Abatement", "Concrete Removal", "Interior Strip-Out"],
-  STEEL_ERECTION: ["Structural Steel", "Misc Metals", "Ornamental", "Stairs/Rails", "Decking"],
-  GLAZING: ["Storefront", "Curtain Wall", "Windows", "Doors", "Skylights", "Mirrors", "Shower Enclosures"],
-  INSULATION: ["Batt Insulation", "Blown-In", "Spray Foam", "Rigid Board", "Fire Stopping"],
-  FIRE_PROTECTION: ["Sprinkler Systems", "Fire Alarms", "Suppression", "Standpipes", "Extinguishers"],
-  LOW_VOLTAGE: ["Data/Network", "Security", "Audio/Video", "Access Control", "Fire Alarm", "Intercom"],
-  SOLAR: ["Roof Mount", "Ground Mount", "Battery Storage", "Inverters", "Electrical Tie-In"],
-  WATERPROOFING: ["Below Grade", "Above Grade", "Decks/Balconies", "Foundation", "Caulking/Sealants"],
-  GENERAL_CONTRACTOR: ["General Conditions", "Supervision", "Temporary Facilities", "Site Management", "Coordination"],
-  OTHER: ["Custom", "Miscellaneous", "Specialty"]
+  CONCRETE: [
+    "Flatwork",
+    "Walls",
+    "Foundations",
+    "Footings",
+    "Curb & Gutter",
+    "Decorative",
+    "Stamped",
+    "Precast",
+  ],
+  EARTHWORK: [
+    "Excavation",
+    "Grading",
+    "Backfill",
+    "Compaction",
+    "Trenching",
+    "Site Prep",
+    "Erosion Control",
+  ],
+  ASPHALT_PAVING: [
+    "Paving",
+    "Seal Coating",
+    "Striping",
+    "Patching",
+    "Milling",
+    "Overlay",
+  ],
+  ROOFING: [
+    "Low Slope",
+    "Steep Slope",
+    "Metal Roofing",
+    "Shingles",
+    "Tile",
+    "TPO/EPDM",
+    "Built-Up",
+    "Repairs",
+  ],
+  ELECTRICAL: [
+    "Rough-In",
+    "Trim-Out",
+    "Panel Work",
+    "Lighting",
+    "Low Voltage",
+    "Service Upgrade",
+    "Generator",
+  ],
+  PLUMBING: [
+    "Rough-In",
+    "Trim-Out",
+    "Water Heater",
+    "Fixtures",
+    "Drain/Sewer",
+    "Gas Piping",
+    "Water Service",
+  ],
+  HVAC: [
+    "Ductwork",
+    "Equipment",
+    "Controls",
+    "Refrigeration",
+    "Ventilation",
+    "Split Systems",
+    "Package Units",
+  ],
+  CARPENTRY: [
+    "Framing",
+    "Rough Carpentry",
+    "Finish Carpentry",
+    "Trim",
+    "Cabinets",
+    "Doors",
+    "Hardware",
+  ],
+  MASONRY: [
+    "Block",
+    "Brick",
+    "Stone",
+    "Veneer",
+    "Fireplace",
+    "Chimney",
+    "Retaining Walls",
+  ],
+  DRYWALL: [
+    "Hanging",
+    "Finishing",
+    "Texture",
+    "Acoustical",
+    "Metal Framing",
+    "Insulation",
+  ],
+  PAINTING: [
+    "Interior",
+    "Exterior",
+    "Prep Work",
+    "Staining",
+    "Specialty Coatings",
+    "Wallcovering",
+  ],
+  FLOORING: [
+    "Tile",
+    "Hardwood",
+    "LVP/LVT",
+    "Carpet",
+    "Epoxy",
+    "Polished Concrete",
+    "VCT",
+  ],
+  LANDSCAPING: [
+    "Softscape",
+    "Hardscape",
+    "Irrigation",
+    "Lighting",
+    "Fencing",
+    "Pavers",
+    "Retaining Walls",
+  ],
+  DEMOLITION: [
+    "Selective Demo",
+    "Full Demo",
+    "Hazmat Abatement",
+    "Concrete Removal",
+    "Interior Strip-Out",
+  ],
+  STEEL_ERECTION: [
+    "Structural Steel",
+    "Misc Metals",
+    "Ornamental",
+    "Stairs/Rails",
+    "Decking",
+  ],
+  GLAZING: [
+    "Storefront",
+    "Curtain Wall",
+    "Windows",
+    "Doors",
+    "Skylights",
+    "Mirrors",
+    "Shower Enclosures",
+  ],
+  INSULATION: [
+    "Batt Insulation",
+    "Blown-In",
+    "Spray Foam",
+    "Rigid Board",
+    "Fire Stopping",
+  ],
+  FIRE_PROTECTION: [
+    "Sprinkler Systems",
+    "Fire Alarms",
+    "Suppression",
+    "Standpipes",
+    "Extinguishers",
+  ],
+  LOW_VOLTAGE: [
+    "Data/Network",
+    "Security",
+    "Audio/Video",
+    "Access Control",
+    "Fire Alarm",
+    "Intercom",
+  ],
+  SOLAR: [
+    "Roof Mount",
+    "Ground Mount",
+    "Battery Storage",
+    "Inverters",
+    "Electrical Tie-In",
+  ],
+  WATERPROOFING: [
+    "Below Grade",
+    "Above Grade",
+    "Decks/Balconies",
+    "Foundation",
+    "Caulking/Sealants",
+  ],
+  GENERAL_CONTRACTOR: [
+    "General Conditions",
+    "Supervision",
+    "Temporary Facilities",
+    "Site Management",
+    "Coordination",
+  ],
+  OTHER: ["Custom", "Miscellaneous", "Specialty"],
 };
 
 export default function ScopeSettings() {
@@ -104,22 +297,22 @@ export default function ScopeSettings() {
 
   const { data: tradeConfig } = useQuery<TradeConfigResponse>({
     queryKey: ["/api/organization/trade-config"],
-    enabled: !!user
+    enabled: !!user,
   });
 
   const getTradeTypeBadgeColor = (tradeType: string) => {
-    if (tradeType === 'GENERAL_CONTRACTOR') {
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-    } else if (tradeType === 'OTHER') {
-      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+    if (tradeType === "GENERAL_CONTRACTOR") {
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+    } else if (tradeType === "OTHER") {
+      return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
     }
-    return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
+    return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200";
   };
   const [showWorkTypeDialog, setShowWorkTypeDialog] = useState(false);
   const [showModifierDialog, setShowModifierDialog] = useState(false);
   const [editingWorkType, setEditingWorkType] = useState<WorkType | null>(null);
   const [editingModifier, setEditingModifier] = useState<Modifier | null>(null);
-  
+
   // Two-level category selection state
   const [selectedTrade, setSelectedTrade] = useState("");
   const [selectedSubCategory, setSelectedSubCategory] = useState("");
@@ -131,26 +324,30 @@ export default function ScopeSettings() {
     defaultUnit: "SF",
     requiresDimensions: false,
     dimensionType: "",
-    displayOrder: 100
+    displayOrder: 100,
   });
 
   const [modifierForm, setModifierForm] = useState({
     categoryId: "",
     name: "",
     code: "",
-    displayOrder: 100
+    displayOrder: 100,
   });
 
-  const { data: workTypeCategories = [], isLoading: loadingWorkTypes } = useQuery<WorkTypeCategory[]>({
-    queryKey: ["/api/scope/work-types"]
-  });
+  const { data: workTypeCategories = [], isLoading: loadingWorkTypes } =
+    useQuery<WorkTypeCategory[]>({
+      queryKey: ["/api/scope/work-types"],
+    });
 
-  const { data: modifierCategories = [], isLoading: loadingModifiers } = useQuery<ModifierCategory[]>({
-    queryKey: ["/api/scope/modifiers"]
-  });
+  const { data: modifierCategories = [], isLoading: loadingModifiers } =
+    useQuery<ModifierCategory[]>({
+      queryKey: ["/api/scope/modifiers"],
+    });
 
   const createWorkTypeMutation = useMutation({
-    mutationFn: async (data: typeof workTypeForm & { tradeName?: string; categoryName?: string }) => {
+    mutationFn: async (
+      data: typeof workTypeForm & { tradeName?: string; categoryName?: string },
+    ) => {
       return await apiRequest("POST", "/api/scope/work-types", data);
     },
     onSuccess: () => {
@@ -160,8 +357,12 @@ export default function ScopeSettings() {
       resetWorkTypeForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to create work type", variant: "destructive" });
-    }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create work type",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateWorkTypeMutation = useMutation({
@@ -176,8 +377,12 @@ export default function ScopeSettings() {
       resetWorkTypeForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to update work type", variant: "destructive" });
-    }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update work type",
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteWorkTypeMutation = useMutation({
@@ -189,8 +394,12 @@ export default function ScopeSettings() {
       toast({ title: "Work type deleted successfully" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to delete work type", variant: "destructive" });
-    }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete work type",
+        variant: "destructive",
+      });
+    },
   });
 
   const createModifierMutation = useMutation({
@@ -204,8 +413,12 @@ export default function ScopeSettings() {
       resetModifierForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to create modifier", variant: "destructive" });
-    }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create modifier",
+        variant: "destructive",
+      });
+    },
   });
 
   const updateModifierMutation = useMutation({
@@ -220,8 +433,12 @@ export default function ScopeSettings() {
       resetModifierForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to update modifier", variant: "destructive" });
-    }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update modifier",
+        variant: "destructive",
+      });
+    },
   });
 
   const deleteModifierMutation = useMutation({
@@ -233,8 +450,12 @@ export default function ScopeSettings() {
       toast({ title: "Modifier deleted successfully" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to delete modifier", variant: "destructive" });
-    }
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete modifier",
+        variant: "destructive",
+      });
+    },
   });
 
   const resetWorkTypeForm = () => {
@@ -245,29 +466,37 @@ export default function ScopeSettings() {
       defaultUnit: "SF",
       requiresDimensions: false,
       dimensionType: "",
-      displayOrder: 100
+      displayOrder: 100,
     });
     setSelectedTrade("");
     setSelectedSubCategory("");
   };
-  
-  const { trades: libraryTrades, scopes: libraryAllScopes, isLoading: loadingLibrary } = useLibraryData();
+
+  const {
+    trades: libraryTrades,
+    scopes: libraryAllScopes,
+    isLoading: loadingLibrary,
+  } = useLibraryData();
 
   const availableTrades = useMemo(() => {
-    const libraryTradeNames = libraryTrades.map(t => t.trade_name);
-    const legacyKeys = Object.keys(TRADE_SUBCATEGORIES).map(k => k.replace(/_/g, " "));
+    const libraryTradeNames = libraryTrades.map((t) => t.trade_name);
+    const legacyKeys = Object.keys(TRADE_SUBCATEGORIES).map((k) =>
+      k.replace(/_/g, " "),
+    );
     const merged = new Set([...libraryTradeNames, ...legacyKeys]);
     return Array.from(merged).sort();
   }, [libraryTrades]);
 
   const availableSubCategories = useMemo(() => {
     if (!selectedTrade) return [];
-    const matchingLibTrade = libraryTrades.find(t => t.trade_name === selectedTrade);
+    const matchingLibTrade = libraryTrades.find(
+      (t) => t.trade_name === selectedTrade,
+    );
     if (matchingLibTrade) {
       const categories = new Set<string>();
       libraryAllScopes
-        .filter(s => s.trade_id === matchingLibTrade.trade_id)
-        .forEach(s => categories.add(s.category));
+        .filter((s) => s.trade_id === matchingLibTrade.trade_id)
+        .forEach((s) => categories.add(s.category));
       const sorted = Array.from(categories).sort();
       return ["General", ...sorted];
     }
@@ -277,60 +506,67 @@ export default function ScopeSettings() {
     }
     return ["General"];
   }, [selectedTrade, libraryTrades, libraryAllScopes]);
-  
-  const findCategoryInfo = (trade: string, subCategory: string): { id: string; name: string } | null => {
+
+  const findCategoryInfo = (
+    trade: string,
+    subCategory: string,
+  ): { id: string; name: string } | null => {
     const tradeLower = trade.toLowerCase();
-    
+
     const targetName = `${trade} - ${subCategory}`;
-    const exactMatch = workTypeCategories.find(cat => 
-      cat.name.toLowerCase() === targetName.toLowerCase()
+    const exactMatch = workTypeCategories.find(
+      (cat) => cat.name.toLowerCase() === targetName.toLowerCase(),
     );
     if (exactMatch) {
       return { id: exactMatch.id, name: exactMatch.name };
     }
-    
+
     if (subCategory && subCategory !== "General") {
-      const standaloneMatch = workTypeCategories.find(cat => 
-        cat.name.toLowerCase() === subCategory.toLowerCase()
+      const standaloneMatch = workTypeCategories.find(
+        (cat) => cat.name.toLowerCase() === subCategory.toLowerCase(),
       );
       if (standaloneMatch) {
         return { id: standaloneMatch.id, name: standaloneMatch.name };
       }
     }
-    
+
     if (!subCategory || subCategory === "General") {
-      const tradeCategory = workTypeCategories.find(cat => 
-        cat.name.toLowerCase() === tradeLower
+      const tradeCategory = workTypeCategories.find(
+        (cat) => cat.name.toLowerCase() === tradeLower,
       );
       if (tradeCategory) {
         return { id: tradeCategory.id, name: tradeCategory.name };
       }
     }
-    
+
     return null;
   };
-  
+
   // Legacy wrapper for backward compatibility
   const findCategoryId = (trade: string, subCategory: string): string => {
     const info = findCategoryInfo(trade, subCategory);
     return info?.id || "";
   };
-  
+
   // Check if current selection has a valid category match
-  const hasValidCategoryMatch = !!(selectedTrade && selectedSubCategory && workTypeForm.categoryId);
-  
+  const hasValidCategoryMatch = !!(
+    selectedTrade &&
+    selectedSubCategory &&
+    workTypeForm.categoryId
+  );
+
   // Handle trade selection change
   const handleTradeChange = (trade: string) => {
     setSelectedTrade(trade);
     setSelectedSubCategory("");
-    setWorkTypeForm(prev => ({ ...prev, categoryId: "" }));
+    setWorkTypeForm((prev) => ({ ...prev, categoryId: "" }));
   };
-  
-  // Handle sub-category selection change  
+
+  // Handle sub-category selection change
   const handleSubCategoryChange = (subCategory: string) => {
     setSelectedSubCategory(subCategory);
     const categoryId = findCategoryId(selectedTrade, subCategory);
-    setWorkTypeForm(prev => ({ ...prev, categoryId }));
+    setWorkTypeForm((prev) => ({ ...prev, categoryId }));
   };
 
   const resetModifierForm = () => {
@@ -338,13 +574,15 @@ export default function ScopeSettings() {
       categoryId: "",
       name: "",
       code: "",
-      displayOrder: 100
+      displayOrder: 100,
     });
   };
 
   const [showLibraryModal, setShowLibraryModal] = useState(false);
   const [librarySearchTerm, setLibrarySearchTerm] = useState("");
-  const [selectedScopeIds, setSelectedScopeIds] = useState<Set<string>>(new Set());
+  const [selectedScopeIds, setSelectedScopeIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [libraryStep, setLibraryStep] = useState<"select" | "review">("select");
 
   interface ReviewItem {
@@ -363,30 +601,41 @@ export default function ScopeSettings() {
     if (!librarySearchTerm.trim()) return libraryScopes;
     const lower = librarySearchTerm.toLowerCase();
     return libraryScopes.filter(
-      s =>
+      (s) =>
         s.scope_name.toLowerCase().includes(lower) ||
         s.category.toLowerCase().includes(lower) ||
         s.trade_name.toLowerCase().includes(lower) ||
-        s.scope_id.toLowerCase().includes(lower)
+        s.scope_id.toLowerCase().includes(lower),
     );
   }, [libraryScopes, librarySearchTerm]);
 
   const groupedLibraryScopes = useMemo(() => {
-    const groups: Record<string, { trade_name: string; category: string; scopes: Scope[] }> = {};
-    filteredLibraryScopes.forEach(s => {
+    const groups: Record<
+      string,
+      { trade_name: string; category: string; scopes: Scope[] }
+    > = {};
+    filteredLibraryScopes.forEach((s) => {
       const key = `${s.trade_id}__${s.category}`;
       if (!groups[key]) {
-        groups[key] = { trade_name: s.trade_name, category: s.category, scopes: [] };
+        groups[key] = {
+          trade_name: s.trade_name,
+          category: s.category,
+          scopes: [],
+        };
       }
       groups[key].scopes.push(s);
     });
     return Object.entries(groups)
       .map(([key, data]) => ({ key, ...data }))
-      .sort((a, b) => a.trade_name.localeCompare(b.trade_name) || a.category.localeCompare(b.category));
+      .sort(
+        (a, b) =>
+          a.trade_name.localeCompare(b.trade_name) ||
+          a.category.localeCompare(b.category),
+      );
   }, [filteredLibraryScopes]);
 
   const toggleScopeSelection = (scopeId: string) => {
-    setSelectedScopeIds(prev => {
+    setSelectedScopeIds((prev) => {
       const next = new Set(prev);
       if (next.has(scopeId)) {
         next.delete(scopeId);
@@ -398,7 +647,7 @@ export default function ScopeSettings() {
   };
 
   const handleSelectAll = () => {
-    const allIds = filteredLibraryScopes.map(s => s.scope_id);
+    const allIds = filteredLibraryScopes.map((s) => s.scope_id);
     setSelectedScopeIds(new Set(allIds));
   };
 
@@ -408,8 +657,8 @@ export default function ScopeSettings() {
 
   const handleProceedToReview = () => {
     const items: ReviewItem[] = libraryScopes
-      .filter(s => selectedScopeIds.has(s.scope_id))
-      .map(s => ({
+      .filter((s) => selectedScopeIds.has(s.scope_id))
+      .map((s) => ({
         scopeId: s.scope_id,
         name: s.scope_name,
         code: s.scope_id,
@@ -421,8 +670,12 @@ export default function ScopeSettings() {
     setLibraryStep("review");
   };
 
-  const updateReviewItem = (index: number, field: keyof ReviewItem, value: string) => {
-    setReviewItems(prev => {
+  const updateReviewItem = (
+    index: number,
+    field: keyof ReviewItem,
+    value: string,
+  ) => {
+    setReviewItems((prev) => {
       const next = [...prev];
       next[index] = { ...next[index], [field]: value };
       return next;
@@ -430,7 +683,7 @@ export default function ScopeSettings() {
   };
 
   const removeReviewItem = (index: number) => {
-    setReviewItems(prev => prev.filter((_, i) => i !== index));
+    setReviewItems((prev) => prev.filter((_, i) => i !== index));
   };
 
   const batchCreateMutation = useMutation({
@@ -458,7 +711,11 @@ export default function ScopeSettings() {
       closeLibraryModal();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to add work types from library", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add work types from library",
+        variant: "destructive",
+      });
     },
   });
 
@@ -484,25 +741,31 @@ export default function ScopeSettings() {
       defaultUnit: workType.defaultUnit,
       requiresDimensions: workType.requiresDimensions,
       dimensionType: workType.dimensionType || "",
-      displayOrder: workType.displayOrder
+      displayOrder: workType.displayOrder,
     });
-    
-    const category = workTypeCategories.find(cat => cat.id === workType.categoryId);
+
+    const category = workTypeCategories.find(
+      (cat) => cat.id === workType.categoryId,
+    );
     if (category) {
       const dashIndex = category.name.indexOf(" - ");
       if (dashIndex > 0) {
         const tradePart = category.name.substring(0, dashIndex).trim();
         const subCat = category.name.substring(dashIndex + 3).trim();
-        const matchedTrade = availableTrades.find(t => t.toLowerCase() === tradePart.toLowerCase());
+        const matchedTrade = availableTrades.find(
+          (t) => t.toLowerCase() === tradePart.toLowerCase(),
+        );
         setSelectedTrade(matchedTrade || tradePart);
         setSelectedSubCategory(subCat);
       } else {
-        const matchedTrade = availableTrades.find(t => t.toLowerCase() === category.name.toLowerCase());
+        const matchedTrade = availableTrades.find(
+          (t) => t.toLowerCase() === category.name.toLowerCase(),
+        );
         setSelectedTrade(matchedTrade || category.name);
         setSelectedSubCategory("General");
       }
     }
-    
+
     setShowWorkTypeDialog(true);
   };
 
@@ -512,20 +775,26 @@ export default function ScopeSettings() {
       categoryId: modifier.categoryId,
       name: modifier.name,
       code: modifier.code,
-      displayOrder: modifier.displayOrder
+      displayOrder: modifier.displayOrder,
     });
     setShowModifierDialog(true);
   };
 
   const handleSaveWorkType = () => {
     if (editingWorkType) {
-      updateWorkTypeMutation.mutate({ id: editingWorkType.id, ...workTypeForm });
+      updateWorkTypeMutation.mutate({
+        id: editingWorkType.id,
+        ...workTypeForm,
+      });
     } else {
       const tradeName = selectedTrade;
-      const existingCategoryInfo = findCategoryInfo(selectedTrade, selectedSubCategory);
-      const categoryName = existingCategoryInfo?.name 
-        || `${tradeName} - ${selectedSubCategory}`;
-      
+      const existingCategoryInfo = findCategoryInfo(
+        selectedTrade,
+        selectedSubCategory,
+      );
+      const categoryName =
+        existingCategoryInfo?.name || `${tradeName} - ${selectedSubCategory}`;
+
       createWorkTypeMutation.mutate({
         ...workTypeForm,
         tradeName: tradeName,
@@ -536,14 +805,21 @@ export default function ScopeSettings() {
 
   const handleSaveModifier = () => {
     if (editingModifier) {
-      updateModifierMutation.mutate({ id: editingModifier.id, ...modifierForm });
+      updateModifierMutation.mutate({
+        id: editingModifier.id,
+        ...modifierForm,
+      });
     } else {
       createModifierMutation.mutate(modifierForm);
     }
   };
 
   const unitOptions = ["SF", "LF", "SY", "CY", "EA", "TON", "LS"];
-  const dimensionTypeOptions = ["", "length_width_depth", "length_height_thickness"];
+  const dimensionTypeOptions = [
+    "",
+    "length_width_depth",
+    "length_height_thickness",
+  ];
 
   // Group categories by parent trade (e.g., "ROOFING - Low Slope" and "ROOFING - Steep Slope" -> grouped under "ROOFING")
   interface GroupedTrade {
@@ -553,30 +829,32 @@ export default function ScopeSettings() {
 
   const groupedByTrade = (): GroupedTrade[] => {
     const tradeMap = new Map<string, WorkTypeCategory[]>();
-    
+
     for (const category of workTypeCategories) {
       // Parse category name - look for pattern "TRADE - SubCategory"
       const dashIndex = category.name.indexOf(" - ");
       let parentTrade: string;
-      
+
       if (dashIndex > 0) {
         parentTrade = category.name.substring(0, dashIndex).trim();
       } else {
         // No dash, use full name as parent trade
         parentTrade = category.name;
       }
-      
+
       if (!tradeMap.has(parentTrade)) {
         tradeMap.set(parentTrade, []);
       }
       tradeMap.get(parentTrade)!.push(category);
     }
-    
+
     // Convert to array and sort by parent trade name
     return Array.from(tradeMap.entries())
       .map(([parentTrade, subCategories]) => ({
         parentTrade,
-        subCategories: subCategories.sort((a, b) => a.displayOrder - b.displayOrder)
+        subCategories: subCategories.sort(
+          (a, b) => a.displayOrder - b.displayOrder,
+        ),
       }))
       .sort((a, b) => a.parentTrade.localeCompare(b.parentTrade));
   };
@@ -591,12 +869,15 @@ export default function ScopeSettings() {
   };
 
   // Track collapsed trades (all expanded by default)
-  const [collapsedTrades, setCollapsedTrades] = useState<Set<string>>(new Set());
-  
-  const isTradeExpanded = (tradeName: string) => !collapsedTrades.has(tradeName);
-  
+  const [collapsedTrades, setCollapsedTrades] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const isTradeExpanded = (tradeName: string) =>
+    !collapsedTrades.has(tradeName);
+
   const toggleTrade = (tradeName: string) => {
-    setCollapsedTrades(prev => {
+    setCollapsedTrades((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(tradeName)) {
         newSet.delete(tradeName);
@@ -606,16 +887,16 @@ export default function ScopeSettings() {
       return newSet;
     });
   };
-  
+
   const handleKeyDown = (e: React.KeyboardEvent, tradeName: string) => {
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       toggleTrade(tradeName);
     }
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
+    <div className="container mx-auto p-6 max-w-full">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-6">
         <div className="flex items-center gap-4">
           <Link href="/projects">
@@ -630,18 +911,21 @@ export default function ScopeSettings() {
                 Scope Standardization Settings
               </h1>
               {tradeConfig && (
-                <Badge 
-                  variant="secondary" 
+                <Badge
+                  variant="secondary"
                   className={`text-sm px-3 py-1 ${getTradeTypeBadgeColor(tradeConfig.organization.tradeType)}`}
                   data-testid="badge-scope-trade-type"
                 >
                   <Wrench className="h-3 w-3 mr-1" />
-                  {getTradeDisplayName(tradeConfig.organization.tradeType as any)}
+                  {getTradeDisplayName(
+                    tradeConfig.organization.tradeType as any,
+                  )}
                 </Badge>
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              Manage standardized work types and modifiers for consistent scope tracking
+              Manage standardized work types and modifiers for consistent scope
+              tracking
             </p>
           </div>
         </div>
@@ -649,11 +933,19 @@ export default function ScopeSettings() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-6">
-          <TabsTrigger value="work-types" className="flex items-center gap-2" data-testid="tab-work-types">
+          <TabsTrigger
+            value="work-types"
+            className="flex items-center gap-2"
+            data-testid="tab-work-types"
+          >
             <Layers className="h-4 w-4" />
             Work Types
           </TabsTrigger>
-          <TabsTrigger value="modifiers" className="flex items-center gap-2" data-testid="tab-modifiers">
+          <TabsTrigger
+            value="modifiers"
+            className="flex items-center gap-2"
+            data-testid="tab-modifiers"
+          >
             <Tag className="h-4 w-4" />
             Modifiers
           </TabsTrigger>
@@ -697,15 +989,18 @@ export default function ScopeSettings() {
           ) : (
             <div className="space-y-4">
               {groupedByTrade().map((group) => (
-                <Card key={group.parentTrade} data-testid={`trade-group-${group.parentTrade.toLowerCase().replace(/\s+/g, '-')}`}>
-                  <CardHeader 
+                <Card
+                  key={group.parentTrade}
+                  data-testid={`trade-group-${group.parentTrade.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  <CardHeader
                     className="py-3 cursor-pointer hover-elevate"
                     onClick={() => toggleTrade(group.parentTrade)}
                     onKeyDown={(e) => handleKeyDown(e, group.parentTrade)}
                     tabIndex={0}
                     role="button"
                     aria-expanded={isTradeExpanded(group.parentTrade)}
-                    data-testid={`toggle-trade-${group.parentTrade.toLowerCase().replace(/\s+/g, '-')}`}
+                    data-testid={`toggle-trade-${group.parentTrade.toLowerCase().replace(/\s+/g, "-")}`}
                   >
                     <CardTitle className="text-lg flex items-center gap-2">
                       {isTradeExpanded(group.parentTrade) ? (
@@ -715,11 +1010,15 @@ export default function ScopeSettings() {
                       )}
                       {group.parentTrade}
                       <Badge variant="secondary" className="ml-2">
-                        {group.subCategories.reduce((sum, cat) => sum + cat.workTypes.length, 0)} items
+                        {group.subCategories.reduce(
+                          (sum, cat) => sum + cat.workTypes.length,
+                          0,
+                        )}{" "}
+                        items
                       </Badge>
                     </CardTitle>
                   </CardHeader>
-                  
+
                   {isTradeExpanded(group.parentTrade) && (
                     <CardContent className="space-y-4">
                       {group.subCategories.map((category) => {
@@ -733,7 +1032,9 @@ export default function ScopeSettings() {
                               </h4>
                             )}
                             {category.workTypes.length === 0 ? (
-                              <p className="text-sm text-muted-foreground">No work types in this category</p>
+                              <p className="text-sm text-muted-foreground">
+                                No work types in this category
+                              </p>
                             ) : (
                               <div className="grid gap-2">
                                 {category.workTypes.map((workType) => (
@@ -743,10 +1044,16 @@ export default function ScopeSettings() {
                                     data-testid={`work-type-item-${workType.id}`}
                                   >
                                     <div className="flex items-center gap-3 flex-wrap">
-                                      <span className="font-medium">{workType.name}</span>
-                                      <Badge variant="outline">{workType.defaultUnit}</Badge>
+                                      <span className="font-medium">
+                                        {workType.name}
+                                      </span>
+                                      <Badge variant="outline">
+                                        {workType.defaultUnit}
+                                      </Badge>
                                       {workType.requiresDimensions && (
-                                        <Badge variant="secondary">Dimensions Required</Badge>
+                                        <Badge variant="secondary">
+                                          Dimensions Required
+                                        </Badge>
                                       )}
                                       {workType.isCustom && (
                                         <Badge>Custom</Badge>
@@ -756,7 +1063,9 @@ export default function ScopeSettings() {
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        onClick={() => handleEditWorkType(workType)}
+                                        onClick={() =>
+                                          handleEditWorkType(workType)
+                                        }
                                         data-testid={`button-edit-work-type-${workType.id}`}
                                       >
                                         <Pencil className="h-4 w-4" />
@@ -765,7 +1074,11 @@ export default function ScopeSettings() {
                                         <Button
                                           variant="ghost"
                                           size="icon"
-                                          onClick={() => deleteWorkTypeMutation.mutate(workType.id)}
+                                          onClick={() =>
+                                            deleteWorkTypeMutation.mutate(
+                                              workType.id,
+                                            )
+                                          }
                                           data-testid={`button-delete-work-type-${workType.id}`}
                                         >
                                           <Trash2 className="h-4 w-4 text-destructive" />
@@ -813,7 +1126,9 @@ export default function ScopeSettings() {
                   </CardHeader>
                   <CardContent>
                     {category.modifiers.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No modifiers in this category</p>
+                      <p className="text-sm text-muted-foreground">
+                        No modifiers in this category
+                      </p>
                     ) : (
                       <div className="flex flex-wrap gap-2">
                         {category.modifiers.map((modifier) => (
@@ -824,7 +1139,9 @@ export default function ScopeSettings() {
                           >
                             <span>{modifier.name}</span>
                             {modifier.isCustom && (
-                              <Badge variant="secondary" className="text-xs">Custom</Badge>
+                              <Badge variant="secondary" className="text-xs">
+                                Custom
+                              </Badge>
                             )}
                             <Button
                               variant="ghost"
@@ -840,7 +1157,9 @@ export default function ScopeSettings() {
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
-                                onClick={() => deleteModifierMutation.mutate(modifier.id)}
+                                onClick={() =>
+                                  deleteModifierMutation.mutate(modifier.id)
+                                }
                                 data-testid={`button-delete-modifier-${modifier.id}`}
                               >
                                 <Trash2 className="h-3 w-3 text-destructive" />
@@ -870,10 +1189,7 @@ export default function ScopeSettings() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Trade Category</Label>
-                <Select
-                  value={selectedTrade}
-                  onValueChange={handleTradeChange}
-                >
+                <Select value={selectedTrade} onValueChange={handleTradeChange}>
                   <SelectTrigger data-testid="select-trade-category">
                     <SelectValue placeholder="Select trade" />
                   </SelectTrigger>
@@ -894,7 +1210,13 @@ export default function ScopeSettings() {
                   disabled={!selectedTrade}
                 >
                   <SelectTrigger data-testid="select-sub-category">
-                    <SelectValue placeholder={selectedTrade ? "Select sub-category" : "Select trade first"} />
+                    <SelectValue
+                      placeholder={
+                        selectedTrade
+                          ? "Select sub-category"
+                          : "Select trade first"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     {availableSubCategories.map((subCat) => (
@@ -906,22 +1228,29 @@ export default function ScopeSettings() {
                 </Select>
               </div>
             </div>
-            
+
             {/* Info message when new category will be created */}
-            {selectedTrade && selectedSubCategory && !workTypeForm.categoryId && (
-              <div className="p-3 rounded-lg border border-primary/50 bg-primary/10 text-sm">
-                <span className="font-medium text-primary">New category will be created:</span>
-                <span className="text-muted-foreground ml-1">
-                  A new category "{selectedTrade} - {selectedSubCategory}" will be automatically created for this work type.
-                </span>
-              </div>
-            )}
-            
+            {selectedTrade &&
+              selectedSubCategory &&
+              !workTypeForm.categoryId && (
+                <div className="p-3 rounded-lg border border-primary/50 bg-primary/10 text-sm">
+                  <span className="font-medium text-primary">
+                    New category will be created:
+                  </span>
+                  <span className="text-muted-foreground ml-1">
+                    A new category "{selectedTrade} - {selectedSubCategory}"
+                    will be automatically created for this work type.
+                  </span>
+                </div>
+              )}
+
             <div>
               <Label>Name</Label>
               <Input
                 value={workTypeForm.name}
-                onChange={(e) => setWorkTypeForm({ ...workTypeForm, name: e.target.value })}
+                onChange={(e) =>
+                  setWorkTypeForm({ ...workTypeForm, name: e.target.value })
+                }
                 placeholder="e.g., 6 inch Sidewalk"
                 data-testid="input-work-type-name"
               />
@@ -930,7 +1259,12 @@ export default function ScopeSettings() {
               <Label>Code (unique identifier)</Label>
               <Input
                 value={workTypeForm.code}
-                onChange={(e) => setWorkTypeForm({ ...workTypeForm, code: e.target.value.toLowerCase().replace(/\s+/g, "_") })}
+                onChange={(e) =>
+                  setWorkTypeForm({
+                    ...workTypeForm,
+                    code: e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                  })
+                }
                 placeholder="e.g., sidewalk_6in"
                 data-testid="input-work-type-code"
               />
@@ -939,7 +1273,9 @@ export default function ScopeSettings() {
               <Label>Default Unit</Label>
               <Select
                 value={workTypeForm.defaultUnit}
-                onValueChange={(value) => setWorkTypeForm({ ...workTypeForm, defaultUnit: value })}
+                onValueChange={(value) =>
+                  setWorkTypeForm({ ...workTypeForm, defaultUnit: value })
+                }
               >
                 <SelectTrigger data-testid="select-work-type-unit">
                   <SelectValue />
@@ -956,7 +1292,12 @@ export default function ScopeSettings() {
             <div className="flex items-center gap-2">
               <Switch
                 checked={workTypeForm.requiresDimensions}
-                onCheckedChange={(checked) => setWorkTypeForm({ ...workTypeForm, requiresDimensions: checked })}
+                onCheckedChange={(checked) =>
+                  setWorkTypeForm({
+                    ...workTypeForm,
+                    requiresDimensions: checked,
+                  })
+                }
                 data-testid="switch-requires-dimensions"
               />
               <Label>Requires Dimension Inputs</Label>
@@ -966,15 +1307,23 @@ export default function ScopeSettings() {
                 <Label>Dimension Type</Label>
                 <Select
                   value={workTypeForm.dimensionType}
-                  onValueChange={(value) => setWorkTypeForm({ ...workTypeForm, dimensionType: value })}
+                  onValueChange={(value) =>
+                    setWorkTypeForm({ ...workTypeForm, dimensionType: value })
+                  }
                 >
                   <SelectTrigger data-testid="select-dimension-type">
                     <SelectValue placeholder="Select dimension type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="length_width_depth">Length x Width x Depth (Footings)</SelectItem>
-                    <SelectItem value="length_height_thickness">Length x Height x Thickness (Walls)</SelectItem>
-                    <SelectItem value="length_width_thickness">Length x Width x Thickness (Flatwork)</SelectItem>
+                    <SelectItem value="length_width_depth">
+                      Length x Width x Depth (Footings)
+                    </SelectItem>
+                    <SelectItem value="length_height_thickness">
+                      Length x Height x Thickness (Walls)
+                    </SelectItem>
+                    <SelectItem value="length_width_thickness">
+                      Length x Width x Thickness (Flatwork)
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -984,18 +1333,31 @@ export default function ScopeSettings() {
               <Input
                 type="number"
                 value={workTypeForm.displayOrder}
-                onChange={(e) => setWorkTypeForm({ ...workTypeForm, displayOrder: parseInt(e.target.value) || 100 })}
+                onChange={(e) =>
+                  setWorkTypeForm({
+                    ...workTypeForm,
+                    displayOrder: parseInt(e.target.value) || 100,
+                  })
+                }
                 data-testid="input-work-type-order"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowWorkTypeDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowWorkTypeDialog(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={handleSaveWorkType}
-              disabled={(!workTypeForm.categoryId && (!selectedTrade || !selectedSubCategory)) || !workTypeForm.name || !workTypeForm.code}
+              disabled={
+                (!workTypeForm.categoryId &&
+                  (!selectedTrade || !selectedSubCategory)) ||
+                !workTypeForm.name ||
+                !workTypeForm.code
+              }
               data-testid="button-save-work-type"
             >
               {editingWorkType ? "Update" : "Create"}
@@ -1015,20 +1377,30 @@ export default function ScopeSettings() {
             <div>
               <Label>Category</Label>
               {modifierCategories.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-2" data-testid="text-no-modifier-categories">
-                  No modifier categories available for your trade type. Please create a category first from the Modifiers tab.
+                <p
+                  className="text-sm text-muted-foreground py-2"
+                  data-testid="text-no-modifier-categories"
+                >
+                  No modifier categories available for your trade type. Please
+                  create a category first from the Modifiers tab.
                 </p>
               ) : (
                 <Select
                   value={modifierForm.categoryId}
-                  onValueChange={(value) => setModifierForm({ ...modifierForm, categoryId: value })}
+                  onValueChange={(value) =>
+                    setModifierForm({ ...modifierForm, categoryId: value })
+                  }
                 >
                   <SelectTrigger data-testid="select-modifier-category">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
                     {modifierCategories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id} data-testid={`select-item-category-${cat.id}`}>
+                      <SelectItem
+                        key={cat.id}
+                        value={cat.id}
+                        data-testid={`select-item-category-${cat.id}`}
+                      >
                         {cat.name}
                       </SelectItem>
                     ))}
@@ -1040,7 +1412,9 @@ export default function ScopeSettings() {
               <Label>Name</Label>
               <Input
                 value={modifierForm.name}
-                onChange={(e) => setModifierForm({ ...modifierForm, name: e.target.value })}
+                onChange={(e) =>
+                  setModifierForm({ ...modifierForm, name: e.target.value })
+                }
                 placeholder="e.g., Fiber Mesh"
                 data-testid="input-modifier-name"
               />
@@ -1049,7 +1423,12 @@ export default function ScopeSettings() {
               <Label>Code (unique identifier)</Label>
               <Input
                 value={modifierForm.code}
-                onChange={(e) => setModifierForm({ ...modifierForm, code: e.target.value.toLowerCase().replace(/\s+/g, "_") })}
+                onChange={(e) =>
+                  setModifierForm({
+                    ...modifierForm,
+                    code: e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                  })
+                }
                 placeholder="e.g., fiber_mesh"
                 data-testid="input-modifier-code"
               />
@@ -1059,18 +1438,30 @@ export default function ScopeSettings() {
               <Input
                 type="number"
                 value={modifierForm.displayOrder}
-                onChange={(e) => setModifierForm({ ...modifierForm, displayOrder: parseInt(e.target.value) || 100 })}
+                onChange={(e) =>
+                  setModifierForm({
+                    ...modifierForm,
+                    displayOrder: parseInt(e.target.value) || 100,
+                  })
+                }
                 data-testid="input-modifier-order"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowModifierDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowModifierDialog(false)}
+            >
               Cancel
             </Button>
             <Button
               onClick={handleSaveModifier}
-              disabled={!modifierForm.categoryId || !modifierForm.name || !modifierForm.code}
+              disabled={
+                !modifierForm.categoryId ||
+                !modifierForm.name ||
+                !modifierForm.code
+              }
               data-testid="button-save-modifier"
             >
               {editingModifier ? "Update" : "Create"}
@@ -1079,11 +1470,18 @@ export default function ScopeSettings() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showLibraryModal} onOpenChange={(open) => { if (!open) closeLibraryModal(); }}>
+      <Dialog
+        open={showLibraryModal}
+        onOpenChange={(open) => {
+          if (!open) closeLibraryModal();
+        }}
+      >
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle data-testid="text-library-modal-title">
-              {libraryStep === "select" ? "Select Scopes From Library" : "Review Selected Work Types"}
+              {libraryStep === "select"
+                ? "Select Scopes From Library"
+                : "Review Selected Work Types"}
             </DialogTitle>
           </DialogHeader>
 
@@ -1100,11 +1498,21 @@ export default function ScopeSettings() {
                     data-testid="input-library-search"
                   />
                 </div>
-                <Button variant="outline" size="sm" onClick={handleSelectAll} data-testid="button-select-all">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSelectAll}
+                  data-testid="button-select-all"
+                >
                   <CheckSquare className="h-4 w-4 mr-1" />
                   All
                 </Button>
-                <Button variant="outline" size="sm" onClick={handleDeselectAll} data-testid="button-deselect-all">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDeselectAll}
+                  data-testid="button-deselect-all"
+                >
                   <Square className="h-4 w-4 mr-1" />
                   None
                 </Button>
@@ -1112,17 +1520,33 @@ export default function ScopeSettings() {
 
               <ScrollArea className="flex-1 min-h-0 max-h-[50vh] border rounded-md">
                 {loadingLibrary ? (
-                  <div className="text-center py-8 text-muted-foreground" data-testid="text-library-loading">Loading library data...</div>
+                  <div
+                    className="text-center py-8 text-muted-foreground"
+                    data-testid="text-library-loading"
+                  >
+                    Loading library data...
+                  </div>
                 ) : filteredLibraryScopes.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground" data-testid="text-library-empty">No scopes found matching your search.</div>
+                  <div
+                    className="text-center py-8 text-muted-foreground"
+                    data-testid="text-library-empty"
+                  >
+                    No scopes found matching your search.
+                  </div>
                 ) : (
                   <div className="p-3 space-y-4">
                     {groupedLibraryScopes.map((group) => (
                       <div key={group.key}>
                         <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-semibold">{group.trade_name}</span>
-                          <Badge variant="outline" className="text-xs">{group.category}</Badge>
-                          <Badge variant="secondary" className="text-xs">{group.scopes.length}</Badge>
+                          <span className="text-sm font-semibold">
+                            {group.trade_name}
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {group.category}
+                          </Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            {group.scopes.length}
+                          </Badge>
                         </div>
                         <div className="space-y-1 ml-2">
                           {group.scopes.map((scope) => (
@@ -1133,13 +1557,21 @@ export default function ScopeSettings() {
                             >
                               <Checkbox
                                 checked={selectedScopeIds.has(scope.scope_id)}
-                                onCheckedChange={() => toggleScopeSelection(scope.scope_id)}
+                                onCheckedChange={() =>
+                                  toggleScopeSelection(scope.scope_id)
+                                }
                                 data-testid={`checkbox-scope-${scope.scope_id}`}
                               />
-                              <span className="flex-1 text-sm">{scope.scope_name}</span>
-                              <Badge variant="outline" className="text-xs">{scope.uom}</Badge>
+                              <span className="flex-1 text-sm">
+                                {scope.scope_name}
+                              </span>
+                              <Badge variant="outline" className="text-xs">
+                                {scope.uom}
+                              </Badge>
                               {scope.material_families.length > 0 && (
-                                <span className="text-xs text-muted-foreground">{scope.material_families.length} material(s)</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {scope.material_families.length} material(s)
+                                </span>
                               )}
                             </label>
                           ))}
@@ -1151,11 +1583,16 @@ export default function ScopeSettings() {
               </ScrollArea>
 
               <DialogFooter className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted-foreground" data-testid="text-selected-count">
+                <span
+                  className="text-sm text-muted-foreground"
+                  data-testid="text-selected-count"
+                >
                   {selectedScopeIds.size} scope(s) selected
                 </span>
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={closeLibraryModal}>Cancel</Button>
+                  <Button variant="outline" onClick={closeLibraryModal}>
+                    Cancel
+                  </Button>
                   <Button
                     onClick={handleProceedToReview}
                     disabled={selectedScopeIds.size === 0}
@@ -1174,43 +1611,73 @@ export default function ScopeSettings() {
               <ScrollArea className="flex-1 min-h-0 max-h-[55vh]">
                 <div className="space-y-3 p-1">
                   {reviewItems.map((item, index) => (
-                    <div key={item.scopeId} className="flex items-start gap-3 p-3 border rounded-md" data-testid={`review-item-${index}`}>
+                    <div
+                      key={item.scopeId}
+                      className="flex items-start gap-3 p-3 border rounded-md"
+                      data-testid={`review-item-${index}`}
+                    >
                       <div className="flex-1 grid grid-cols-2 gap-2">
                         <div>
-                          <Label className="text-xs text-muted-foreground">Name</Label>
+                          <Label className="text-xs text-muted-foreground">
+                            Name
+                          </Label>
                           <Input
                             value={item.name}
-                            onChange={(e) => updateReviewItem(index, "name", e.target.value)}
+                            onChange={(e) =>
+                              updateReviewItem(index, "name", e.target.value)
+                            }
                             data-testid={`input-review-name-${index}`}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-muted-foreground">Code</Label>
+                          <Label className="text-xs text-muted-foreground">
+                            Code
+                          </Label>
                           <Input
                             value={item.code}
-                            onChange={(e) => updateReviewItem(index, "code", e.target.value.toLowerCase().replace(/\s+/g, "_"))}
+                            onChange={(e) =>
+                              updateReviewItem(
+                                index,
+                                "code",
+                                e.target.value
+                                  .toLowerCase()
+                                  .replace(/\s+/g, "_"),
+                              )
+                            }
                             data-testid={`input-review-code-${index}`}
                           />
                         </div>
                         <div>
-                          <Label className="text-xs text-muted-foreground">Unit</Label>
+                          <Label className="text-xs text-muted-foreground">
+                            Unit
+                          </Label>
                           <Select
                             value={item.defaultUnit}
-                            onValueChange={(val) => updateReviewItem(index, "defaultUnit", val)}
+                            onValueChange={(val) =>
+                              updateReviewItem(index, "defaultUnit", val)
+                            }
                           >
-                            <SelectTrigger data-testid={`select-review-unit-${index}`}>
+                            <SelectTrigger
+                              data-testid={`select-review-unit-${index}`}
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
                               {unitOptions.map((u) => (
-                                <SelectItem key={u} value={u}>{u}</SelectItem>
+                                <SelectItem key={u} value={u}>
+                                  {u}
+                                </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
                         </div>
                         <div className="flex items-end gap-1">
-                          <Badge variant="secondary" className="text-xs mb-1">{item.tradeName.replace(/_/g, " ")}</Badge>
-                          <Badge variant="outline" className="text-xs mb-1">{item.categoryName}</Badge>
+                          <Badge variant="secondary" className="text-xs mb-1">
+                            {item.tradeName.replace(/_/g, " ")}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs mb-1">
+                            {item.categoryName}
+                          </Badge>
                         </div>
                       </div>
                       <Button
@@ -1227,7 +1694,10 @@ export default function ScopeSettings() {
               </ScrollArea>
 
               <DialogFooter className="flex items-center justify-between gap-2">
-                <span className="text-sm text-muted-foreground" data-testid="text-review-count">
+                <span
+                  className="text-sm text-muted-foreground"
+                  data-testid="text-review-count"
+                >
                   {reviewItems.length} work type(s) to add
                 </span>
                 <div className="flex items-center gap-2">
@@ -1241,10 +1711,14 @@ export default function ScopeSettings() {
                   </Button>
                   <Button
                     onClick={handleBatchCreate}
-                    disabled={reviewItems.length === 0 || batchCreateMutation.isPending}
+                    disabled={
+                      reviewItems.length === 0 || batchCreateMutation.isPending
+                    }
                     data-testid="button-add-selected"
                   >
-                    {batchCreateMutation.isPending ? "Adding..." : `Add ${reviewItems.length} Work Type(s)`}
+                    {batchCreateMutation.isPending
+                      ? "Adding..."
+                      : `Add ${reviewItems.length} Work Type(s)`}
                   </Button>
                 </div>
               </DialogFooter>
