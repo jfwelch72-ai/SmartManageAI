@@ -25,7 +25,14 @@ const formatCurrency = (amount: string | number) => {
 const getStatusBadge = (status: string) => {
   switch (status) {
     case "PENDING":
-      return <Badge variant="outline" className="text-yellow-600 border-yellow-600 dark:text-yellow-500 dark:border-yellow-500">Pending</Badge>;
+      return (
+        <Badge
+          variant="outline"
+          className="text-yellow-600 border-yellow-600 dark:text-yellow-500 dark:border-yellow-500"
+        >
+          Pending
+        </Badge>
+      );
     case "APPROVED":
       return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>;
     case "PAID":
@@ -47,7 +54,11 @@ export default function SubcontractorPayablesPage() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [isPayOpen, setIsPayOpen] = useState(false);
 
-  const isAuthorized = !!user && (user.role === "ADMIN" || user.role === "MANAGER" || user.role === "OFFICE_MANAGER");
+  const isAuthorized =
+    !!user &&
+    (user.role === "ADMIN" ||
+      user.role === "MANAGER" ||
+      user.role === "OFFICE_MANAGER");
 
   const { data: payables = [], isLoading } = useQuery<Payable[]>({
     queryKey: ["/api/payables"],
@@ -76,13 +87,19 @@ export default function SubcontractorPayablesPage() {
       setIsDetailOpen(false);
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to approve payable", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to approve payable",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const rejectMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      return apiRequest("POST", `/api/payables/${id}/reject`, { rejectionReason: reason });
+      return apiRequest("POST", `/api/payables/${id}/reject`, {
+        rejectionReason: reason,
+      });
     },
     onSuccess: () => {
       toast({ title: "Payable rejected" });
@@ -91,18 +108,31 @@ export default function SubcontractorPayablesPage() {
       setIsDetailOpen(false);
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to reject payable", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to reject payable",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const markPaidMutation = useMutation({
-    mutationFn: async ({ id, paymentDate, checkNumber, paymentMethod }: {
+    mutationFn: async ({
+      id,
+      paymentDate,
+      checkNumber,
+      paymentMethod,
+    }: {
       id: string;
       paymentDate: string;
       checkNumber?: string;
       paymentMethod?: string;
     }) => {
-      return apiRequest("POST", `/api/payables/${id}/mark-paid`, { paymentDate, checkNumber, paymentMethod });
+      return apiRequest("POST", `/api/payables/${id}/mark-paid`, {
+        paymentDate,
+        checkNumber,
+        paymentMethod,
+      });
     },
     onSuccess: () => {
       toast({ title: "Payment recorded successfully" });
@@ -111,34 +141,58 @@ export default function SubcontractorPayablesPage() {
       setIsDetailOpen(false);
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to record payment", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to record payment",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const backfillMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/payables/backfill", {});
-      return response.json() as Promise<{ message: string; created: number; failed?: number }>;
+      return response.json() as Promise<{
+        message: string;
+        created: number;
+        failed?: number;
+      }>;
     },
     onSuccess: (data) => {
       toast({ title: "Backfill Complete", description: data.message });
       invalidatePayables();
     },
     onError: (error: Error) => {
-      toast({ title: "Backfill Failed", description: error.message, variant: "destructive" });
+      toast({
+        title: "Backfill Failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const filteredPayables = useMemo(() => {
-    return payables.filter(payable => {
+    return payables.filter((payable) => {
       if (!payable.subcontractor || !payable.project) return false;
       const matchesSearch =
-        (payable.subcontractor.companyName?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (payable.project.name?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (payable.project.code?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (payable.contract.contractNumber?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (payable.invoiceNumber && payable.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()));
-      const matchesStatus = statusFilter === "ALL" || payable.status === statusFilter;
+        payable.subcontractor.companyName
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        payable.project.name
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        payable.project.code
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        payable.contract.contractNumber
+          ?.toLowerCase()
+          .includes(searchTerm.toLowerCase()) ||
+        (payable.invoiceNumber &&
+          payable.invoiceNumber
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase()));
+      const matchesStatus =
+        statusFilter === "ALL" || payable.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
   }, [payables, searchTerm, statusFilter]);
@@ -151,7 +205,8 @@ export default function SubcontractorPayablesPage() {
             <CardContent className="p-8 text-center">
               <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground">
-                Admin, Manager, or Office Manager access required to view subcontractor payables.
+                Admin, Manager, or Office Manager access required to view
+                subcontractor payables.
               </p>
             </CardContent>
           </Card>
@@ -162,15 +217,19 @@ export default function SubcontractorPayablesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-full px-6 py-8">
         <div className="mb-8 flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2" data-testid="title-payables">
+            <h1
+              className="text-2xl font-bold text-foreground mb-1 flex items-center gap-2"
+              data-testid="title-payables"
+            >
               <DollarSign className="w-7 h-7 text-primary" />
               Subcontractor Payables
             </h1>
             <p className="text-sm text-muted-foreground">
-              Track, approve, and manage all subcontractor payments across projects
+              Track, approve, and manage all subcontractor payments across
+              projects
             </p>
           </div>
           {user?.role === "ADMIN" && payables.length === 0 && (
@@ -202,7 +261,10 @@ export default function SubcontractorPayablesPage() {
           </div>
         ) : (
           <>
-            <PayablesKPICards summary={summary} formatCurrency={formatCurrency} />
+            <PayablesKPICards
+              summary={summary}
+              formatCurrency={formatCurrency}
+            />
             <PayablesTable
               payables={filteredPayables}
               searchTerm={searchTerm}

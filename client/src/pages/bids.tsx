@@ -12,7 +12,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Plus, AlertTriangle, Trash2, Filter, X, Calendar, Wand2, UserCog, ChevronDown, FileEdit } from "lucide-react";
+import {
+  Search,
+  Plus,
+  AlertTriangle,
+  Trash2,
+  Filter,
+  X,
+  Calendar,
+  Wand2,
+  UserCog,
+  ChevronDown,
+  FileEdit,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,14 +34,34 @@ import {
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditBids, canDeleteBids } from "@/lib/rbac";
-import { useBids, useConvertBidToProject, useCreateBid, useDeleteBid } from "@/hooks/use-data";
+import {
+  useBids,
+  useConvertBidToProject,
+  useCreateBid,
+  useDeleteBid,
+} from "@/hooks/use-data";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { format, isAfter, isBefore, startOfWeek, endOfWeek, startOfMonth, endOfMonth, addDays, parseISO } from "date-fns";
+import {
+  format,
+  isAfter,
+  isBefore,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  addDays,
+  parseISO,
+} from "date-fns";
 import { FormDatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { Calendar as CalendarIcon } from "lucide-react";
-import type { Bid, CrmOrganisation, CrmContact, SelectUser } from "@shared/schema";
+import type {
+  Bid,
+  CrmOrganisation,
+  CrmContact,
+  SelectUser,
+} from "@shared/schema";
 import { insertBidSchema } from "@shared/schema";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -102,15 +134,19 @@ export default function BidsPage() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [estimatorFilter, setEstimatorFilter] = useState("ALL");
   const [showBudgetWarning, setShowBudgetWarning] = useState(false);
-  const [pendingConversionBidCode, setPendingConversionBidCode] = useState<string | null>(null);
+  const [pendingConversionBidCode, setPendingConversionBidCode] = useState<
+    string | null
+  >(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showAwardDialog, setShowAwardDialog] = useState(false);
   const [awardBidCode, setAwardBidCode] = useState<string | null>(null);
-  const [selectedSuperintendentId, setSelectedSuperintendentId] = useState<string>("");
-  const [selectedProjectManagerId, setSelectedProjectManagerId] = useState<string>("");
-  
+  const [selectedSuperintendentId, setSelectedSuperintendentId] =
+    useState<string>("");
+  const [selectedProjectManagerId, setSelectedProjectManagerId] =
+    useState<string>("");
+
   const { data: bidsData = [], isLoading } = useBids();
-  
+
   // Fetch users for estimator filter
   const { data: users = [] } = useQuery<SelectUser[]>({
     queryKey: ["/api/users"],
@@ -118,25 +154,39 @@ export default function BidsPage() {
   const convertBid = useConvertBidToProject();
   const createBid = useCreateBid();
   const deleteBid = useDeleteBid();
-  
+
   // Filter active superintendents and managers for team assignment
-  const superintendents = users.filter((u: SelectUser) => 
-    u.isActive && (u.role === "SUPERINTENDENT" || u.role === "MANAGER" || u.role === "ADMIN")
+  const superintendents = users.filter(
+    (u: SelectUser) =>
+      u.isActive &&
+      (u.role === "SUPERINTENDENT" ||
+        u.role === "MANAGER" ||
+        u.role === "ADMIN"),
   );
-  const managers = users.filter((u: SelectUser) => 
-    u.isActive && (u.role === "MANAGER" || u.role === "ADMIN")
+  const managers = users.filter(
+    (u: SelectUser) =>
+      u.isActive && (u.role === "MANAGER" || u.role === "ADMIN"),
   );
 
   // Delete state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [bidToDelete, setBidToDelete] = useState<{ code: string; name: string } | null>(null);
-  
+  const [bidToDelete, setBidToDelete] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
+
   // CRM integration state
-  const [selectedGcOrg, setSelectedGcOrg] = useState<CrmOrganisation | null>(null);
-  const [selectedGcContact, setSelectedGcContact] = useState<CrmContact | null>(null);
-  const [selectedOwnerRepOrg, setSelectedOwnerRepOrg] = useState<CrmOrganisation | null>(null);
-  const [selectedOwnerRepContact, setSelectedOwnerRepContact] = useState<CrmContact | null>(null);
-  
+  const [selectedGcOrg, setSelectedGcOrg] = useState<CrmOrganisation | null>(
+    null,
+  );
+  const [selectedGcContact, setSelectedGcContact] = useState<CrmContact | null>(
+    null,
+  );
+  const [selectedOwnerRepOrg, setSelectedOwnerRepOrg] =
+    useState<CrmOrganisation | null>(null);
+  const [selectedOwnerRepContact, setSelectedOwnerRepContact] =
+    useState<CrmContact | null>(null);
+
   // Cast to extended type with estimate summary
   const bids = bidsData as BidWithEstimate[];
 
@@ -163,12 +213,12 @@ export default function BidsPage() {
       ownerRepOrganizationId: undefined,
     },
   });
-  
+
   // Handle GC organization selection - auto-populate client fields
   const handleGcSelect = (org: CrmOrganisation | null) => {
     const previousOrgId = selectedGcOrg?.id;
     setSelectedGcOrg(org);
-    
+
     // Always clear contact when org changes (different org or deselected)
     if (!org || org.id !== previousOrgId) {
       setSelectedGcContact(null);
@@ -176,7 +226,7 @@ export default function BidsPage() {
       form.setValue("clientContactEmail", "");
       form.setValue("clientContactPhone", "");
     }
-    
+
     if (org) {
       form.setValue("gcOrganizationId", org.id);
       form.setValue("clientName", org.name);
@@ -185,7 +235,7 @@ export default function BidsPage() {
       form.setValue("clientName", "");
     }
   };
-  
+
   // Handle GC contact selection - auto-populate contact fields
   const handleGcContactSelect = (contact: CrmContact | null) => {
     setSelectedGcContact(contact);
@@ -193,36 +243,39 @@ export default function BidsPage() {
       const fullName = `${contact.firstName} ${contact.lastName}`.trim();
       form.setValue("clientContactName", fullName);
       form.setValue("clientContactEmail", contact.email || "");
-      form.setValue("clientContactPhone", contact.phone || contact.mobile || "");
+      form.setValue(
+        "clientContactPhone",
+        contact.phone || contact.mobile || "",
+      );
     } else {
       form.setValue("clientContactName", "");
       form.setValue("clientContactEmail", "");
       form.setValue("clientContactPhone", "");
     }
   };
-  
+
   // Handle Owner Rep organization selection
   const handleOwnerRepSelect = (org: CrmOrganisation | null) => {
     const previousOrgId = selectedOwnerRepOrg?.id;
     setSelectedOwnerRepOrg(org);
-    
+
     // Always clear contact when org changes (different org or deselected)
     if (!org || org.id !== previousOrgId) {
       setSelectedOwnerRepContact(null);
     }
-    
+
     if (org) {
       form.setValue("ownerRepOrganizationId", org.id);
     } else {
       form.setValue("ownerRepOrganizationId", undefined);
     }
   };
-  
+
   // Handle Owner Rep contact selection
   const handleOwnerRepContactSelect = (contact: CrmContact | null) => {
     setSelectedOwnerRepContact(contact);
   };
-  
+
   // Reset form and CRM state
   const resetFormAndCrmState = () => {
     form.reset();
@@ -231,7 +284,7 @@ export default function BidsPage() {
     setSelectedOwnerRepOrg(null);
     setSelectedOwnerRepContact(null);
   };
-  
+
   // Handle dialog open/close
   const handleDialogOpenChange = (open: boolean) => {
     setShowCreateDialog(open);
@@ -246,53 +299,63 @@ export default function BidsPage() {
     const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
     const monthStart = startOfMonth(today);
     const monthEnd = endOfMonth(today);
-    
-    return bids.filter(bid => {
+
+    return bids.filter((bid) => {
       // Search filter
-      const matchesSearch = 
+      const matchesSearch =
         bid.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         bid.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
         bid.clientName.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       if (!matchesSearch) return false;
-      
+
       // Due date filter
       if (dueDateFilter !== "ALL") {
         const dueDate = bid.dueDate ? new Date(bid.dueDate) : null;
-        
+
         switch (dueDateFilter) {
           case "OVERDUE":
             if (!dueDate || !isBefore(dueDate, today)) return false;
             break;
           case "THIS_WEEK":
-            if (!dueDate || isBefore(dueDate, weekStart) || isAfter(dueDate, weekEnd)) return false;
+            if (
+              !dueDate ||
+              isBefore(dueDate, weekStart) ||
+              isAfter(dueDate, weekEnd)
+            )
+              return false;
             break;
           case "THIS_MONTH":
-            if (!dueDate || isBefore(dueDate, monthStart) || isAfter(dueDate, monthEnd)) return false;
+            if (
+              !dueDate ||
+              isBefore(dueDate, monthStart) ||
+              isAfter(dueDate, monthEnd)
+            )
+              return false;
             break;
           case "NO_DATE":
             if (dueDate) return false;
             break;
         }
       }
-      
+
       // Estimate status filter
       if (statusFilter !== "ALL") {
         const estimateStatus = bid.estimateSummary?.status;
         if (estimateStatus !== statusFilter) return false;
       }
-      
+
       // Estimator filter
       if (estimatorFilter !== "ALL") {
         if (bid.estimatorId !== estimatorFilter) return false;
       }
-      
+
       return true;
     });
   }, [bids, searchTerm, dueDateFilter, statusFilter, estimatorFilter]);
 
   const handleConvertToProject = async (bidCode: string) => {
-    const bid = bids.find(b => b.code === bidCode);
+    const bid = bids.find((b) => b.code === bidCode);
     if (bid && (!bid.bidAmount || parseFloat(bid.bidAmount) === 0)) {
       setPendingConversionBidCode(bidCode);
       setShowBudgetWarning(true);
@@ -370,7 +433,7 @@ export default function BidsPage() {
 
   const confirmDeleteBid = async () => {
     if (!bidToDelete) return;
-    
+
     try {
       await deleteBid.mutateAsync(bidToDelete.code);
       toast({
@@ -390,10 +453,12 @@ export default function BidsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-3 py-4 sm:px-6 sm:py-8">
+      <main className="mx-auto max-w-full px-3 py-4 sm:px-6 sm:py-8">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-8">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1">Bid Board</h1>
+            <h1 className="text-2xl font-bold text-foreground mb-1">
+              Bid Board
+            </h1>
             <p className="text-sm text-muted-foreground">
               Track opportunities and bids in progress
             </p>
@@ -418,7 +483,9 @@ export default function BidsPage() {
                     <Wand2 className="w-4 h-4 mr-3 text-primary" />
                     <div>
                       <div className="font-medium">AI-Enhanced Bid Wizard</div>
-                      <div className="text-xs text-muted-foreground">AI analyzes documents & extracts scope</div>
+                      <div className="text-xs text-muted-foreground">
+                        AI analyzes documents & extracts scope
+                      </div>
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem
@@ -429,7 +496,9 @@ export default function BidsPage() {
                     <FileEdit className="w-4 h-4 mr-3 text-muted-foreground" />
                     <div>
                       <div className="font-medium">Manual Bid Entry</div>
-                      <div className="text-xs text-muted-foreground">Enter bid details & line items manually</div>
+                      <div className="text-xs text-muted-foreground">
+                        Enter bid details & line items manually
+                      </div>
                     </div>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -450,39 +519,55 @@ export default function BidsPage() {
                 data-testid="input-search-bids"
               />
             </div>
-            
+
             <div className="flex flex-wrap gap-2">
               <Select value={dueDateFilter} onValueChange={setDueDateFilter}>
-                <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-due-date-filter">
+                <SelectTrigger
+                  className="w-full sm:w-[160px]"
+                  data-testid="select-due-date-filter"
+                >
                   <Calendar className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Due Date" />
                 </SelectTrigger>
                 <SelectContent>
-                  {DUE_DATE_FILTERS.map(option => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  {DUE_DATE_FILTERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              
+
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-status-filter">
+                <SelectTrigger
+                  className="w-full sm:w-[160px]"
+                  data-testid="select-status-filter"
+                >
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  {ESTIMATE_STATUS_FILTERS.map(option => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  {ESTIMATE_STATUS_FILTERS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              
-              <Select value={estimatorFilter} onValueChange={setEstimatorFilter}>
-                <SelectTrigger className="w-full sm:w-[180px]" data-testid="select-estimator-filter">
+
+              <Select
+                value={estimatorFilter}
+                onValueChange={setEstimatorFilter}
+              >
+                <SelectTrigger
+                  className="w-full sm:w-[180px]"
+                  data-testid="select-estimator-filter"
+                >
                   <SelectValue placeholder="Estimator" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Estimators</SelectItem>
-                  {users.map(u => (
+                  {users.map((u) => (
                     <SelectItem key={u.id} value={u.id}>
                       {u.firstName} {u.lastName} - {u.role}
                     </SelectItem>
@@ -491,16 +576,23 @@ export default function BidsPage() {
               </Select>
             </div>
           </div>
-          
+
           {/* Active filter badges */}
-          {(dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL") && (
+          {(dueDateFilter !== "ALL" ||
+            statusFilter !== "ALL" ||
+            estimatorFilter !== "ALL") && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">Active filters:</span>
+              <span className="text-sm text-muted-foreground">
+                Active filters:
+              </span>
               {dueDateFilter !== "ALL" && (
                 <Badge variant="secondary" className="gap-1">
-                  {DUE_DATE_FILTERS.find(f => f.value === dueDateFilter)?.label}
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
+                  {
+                    DUE_DATE_FILTERS.find((f) => f.value === dueDateFilter)
+                      ?.label
+                  }
+                  <X
+                    className="w-3 h-3 cursor-pointer"
                     onClick={() => setDueDateFilter("ALL")}
                     data-testid="button-clear-due-date-filter"
                   />
@@ -508,9 +600,13 @@ export default function BidsPage() {
               )}
               {statusFilter !== "ALL" && (
                 <Badge variant="secondary" className="gap-1">
-                  {ESTIMATE_STATUS_FILTERS.find(f => f.value === statusFilter)?.label}
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
+                  {
+                    ESTIMATE_STATUS_FILTERS.find(
+                      (f) => f.value === statusFilter,
+                    )?.label
+                  }
+                  <X
+                    className="w-3 h-3 cursor-pointer"
                     onClick={() => setStatusFilter("ALL")}
                     data-testid="button-clear-status-filter"
                   />
@@ -518,17 +614,18 @@ export default function BidsPage() {
               )}
               {estimatorFilter !== "ALL" && (
                 <Badge variant="secondary" className="gap-1">
-                  {users.find(u => u.id === estimatorFilter)?.firstName} {users.find(u => u.id === estimatorFilter)?.lastName}
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
+                  {users.find((u) => u.id === estimatorFilter)?.firstName}{" "}
+                  {users.find((u) => u.id === estimatorFilter)?.lastName}
+                  <X
+                    className="w-3 h-3 cursor-pointer"
                     onClick={() => setEstimatorFilter("ALL")}
                     data-testid="button-clear-estimator-filter"
                   />
                 </Badge>
               )}
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setDueDateFilter("ALL");
                   setStatusFilter("ALL");
@@ -548,8 +645,11 @@ export default function BidsPage() {
           </div>
         ) : filteredBids.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            {searchTerm || dueDateFilter !== "ALL" || statusFilter !== "ALL" || estimatorFilter !== "ALL" 
-              ? "No bids match your filters" 
+            {searchTerm ||
+            dueDateFilter !== "ALL" ||
+            statusFilter !== "ALL" ||
+            estimatorFilter !== "ALL"
+              ? "No bids match your filters"
               : "No bids found. Click 'New Bid' to create your first bid."}
           </div>
         ) : (
@@ -560,14 +660,41 @@ export default function BidsPage() {
                 code={bid.code}
                 name={bid.name}
                 clientName={bid.clientName}
-                bidAmount={bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString()}` : "TBD"}
-                dueDate={bid.dueDate ? format(new Date(bid.dueDate), 'yyyy-MM-dd') : undefined}
-                location={[bid.city, bid.state].filter(Boolean).join(', ') || bid.locationAddress || undefined}
+                bidAmount={
+                  bid.bidAmount
+                    ? `$${Number(bid.bidAmount).toLocaleString()}`
+                    : "TBD"
+                }
+                dueDate={
+                  bid.dueDate
+                    ? format(new Date(bid.dueDate), "yyyy-MM-dd")
+                    : undefined
+                }
+                location={
+                  [bid.city, bid.state].filter(Boolean).join(", ") ||
+                  bid.locationAddress ||
+                  undefined
+                }
                 estimator={bid.estimatorName || "Unassigned"}
-                status={bid.status as "DRAFT" | "ACTIVE" | "AWARDED" | "LOST" | "CANCELLED"}
+                status={
+                  bid.status as
+                    | "DRAFT"
+                    | "ACTIVE"
+                    | "AWARDED"
+                    | "LOST"
+                    | "CANCELLED"
+                }
                 onClick={() => setLocation(`/bids/${bid.code}`)}
-                onConvertToProject={canEditBids(user?.role) ? () => handleConvertToProject(bid.code) : undefined}
-                onDelete={canDeleteBids(user?.role) ? () => handleDeleteBid(bid.code, bid.name) : undefined}
+                onConvertToProject={
+                  canEditBids(user?.role)
+                    ? () => handleConvertToProject(bid.code)
+                    : undefined
+                }
+                onDelete={
+                  canDeleteBids(user?.role)
+                    ? () => handleDeleteBid(bid.code, bid.name)
+                    : undefined
+                }
                 estimateData={bid.estimateSummary}
               />
             ))}
@@ -584,27 +711,35 @@ export default function BidsPage() {
               Award Bid & Assign Team
             </DialogTitle>
             <DialogDescription>
-              Convert this bid to an active project and assign the team members who will be responsible for it.
+              Convert this bid to an active project and assign the team members
+              who will be responsible for it.
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4 py-4">
             {awardBidCode && (
               <div className="p-3 bg-muted rounded-md">
                 <p className="text-sm font-medium">
-                  Bid: {bids.find(b => b.code === awardBidCode)?.name}
+                  Bid: {bids.find((b) => b.code === awardBidCode)?.name}
                 </p>
-                <p className="text-xs text-muted-foreground">Code: {awardBidCode}</p>
+                <p className="text-xs text-muted-foreground">
+                  Code: {awardBidCode}
+                </p>
               </div>
             )}
 
             <div className="space-y-2">
               <Label htmlFor="list-superintendent">Superintendent</Label>
-              <Select 
-                value={selectedSuperintendentId} 
-                onValueChange={(val) => setSelectedSuperintendentId(val === "none" ? "" : val)}
+              <Select
+                value={selectedSuperintendentId}
+                onValueChange={(val) =>
+                  setSelectedSuperintendentId(val === "none" ? "" : val)
+                }
               >
-                <SelectTrigger id="list-superintendent" data-testid="select-list-superintendent">
+                <SelectTrigger
+                  id="list-superintendent"
+                  data-testid="select-list-superintendent"
+                >
                   <SelectValue placeholder="Select superintendent (optional)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -620,11 +755,16 @@ export default function BidsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="list-project-manager">Project Manager</Label>
-              <Select 
-                value={selectedProjectManagerId} 
-                onValueChange={(val) => setSelectedProjectManagerId(val === "none" ? "" : val)}
+              <Select
+                value={selectedProjectManagerId}
+                onValueChange={(val) =>
+                  setSelectedProjectManagerId(val === "none" ? "" : val)
+                }
               >
-                <SelectTrigger id="list-project-manager" data-testid="select-list-project-manager">
+                <SelectTrigger
+                  id="list-project-manager"
+                  data-testid="select-list-project-manager"
+                >
                   <SelectValue placeholder="Select project manager (optional)" />
                 </SelectTrigger>
                 <SelectContent>
@@ -640,15 +780,15 @@ export default function BidsPage() {
           </div>
 
           <DialogFooter>
-            <Button 
-              type="button" 
-              variant="outline" 
-              onClick={() => setShowAwardDialog(false)} 
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowAwardDialog(false)}
               data-testid="button-cancel-list-award"
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={async () => {
                 if (awardBidCode) {
                   await performConversion(awardBidCode);
@@ -657,7 +797,9 @@ export default function BidsPage() {
               disabled={convertBid.isPending}
               data-testid="button-confirm-list-award"
             >
-              {convertBid.isPending ? "Converting..." : "Award & Convert to Project"}
+              {convertBid.isPending
+                ? "Converting..."
+                : "Award & Convert to Project"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -673,7 +815,8 @@ export default function BidsPage() {
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <p>
-                This bid does not have a bid amount entered. Converting to a project without budget data will:
+                This bid does not have a bid amount entered. Converting to a
+                project without budget data will:
               </p>
               <ul className="list-disc list-inside space-y-1 text-sm">
                 <li>Prevent accurate profitability tracking</li>
@@ -712,7 +855,10 @@ export default function BidsPage() {
 
       {/* Create Bid Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-bid">
+        <DialogContent
+          className="max-w-2xl max-h-[90vh] overflow-y-auto"
+          data-testid="dialog-create-bid"
+        >
           <DialogHeader>
             <DialogTitle>Create New Bid</DialogTitle>
             <DialogDescription>
@@ -720,7 +866,10 @@ export default function BidsPage() {
             </DialogDescription>
           </DialogHeader>
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleCreateBid)} className="space-y-4">
+            <form
+              onSubmit={form.handleSubmit(handleCreateBid)}
+              className="space-y-4"
+            >
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -729,7 +878,11 @@ export default function BidsPage() {
                     <FormItem className="col-span-2">
                       <FormLabel>Bid Name *</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Downtown Office Renovation" {...field} data-testid="input-bid-name" />
+                        <Input
+                          placeholder="e.g., Downtown Office Renovation"
+                          {...field}
+                          data-testid="input-bid-name"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -755,10 +908,14 @@ export default function BidsPage() {
 
                 <div className="col-span-2 space-y-4 border rounded-md p-4 bg-muted/30">
                   <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">CRM Integration</Label>
-                    <span className="text-xs text-muted-foreground">Select from CRM to auto-fill client info</span>
+                    <Label className="text-sm font-medium">
+                      CRM Integration
+                    </Label>
+                    <span className="text-xs text-muted-foreground">
+                      Select from CRM to auto-fill client info
+                    </span>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label className="text-sm">GC / General Contractor</Label>
@@ -772,7 +929,7 @@ export default function BidsPage() {
                         selectedContactId={selectedGcContact?.id}
                       />
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="text-sm">Owner Representative</Label>
                       <CrmOrganizationSelector
@@ -795,7 +952,11 @@ export default function BidsPage() {
                     <FormItem className="col-span-2">
                       <FormLabel>Client Name *</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., ABC Corporation" {...field} data-testid="input-client-name" />
+                        <Input
+                          placeholder="e.g., ABC Corporation"
+                          {...field}
+                          data-testid="input-client-name"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -809,7 +970,12 @@ export default function BidsPage() {
                     <FormItem>
                       <FormLabel>Contact Name</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., John Smith" {...field} value={field.value || ""} data-testid="input-contact-name" />
+                        <Input
+                          placeholder="e.g., John Smith"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-contact-name"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -823,7 +989,13 @@ export default function BidsPage() {
                     <FormItem>
                       <FormLabel>Contact Email</FormLabel>
                       <FormControl>
-                        <Input type="email" placeholder="john@example.com" {...field} value={field.value || ""} data-testid="input-contact-email" />
+                        <Input
+                          type="email"
+                          placeholder="john@example.com"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-contact-email"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -837,7 +1009,12 @@ export default function BidsPage() {
                     <FormItem>
                       <FormLabel>Contact Phone</FormLabel>
                       <FormControl>
-                        <Input placeholder="(555) 123-4567" {...field} value={field.value || ""} data-testid="input-contact-phone" />
+                        <Input
+                          placeholder="(555) 123-4567"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-contact-phone"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -851,7 +1028,14 @@ export default function BidsPage() {
                     <FormItem>
                       <FormLabel>Bid Amount</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" placeholder="0.00" {...field} value={field.value || ""} data-testid="input-bid-amount" />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-bid-amount"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -865,7 +1049,12 @@ export default function BidsPage() {
                     <FormItem className="col-span-2">
                       <FormLabel>Location Address</FormLabel>
                       <FormControl>
-                        <Input placeholder="123 Main St" {...field} value={field.value || ""} data-testid="input-location-address" />
+                        <Input
+                          placeholder="123 Main St"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-location-address"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -879,7 +1068,12 @@ export default function BidsPage() {
                     <FormItem>
                       <FormLabel>City</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Seattle" {...field} value={field.value || ""} data-testid="input-city" />
+                        <Input
+                          placeholder="e.g., Seattle"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-city"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -893,7 +1087,12 @@ export default function BidsPage() {
                     <FormItem>
                       <FormLabel>State</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., WA" {...field} value={field.value || ""} data-testid="input-state" />
+                        <Input
+                          placeholder="e.g., WA"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-state"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -922,10 +1121,19 @@ export default function BidsPage() {
               </div>
 
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => handleDialogOpenChange(false)} data-testid="button-cancel-create">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleDialogOpenChange(false)}
+                  data-testid="button-cancel-create"
+                >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createBid.isPending} data-testid="button-submit-create">
+                <Button
+                  type="submit"
+                  disabled={createBid.isPending}
+                  data-testid="button-submit-create"
+                >
                   {createBid.isPending ? "Creating..." : "Create Bid"}
                 </Button>
               </DialogFooter>
@@ -943,13 +1151,16 @@ export default function BidsPage() {
               Delete Bid
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete bid <strong>{bidToDelete?.code}</strong> ({bidToDelete?.name})?
-              <br /><br />
-              This action cannot be undone. All associated estimates, quotes, and documents will also be deleted.
+              Are you sure you want to delete bid{" "}
+              <strong>{bidToDelete?.code}</strong> ({bidToDelete?.name})?
+              <br />
+              <br />
+              This action cannot be undone. All associated estimates, quotes,
+              and documents will also be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel 
+            <AlertDialogCancel
               onClick={() => setBidToDelete(null)}
               data-testid="button-cancel-delete"
             >

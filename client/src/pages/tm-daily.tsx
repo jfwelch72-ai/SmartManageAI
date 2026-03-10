@@ -1,10 +1,20 @@
 import { useState, useRef } from "react";
 import TMDailyForm, { TMDailyFormRef } from "@/components/TMDailyForm";
 import { useAuth } from "@/hooks/use-auth";
-import { useProjects, useProjectTMSheets, useCreateTMSheet } from "@/hooks/use-data";
+import {
+  useProjects,
+  useProjectTMSheets,
+  useCreateTMSheet,
+} from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
@@ -15,14 +25,14 @@ export default function TMDailyPage() {
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const formRef = useRef<TMDailyFormRef>(null);
-  
+
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: tmSheets = [], isLoading: sheetsLoading } = useProjectTMSheets(
-    projects.find(p => p.id === selectedProjectId)?.code || ""
+    projects.find((p) => p.id === selectedProjectId)?.code || "",
   );
   const createSheet = useCreateTMSheet();
 
-  const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
   const handleSubmit = async (data: {
     date: string;
@@ -71,9 +81,11 @@ export default function TMDailyPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-4xl px-6 py-8">
+      <main className="mx-auto max-w-full px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground mb-1">Daily T&M Sheet</h1>
+          <h1 className="text-2xl font-bold text-foreground mb-1">
+            Daily T&M Sheet
+          </h1>
           <p className="text-sm text-muted-foreground">
             Document time and materials for project work
           </p>
@@ -87,8 +99,14 @@ export default function TMDailyPage() {
             <CardContent>
               <div className="space-y-2">
                 <Label htmlFor="project-select">Project</Label>
-                <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                  <SelectTrigger id="project-select" data-testid="select-tm-project">
+                <Select
+                  value={selectedProjectId}
+                  onValueChange={setSelectedProjectId}
+                >
+                  <SelectTrigger
+                    id="project-select"
+                    data-testid="select-tm-project"
+                  >
                     <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                   <SelectContent>
@@ -126,17 +144,23 @@ export default function TMDailyPage() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {tmSheets.map(sheet => (
-                        <div 
-                          key={sheet.id} 
+                      {tmSheets.map((sheet) => (
+                        <div
+                          key={sheet.id}
                           className="flex items-start justify-between p-4 border rounded-md"
                           data-testid={`tm-sheet-${sheet.id}`}
                         >
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                               <FileText className="w-4 h-4 text-muted-foreground" />
-                              <span className="font-medium text-sm" data-testid={`text-date-${sheet.id}`}>
-                                {format(new Date(sheet.date), "EEEE, MMM d, yyyy")}
+                              <span
+                                className="font-medium text-sm"
+                                data-testid={`text-date-${sheet.id}`}
+                              >
+                                {format(
+                                  new Date(sheet.date),
+                                  "EEEE, MMM d, yyyy",
+                                )}
                               </span>
                               {sheet.crewSize && (
                                 <Badge variant="secondary" className="text-xs">
@@ -147,7 +171,11 @@ export default function TMDailyPage() {
                             <p className="text-sm text-muted-foreground mb-1">
                               <strong>Company Rep:</strong> {sheet.tfrRepName}
                               {sheet.clientRepName && (
-                                <> | <strong>Client Rep:</strong> {sheet.clientRepName}</>
+                                <>
+                                  {" "}
+                                  | <strong>Client Rep:</strong>{" "}
+                                  {sheet.clientRepName}
+                                </>
                               )}
                             </p>
                             {sheet.weather && (
@@ -155,7 +183,9 @@ export default function TMDailyPage() {
                                 <strong>Weather:</strong> {sheet.weather}
                               </p>
                             )}
-                            <p className="text-sm mt-2">{sheet.descriptionOfWork}</p>
+                            <p className="text-sm mt-2">
+                              {sheet.descriptionOfWork}
+                            </p>
                           </div>
                         </div>
                       ))}

@@ -42,7 +42,8 @@ export default function ProductionRatesPage() {
   const { startDate } = getDateRange();
   const queryParams = new URLSearchParams();
   if (startDate) queryParams.set("startDate", startDate);
-  if (selectedUnit && selectedUnit !== "all") queryParams.set("unit", selectedUnit);
+  if (selectedUnit && selectedUnit !== "all")
+    queryParams.set("unit", selectedUnit);
 
   const { data, isLoading, error } = useQuery<ProductionRatesResponse>({
     queryKey: ["/api/production-rates", startDate, selectedUnit],
@@ -54,36 +55,47 @@ export default function ProductionRatesPage() {
     },
   });
 
-  const { data: detailData, isLoading: detailLoading } = useQuery<ProductionRateDetail>({
-    queryKey: ["/api/production-rates/detail", selectedRate?.description, selectedRate?.unit, startDate],
-    queryFn: async () => {
-      if (!selectedRate) return null;
-      const params = new URLSearchParams({
-        description: selectedRate.description,
-        unit: selectedRate.unit,
-      });
-      if (startDate) params.set("startDate", startDate);
-      const response = await fetch(`/api/production-rates/detail?${params.toString()}`, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch rate details");
-      return response.json();
-    },
-    enabled: !!selectedRate && detailDialogOpen,
-  });
+  const { data: detailData, isLoading: detailLoading } =
+    useQuery<ProductionRateDetail>({
+      queryKey: [
+        "/api/production-rates/detail",
+        selectedRate?.description,
+        selectedRate?.unit,
+        startDate,
+      ],
+      queryFn: async () => {
+        if (!selectedRate) return null;
+        const params = new URLSearchParams({
+          description: selectedRate.description,
+          unit: selectedRate.unit,
+        });
+        if (startDate) params.set("startDate", startDate);
+        const response = await fetch(
+          `/api/production-rates/detail?${params.toString()}`,
+          { credentials: "include" },
+        );
+        if (!response.ok) throw new Error("Failed to fetch rate details");
+        return response.json();
+      },
+      enabled: !!selectedRate && detailDialogOpen,
+    });
 
   const costQueryParams = new URLSearchParams();
   if (startDate) costQueryParams.set("startDate", startDate);
-  if (selectedUnit && selectedUnit !== "all") costQueryParams.set("unit", selectedUnit);
+  if (selectedUnit && selectedUnit !== "all")
+    costQueryParams.set("unit", selectedUnit);
 
-  const { data: costData, isLoading: costLoading } = useQuery<CostMetricsResponse>({
-    queryKey: ["/api/production-rates/metrics", startDate, selectedUnit],
-    queryFn: async () => {
-      const url = `/api/production-rates/metrics${costQueryParams.toString() ? `?${costQueryParams.toString()}` : ""}`;
-      const response = await fetch(url, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch cost metrics");
-      return response.json();
-    },
-    enabled: activeTab === "cost-analytics",
-  });
+  const { data: costData, isLoading: costLoading } =
+    useQuery<CostMetricsResponse>({
+      queryKey: ["/api/production-rates/metrics", startDate, selectedUnit],
+      queryFn: async () => {
+        const url = `/api/production-rates/metrics${costQueryParams.toString() ? `?${costQueryParams.toString()}` : ""}`;
+        const response = await fetch(url, { credentials: "include" });
+        if (!response.ok) throw new Error("Failed to fetch cost metrics");
+        return response.json();
+      },
+      enabled: activeTab === "cost-analytics",
+    });
 
   const handleViewDetails = (rate: ProductionRate) => {
     setSelectedRate(rate);
@@ -92,10 +104,13 @@ export default function ProductionRatesPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-full px-6 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-foreground mb-1" data-testid="text-page-title">
+            <h1
+              className="text-2xl font-bold text-foreground mb-1"
+              data-testid="text-page-title"
+            >
               Production Rates
             </h1>
             <p className="text-sm text-muted-foreground">
@@ -104,13 +119,20 @@ export default function ProductionRatesPage() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as PageTab)} className="mb-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as PageTab)}
+          className="mb-6"
+        >
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="benchmarks" data-testid="tab-benchmarks">
               <BarChart3 className="w-4 h-4 mr-2" />
               Benchmarks
             </TabsTrigger>
-            <TabsTrigger value="cost-analytics" data-testid="tab-cost-analytics">
+            <TabsTrigger
+              value="cost-analytics"
+              data-testid="tab-cost-analytics"
+            >
               <DollarSign className="w-4 h-4 mr-2" />
               Cost Analytics
             </TabsTrigger>

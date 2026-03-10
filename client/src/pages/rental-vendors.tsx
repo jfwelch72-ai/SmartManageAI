@@ -1,22 +1,48 @@
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { 
-  Building2, 
+import {
+  Building2,
   Plus,
   Search,
   Edit,
@@ -31,7 +57,7 @@ import {
   AlertCircle,
   X,
   FileText,
-  Wrench
+  Wrench,
 } from "lucide-react";
 import type { RentalVendor, RentalEquipmentCatalog } from "@shared/schema";
 import { format } from "date-fns";
@@ -107,15 +133,21 @@ export default function RentalVendorsPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  
+
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedVendor, setSelectedVendor] = useState<RentalVendor | null>(null);
+  const [selectedVendor, setSelectedVendor] = useState<RentalVendor | null>(
+    null,
+  );
   const [showVendorDialog, setShowVendorDialog] = useState(false);
   const [editingVendor, setEditingVendor] = useState<RentalVendor | null>(null);
   const [showCatalogDialog, setShowCatalogDialog] = useState(false);
-  const [editingCatalog, setEditingCatalog] = useState<RentalEquipmentCatalog | null>(null);
+  const [editingCatalog, setEditingCatalog] =
+    useState<RentalEquipmentCatalog | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ type: "vendor" | "catalog"; id: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: "vendor" | "catalog";
+    id: string;
+  } | null>(null);
 
   const vendorForm = useForm<VendorFormValues>({
     resolver: zodResolver(vendorFormSchema),
@@ -154,11 +186,15 @@ export default function RentalVendorsPage() {
     },
   });
 
-  const { data: vendors = [], isLoading: vendorsLoading } = useQuery<RentalVendor[]>({
+  const { data: vendors = [], isLoading: vendorsLoading } = useQuery<
+    RentalVendor[]
+  >({
     queryKey: ["/api/rental-vendors"],
   });
 
-  const { data: allCatalog = [], isLoading: catalogLoading } = useQuery<CatalogWithVendor[]>({
+  const { data: allCatalog = [], isLoading: catalogLoading } = useQuery<
+    CatalogWithVendor[]
+  >({
     queryKey: ["/api/rental-vendors/catalog"],
   });
 
@@ -178,12 +214,22 @@ export default function RentalVendorsPage() {
       vendorForm.reset();
     },
     onError: (error: any) => {
-      toast({ title: "Failed to create vendor", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to create vendor",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const updateVendorMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: VendorFormValues }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: VendorFormValues;
+    }) => {
       return apiRequest("PATCH", `/api/rental-vendors/${id}`, data);
     },
     onSuccess: () => {
@@ -194,7 +240,11 @@ export default function RentalVendorsPage() {
       vendorForm.reset();
     },
     onError: (error: any) => {
-      toast({ title: "Failed to update vendor", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to update vendor",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -212,7 +262,11 @@ export default function RentalVendorsPage() {
       }
     },
     onError: (error: any) => {
-      toast({ title: "Failed to delete vendor", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to delete vendor",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -227,24 +281,42 @@ export default function RentalVendorsPage() {
         monthlyRate: data.monthlyRate || null,
         deliveryFee: data.deliveryFee || null,
         pickupFee: data.pickupFee || null,
-        minimumRentalDays: data.minimumRentalDays ? parseInt(data.minimumRentalDays) : null,
+        minimumRentalDays: data.minimumRentalDays
+          ? parseInt(data.minimumRentalDays)
+          : null,
       };
-      return apiRequest("POST", `/api/rental-vendors/${selectedVendor.id}/catalog`, payload);
+      return apiRequest(
+        "POST",
+        `/api/rental-vendors/${selectedVendor.id}/catalog`,
+        payload,
+      );
     },
     onSuccess: () => {
       toast({ title: "Equipment added to catalog" });
-      qc.invalidateQueries({ queryKey: ["/api/rental-vendors", selectedVendor?.id, "catalog"] });
+      qc.invalidateQueries({
+        queryKey: ["/api/rental-vendors", selectedVendor?.id, "catalog"],
+      });
       qc.invalidateQueries({ queryKey: ["/api/rental-vendors/catalog"] });
       setShowCatalogDialog(false);
       catalogForm.reset();
     },
     onError: (error: any) => {
-      toast({ title: "Failed to add equipment", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to add equipment",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
   const updateCatalogMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: CatalogFormValues }) => {
+    mutationFn: async ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: CatalogFormValues;
+    }) => {
       const payload = {
         ...data,
         hourlyRate: data.hourlyRate || null,
@@ -253,20 +325,28 @@ export default function RentalVendorsPage() {
         monthlyRate: data.monthlyRate || null,
         deliveryFee: data.deliveryFee || null,
         pickupFee: data.pickupFee || null,
-        minimumRentalDays: data.minimumRentalDays ? parseInt(data.minimumRentalDays) : null,
+        minimumRentalDays: data.minimumRentalDays
+          ? parseInt(data.minimumRentalDays)
+          : null,
       };
       return apiRequest("PATCH", `/api/rental-equipment/${id}`, payload);
     },
     onSuccess: () => {
       toast({ title: "Equipment updated" });
-      qc.invalidateQueries({ queryKey: ["/api/rental-vendors", selectedVendor?.id, "catalog"] });
+      qc.invalidateQueries({
+        queryKey: ["/api/rental-vendors", selectedVendor?.id, "catalog"],
+      });
       qc.invalidateQueries({ queryKey: ["/api/rental-vendors/catalog"] });
       setShowCatalogDialog(false);
       setEditingCatalog(null);
       catalogForm.reset();
     },
     onError: (error: any) => {
-      toast({ title: "Failed to update equipment", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to update equipment",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -276,13 +356,19 @@ export default function RentalVendorsPage() {
     },
     onSuccess: () => {
       toast({ title: "Equipment removed from catalog" });
-      qc.invalidateQueries({ queryKey: ["/api/rental-vendors", selectedVendor?.id, "catalog"] });
+      qc.invalidateQueries({
+        queryKey: ["/api/rental-vendors", selectedVendor?.id, "catalog"],
+      });
       qc.invalidateQueries({ queryKey: ["/api/rental-vendors/catalog"] });
       setShowDeleteConfirm(false);
       setDeleteTarget(null);
     },
     onError: (error: any) => {
-      toast({ title: "Failed to delete equipment", description: error.message, variant: "destructive" });
+      toast({
+        title: "Failed to delete equipment",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -389,9 +475,10 @@ export default function RentalVendorsPage() {
     }
   };
 
-  const filteredVendors = vendors.filter(v => 
-    v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.code.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredVendors = vendors.filter(
+    (v) =>
+      v.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      v.code.toLowerCase().includes(searchTerm.toLowerCase()),
   );
 
   const formatRate = (rate: string | null) => {
@@ -404,14 +491,19 @@ export default function RentalVendorsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="container mx-auto px-4 py-6 max-w-7xl">
+      <main className="container mx-auto px-4 py-6 max-w-full">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
+            <h1
+              className="text-2xl font-bold flex items-center gap-2"
+              data-testid="text-page-title"
+            >
               <Truck className="h-6 w-6 text-primary" />
               Rental Vendors
             </h1>
-            <p className="text-muted-foreground">Manage equipment rental vendors and their catalogs</p>
+            <p className="text-muted-foreground">
+              Manage equipment rental vendors and their catalogs
+            </p>
           </div>
           <Button onClick={handleAddVendor} data-testid="button-add-vendor">
             <Plus className="h-4 w-4 mr-2" />
@@ -425,8 +517,8 @@ export default function RentalVendorsPage() {
               <CardTitle className="text-lg">Vendors</CardTitle>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input 
-                  placeholder="Search vendors..." 
+                <Input
+                  placeholder="Search vendors..."
                   className="pl-9"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -438,7 +530,7 @@ export default function RentalVendorsPage() {
               <ScrollArea className="h-[calc(100vh-320px)]">
                 {vendorsLoading ? (
                   <div className="p-4 space-y-3">
-                    {[1, 2, 3].map(i => (
+                    {[1, 2, 3].map((i) => (
                       <Skeleton key={i} className="h-16 w-full" />
                     ))}
                   </div>
@@ -449,11 +541,13 @@ export default function RentalVendorsPage() {
                   </div>
                 ) : (
                   <div className="divide-y">
-                    {filteredVendors.map(vendor => (
+                    {filteredVendors.map((vendor) => (
                       <div
                         key={vendor.id}
                         className={`p-4 cursor-pointer hover-elevate transition-colors ${
-                          selectedVendor?.id === vendor.id ? "bg-primary/10" : ""
+                          selectedVendor?.id === vendor.id
+                            ? "bg-primary/10"
+                            : ""
                         }`}
                         onClick={() => setSelectedVendor(vendor)}
                         data-testid={`vendor-row-${vendor.id}`}
@@ -461,8 +555,13 @@ export default function RentalVendorsPage() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium truncate">{vendor.name}</span>
-                              <Badge variant="outline" className="text-xs shrink-0">
+                              <span className="font-medium truncate">
+                                {vendor.name}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className="text-xs shrink-0"
+                              >
                                 {vendor.code}
                               </Badge>
                             </div>
@@ -472,7 +571,10 @@ export default function RentalVendorsPage() {
                               </p>
                             )}
                           </div>
-                          <Badge variant={vendor.isActive ? "default" : "secondary"} className="shrink-0">
+                          <Badge
+                            variant={vendor.isActive ? "default" : "secondary"}
+                            className="shrink-0"
+                          >
                             {vendor.isActive ? "Active" : "Inactive"}
                           </Badge>
                         </div>
@@ -495,27 +597,29 @@ export default function RentalVendorsPage() {
                         <Badge variant="outline">{selectedVendor.code}</Badge>
                       </CardTitle>
                       <CardDescription>
-                        {selectedVendor.city && selectedVendor.state 
+                        {selectedVendor.city && selectedVendor.state
                           ? `${selectedVendor.city}, ${selectedVendor.state}`
-                          : "No location set"
-                        }
+                          : "No location set"}
                       </CardDescription>
                     </div>
                     <div className="flex gap-2">
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="icon"
                         onClick={() => handleEditVendor(selectedVendor)}
                         data-testid="button-edit-vendor"
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         size="icon"
                         className="text-destructive hover:text-destructive"
                         onClick={() => {
-                          setDeleteTarget({ type: "vendor", id: selectedVendor.id });
+                          setDeleteTarget({
+                            type: "vendor",
+                            id: selectedVendor.id,
+                          });
                           setShowDeleteConfirm(true);
                         }}
                         data-testid="button-delete-vendor"
@@ -528,11 +632,19 @@ export default function RentalVendorsPage() {
                 <CardContent>
                   <Tabs defaultValue="catalog">
                     <TabsList className="mb-4">
-                      <TabsTrigger value="catalog" className="gap-2" data-testid="tab-catalog">
+                      <TabsTrigger
+                        value="catalog"
+                        className="gap-2"
+                        data-testid="tab-catalog"
+                      >
                         <Package className="h-4 w-4" />
                         Equipment Catalog
                       </TabsTrigger>
-                      <TabsTrigger value="info" className="gap-2" data-testid="tab-info">
+                      <TabsTrigger
+                        value="info"
+                        className="gap-2"
+                        data-testid="tab-info"
+                      >
                         <FileText className="h-4 w-4" />
                         Vendor Info
                       </TabsTrigger>
@@ -541,9 +653,14 @@ export default function RentalVendorsPage() {
                     <TabsContent value="catalog">
                       <div className="flex items-center justify-between mb-4">
                         <p className="text-sm text-muted-foreground">
-                          {vendorCatalog.length} equipment item{vendorCatalog.length !== 1 ? "s" : ""} in catalog
+                          {vendorCatalog.length} equipment item
+                          {vendorCatalog.length !== 1 ? "s" : ""} in catalog
                         </p>
-                        <Button size="sm" onClick={handleAddCatalogItem} data-testid="button-add-catalog-item">
+                        <Button
+                          size="sm"
+                          onClick={handleAddCatalogItem}
+                          data-testid="button-add-catalog-item"
+                        >
                           <Plus className="h-4 w-4 mr-2" />
                           Add Equipment
                         </Button>
@@ -553,7 +670,9 @@ export default function RentalVendorsPage() {
                         <div className="text-center py-8 text-muted-foreground">
                           <Wrench className="h-12 w-12 mx-auto mb-2 opacity-50" />
                           <p>No equipment in catalog</p>
-                          <p className="text-sm">Add equipment available for rental from this vendor</p>
+                          <p className="text-sm">
+                            Add equipment available for rental from this vendor
+                          </p>
                         </div>
                       ) : (
                         <ScrollArea className="h-[400px]">
@@ -562,28 +681,39 @@ export default function RentalVendorsPage() {
                               <TableRow>
                                 <TableHead>Equipment</TableHead>
                                 <TableHead>Type</TableHead>
-                                <TableHead className="text-right">Daily Rate</TableHead>
-                                <TableHead className="text-right">Weekly Rate</TableHead>
+                                <TableHead className="text-right">
+                                  Daily Rate
+                                </TableHead>
+                                <TableHead className="text-right">
+                                  Weekly Rate
+                                </TableHead>
                                 <TableHead>Status</TableHead>
                                 <TableHead className="w-[80px]"></TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {vendorCatalog.map(item => (
-                                <TableRow key={item.id} data-testid={`catalog-row-${item.id}`}>
+                              {vendorCatalog.map((item) => (
+                                <TableRow
+                                  key={item.id}
+                                  data-testid={`catalog-row-${item.id}`}
+                                >
                                   <TableCell>
                                     <div>
                                       <p className="font-medium">{item.name}</p>
                                       {(item.make || item.model) && (
                                         <p className="text-sm text-muted-foreground">
-                                          {[item.make, item.model].filter(Boolean).join(" ")}
+                                          {[item.make, item.model]
+                                            .filter(Boolean)
+                                            .join(" ")}
                                         </p>
                                       )}
                                     </div>
                                   </TableCell>
                                   <TableCell>
                                     <Badge variant="outline">
-                                      {EQUIPMENT_TYPES.find(t => t.value === item.equipmentType)?.label || item.equipmentType}
+                                      {EQUIPMENT_TYPES.find(
+                                        (t) => t.value === item.equipmentType,
+                                      )?.label || item.equipmentType}
                                     </Badge>
                                   </TableCell>
                                   <TableCell className="text-right font-mono">
@@ -593,26 +723,35 @@ export default function RentalVendorsPage() {
                                     {formatRate(item.weeklyRate)}
                                   </TableCell>
                                   <TableCell>
-                                    <Badge variant={item.isActive ? "default" : "secondary"}>
+                                    <Badge
+                                      variant={
+                                        item.isActive ? "default" : "secondary"
+                                      }
+                                    >
                                       {item.isActive ? "Active" : "Inactive"}
                                     </Badge>
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex gap-1">
-                                      <Button 
-                                        variant="ghost" 
+                                      <Button
+                                        variant="ghost"
                                         size="icon"
-                                        onClick={() => handleEditCatalogItem(item)}
+                                        onClick={() =>
+                                          handleEditCatalogItem(item)
+                                        }
                                         data-testid={`button-edit-catalog-${item.id}`}
                                       >
                                         <Edit className="h-4 w-4" />
                                       </Button>
-                                      <Button 
-                                        variant="ghost" 
+                                      <Button
+                                        variant="ghost"
                                         size="icon"
                                         className="text-destructive hover:text-destructive"
                                         onClick={() => {
-                                          setDeleteTarget({ type: "catalog", id: item.id });
+                                          setDeleteTarget({
+                                            type: "catalog",
+                                            id: item.id,
+                                          });
                                           setShowDeleteConfirm(true);
                                         }}
                                         data-testid={`button-delete-catalog-${item.id}`}
@@ -643,7 +782,10 @@ export default function RentalVendorsPage() {
                             {selectedVendor.contactEmail && (
                               <div className="flex items-center gap-2 text-sm">
                                 <Mail className="h-4 w-4 text-muted-foreground" />
-                                <a href={`mailto:${selectedVendor.contactEmail}`} className="text-primary hover:underline">
+                                <a
+                                  href={`mailto:${selectedVendor.contactEmail}`}
+                                  className="text-primary hover:underline"
+                                >
                                   {selectedVendor.contactEmail}
                                 </a>
                               </div>
@@ -651,7 +793,10 @@ export default function RentalVendorsPage() {
                             {selectedVendor.contactPhone && (
                               <div className="flex items-center gap-2 text-sm">
                                 <Phone className="h-4 w-4 text-muted-foreground" />
-                                <a href={`tel:${selectedVendor.contactPhone}`} className="text-primary hover:underline">
+                                <a
+                                  href={`tel:${selectedVendor.contactPhone}`}
+                                  className="text-primary hover:underline"
+                                >
                                   {selectedVendor.contactPhone}
                                 </a>
                               </div>
@@ -661,8 +806,12 @@ export default function RentalVendorsPage() {
                                 <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
                                 <span>
                                   {selectedVendor.address}
-                                  {selectedVendor.city && <>, {selectedVendor.city}</>}
-                                  {selectedVendor.state && <>, {selectedVendor.state}</>}
+                                  {selectedVendor.city && (
+                                    <>, {selectedVendor.city}</>
+                                  )}
+                                  {selectedVendor.state && (
+                                    <>, {selectedVendor.state}</>
+                                  )}
                                 </span>
                               </div>
                             )}
@@ -675,17 +824,21 @@ export default function RentalVendorsPage() {
                             {selectedVendor.accountNumber && (
                               <div className="flex items-center gap-2 text-sm">
                                 <DollarSign className="h-4 w-4 text-muted-foreground" />
-                                <span>Account: {selectedVendor.accountNumber}</span>
+                                <span>
+                                  Account: {selectedVendor.accountNumber}
+                                </span>
                               </div>
                             )}
                             {selectedVendor.paymentTerms && (
                               <div className="flex items-center gap-2 text-sm">
                                 <FileText className="h-4 w-4 text-muted-foreground" />
-                                <span>Terms: {selectedVendor.paymentTerms}</span>
+                                <span>
+                                  Terms: {selectedVendor.paymentTerms}
+                                </span>
                               </div>
                             )}
                           </div>
-                          
+
                           {selectedVendor.notes && (
                             <div className="mt-4">
                               <h3 className="font-medium mb-2">Notes</h3>
@@ -704,28 +857,40 @@ export default function RentalVendorsPage() {
               <div className="flex flex-col items-center justify-center h-[500px] text-muted-foreground">
                 <Truck className="h-16 w-16 mb-4 opacity-50" />
                 <p className="text-lg font-medium">Select a vendor</p>
-                <p className="text-sm">Choose a vendor from the list to view their equipment catalog</p>
+                <p className="text-sm">
+                  Choose a vendor from the list to view their equipment catalog
+                </p>
               </div>
             )}
           </Card>
         </div>
 
-        <Dialog open={showVendorDialog} onOpenChange={(open) => {
-          setShowVendorDialog(open);
-          if (!open) {
-            setEditingVendor(null);
-            vendorForm.reset();
-          }
-        }}>
+        <Dialog
+          open={showVendorDialog}
+          onOpenChange={(open) => {
+            setShowVendorDialog(open);
+            if (!open) {
+              setEditingVendor(null);
+              vendorForm.reset();
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{editingVendor ? "Edit Vendor" : "Add Rental Vendor"}</DialogTitle>
+              <DialogTitle>
+                {editingVendor ? "Edit Vendor" : "Add Rental Vendor"}
+              </DialogTitle>
               <DialogDescription>
-                {editingVendor ? "Update vendor information" : "Add a new equipment rental vendor"}
+                {editingVendor
+                  ? "Update vendor information"
+                  : "Add a new equipment rental vendor"}
               </DialogDescription>
             </DialogHeader>
             <Form {...vendorForm}>
-              <form onSubmit={vendorForm.handleSubmit(handleSubmitVendor)} className="space-y-4">
+              <form
+                onSubmit={vendorForm.handleSubmit(handleSubmitVendor)}
+                className="space-y-4"
+              >
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={vendorForm.control}
@@ -734,7 +899,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Vendor Name *</FormLabel>
                         <FormControl>
-                          <Input placeholder="Sunbelt Rentals" {...field} data-testid="input-vendor-name" />
+                          <Input
+                            placeholder="Sunbelt Rentals"
+                            {...field}
+                            data-testid="input-vendor-name"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -747,7 +916,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Vendor Code *</FormLabel>
                         <FormControl>
-                          <Input placeholder="SUNBELT" {...field} data-testid="input-vendor-code" />
+                          <Input
+                            placeholder="SUNBELT"
+                            {...field}
+                            data-testid="input-vendor-code"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -763,7 +936,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Contact Name</FormLabel>
                         <FormControl>
-                          <Input placeholder="John Smith" {...field} data-testid="input-contact-name" />
+                          <Input
+                            placeholder="John Smith"
+                            {...field}
+                            data-testid="input-contact-name"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -776,7 +953,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Phone</FormLabel>
                         <FormControl>
-                          <Input placeholder="(555) 123-4567" {...field} data-testid="input-contact-phone" />
+                          <Input
+                            placeholder="(555) 123-4567"
+                            {...field}
+                            data-testid="input-contact-phone"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -791,7 +972,12 @@ export default function RentalVendorsPage() {
                     <FormItem>
                       <FormLabel>Email</FormLabel>
                       <FormControl>
-                        <Input type="email" placeholder="contact@sunbelt.com" {...field} data-testid="input-contact-email" />
+                        <Input
+                          type="email"
+                          placeholder="contact@sunbelt.com"
+                          {...field}
+                          data-testid="input-contact-email"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -805,7 +991,11 @@ export default function RentalVendorsPage() {
                     <FormItem>
                       <FormLabel>Address</FormLabel>
                       <FormControl>
-                        <Input placeholder="123 Industrial Blvd" {...field} data-testid="input-address" />
+                        <Input
+                          placeholder="123 Industrial Blvd"
+                          {...field}
+                          data-testid="input-address"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -820,7 +1010,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>City</FormLabel>
                         <FormControl>
-                          <Input placeholder="Dallas" {...field} data-testid="input-city" />
+                          <Input
+                            placeholder="Dallas"
+                            {...field}
+                            data-testid="input-city"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -833,7 +1027,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>State</FormLabel>
                         <FormControl>
-                          <Input placeholder="TX" {...field} data-testid="input-state" />
+                          <Input
+                            placeholder="TX"
+                            {...field}
+                            data-testid="input-state"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -849,7 +1047,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Account Number</FormLabel>
                         <FormControl>
-                          <Input placeholder="TFR-001234" {...field} data-testid="input-account-number" />
+                          <Input
+                            placeholder="TFR-001234"
+                            {...field}
+                            data-testid="input-account-number"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -862,7 +1064,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Payment Terms</FormLabel>
                         <FormControl>
-                          <Input placeholder="NET30" {...field} data-testid="input-payment-terms" />
+                          <Input
+                            placeholder="NET30"
+                            {...field}
+                            data-testid="input-payment-terms"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -877,10 +1083,10 @@ export default function RentalVendorsPage() {
                     <FormItem>
                       <FormLabel>Notes</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="Additional notes about this vendor..." 
+                        <Textarea
+                          placeholder="Additional notes about this vendor..."
                           className="resize-none"
-                          {...field} 
+                          {...field}
                           data-testid="input-vendor-notes"
                         />
                       </FormControl>
@@ -890,17 +1096,20 @@ export default function RentalVendorsPage() {
                 />
 
                 <DialogFooter>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setShowVendorDialog(false)}
                     data-testid="button-cancel-vendor"
                   >
                     Cancel
                   </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={createVendorMutation.isPending || updateVendorMutation.isPending}
+                  <Button
+                    type="submit"
+                    disabled={
+                      createVendorMutation.isPending ||
+                      updateVendorMutation.isPending
+                    }
                     data-testid="button-save-vendor"
                   >
                     {editingVendor ? "Update Vendor" : "Add Vendor"}
@@ -911,25 +1120,32 @@ export default function RentalVendorsPage() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={showCatalogDialog} onOpenChange={(open) => {
-          setShowCatalogDialog(open);
-          if (!open) {
-            setEditingCatalog(null);
-            catalogForm.reset();
-          }
-        }}>
+        <Dialog
+          open={showCatalogDialog}
+          onOpenChange={(open) => {
+            setShowCatalogDialog(open);
+            if (!open) {
+              setEditingCatalog(null);
+              catalogForm.reset();
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>{editingCatalog ? "Edit Equipment" : "Add Equipment to Catalog"}</DialogTitle>
+              <DialogTitle>
+                {editingCatalog ? "Edit Equipment" : "Add Equipment to Catalog"}
+              </DialogTitle>
               <DialogDescription>
-                {editingCatalog 
-                  ? "Update equipment information and rates" 
-                  : `Add rental equipment available from ${selectedVendor?.name}`
-                }
+                {editingCatalog
+                  ? "Update equipment information and rates"
+                  : `Add rental equipment available from ${selectedVendor?.name}`}
               </DialogDescription>
             </DialogHeader>
             <Form {...catalogForm}>
-              <form onSubmit={catalogForm.handleSubmit(handleSubmitCatalog)} className="space-y-4">
+              <form
+                onSubmit={catalogForm.handleSubmit(handleSubmitCatalog)}
+                className="space-y-4"
+              >
                 <div className="grid grid-cols-2 gap-4">
                   <FormField
                     control={catalogForm.control}
@@ -938,7 +1154,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Equipment Name *</FormLabel>
                         <FormControl>
-                          <Input placeholder="CAT 320 Excavator" {...field} data-testid="input-catalog-name" />
+                          <Input
+                            placeholder="CAT 320 Excavator"
+                            {...field}
+                            data-testid="input-catalog-name"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -950,14 +1170,17 @@ export default function RentalVendorsPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Type *</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-equipment-type">
                               <SelectValue placeholder="Select type" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {EQUIPMENT_TYPES.map(type => (
+                            {EQUIPMENT_TYPES.map((type) => (
                               <SelectItem key={type.value} value={type.value}>
                                 {type.label}
                               </SelectItem>
@@ -978,7 +1201,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Make</FormLabel>
                         <FormControl>
-                          <Input placeholder="Caterpillar" {...field} data-testid="input-catalog-make" />
+                          <Input
+                            placeholder="Caterpillar"
+                            {...field}
+                            data-testid="input-catalog-make"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -991,7 +1218,11 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Model</FormLabel>
                         <FormControl>
-                          <Input placeholder="320" {...field} data-testid="input-catalog-model" />
+                          <Input
+                            placeholder="320"
+                            {...field}
+                            data-testid="input-catalog-model"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1006,10 +1237,10 @@ export default function RentalVendorsPage() {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="Equipment specifications and capabilities..." 
+                        <Textarea
+                          placeholder="Equipment specifications and capabilities..."
                           className="resize-none"
-                          {...field} 
+                          {...field}
                           data-testid="input-catalog-description"
                         />
                       </FormControl>
@@ -1028,7 +1259,13 @@ export default function RentalVendorsPage() {
                         <FormItem>
                           <FormLabel>Hourly</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-catalog-hourly" />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              {...field}
+                              data-testid="input-catalog-hourly"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1041,7 +1278,13 @@ export default function RentalVendorsPage() {
                         <FormItem>
                           <FormLabel>Daily</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-catalog-daily" />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              {...field}
+                              data-testid="input-catalog-daily"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1054,7 +1297,13 @@ export default function RentalVendorsPage() {
                         <FormItem>
                           <FormLabel>Weekly</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-catalog-weekly" />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              {...field}
+                              data-testid="input-catalog-weekly"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1067,7 +1316,13 @@ export default function RentalVendorsPage() {
                         <FormItem>
                           <FormLabel>Monthly</FormLabel>
                           <FormControl>
-                            <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-catalog-monthly" />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              {...field}
+                              data-testid="input-catalog-monthly"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1084,7 +1339,13 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Delivery Fee</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-catalog-delivery" />
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            data-testid="input-catalog-delivery"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1097,7 +1358,13 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Pickup Fee</FormLabel>
                         <FormControl>
-                          <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-catalog-pickup" />
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            data-testid="input-catalog-pickup"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1110,7 +1377,13 @@ export default function RentalVendorsPage() {
                       <FormItem>
                         <FormLabel>Min Days</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="1" {...field} value={field.value as string} data-testid="input-catalog-min-days" />
+                          <Input
+                            type="number"
+                            placeholder="1"
+                            {...field}
+                            value={field.value as string}
+                            data-testid="input-catalog-min-days"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1119,17 +1392,20 @@ export default function RentalVendorsPage() {
                 </div>
 
                 <DialogFooter>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setShowCatalogDialog(false)}
                     data-testid="button-cancel-catalog"
                   >
                     Cancel
                   </Button>
-                  <Button 
-                    type="submit" 
-                    disabled={createCatalogMutation.isPending || updateCatalogMutation.isPending}
+                  <Button
+                    type="submit"
+                    disabled={
+                      createCatalogMutation.isPending ||
+                      updateCatalogMutation.isPending
+                    }
                     data-testid="button-save-catalog"
                   >
                     {editingCatalog ? "Update Equipment" : "Add Equipment"}
@@ -1148,24 +1424,26 @@ export default function RentalVendorsPage() {
                 Confirm Delete
               </DialogTitle>
               <DialogDescription>
-                {deleteTarget?.type === "vendor" 
+                {deleteTarget?.type === "vendor"
                   ? "Are you sure you want to delete this vendor? This will also remove all equipment in their catalog."
-                  : "Are you sure you want to remove this equipment from the catalog?"
-                }
+                  : "Are you sure you want to remove this equipment from the catalog?"}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setShowDeleteConfirm(false)}
                 data-testid="button-cancel-delete"
               >
                 Cancel
               </Button>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 onClick={confirmDelete}
-                disabled={deleteVendorMutation.isPending || deleteCatalogMutation.isPending}
+                disabled={
+                  deleteVendorMutation.isPending ||
+                  deleteCatalogMutation.isPending
+                }
                 data-testid="button-confirm-delete"
               >
                 Delete

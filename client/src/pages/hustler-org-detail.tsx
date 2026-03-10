@@ -1,12 +1,30 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Building2, FolderKanban, FileText, Users, ClipboardList, TrendingUp, DollarSign, Calendar, AlertCircle, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Building2,
+  FolderKanban,
+  FileText,
+  Users,
+  ClipboardList,
+  TrendingUp,
+  DollarSign,
+  Calendar,
+  AlertCircle,
+  Loader2,
+} from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { queryClient } from "@/lib/queryClient";
 
@@ -71,7 +89,10 @@ export default function HustlerOrgDetail() {
   const orgId = params.orgId;
 
   // Fetch current user context to get organization info - refetch frequently to catch context switch
-  const { data: authData, isLoading: loadingAuth } = useQuery<{ user: { organizationId: string }, organization?: Organization }>({
+  const { data: authData, isLoading: loadingAuth } = useQuery<{
+    user: { organizationId: string };
+    organization?: Organization;
+  }>({
     queryKey: ["/api/auth/me"],
     staleTime: 1000, // Short stale time to catch context switch quickly
     refetchInterval: (query) => {
@@ -88,13 +109,20 @@ export default function HustlerOrgDetail() {
   const isContextAligned = authData?.user?.organizationId === orgId;
 
   // Fetch organization details from hustler organizations list
-  const { data: hustlerOrgs } = useQuery<{ organizations: Array<{ organizationId: string, organization: Organization }> }>({
+  const { data: hustlerOrgs } = useQuery<{
+    organizations: Array<{
+      organizationId: string;
+      organization: Organization;
+    }>;
+  }>({
     queryKey: ["/api/hustler/organizations"],
     staleTime: 30000,
   });
 
   // Find the current organization from the hustler's linked orgs
-  const currentOrg = hustlerOrgs?.organizations?.find(o => o.organizationId === orgId)?.organization;
+  const currentOrg = hustlerOrgs?.organizations?.find(
+    (o) => o.organizationId === orgId,
+  )?.organization;
 
   // Invalidate cached data when org changes - use orgId in queryKey to prevent cross-org pollution
   useEffect(() => {
@@ -103,12 +131,17 @@ export default function HustlerOrgDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", orgId] });
       queryClient.invalidateQueries({ queryKey: ["/api/bids", orgId] });
       queryClient.invalidateQueries({ queryKey: ["/api/users", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/change-orders", orgId] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/change-orders", orgId],
+      });
     }
   }, [isContextAligned, orgId]);
 
   // Fetch projects for this org - only when context is aligned
-  const { data: projectsData, isLoading: loadingProjects } = useQuery<{ data: Project[], pagination: { totalCount: number } }>({
+  const { data: projectsData, isLoading: loadingProjects } = useQuery<{
+    data: Project[];
+    pagination: { totalCount: number };
+  }>({
     queryKey: ["/api/projects", orgId],
     enabled: isContextAligned,
     staleTime: 30000,
@@ -129,7 +162,9 @@ export default function HustlerOrgDetail() {
   });
 
   // Fetch change orders
-  const { data: changeOrdersData, isLoading: loadingChangeOrders } = useQuery<ChangeOrder[]>({
+  const { data: changeOrdersData, isLoading: loadingChangeOrders } = useQuery<
+    ChangeOrder[]
+  >({
     queryKey: ["/api/change-orders", orgId],
     enabled: isContextAligned,
     staleTime: 30000,
@@ -141,33 +176,54 @@ export default function HustlerOrgDetail() {
   const changeOrders = changeOrdersData || [];
 
   // Calculate stats
-  const activeProjects = projects.filter(p => p.status === "ACTIVE").length;
-  const planningProjects = projects.filter(p => p.status === "PLANNING").length;
-  const openBids = bids.filter(b => b.status === "PENDING" || b.status === "SUBMITTED").length;
-  const wonBids = bids.filter(b => b.status === "WON").length;
-  const pendingChangeOrders = changeOrders.filter(co => co.status === "SUBMITTED" || co.status === "PENDING").length;
-  const activeEmployees = users.filter(u => u.isActive).length;
-  const totalBidValue = bids.reduce((sum, b) => sum + (parseFloat(b.bidAmount || "0") || 0), 0);
+  const activeProjects = projects.filter((p) => p.status === "ACTIVE").length;
+  const planningProjects = projects.filter(
+    (p) => p.status === "PLANNING",
+  ).length;
+  const openBids = bids.filter(
+    (b) => b.status === "PENDING" || b.status === "SUBMITTED",
+  ).length;
+  const wonBids = bids.filter((b) => b.status === "WON").length;
+  const pendingChangeOrders = changeOrders.filter(
+    (co) => co.status === "SUBMITTED" || co.status === "PENDING",
+  ).length;
+  const activeEmployees = users.filter((u) => u.isActive).length;
+  const totalBidValue = bids.reduce(
+    (sum, b) => sum + (parseFloat(b.bidAmount || "0") || 0),
+    0,
+  );
 
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
-      case "ACTIVE": return "default";
-      case "PLANNING": return "secondary";
-      case "COMPLETE": return "outline";
-      case "WON": return "default";
-      case "LOST": return "destructive";
-      case "PENDING": case "SUBMITTED": return "secondary";
-      default: return "outline";
+      case "ACTIVE":
+        return "default";
+      case "PLANNING":
+        return "secondary";
+      case "COMPLETE":
+        return "outline";
+      case "WON":
+        return "default";
+      case "LOST":
+        return "destructive";
+      case "PENDING":
+      case "SUBMITTED":
+        return "secondary";
+      default:
+        return "outline";
     }
   };
 
   // Show loading state while waiting for org context to align
   if (loadingAuth || !isContextAligned) {
     return (
-      <div className="container mx-auto p-6">
+      <div className="container mx-auto max-w-full p-6">
         <div className="flex items-center gap-4 mb-6">
           <Link href="/hustler">
-            <Button variant="ghost" size="icon" data-testid="button-back-portfolio">
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="button-back-portfolio"
+            >
               <ArrowLeft className="h-5 w-5" />
             </Button>
           </Link>
@@ -183,8 +239,12 @@ export default function HustlerOrgDetail() {
         </div>
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="h-10 w-10 text-primary animate-spin mb-4" />
-          <p className="text-muted-foreground">Switching organization context...</p>
-          <p className="text-sm text-muted-foreground mt-1">Loading {currentOrg?.name || "organization"} data</p>
+          <p className="text-muted-foreground">
+            Switching organization context...
+          </p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Loading {currentOrg?.name || "organization"} data
+          </p>
         </div>
       </div>
     );
@@ -195,13 +255,21 @@ export default function HustlerOrgDetail() {
       {/* Header with back button */}
       <div className="flex items-center gap-4 mb-6">
         <Link href="/hustler">
-          <Button variant="ghost" size="icon" data-testid="button-back-portfolio">
+          <Button
+            variant="ghost"
+            size="icon"
+            data-testid="button-back-portfolio"
+          >
             <ArrowLeft className="h-5 w-5" />
           </Button>
         </Link>
         <div className="flex items-center gap-3">
           {currentOrg?.logoUrl ? (
-            <img src={currentOrg.logoUrl} alt={currentOrg.name} className="h-10 w-10 rounded-lg" />
+            <img
+              src={currentOrg.logoUrl}
+              alt={currentOrg.name}
+              className="h-10 w-10 rounded-lg"
+            />
           ) : (
             <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
               <Building2 className="h-6 w-6 text-primary" />
@@ -216,7 +284,9 @@ export default function HustlerOrgDetail() {
                 {currentOrg?.tradeType?.replace(/_/g, " ") || "Unknown Trade"}
               </Badge>
               {currentOrg?.region && (
-                <span className="text-sm text-muted-foreground">{currentOrg.region}</span>
+                <span className="text-sm text-muted-foreground">
+                  {currentOrg.region}
+                </span>
               )}
             </div>
           </div>
@@ -227,7 +297,9 @@ export default function HustlerOrgDetail() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card data-testid="card-stat-projects">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Active Projects
+            </CardTitle>
             <FolderKanban className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -235,7 +307,12 @@ export default function HustlerOrgDetail() {
               <Skeleton className="h-8 w-16" />
             ) : (
               <>
-                <div className="text-2xl font-bold" data-testid="text-active-projects">{activeProjects}</div>
+                <div
+                  className="text-2xl font-bold"
+                  data-testid="text-active-projects"
+                >
+                  {activeProjects}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {planningProjects} in planning
                 </p>
@@ -254,7 +331,12 @@ export default function HustlerOrgDetail() {
               <Skeleton className="h-8 w-16" />
             ) : (
               <>
-                <div className="text-2xl font-bold" data-testid="text-open-bids">{openBids}</div>
+                <div
+                  className="text-2xl font-bold"
+                  data-testid="text-open-bids"
+                >
+                  {openBids}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   {wonBids} won this period
                 </p>
@@ -273,7 +355,12 @@ export default function HustlerOrgDetail() {
               <Skeleton className="h-8 w-16" />
             ) : (
               <>
-                <div className="text-2xl font-bold" data-testid="text-pending-cos">{pendingChangeOrders}</div>
+                <div
+                  className="text-2xl font-bold"
+                  data-testid="text-pending-cos"
+                >
+                  {pendingChangeOrders}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Requiring review
                 </p>
@@ -292,7 +379,12 @@ export default function HustlerOrgDetail() {
               <Skeleton className="h-8 w-16" />
             ) : (
               <>
-                <div className="text-2xl font-bold" data-testid="text-team-size">{activeEmployees}</div>
+                <div
+                  className="text-2xl font-bold"
+                  data-testid="text-team-size"
+                >
+                  {activeEmployees}
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Active employees
                 </p>
@@ -328,12 +420,16 @@ export default function HustlerOrgDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Projects</CardTitle>
-              <CardDescription>All projects for this organization</CardDescription>
+              <CardDescription>
+                All projects for this organization
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {loadingProjects ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
                 </div>
               ) : projects.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -342,19 +438,23 @@ export default function HustlerOrgDetail() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {projects.map(project => (
-                    <div 
-                      key={project.id} 
+                  {projects.map((project) => (
+                    <div
+                      key={project.id}
                       className="flex items-center justify-between p-4 border rounded-lg hover-elevate cursor-pointer"
                       data-testid={`row-project-${project.id}`}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{project.name}</span>
-                          <Badge variant="outline" className="text-xs">{project.code}</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {project.code}
+                          </Badge>
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
-                          {project.clientName && <span>{project.clientName}</span>}
+                          {project.clientName && (
+                            <span>{project.clientName}</span>
+                          )}
                           {project.address && <span> • {project.address}</span>}
                         </div>
                       </div>
@@ -387,7 +487,9 @@ export default function HustlerOrgDetail() {
             <CardContent>
               {loadingBids ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
                 </div>
               ) : bids.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -396,16 +498,18 @@ export default function HustlerOrgDetail() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {bids.map(bid => (
-                    <div 
-                      key={bid.id} 
+                  {bids.map((bid) => (
+                    <div
+                      key={bid.id}
                       className="flex items-center justify-between p-4 border rounded-lg hover-elevate cursor-pointer"
                       data-testid={`row-bid-${bid.id}`}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{bid.name}</span>
-                          <Badge variant="outline" className="text-xs">{bid.code}</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {bid.code}
+                          </Badge>
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
                           {bid.clientName && <span>{bid.clientName}</span>}
@@ -441,12 +545,16 @@ export default function HustlerOrgDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Change Orders</CardTitle>
-              <CardDescription>All change orders for this organization</CardDescription>
+              <CardDescription>
+                All change orders for this organization
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {loadingChangeOrders ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
                 </div>
               ) : changeOrders.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -455,19 +563,22 @@ export default function HustlerOrgDetail() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {changeOrders.map(co => (
-                    <div 
-                      key={co.id} 
+                  {changeOrders.map((co) => (
+                    <div
+                      key={co.id}
                       className="flex items-center justify-between p-4 border rounded-lg hover-elevate cursor-pointer"
                       data-testid={`row-co-${co.id}`}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{co.title}</span>
-                          <Badge variant="outline" className="text-xs">{co.code}</Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {co.code}
+                          </Badge>
                         </div>
                         <div className="text-sm text-muted-foreground mt-1">
-                          Created {formatDistanceToNow(new Date(co.createdAt))} ago
+                          Created {formatDistanceToNow(new Date(co.createdAt))}{" "}
+                          ago
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
@@ -491,12 +602,16 @@ export default function HustlerOrgDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Team Members</CardTitle>
-              <CardDescription>All team members for this organization</CardDescription>
+              <CardDescription>
+                All team members for this organization
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {loadingUsers ? (
                 <div className="space-y-3">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-16 w-full" />
+                  ))}
                 </div>
               ) : users.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
@@ -505,16 +620,16 @@ export default function HustlerOrgDetail() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {users.map(user => (
-                    <div 
-                      key={user.id} 
+                  {users.map((user) => (
+                    <div
+                      key={user.id}
                       className="flex items-center justify-between p-4 border rounded-lg"
                       data-testid={`row-user-${user.id}`}
                     >
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">
-                            {user.firstName || user.lastName 
+                            {user.firstName || user.lastName
                               ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
                               : user.email}
                           </span>

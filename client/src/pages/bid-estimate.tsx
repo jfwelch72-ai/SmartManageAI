@@ -7,13 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { FileText, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
-import { getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
+import {
+  getDefaultMaterialCalculatorData,
+  type MaterialCalculatorData,
+} from "@/components/MaterialCalculator";
 import { MaterialJobTotals } from "@/components/MaterialCalculator";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import type { 
-  Estimate, 
-  EstimateLineItem, 
+import type {
+  Estimate,
+  EstimateLineItem,
   BidSubcontractorQuote,
 } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,63 +47,81 @@ export default function BidEstimate() {
   const bidId = bid?.id;
   const { user } = useAuth();
   const hasEstimateAccess = canEditBids(user?.role);
-  
+
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
   const [equipmentSelectorKey, setEquipmentSelectorKey] = useState(0);
-  const [editingLineItem, setEditingLineItem] = useState<EstimateLineItem | null>(null);
+  const [editingLineItem, setEditingLineItem] =
+    useState<EstimateLineItem | null>(null);
   const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
-  const [selectedScopeData, setSelectedScopeData] = useState<ScopeSelectionData | null>(null);
-  const [hierarchicalSelection, setHierarchicalSelection] = useState<LineItemSelectionData | null>(null);
+  const [selectedScopeData, setSelectedScopeData] =
+    useState<ScopeSelectionData | null>(null);
+  const [hierarchicalSelection, setHierarchicalSelection] =
+    useState<LineItemSelectionData | null>(null);
   const [hierarchicalQuantity, setHierarchicalQuantity] = useState<number>(0);
   const [hierarchicalUnit, setHierarchicalUnit] = useState<string>("");
-  const [materialCalcData, setMaterialCalcData] = useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
-  const [selectedCatalogCategory, setSelectedCatalogCategory] = useState<string>("");
-  const [useHierarchicalBuilder, setUseHierarchicalBuilder] = useState<boolean>(true);
-  const [catalogPricedMaterials, setCatalogPricedMaterials] = useState<Set<string>>(new Set());
+  const [materialCalcData, setMaterialCalcData] =
+    useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
+  const [selectedCatalogCategory, setSelectedCatalogCategory] =
+    useState<string>("");
+  const [useHierarchicalBuilder, setUseHierarchicalBuilder] =
+    useState<boolean>(true);
+  const [catalogPricedMaterials, setCatalogPricedMaterials] = useState<
+    Set<string>
+  >(new Set());
 
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
-    estimate: Estimate & { lineItems: EstimateLineItem[], totals: any } | null
+    estimate:
+      | (Estimate & { lineItems: EstimateLineItem[]; totals: any })
+      | null;
   }>({
     queryKey: bidEstimateKey(bidId),
     enabled: !!bidId,
   });
 
   const estimate = estimateData?.estimate || null;
-  
+
   const { data: subcontractorQuotes = [] } = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidId, "subcontractor-quotes"],
     enabled: !!bidId,
   });
-  
+
   const { data: workCategories = [] } = useQuery<WorkCategory[]>({
     queryKey: ["/api/organization/work-categories"],
     enabled: hasEstimateAccess,
     staleTime: 10 * 60 * 1000,
   });
-  
+
   const { data: catalogPrices = [] } = useQuery<CatalogPriceItem[]>({
-    queryKey: [`/api/vendor-pricing/search?category=${selectedCatalogCategory}`],
+    queryKey: [
+      `/api/vendor-pricing/search?category=${selectedCatalogCategory}`,
+    ],
     enabled: !!selectedCatalogCategory && hasEstimateAccess,
     staleTime: 5 * 60 * 1000,
   });
-  
+
   const totals = estimate?.totals || {
-    materialCost: 0, laborCost: 0, laborHours: 0, equipmentCost: 0,
-    consumablesCost: 0, subcontractCost: 0, overheadAllocation: 0,
-    profitAllocation: 0, totalCost: 0,
+    materialCost: 0,
+    laborCost: 0,
+    laborHours: 0,
+    equipmentCost: 0,
+    consumablesCost: 0,
+    subcontractCost: 0,
+    overheadAllocation: 0,
+    profitAllocation: 0,
+    totalCost: 0,
   };
 
   const addLineItemMutation = useMutation({
-    mutationFn: (data: LineItemFormValues & { estimateId: string }) => 
+    mutationFn: (data: LineItemFormValues & { estimateId: string }) =>
       apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setAddLineItemOpen(false);
       form.reset();
-      setEquipmentSelectorKey(prev => prev + 1);
+      setEquipmentSelectorKey((prev) => prev + 1);
       setSelectedScopeData(null);
       toast({ title: "Line item added successfully" });
     },
@@ -110,7 +131,7 @@ export default function BidEstimate() {
   });
 
   const approveEstimateMutation = useMutation({
-    mutationFn: (estimateId: string) => 
+    mutationFn: (estimateId: string) =>
       apiRequest("POST", `/api/estimates/${estimateId}/approve`, {}),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
@@ -123,8 +144,18 @@ export default function BidEstimate() {
   });
 
   const deleteLineItemMutation = useMutation({
-    mutationFn: ({ estimateId, lineItemId }: { estimateId: string, lineItemId: string }) => 
-      apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}`, {}),
+    mutationFn: ({
+      estimateId,
+      lineItemId,
+    }: {
+      estimateId: string;
+      lineItemId: string;
+    }) =>
+      apiRequest(
+        "DELETE",
+        `/api/estimates/${estimateId}/line-items/${lineItemId}`,
+        {},
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       toast({ title: "Line item deleted successfully" });
@@ -135,8 +166,20 @@ export default function BidEstimate() {
   });
 
   const editLineItemMutation = useMutation({
-    mutationFn: ({ estimateId, lineItemId, data }: { estimateId: string, lineItemId: string, data: any }) => 
-      apiRequest("PUT", `/api/estimates/${estimateId}/line-items/${lineItemId}`, data),
+    mutationFn: ({
+      estimateId,
+      lineItemId,
+      data,
+    }: {
+      estimateId: string;
+      lineItemId: string;
+      data: any;
+    }) =>
+      apiRequest(
+        "PUT",
+        `/api/estimates/${estimateId}/line-items/${lineItemId}`,
+        data,
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setEditLineItemOpen(false);
@@ -160,19 +203,21 @@ export default function BidEstimate() {
     form.setValue("description", data.canonicalName);
     form.setValue("unit", data.unit);
     form.setValue("scopeWorkTypeId", data.workTypeId);
-    
-    let matchedCategory = workCategories.find(c => 
-      c.label.toLowerCase() === data.categoryName.toLowerCase() ||
-      c.label.toLowerCase().includes(data.categoryName.toLowerCase())
+
+    let matchedCategory = workCategories.find(
+      (c) =>
+        c.label.toLowerCase() === data.categoryName.toLowerCase() ||
+        c.label.toLowerCase().includes(data.categoryName.toLowerCase()),
     );
-    
-    const defaultCategory = workCategories.find(c => c.isDefault);
-    const mappedCategory = matchedCategory?.value || defaultCategory?.value || 'OTHER';
-    
+
+    const defaultCategory = workCategories.find((c) => c.isDefault);
+    const mappedCategory =
+      matchedCategory?.value || defaultCategory?.value || "OTHER";
+
     form.setValue("category", mappedCategory);
     setSelectedCatalogCategory(mappedCategory);
   };
-  
+
   const handleCategoryChange = (value: string) => {
     form.setValue("category", value);
     setSelectedCatalogCategory(value);
@@ -182,28 +227,45 @@ export default function BidEstimate() {
     const scopeQuantity = form.getValues("quantity") || 1;
     const unitPrice = parseFloat(item.unitPrice);
     const normalizedItemUnit = normalizeUnit(item.unit || "");
-    
+
     const nameBasedMaterialType = detectMaterialTypeFromName(item.itemName);
-    
+
     let materialQuantity = scopeQuantity;
     let quantitySource = "scope";
     let materialType: string | null = null;
-    
+
     if (nameBasedMaterialType) {
       const quantityMap: Record<string, { field: string; source: string }> = {
-        concrete: { field: "calculatedConcreteYards", source: "calculated concrete" },
-        excavation: { field: "calculatedExcavationYards", source: "calculated excavation" },
+        concrete: {
+          field: "calculatedConcreteYards",
+          source: "calculated concrete",
+        },
+        excavation: {
+          field: "calculatedExcavationYards",
+          source: "calculated excavation",
+        },
         stone: { field: "calculatedStoneTons", source: "calculated stone" },
-        wireMesh: { field: "calculatedWireMeshRolls", source: "calculated wire mesh" },
+        wireMesh: {
+          field: "calculatedWireMeshRolls",
+          source: "calculated wire mesh",
+        },
         rebar: { field: "calculatedRebarCount", source: "calculated rebar" },
         dowels: { field: "calculatedDowelCount", source: "calculated dowels" },
-        sealer: { field: "calculatedSealerGallons", source: "calculated sealer" },
-        underlayment: { field: "calculatedUnderlaymentSF", source: "calculated underlayment" },
+        sealer: {
+          field: "calculatedSealerGallons",
+          source: "calculated sealer",
+        },
+        underlayment: {
+          field: "calculatedUnderlaymentSF",
+          source: "calculated underlayment",
+        },
       };
-      
+
       const mapping = quantityMap[nameBasedMaterialType];
       if (mapping) {
-        const calcValue = parseFloat((materialCalcData as any)[mapping.field] || "0");
+        const calcValue = parseFloat(
+          (materialCalcData as any)[mapping.field] || "0",
+        );
         if (calcValue > 0) {
           materialQuantity = calcValue;
           quantitySource = mapping.source;
@@ -211,61 +273,91 @@ export default function BidEstimate() {
         }
       }
     }
-    
+
     if (!materialType) {
-      const unitToFieldMap: Record<string, { field: string; fallback?: string; source: string; fallbackSource?: string }> = {
-        CY: { field: "calculatedConcreteYards", fallback: "calculatedExcavationYards", source: "calculated concrete", fallbackSource: "calculated excavation" },
+      const unitToFieldMap: Record<
+        string,
+        {
+          field: string;
+          fallback?: string;
+          source: string;
+          fallbackSource?: string;
+        }
+      > = {
+        CY: {
+          field: "calculatedConcreteYards",
+          fallback: "calculatedExcavationYards",
+          source: "calculated concrete",
+          fallbackSource: "calculated excavation",
+        },
         TON: { field: "calculatedStoneTons", source: "calculated stone" },
-        ROLL: { field: "calculatedWireMeshRolls", source: "calculated wire mesh" },
+        ROLL: {
+          field: "calculatedWireMeshRolls",
+          source: "calculated wire mesh",
+        },
         EA: { field: "calculatedRebarCount", source: "calculated rebar" },
-        LF: { field: "calculatedRebarLinearFeet", source: "calculated rebar LF" },
+        LF: {
+          field: "calculatedRebarLinearFeet",
+          source: "calculated rebar LF",
+        },
         GAL: { field: "calculatedSealerGallons", source: "calculated sealer" },
         DOWEL: { field: "calculatedDowelCount", source: "calculated dowels" },
-        SF: { field: "calculatedUnderlaymentSF", source: "calculated underlayment" },
+        SF: {
+          field: "calculatedUnderlaymentSF",
+          source: "calculated underlayment",
+        },
       };
-      
+
       const mapping = unitToFieldMap[normalizedItemUnit];
       if (mapping) {
-        const calcValue = parseFloat((materialCalcData as any)[mapping.field] || "0");
+        const calcValue = parseFloat(
+          (materialCalcData as any)[mapping.field] || "0",
+        );
         if (calcValue > 0) {
           materialQuantity = calcValue;
           quantitySource = mapping.source;
           materialType = mapping.source.replace("calculated ", "");
         } else if (mapping.fallback) {
-          const fallbackValue = parseFloat((materialCalcData as any)[mapping.fallback] || "0");
+          const fallbackValue = parseFloat(
+            (materialCalcData as any)[mapping.fallback] || "0",
+          );
           if (fallbackValue > 0) {
             materialQuantity = fallbackValue;
             quantitySource = mapping.fallbackSource || mapping.source;
-            materialType = (mapping.fallbackSource || mapping.source).replace("calculated ", "");
+            materialType = (mapping.fallbackSource || mapping.source).replace(
+              "calculated ",
+              "",
+            );
           }
         }
       }
     }
-    
+
     const totalMaterialCost = unitPrice * materialQuantity;
     const currentMaterialCost = Number(form.getValues("materialCost")) || 0;
     form.setValue("materialCost", currentMaterialCost + totalMaterialCost);
-    
+
     if (materialType) {
-      setCatalogPricedMaterials(prev => {
+      setCatalogPricedMaterials((prev) => {
         const newSet = new Set(prev);
         newSet.add(materialType!);
         return newSet;
       });
     }
-    
-    const description = quantitySource === "scope" 
-      ? `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} = $${totalMaterialCost.toFixed(2)}`
-      : `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} ${item.unit} (${quantitySource}) = $${totalMaterialCost.toFixed(2)}`;
-    
+
+    const description =
+      quantitySource === "scope"
+        ? `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} = $${totalMaterialCost.toFixed(2)}`
+        : `${item.itemName} from ${item.vendorName} - $${unitPrice.toFixed(2)}/${item.unit} × ${materialQuantity.toFixed(2)} ${item.unit} (${quantitySource}) = $${totalMaterialCost.toFixed(2)}`;
+
     toast({ title: "Catalog price applied", description });
   };
-  
+
   const handleAddDialogClose = (open: boolean) => {
     setAddLineItemOpen(open);
     if (!open) {
       form.reset();
-      setEquipmentSelectorKey(prev => prev + 1);
+      setEquipmentSelectorKey((prev) => prev + 1);
       setSelectedScopeData(null);
       setHierarchicalSelection(null);
       setHierarchicalQuantity(0);
@@ -275,31 +367,35 @@ export default function BidEstimate() {
       setCatalogPricedMaterials(new Set());
     }
   };
-  
+
   const handleEditDialogClose = (open: boolean) => {
     setEditLineItemOpen(open);
     if (!open) {
       setEditingLineItem(null);
       form.reset();
-      setEquipmentSelectorKey(prev => prev + 1);
+      setEquipmentSelectorKey((prev) => prev + 1);
       setMaterialCalcData(getDefaultMaterialCalculatorData());
       setSelectedCatalogCategory("");
     }
   };
 
-  const handleHierarchicalSelectionChange = (data: LineItemSelectionData | null) => {
+  const handleHierarchicalSelectionChange = (
+    data: LineItemSelectionData | null,
+  ) => {
     setHierarchicalSelection(data);
     if (data) {
       form.setValue("description", data.canonicalName);
       form.setValue("unit", data.unit);
       form.setValue("quantity", hierarchicalQuantity);
       form.setValue("scopeWorkTypeId", undefined);
-      
-      const matchedCategory = workCategories.find(c => 
-        c.value === data.categoryCode ||
-        c.value === data.tradeName.toUpperCase().replace(/ /g, "_")
+
+      const matchedCategory = workCategories.find(
+        (c) =>
+          c.value === data.categoryCode ||
+          c.value === data.tradeName.toUpperCase().replace(/ /g, "_"),
       );
-      const defaultCategory = workCategories.find(c => c.isDefault)?.value || "GENERAL";
+      const defaultCategory =
+        workCategories.find((c) => c.isDefault)?.value || "GENERAL";
       const mappedCategory = matchedCategory?.value || defaultCategory;
       form.setValue("category", mappedCategory);
       setSelectedCatalogCategory(mappedCategory);
@@ -309,7 +405,8 @@ export default function BidEstimate() {
   const onSubmit = (values: LineItemFormValues) => {
     if (!estimateData?.estimate) return;
 
-    const materialCalcPayload = buildMaterialCalculatorPayload(materialCalcData);
+    const materialCalcPayload =
+      buildMaterialCalculatorPayload(materialCalcData);
 
     if (editingLineItem) {
       editLineItemMutation.mutate({
@@ -347,7 +444,9 @@ export default function BidEstimate() {
         laborCost: String(values.laborCost),
         laborHours: String(values.laborHours),
         jobClassificationId: values.jobClassificationId || null,
-        laborRateUsed: values.laborRateUsed ? String(values.laborRateUsed) : null,
+        laborRateUsed: values.laborRateUsed
+          ? String(values.laborRateUsed)
+          : null,
         equipmentCost: String(values.equipmentCost),
         consumablesCost: String(values.consumablesCost || 0),
         subcontractCost: String(values.subcontractCost || 0),
@@ -357,8 +456,12 @@ export default function BidEstimate() {
         source: "MANUAL",
         notes: values.notes || undefined,
         scopeWorkTypeId: values.scopeWorkTypeId || undefined,
-        workTypeCode: selectedScopeData?.workTypeCode || hierarchicalSelection?.workTypeCode || undefined,
-        organizationSowItemId: hierarchicalSelection?.organizationSowItemId || undefined,
+        workTypeCode:
+          selectedScopeData?.workTypeCode ||
+          hierarchicalSelection?.workTypeCode ||
+          undefined,
+        organizationSowItemId:
+          hierarchicalSelection?.organizationSowItemId || undefined,
         ...materialCalcPayload,
       } as any);
     }
@@ -379,7 +482,9 @@ export default function BidEstimate() {
       equipmentCost: Number(item.equipmentCost),
       equipmentSource: lineItemAny.equipmentSource || undefined,
       selectedEquipmentId: lineItemAny.selectedEquipmentId || undefined,
-      equipmentRateUsed: lineItemAny.equipmentRateUsed ? Number(lineItemAny.equipmentRateUsed) : undefined,
+      equipmentRateUsed: lineItemAny.equipmentRateUsed
+        ? Number(lineItemAny.equipmentRateUsed)
+        : undefined,
       consumablesCost: Number(item.consumablesCost || 0),
       subcontractCost: Number(item.subcontractCost || 0),
       subcontractorQuoteId: lineItemAny.subcontractorQuoteId || undefined,
@@ -441,14 +546,21 @@ export default function BidEstimate() {
   };
 
   const getStatusBadge = (status: string) => {
-    const variants: Record<string, { variant: "default" | "secondary" | "outline", icon: any }> = {
-      "DRAFT": { variant: "secondary", icon: FileText },
-      "APPROVED": { variant: "default", icon: CheckCircle },
+    const variants: Record<
+      string,
+      { variant: "default" | "secondary" | "outline"; icon: any }
+    > = {
+      DRAFT: { variant: "secondary", icon: FileText },
+      APPROVED: { variant: "default", icon: CheckCircle },
     };
     const config = variants[status] || variants["DRAFT"];
     const Icon = config.icon;
     return (
-      <Badge variant={config.variant} className="gap-1" data-testid={`badge-estimate-status-${status.toLowerCase()}`}>
+      <Badge
+        variant={config.variant}
+        className="gap-1"
+        data-testid={`badge-estimate-status-${status.toLowerCase()}`}
+      >
         <Icon className="h-3 w-3" />
         {status}
       </Badge>
@@ -468,8 +580,12 @@ export default function BidEstimate() {
   if (!bid || !estimate) {
     return (
       <div className="min-h-screen bg-background">
-        <div className="mx-auto max-w-7xl px-6 py-8">
-          <Button variant="ghost" onClick={() => setLocation(`/bids/${bidCode}`)} data-testid="button-back">
+        <div className="mx-auto max-w-full px-6 py-8">
+          <Button
+            variant="ghost"
+            onClick={() => setLocation(`/bids/${bidCode}`)}
+            data-testid="button-back"
+          >
             ← Back to Bid
           </Button>
           <div className="flex items-center justify-center py-12">
@@ -484,7 +600,11 @@ export default function BidEstimate() {
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
         <div className="mb-6">
-          <Button variant="ghost" onClick={() => setLocation(`/bids/${bidCode}`)} data-testid="button-back">
+          <Button
+            variant="ghost"
+            onClick={() => setLocation(`/bids/${bidCode}`)}
+            data-testid="button-back"
+          >
             ← Back to Bid
           </Button>
         </div>
@@ -502,7 +622,10 @@ export default function BidEstimate() {
               <Button
                 size="sm"
                 onClick={() => approveEstimateMutation.mutate(estimate.id)}
-                disabled={approveEstimateMutation.isPending || estimate.lineItems.length === 0}
+                disabled={
+                  approveEstimateMutation.isPending ||
+                  estimate.lineItems.length === 0
+                }
                 data-testid="button-approve-estimate"
               >
                 <CheckCircle className="h-4 w-4 mr-2" />

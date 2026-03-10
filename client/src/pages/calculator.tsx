@@ -1,4 +1,10 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -32,22 +38,88 @@ import MarkupCalculator from "@/components/calculators/MarkupCalculator";
 import LaborCostEstimator from "@/components/calculators/LaborCostEstimator";
 
 const allCategories = [
-  { id: "unit-converter", label: "Unit Converter", icon: ArrowLeftRight, component: UnitConverter },
-  { id: "material-estimator", label: "Concrete & Materials", icon: Box, component: MaterialEstimatorCalculator },
-  { id: "masonry", label: "Masonry", icon: BrickWall, component: MasonryCalculator },
-  { id: "lumber", label: "Lumber & Framing", icon: TreePine, component: LumberCalculator },
+  {
+    id: "unit-converter",
+    label: "Unit Converter",
+    icon: ArrowLeftRight,
+    component: UnitConverter,
+  },
+  {
+    id: "material-estimator",
+    label: "Concrete & Materials",
+    icon: Box,
+    component: MaterialEstimatorCalculator,
+  },
+  {
+    id: "masonry",
+    label: "Masonry",
+    icon: BrickWall,
+    component: MasonryCalculator,
+  },
+  {
+    id: "lumber",
+    label: "Lumber & Framing",
+    icon: TreePine,
+    component: LumberCalculator,
+  },
   { id: "roofing", label: "Roofing", icon: Home, component: RoofingCalculator },
-  { id: "tiling", label: "Tiling & Flooring", icon: LayoutGrid, component: TilingCalculator },
-  { id: "drywall", label: "Drywall", icon: Square, component: DrywallCalculator },
-  { id: "paint", label: "Paint & Coating", icon: Paintbrush, component: PaintCalculator },
-  { id: "aggregates", label: "Aggregates", icon: Mountain, component: AggregatesCalculator },
-  { id: "geometry", label: "Geometry", icon: Triangle, component: GeometryCalculator },
-  { id: "profit-margin", label: "Profit Margin", icon: TrendingUp, component: ProfitMarginCalculator },
-  { id: "markup", label: "Markup", icon: Calculator, component: MarkupCalculator },
-  { id: "labor-cost", label: "Labor Cost", icon: Users, component: LaborCostEstimator },
+  {
+    id: "tiling",
+    label: "Tiling & Flooring",
+    icon: LayoutGrid,
+    component: TilingCalculator,
+  },
+  {
+    id: "drywall",
+    label: "Drywall",
+    icon: Square,
+    component: DrywallCalculator,
+  },
+  {
+    id: "paint",
+    label: "Paint & Coating",
+    icon: Paintbrush,
+    component: PaintCalculator,
+  },
+  {
+    id: "aggregates",
+    label: "Aggregates",
+    icon: Mountain,
+    component: AggregatesCalculator,
+  },
+  {
+    id: "geometry",
+    label: "Geometry",
+    icon: Triangle,
+    component: GeometryCalculator,
+  },
+  {
+    id: "profit-margin",
+    label: "Profit Margin",
+    icon: TrendingUp,
+    component: ProfitMarginCalculator,
+  },
+  {
+    id: "markup",
+    label: "Markup",
+    icon: Calculator,
+    component: MarkupCalculator,
+  },
+  {
+    id: "labor-cost",
+    label: "Labor Cost",
+    icon: Users,
+    component: LaborCostEstimator,
+  },
 ];
 
-const UNIVERSAL_CALCULATORS = ["unit-converter", "geometry", "profit-margin", "markup", "labor-cost"];
+const UNIVERSAL_CALCULATORS = [
+  "unit-converter",
+  "geometry",
+  "profit-margin",
+  "markup",
+  "labor-cost",
+];
 
 const TRADE_CALCULATOR_MAP: Record<string, string[]> = {
   GENERAL_CONTRACTOR: allCategories.map((c) => c.id),
@@ -75,38 +147,55 @@ const TRADE_CALCULATOR_MAP: Record<string, string[]> = {
   OTHER: allCategories.map((c) => c.id),
 };
 
-function getCalculatorsForTrade(tradeType: string | null | undefined): typeof allCategories {
+function getCalculatorsForTrade(
+  tradeType: string | null | undefined,
+): typeof allCategories {
   if (!tradeType) return allCategories;
-  const tradeSpecific = TRADE_CALCULATOR_MAP[tradeType] || allCategories.map((c) => c.id);
+  const tradeSpecific =
+    TRADE_CALCULATOR_MAP[tradeType] || allCategories.map((c) => c.id);
   const allowedIds = new Set([...UNIVERSAL_CALCULATORS, ...tradeSpecific]);
   return allCategories.filter((c) => allowedIds.has(c.id));
 }
 
 export default function CalculatorPage() {
-  const { data: tradeConfig } = useQuery<{ organization: { tradeType: string } }>({
+  const { data: tradeConfig } = useQuery<{
+    organization: { tradeType: string };
+  }>({
     queryKey: ["/api/organization/trade-config"],
   });
 
   const tradeType = tradeConfig?.organization?.tradeType || null;
-  const categories = useMemo(() => getCalculatorsForTrade(tradeType), [tradeType]);
+  const categories = useMemo(
+    () => getCalculatorsForTrade(tradeType),
+    [tradeType],
+  );
 
-  const [activeCategory, setActiveCategory] = useState<string>("unit-converter");
+  const [activeCategory, setActiveCategory] =
+    useState<string>("unit-converter");
 
   const effectiveCategory = categories.some((c) => c.id === activeCategory)
     ? activeCategory
     : categories[0]?.id || "unit-converter";
-  const active = categories.find((c) => c.id === effectiveCategory) ?? categories[0];
+  const active =
+    categories.find((c) => c.id === effectiveCategory) ?? categories[0];
   const ActiveComponent = active.component;
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-4 py-8">
+      <main className="mx-auto max-w-full px-4 py-8">
         <div className="mb-8" data-testid="calculator-header">
-          <h1 className="text-2xl font-bold text-foreground" data-testid="text-calculator-title">
+          <h1
+            className="text-2xl font-bold text-foreground"
+            data-testid="text-calculator-title"
+          >
             Construction Calculator
           </h1>
-          <p className="text-muted-foreground mt-1" data-testid="text-calculator-description">
-            Professional construction calculations with unit conversion, material estimating, and cost analysis
+          <p
+            className="text-muted-foreground mt-1"
+            data-testid="text-calculator-description"
+          >
+            Professional construction calculations with unit conversion,
+            material estimating, and cost analysis
           </p>
         </div>
 
@@ -132,7 +221,10 @@ export default function CalculatorPage() {
         </div>
 
         <div className="flex gap-4">
-          <div className="hidden md:block w-64 shrink-0" data-testid="sidebar-categories">
+          <div
+            className="hidden md:block w-64 shrink-0"
+            data-testid="sidebar-categories"
+          >
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Categories</CardTitle>

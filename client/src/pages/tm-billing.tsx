@@ -1,10 +1,23 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,16 +26,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { 
-  DollarSign, 
-  FileText, 
-  CheckCircle, 
-  Clock, 
+import {
+  DollarSign,
+  FileText,
+  CheckCircle,
+  Clock,
   Receipt,
   Send,
   CreditCard,
   AlertCircle,
-  Loader2
+  Loader2,
 } from "lucide-react";
 
 interface TMTicketWithProject {
@@ -69,7 +82,9 @@ interface BillingSummary {
 
 export default function TMBillingPage() {
   const { toast } = useToast();
-  const [selectedTickets, setSelectedTickets] = useState<Set<string>>(new Set());
+  const [selectedTickets, setSelectedTickets] = useState<Set<string>>(
+    new Set(),
+  );
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [invoiceFormData, setInvoiceFormData] = useState({
     clientName: "",
@@ -80,15 +95,21 @@ export default function TMBillingPage() {
     notes: "",
   });
 
-  const { data: summary, isLoading: summaryLoading } = useQuery<BillingSummary>({
-    queryKey: ["/api/tm-billing/summary"],
-  });
+  const { data: summary, isLoading: summaryLoading } = useQuery<BillingSummary>(
+    {
+      queryKey: ["/api/tm-billing/summary"],
+    },
+  );
 
-  const { data: pendingTickets, isLoading: pendingLoading } = useQuery<TMTicketWithProject[]>({
+  const { data: pendingTickets, isLoading: pendingLoading } = useQuery<
+    TMTicketWithProject[]
+  >({
     queryKey: ["/api/tm-billing/pending"],
   });
 
-  const { data: approvedTickets, isLoading: approvedLoading } = useQuery<TMTicketWithProject[]>({
+  const { data: approvedTickets, isLoading: approvedLoading } = useQuery<
+    TMTicketWithProject[]
+  >({
     queryKey: ["/api/tm-billing/approved"],
   });
 
@@ -98,7 +119,11 @@ export default function TMBillingPage() {
 
   const approveMutation = useMutation({
     mutationFn: async (ticketId: string) => {
-      return apiRequest("POST", `/api/tm-tickets/${ticketId}/approve-for-billing`, {});
+      return apiRequest(
+        "POST",
+        `/api/tm-tickets/${ticketId}/approve-for-billing`,
+        {},
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tm-billing/summary"] });
@@ -112,7 +137,15 @@ export default function TMBillingPage() {
   });
 
   const createInvoiceMutation = useMutation({
-    mutationFn: async (data: { ticketIds: string[]; clientName: string; clientAddress?: string; clientEmail?: string; dueDate?: string; taxRate?: string; notes?: string }) => {
+    mutationFn: async (data: {
+      ticketIds: string[];
+      clientName: string;
+      clientAddress?: string;
+      clientEmail?: string;
+      dueDate?: string;
+      taxRate?: string;
+      notes?: string;
+    }) => {
       return apiRequest("POST", "/api/tm-invoices", data);
     },
     onSuccess: () => {
@@ -139,7 +172,10 @@ export default function TMBillingPage() {
       toast({ title: "Invoice marked as paid" });
     },
     onError: () => {
-      toast({ title: "Failed to mark invoice as paid", variant: "destructive" });
+      toast({
+        title: "Failed to mark invoice as paid",
+        variant: "destructive",
+      });
     },
   });
 
@@ -153,7 +189,10 @@ export default function TMBillingPage() {
       toast({ title: "Invoice marked as sent" });
     },
     onError: () => {
-      toast({ title: "Failed to mark invoice as sent", variant: "destructive" });
+      toast({
+        title: "Failed to mark invoice as sent",
+        variant: "destructive",
+      });
     },
   });
 
@@ -169,13 +208,16 @@ export default function TMBillingPage() {
 
   const handleGenerateInvoice = () => {
     if (selectedTickets.size === 0) {
-      toast({ title: "Please select at least one ticket", variant: "destructive" });
+      toast({
+        title: "Please select at least one ticket",
+        variant: "destructive",
+      });
       return;
     }
-    
-    const firstTicket = approvedTickets?.find(t => selectedTickets.has(t.id));
+
+    const firstTicket = approvedTickets?.find((t) => selectedTickets.has(t.id));
     if (firstTicket?.project) {
-      setInvoiceFormData(prev => ({
+      setInvoiceFormData((prev) => ({
         ...prev,
         clientName: firstTicket.project?.clientName || "",
       }));
@@ -197,19 +239,42 @@ export default function TMBillingPage() {
   };
 
   const formatCurrency = (value: string | number) => {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value));
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(value));
   };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "PENDING":
-        return <Badge variant="secondary" data-testid="badge-status-pending"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+        return (
+          <Badge variant="secondary" data-testid="badge-status-pending">
+            <Clock className="h-3 w-3 mr-1" />
+            Pending
+          </Badge>
+        );
       case "APPROVED_FOR_BILLING":
-        return <Badge variant="default" data-testid="badge-status-approved"><CheckCircle className="h-3 w-3 mr-1" />Ready to Invoice</Badge>;
+        return (
+          <Badge variant="default" data-testid="badge-status-approved">
+            <CheckCircle className="h-3 w-3 mr-1" />
+            Ready to Invoice
+          </Badge>
+        );
       case "INVOICED":
-        return <Badge variant="outline" data-testid="badge-status-invoiced"><FileText className="h-3 w-3 mr-1" />Invoiced</Badge>;
+        return (
+          <Badge variant="outline" data-testid="badge-status-invoiced">
+            <FileText className="h-3 w-3 mr-1" />
+            Invoiced
+          </Badge>
+        );
       case "BILLED":
-        return <Badge className="bg-green-600" data-testid="badge-status-billed"><DollarSign className="h-3 w-3 mr-1" />Billed</Badge>;
+        return (
+          <Badge className="bg-green-600" data-testid="badge-status-billed">
+            <DollarSign className="h-3 w-3 mr-1" />
+            Billed
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -218,13 +283,31 @@ export default function TMBillingPage() {
   const getInvoiceStatusBadge = (status: string) => {
     switch (status) {
       case "DRAFT":
-        return <Badge variant="secondary" data-testid="badge-invoice-draft">Draft</Badge>;
+        return (
+          <Badge variant="secondary" data-testid="badge-invoice-draft">
+            Draft
+          </Badge>
+        );
       case "SENT":
-        return <Badge variant="default" data-testid="badge-invoice-sent"><Send className="h-3 w-3 mr-1" />Sent</Badge>;
+        return (
+          <Badge variant="default" data-testid="badge-invoice-sent">
+            <Send className="h-3 w-3 mr-1" />
+            Sent
+          </Badge>
+        );
       case "PAID":
-        return <Badge className="bg-green-600" data-testid="badge-invoice-paid"><CreditCard className="h-3 w-3 mr-1" />Paid</Badge>;
+        return (
+          <Badge className="bg-green-600" data-testid="badge-invoice-paid">
+            <CreditCard className="h-3 w-3 mr-1" />
+            Paid
+          </Badge>
+        );
       case "CANCELLED":
-        return <Badge variant="destructive" data-testid="badge-invoice-cancelled">Cancelled</Badge>;
+        return (
+          <Badge variant="destructive" data-testid="badge-invoice-cancelled">
+            Cancelled
+          </Badge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -239,53 +322,93 @@ export default function TMBillingPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto max-w-full p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">T&M Billing Management</h1>
-          <p className="text-muted-foreground">Approve tickets, generate invoices, and track payments</p>
+          <h1 className="text-2xl font-bold" data-testid="text-page-title">
+            T&M Billing Management
+          </h1>
+          <p className="text-muted-foreground">
+            Approve tickets, generate invoices, and track payments
+          </p>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Approval</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Pending Approval
+            </CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-pending-count">{summary?.pendingCount || 0}</div>
-            <p className="text-xs text-muted-foreground">{formatCurrency(summary?.pendingTotal || 0)}</p>
+            <div
+              className="text-2xl font-bold"
+              data-testid="text-pending-count"
+            >
+              {summary?.pendingCount || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(summary?.pendingTotal || 0)}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Ready to Invoice</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Ready to Invoice
+            </CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-approved-count">{summary?.approvedForBillingCount || 0}</div>
-            <p className="text-xs text-muted-foreground">{formatCurrency(summary?.approvedForBillingTotal || 0)}</p>
+            <div
+              className="text-2xl font-bold"
+              data-testid="text-approved-count"
+            >
+              {summary?.approvedForBillingCount || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(summary?.approvedForBillingTotal || 0)}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Outstanding Invoices</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Outstanding Invoices
+            </CardTitle>
             <Receipt className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-outstanding-count">{summary?.sentInvoices || 0}</div>
-            <p className="text-xs text-muted-foreground">{formatCurrency(summary?.totalInvoiced || 0)}</p>
+            <div
+              className="text-2xl font-bold"
+              data-testid="text-outstanding-count"
+            >
+              {summary?.sentInvoices || 0}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(summary?.totalInvoiced || 0)}
+            </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Collected</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Collected
+            </CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold" data-testid="text-collected-total">{formatCurrency(summary?.totalPaid || 0)}</div>
-            <p className="text-xs text-muted-foreground">{summary?.paidInvoices || 0} invoices paid</p>
+            <div
+              className="text-2xl font-bold"
+              data-testid="text-collected-total"
+            >
+              {formatCurrency(summary?.totalPaid || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {summary?.paidInvoices || 0} invoices paid
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -307,7 +430,9 @@ export default function TMBillingPage() {
           <Card>
             <CardHeader>
               <CardTitle>Tickets Pending Billing Approval</CardTitle>
-              <CardDescription>Review and approve completed T&M tickets for billing</CardDescription>
+              <CardDescription>
+                Review and approve completed T&M tickets for billing
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {pendingLoading ? (
@@ -322,26 +447,42 @@ export default function TMBillingPage() {
               ) : (
                 <div className="space-y-2">
                   {pendingTickets.map((ticket) => (
-                    <div key={ticket.id} className="flex items-center justify-between p-4 border rounded-lg" data-testid={`ticket-pending-${ticket.id}`}>
+                    <div
+                      key={ticket.id}
+                      className="flex items-center justify-between p-4 border rounded-lg"
+                      data-testid={`ticket-pending-${ticket.id}`}
+                    >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{ticket.ticketNumber}</span>
+                          <span className="font-medium">
+                            {ticket.ticketNumber}
+                          </span>
                           {getStatusBadge(ticket.billingStatus)}
                         </div>
-                        <p className="text-sm text-muted-foreground">{ticket.project?.name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {ticket.project?.name}
+                        </p>
                         <p className="text-sm">{ticket.scopeDescription}</p>
                         <p className="text-xs text-muted-foreground">
-                          {format(new Date(ticket.workDate), "MMM d, yyyy")} • Created by {ticket.createdBy?.firstName} {ticket.createdBy?.lastName}
+                          {format(new Date(ticket.workDate), "MMM d, yyyy")} •
+                          Created by {ticket.createdBy?.firstName}{" "}
+                          {ticket.createdBy?.lastName}
                         </p>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="text-lg font-bold">{formatCurrency(ticket.grandTotal)}</span>
-                        <Button 
+                        <span className="text-lg font-bold">
+                          {formatCurrency(ticket.grandTotal)}
+                        </span>
+                        <Button
                           onClick={() => approveMutation.mutate(ticket.id)}
                           disabled={approveMutation.isPending}
                           data-testid={`button-approve-${ticket.id}`}
                         >
-                          {approveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Approve for Billing"}
+                          {approveMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            "Approve for Billing"
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -358,10 +499,15 @@ export default function TMBillingPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Tickets Ready for Invoicing</CardTitle>
-                  <CardDescription>Select tickets to include in an invoice</CardDescription>
+                  <CardDescription>
+                    Select tickets to include in an invoice
+                  </CardDescription>
                 </div>
                 {selectedTickets.size > 0 && (
-                  <Button onClick={handleGenerateInvoice} data-testid="button-generate-invoice">
+                  <Button
+                    onClick={handleGenerateInvoice}
+                    data-testid="button-generate-invoice"
+                  >
                     <FileText className="h-4 w-4 mr-2" />
                     Generate Invoice ({selectedTickets.size} tickets)
                   </Button>
@@ -381,24 +527,36 @@ export default function TMBillingPage() {
               ) : (
                 <div className="space-y-2">
                   {approvedTickets.map((ticket) => (
-                    <div key={ticket.id} className="flex items-center gap-4 p-4 border rounded-lg" data-testid={`ticket-approved-${ticket.id}`}>
-                      <Checkbox 
+                    <div
+                      key={ticket.id}
+                      className="flex items-center gap-4 p-4 border rounded-lg"
+                      data-testid={`ticket-approved-${ticket.id}`}
+                    >
+                      <Checkbox
                         checked={selectedTickets.has(ticket.id)}
-                        onCheckedChange={(checked) => handleTicketSelect(ticket.id, checked as boolean)}
+                        onCheckedChange={(checked) =>
+                          handleTicketSelect(ticket.id, checked as boolean)
+                        }
                         data-testid={`checkbox-ticket-${ticket.id}`}
                       />
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{ticket.ticketNumber}</span>
+                          <span className="font-medium">
+                            {ticket.ticketNumber}
+                          </span>
                           {getStatusBadge(ticket.billingStatus)}
                         </div>
-                        <p className="text-sm text-muted-foreground">{ticket.project?.name} • {ticket.project?.clientName}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {ticket.project?.name} • {ticket.project?.clientName}
+                        </p>
                         <p className="text-sm">{ticket.scopeDescription}</p>
                         <p className="text-xs text-muted-foreground">
                           {format(new Date(ticket.workDate), "MMM d, yyyy")}
                         </p>
                       </div>
-                      <span className="text-lg font-bold">{formatCurrency(ticket.grandTotal)}</span>
+                      <span className="text-lg font-bold">
+                        {formatCurrency(ticket.grandTotal)}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -411,7 +569,9 @@ export default function TMBillingPage() {
           <Card>
             <CardHeader>
               <CardTitle>Invoices</CardTitle>
-              <CardDescription>Track invoice status and payments</CardDescription>
+              <CardDescription>
+                Track invoice status and payments
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {invoicesLoading ? (
@@ -426,27 +586,43 @@ export default function TMBillingPage() {
               ) : (
                 <div className="space-y-2">
                   {invoices.map((invoice) => (
-                    <div key={invoice.id} className="flex items-center justify-between p-4 border rounded-lg" data-testid={`invoice-${invoice.id}`}>
+                    <div
+                      key={invoice.id}
+                      className="flex items-center justify-between p-4 border rounded-lg"
+                      data-testid={`invoice-${invoice.id}`}
+                    >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{invoice.invoiceNumber}</span>
+                          <span className="font-medium">
+                            {invoice.invoiceNumber}
+                          </span>
                           {getInvoiceStatusBadge(invoice.status)}
                         </div>
-                        <p className="text-sm text-muted-foreground">{invoice.project?.name}</p>
-                        <p className="text-sm">{invoice.clientName} • {invoice.ticketCount} tickets</p>
+                        <p className="text-sm text-muted-foreground">
+                          {invoice.project?.name}
+                        </p>
+                        <p className="text-sm">
+                          {invoice.clientName} • {invoice.ticketCount} tickets
+                        </p>
                         <p className="text-xs text-muted-foreground">
-                          Created {format(new Date(invoice.invoiceDate), "MMM d, yyyy")}
-                          {invoice.dueDate && ` • Due ${format(new Date(invoice.dueDate), "MMM d, yyyy")}`}
+                          Created{" "}
+                          {format(new Date(invoice.invoiceDate), "MMM d, yyyy")}
+                          {invoice.dueDate &&
+                            ` • Due ${format(new Date(invoice.dueDate), "MMM d, yyyy")}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="text-lg font-bold">{formatCurrency(invoice.total)}</span>
+                        <span className="text-lg font-bold">
+                          {formatCurrency(invoice.total)}
+                        </span>
                         <div className="flex gap-2">
                           {invoice.status === "DRAFT" && (
-                            <Button 
-                              variant="outline" 
+                            <Button
+                              variant="outline"
                               size="sm"
-                              onClick={() => sendInvoiceMutation.mutate(invoice.id)}
+                              onClick={() =>
+                                sendInvoiceMutation.mutate(invoice.id)
+                              }
                               disabled={sendInvoiceMutation.isPending}
                               data-testid={`button-send-${invoice.id}`}
                             >
@@ -454,10 +630,13 @@ export default function TMBillingPage() {
                               Mark Sent
                             </Button>
                           )}
-                          {(invoice.status === "DRAFT" || invoice.status === "SENT") && (
-                            <Button 
+                          {(invoice.status === "DRAFT" ||
+                            invoice.status === "SENT") && (
+                            <Button
                               size="sm"
-                              onClick={() => markPaidMutation.mutate(invoice.id)}
+                              onClick={() =>
+                                markPaidMutation.mutate(invoice.id)
+                              }
                               disabled={markPaidMutation.isPending}
                               data-testid={`button-paid-${invoice.id}`}
                             >
@@ -487,31 +666,46 @@ export default function TMBillingPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="clientName">Client Name *</Label>
-              <Input 
-                id="clientName" 
+              <Input
+                id="clientName"
                 value={invoiceFormData.clientName}
-                onChange={(e) => setInvoiceFormData(prev => ({ ...prev, clientName: e.target.value }))}
+                onChange={(e) =>
+                  setInvoiceFormData((prev) => ({
+                    ...prev,
+                    clientName: e.target.value,
+                  }))
+                }
                 placeholder="Enter client name"
                 data-testid="input-client-name"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="clientEmail">Client Email</Label>
-              <Input 
-                id="clientEmail" 
+              <Input
+                id="clientEmail"
                 type="email"
                 value={invoiceFormData.clientEmail}
-                onChange={(e) => setInvoiceFormData(prev => ({ ...prev, clientEmail: e.target.value }))}
+                onChange={(e) =>
+                  setInvoiceFormData((prev) => ({
+                    ...prev,
+                    clientEmail: e.target.value,
+                  }))
+                }
                 placeholder="client@example.com"
                 data-testid="input-client-email"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="clientAddress">Client Address</Label>
-              <Textarea 
-                id="clientAddress" 
+              <Textarea
+                id="clientAddress"
                 value={invoiceFormData.clientAddress}
-                onChange={(e) => setInvoiceFormData(prev => ({ ...prev, clientAddress: e.target.value }))}
+                onChange={(e) =>
+                  setInvoiceFormData((prev) => ({
+                    ...prev,
+                    clientAddress: e.target.value,
+                  }))
+                }
                 placeholder="Enter billing address"
                 data-testid="input-client-address"
               />
@@ -521,22 +715,29 @@ export default function TMBillingPage() {
                 <Label htmlFor="dueDate">Due Date</Label>
                 <DatePicker
                   value={invoiceFormData.dueDate || undefined}
-                  onChange={(date) => setInvoiceFormData(prev => ({ 
-                    ...prev, 
-                    dueDate: date ? format(date, "yyyy-MM-dd") : "" 
-                  }))}
+                  onChange={(date) =>
+                    setInvoiceFormData((prev) => ({
+                      ...prev,
+                      dueDate: date ? format(date, "yyyy-MM-dd") : "",
+                    }))
+                  }
                   placeholder="Select due date"
                   data-testid="input-due-date"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="taxRate">Tax Rate (%)</Label>
-                <Input 
-                  id="taxRate" 
+                <Input
+                  id="taxRate"
                   type="number"
                   step="0.01"
                   value={invoiceFormData.taxRate}
-                  onChange={(e) => setInvoiceFormData(prev => ({ ...prev, taxRate: e.target.value }))}
+                  onChange={(e) =>
+                    setInvoiceFormData((prev) => ({
+                      ...prev,
+                      taxRate: e.target.value,
+                    }))
+                  }
                   placeholder="0"
                   data-testid="input-tax-rate"
                 />
@@ -544,25 +745,38 @@ export default function TMBillingPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>
-              <Textarea 
-                id="notes" 
+              <Textarea
+                id="notes"
                 value={invoiceFormData.notes}
-                onChange={(e) => setInvoiceFormData(prev => ({ ...prev, notes: e.target.value }))}
+                onChange={(e) =>
+                  setInvoiceFormData((prev) => ({
+                    ...prev,
+                    notes: e.target.value,
+                  }))
+                }
                 placeholder="Additional notes for the invoice"
                 data-testid="input-notes"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInvoiceDialog(false)} data-testid="button-cancel-invoice">
+            <Button
+              variant="outline"
+              onClick={() => setShowInvoiceDialog(false)}
+              data-testid="button-cancel-invoice"
+            >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleCreateInvoice}
-              disabled={!invoiceFormData.clientName || createInvoiceMutation.isPending}
+              disabled={
+                !invoiceFormData.clientName || createInvoiceMutation.isPending
+              }
               data-testid="button-create-invoice"
             >
-              {createInvoiceMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              {createInvoiceMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
               Create Invoice
             </Button>
           </DialogFooter>

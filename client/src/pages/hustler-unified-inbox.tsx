@@ -1,12 +1,34 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Inbox, Bell, ClipboardList, Building2, CheckCircle, Clock, AlertTriangle, ChevronLeft, CheckCheck } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Inbox,
+  Bell,
+  ClipboardList,
+  Building2,
+  CheckCircle,
+  Clock,
+  AlertTriangle,
+  ChevronLeft,
+  CheckCheck,
+} from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
@@ -63,21 +85,31 @@ export default function HustlerUnifiedInbox() {
 
   const markReadMutation = useMutation({
     mutationFn: async (notificationId: string) => {
-      const response = await apiRequest("POST", `/api/hustler/notifications/${notificationId}/read`);
+      const response = await apiRequest(
+        "POST",
+        `/api/hustler/notifications/${notificationId}/read`,
+      );
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hustler/unified-inbox"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/hustler/unified-inbox"],
+      });
     },
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("POST", "/api/hustler/notifications/mark-all-read");
+      const response = await apiRequest(
+        "POST",
+        "/api/hustler/notifications/mark-all-read",
+      );
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hustler/unified-inbox"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/hustler/unified-inbox"],
+      });
       toast({
         title: "All Marked Read",
         description: "All notifications have been marked as read",
@@ -119,7 +151,7 @@ export default function HustlerUnifiedInbox() {
   }
 
   return (
-    <div className="container mx-auto p-6">
+    <div className="container mx-auto max-w-full p-6">
       <div className="flex items-center gap-4 mb-6">
         <Link href="/hustler">
           <Button variant="ghost" size="icon" data-testid="button-back-hustler">
@@ -127,7 +159,10 @@ export default function HustlerUnifiedInbox() {
           </Button>
         </Link>
         <div className="flex-1">
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2" data-testid="text-inbox-title">
+          <h1
+            className="text-3xl font-bold tracking-tight flex items-center gap-2"
+            data-testid="text-inbox-title"
+          >
             <Inbox className="h-8 w-8" />
             Unified Inbox
           </h1>
@@ -190,7 +225,10 @@ export default function HustlerUnifiedInbox() {
             {isLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold" data-testid="text-stat-notifications">
+              <div
+                className="text-2xl font-bold"
+                data-testid="text-stat-notifications"
+              >
                 {data?.counts?.notifications || 0}
               </div>
             )}
@@ -208,7 +246,10 @@ export default function HustlerUnifiedInbox() {
             {isLoading ? (
               <Skeleton className="h-8 w-16" />
             ) : (
-              <div className="text-2xl font-bold text-destructive" data-testid="text-stat-unread">
+              <div
+                className="text-2xl font-bold text-destructive"
+                data-testid="text-stat-unread"
+              >
                 {data?.counts?.unreadNotifications || 0}
               </div>
             )}
@@ -227,7 +268,10 @@ export default function HustlerUnifiedInbox() {
             </div>
             <div className="flex gap-2">
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-type-filter">
+                <SelectTrigger
+                  className="w-[140px]"
+                  data-testid="select-type-filter"
+                >
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -238,7 +282,10 @@ export default function HustlerUnifiedInbox() {
               </Select>
 
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
+                <SelectTrigger
+                  className="w-[140px]"
+                  data-testid="select-status-filter"
+                >
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -279,13 +326,20 @@ export default function HustlerUnifiedInbox() {
                       {item.type === "task" ? (
                         getPriorityIcon(item.priority)
                       ) : (
-                        <Bell className={`h-4 w-4 ${item.isRead ? "text-muted-foreground" : "text-primary"}`} />
+                        <Bell
+                          className={`h-4 w-4 ${item.isRead ? "text-muted-foreground" : "text-primary"}`}
+                        />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium">{item.title}</span>
-                        <Badge variant={item.type === "task" ? "default" : "secondary"} className="text-xs">
+                        <Badge
+                          variant={
+                            item.type === "task" ? "default" : "secondary"
+                          }
+                          className="text-xs"
+                        >
                           {item.type}
                         </Badge>
                         {item.status && (
@@ -294,8 +348,13 @@ export default function HustlerUnifiedInbox() {
                           </Badge>
                         )}
                         {item.priority && item.type === "task" && (
-                          <Badge 
-                            variant={item.priority === "HIGH" || item.priority === "URGENT" ? "destructive" : "secondary"}
+                          <Badge
+                            variant={
+                              item.priority === "HIGH" ||
+                              item.priority === "URGENT"
+                                ? "destructive"
+                                : "secondary"
+                            }
                             className="text-xs"
                           >
                             {item.priority}
@@ -318,11 +377,18 @@ export default function HustlerUnifiedInbox() {
                           <span>Project: {item.projectName}</span>
                         )}
                         {item.createdAt && (
-                          <span>{formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}</span>
+                          <span>
+                            {formatDistanceToNow(new Date(item.createdAt), {
+                              addSuffix: true,
+                            })}
+                          </span>
                         )}
                         {item.dueDate && (
                           <span className="text-orange-500">
-                            Due: {formatDistanceToNow(new Date(item.dueDate), { addSuffix: true })}
+                            Due:{" "}
+                            {formatDistanceToNow(new Date(item.dueDate), {
+                              addSuffix: true,
+                            })}
                           </span>
                         )}
                       </div>

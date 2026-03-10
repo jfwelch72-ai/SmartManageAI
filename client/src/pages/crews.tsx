@@ -4,18 +4,58 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Users, Plus, Trash2, Edit, UserPlus, Award, X, Search, Filter, Sparkles, Calendar, AlertTriangle, Briefcase } from "lucide-react";
+import {
+  Users,
+  Plus,
+  Trash2,
+  Edit,
+  UserPlus,
+  Award,
+  X,
+  Search,
+  Filter,
+  Sparkles,
+  Calendar,
+  AlertTriangle,
+  Briefcase,
+} from "lucide-react";
 
 interface Crew {
   id: string;
@@ -74,7 +114,12 @@ interface CrewAssignment {
     createdAt: string;
   };
   crew: { id: string; name: string } | null;
-  project: { id: string; code: string | null; name: string; status: string } | null;
+  project: {
+    id: string;
+    code: string | null;
+    name: string;
+    status: string;
+  } | null;
 }
 
 interface ConflictInfo {
@@ -113,11 +158,14 @@ export default function CrewsPage() {
 
   // Crew members state
   const [showMembersDialog, setShowMembersDialog] = useState(false);
-  const [selectedCrewForMembers, setSelectedCrewForMembers] = useState<Crew | null>(null);
+  const [selectedCrewForMembers, setSelectedCrewForMembers] =
+    useState<Crew | null>(null);
   const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [memberRole, setMemberRole] = useState("");
-  const [memberSkillAssignments, setMemberSkillAssignments] = useState<{ category: string; skillId: string }[]>([]);
+  const [memberSkillAssignments, setMemberSkillAssignments] = useState<
+    { category: string; skillId: string }[]
+  >([]);
 
   // Assignment state
   const [showAssignmentDialog, setShowAssignmentDialog] = useState(false);
@@ -126,15 +174,25 @@ export default function CrewsPage() {
   const [assignmentStartDate, setAssignmentStartDate] = useState("");
   const [assignmentEndDate, setAssignmentEndDate] = useState("");
   const [assignmentNotes, setAssignmentNotes] = useState("");
-  const [assignmentConflicts, setAssignmentConflicts] = useState<ConflictInfo[]>([]);
+  const [assignmentConflicts, setAssignmentConflicts] = useState<
+    ConflictInfo[]
+  >([]);
   const [showConflictWarning, setShowConflictWarning] = useState(false);
 
   // Data queries
-  const { data: crews = [], isLoading: crewsLoading, refetch: refetchCrews } = useQuery<Crew[]>({
+  const {
+    data: crews = [],
+    isLoading: crewsLoading,
+    refetch: refetchCrews,
+  } = useQuery<Crew[]>({
     queryKey: ["/api/crews"],
   });
 
-  const { data: skills = [], isLoading: skillsLoading, refetch: refetchSkills } = useQuery<Skill[]>({
+  const {
+    data: skills = [],
+    isLoading: skillsLoading,
+    refetch: refetchSkills,
+  } = useQuery<Skill[]>({
     queryKey: ["/api/skills"],
   });
 
@@ -142,16 +200,22 @@ export default function CrewsPage() {
     queryKey: ["/api/users"],
   });
 
-  const { data: projectsResponse } = useQuery<{ data: Project[]; pagination: any }>({
+  const { data: projectsResponse } = useQuery<{
+    data: Project[];
+    pagination: any;
+  }>({
     queryKey: ["/api/projects"],
   });
   const projectsList = projectsResponse?.data ?? [];
 
-  const { data: crewAssignments = [], isLoading: assignmentsLoading } = useQuery<CrewAssignment[]>({
-    queryKey: ["/api/crew-assignments"],
-  });
+  const { data: crewAssignments = [], isLoading: assignmentsLoading } =
+    useQuery<CrewAssignment[]>({
+      queryKey: ["/api/crew-assignments"],
+    });
 
-  const { data: crewMembers = [], refetch: refetchMembers } = useQuery<CrewMember[]>({
+  const { data: crewMembers = [], refetch: refetchMembers } = useQuery<
+    CrewMember[]
+  >({
     queryKey: ["/api/crews", selectedCrewForMembers?.id, "members"],
     enabled: !!selectedCrewForMembers,
   });
@@ -159,55 +223,61 @@ export default function CrewsPage() {
   // Filtering logic
   const filteredCrews = useMemo(() => {
     const searchLower = crewSearchTerm.toLowerCase();
-    
-    return crews.filter(crew => {
+
+    return crews.filter((crew) => {
       // Search filter - safely handle optional fields
       const crewName = (crew.name ?? "").toLowerCase();
       const crewDescription = (crew.description ?? "").toLowerCase();
-      const leadName = crew.lead 
-        ? `${crew.lead.firstName ?? ""} ${crew.lead.lastName ?? ""}`.toLowerCase() 
+      const leadName = crew.lead
+        ? `${crew.lead.firstName ?? ""} ${crew.lead.lastName ?? ""}`.toLowerCase()
         : "";
-      
-      const matchesSearch = 
+
+      const matchesSearch =
         crewName.includes(searchLower) ||
         crewDescription.includes(searchLower) ||
         leadName.includes(searchLower);
-      
+
       if (crewSearchTerm && !matchesSearch) return false;
-      
+
       // Status filter
       if (crewStatusFilter === "ACTIVE" && !crew.isActive) return false;
       if (crewStatusFilter === "INACTIVE" && crew.isActive) return false;
-      
+
       return true;
     });
   }, [crews, crewSearchTerm, crewStatusFilter]);
 
   // Get unique skill categories
   const uniqueSkillCategories = useMemo(() => {
-    const categories = skills.map(s => s.category).filter(Boolean) as string[];
+    const categories = skills
+      .map((s) => s.category)
+      .filter(Boolean) as string[];
     return Array.from(new Set(categories)).sort();
   }, [skills]);
 
   const filteredSkills = useMemo(() => {
     const searchLower = skillSearchTerm.toLowerCase();
-    
-    return skills.filter(skill => {
+
+    return skills.filter((skill) => {
       // Search filter - safely handle optional fields
       const skillNameVal = (skill.name ?? "").toLowerCase();
       const skillDescVal = (skill.description ?? "").toLowerCase();
       const skillCatVal = (skill.category ?? "").toLowerCase();
-      
-      const matchesSearch = 
+
+      const matchesSearch =
         skillNameVal.includes(searchLower) ||
         skillDescVal.includes(searchLower) ||
         skillCatVal.includes(searchLower);
-      
+
       if (skillSearchTerm && !matchesSearch) return false;
-      
+
       // Category filter
-      if (skillCategoryFilter !== "ALL" && skill.category !== skillCategoryFilter) return false;
-      
+      if (
+        skillCategoryFilter !== "ALL" &&
+        skill.category !== skillCategoryFilter
+      )
+        return false;
+
       return true;
     });
   }, [skills, skillSearchTerm, skillCategoryFilter]);
@@ -225,12 +295,16 @@ export default function CrewsPage() {
       resetCrewForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to create crew", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create crew",
+        variant: "destructive",
+      });
     },
   });
 
   const updateCrewMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => 
+    mutationFn: async ({ id, data }: { id: string; data: any }) =>
       apiRequest("PATCH", `/api/crews/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crews"] });
@@ -239,7 +313,11 @@ export default function CrewsPage() {
       resetCrewForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to update crew", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update crew",
+        variant: "destructive",
+      });
     },
   });
 
@@ -250,7 +328,11 @@ export default function CrewsPage() {
       toast({ title: "Success", description: "Crew deleted successfully" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to delete crew", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete crew",
+        variant: "destructive",
+      });
     },
   });
 
@@ -264,7 +346,11 @@ export default function CrewsPage() {
       resetSkillForm();
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to create skill", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create skill",
+        variant: "destructive",
+      });
     },
   });
 
@@ -275,7 +361,11 @@ export default function CrewsPage() {
       toast({ title: "Success", description: "Skill deleted successfully" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to delete skill", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete skill",
+        variant: "destructive",
+      });
     },
   });
 
@@ -283,22 +373,41 @@ export default function CrewsPage() {
     mutationFn: async () => apiRequest("POST", "/api/skills/generate"),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/skills"] });
-      toast({ 
-        title: "Skills Generated", 
-        description: data.created > 0 
-          ? `${data.created} new construction skills have been added` 
-          : "All skills already exist in the system"
+      toast({
+        title: "Skills Generated",
+        description:
+          data.created > 0
+            ? `${data.created} new construction skills have been added`
+            : "All skills already exist in the system",
       });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to generate skills", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate skills",
+        variant: "destructive",
+      });
     },
   });
 
   // Crew member mutations
   const addMemberMutation = useMutation({
-    mutationFn: async ({ crewId, userId, role, skillIds }: { crewId: string; userId: string; role: string; skillIds: string[] }) =>
-      apiRequest("POST", `/api/crews/${crewId}/members`, { userId, role: role || null, skillIds }),
+    mutationFn: async ({
+      crewId,
+      userId,
+      role,
+      skillIds,
+    }: {
+      crewId: string;
+      userId: string;
+      role: string;
+      skillIds: string[];
+    }) =>
+      apiRequest("POST", `/api/crews/${crewId}/members`, {
+        userId,
+        role: role || null,
+        skillIds,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crews"] });
       refetchMembers();
@@ -309,7 +418,11 @@ export default function CrewsPage() {
       setMemberSkillAssignments([]);
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to add member", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to add member",
+        variant: "destructive",
+      });
     },
   });
 
@@ -329,14 +442,23 @@ export default function CrewsPage() {
 
   // Skill assignment repeater handlers
   const addSkillRow = () => {
-    setMemberSkillAssignments([...memberSkillAssignments, { category: "", skillId: "" }]);
+    setMemberSkillAssignments([
+      ...memberSkillAssignments,
+      { category: "", skillId: "" },
+    ]);
   };
 
   const removeSkillRow = (index: number) => {
-    setMemberSkillAssignments(memberSkillAssignments.filter((_, i) => i !== index));
+    setMemberSkillAssignments(
+      memberSkillAssignments.filter((_, i) => i !== index),
+    );
   };
 
-  const updateSkillRow = (index: number, field: "category" | "skillId", value: string) => {
+  const updateSkillRow = (
+    index: number,
+    field: "category" | "skillId",
+    value: string,
+  ) => {
     const updated = [...memberSkillAssignments];
     updated[index] = { ...updated[index], [field]: value };
     if (field === "category") {
@@ -346,15 +468,24 @@ export default function CrewsPage() {
   };
 
   const removeMemberMutation = useMutation({
-    mutationFn: async ({ crewId, userId }: { crewId: string; userId: string }) =>
-      apiRequest("DELETE", `/api/crews/${crewId}/members/${userId}`),
+    mutationFn: async ({
+      crewId,
+      userId,
+    }: {
+      crewId: string;
+      userId: string;
+    }) => apiRequest("DELETE", `/api/crews/${crewId}/members/${userId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crews"] });
       refetchMembers();
       toast({ title: "Success", description: "Member removed from crew" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to remove member", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove member",
+        variant: "destructive",
+      });
     },
   });
 
@@ -369,7 +500,11 @@ export default function CrewsPage() {
       const json = await res.json();
       if (!res.ok) {
         if (res.status === 409 && json.conflicts) {
-          throw { isConflict: true, conflicts: json.conflicts, message: json.message };
+          throw {
+            isConflict: true,
+            conflicts: json.conflicts,
+            message: json.message,
+          };
         }
         throw new Error(json.error || "Failed to create assignment");
       }
@@ -388,19 +523,28 @@ export default function CrewsPage() {
         setAssignmentConflicts(error.conflicts);
         setShowConflictWarning(true);
       } else {
-        toast({ title: "Error", description: error.message || "Failed to assign crew", variant: "destructive" });
+        toast({
+          title: "Error",
+          description: error.message || "Failed to assign crew",
+          variant: "destructive",
+        });
       }
     },
   });
 
   const deleteAssignmentMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("DELETE", `/api/crew-assignments/${id}`),
+    mutationFn: async (id: string) =>
+      apiRequest("DELETE", `/api/crew-assignments/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/crew-assignments"] });
       toast({ title: "Success", description: "Assignment removed" });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to remove assignment", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to remove assignment",
+        variant: "destructive",
+      });
     },
   });
 
@@ -429,7 +573,11 @@ export default function CrewsPage() {
 
   const handleSaveCrew = () => {
     if (!crewName.trim()) {
-      toast({ title: "Error", description: "Crew name is required", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Crew name is required",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -449,7 +597,11 @@ export default function CrewsPage() {
 
   const handleSaveSkill = () => {
     if (!skillName.trim()) {
-      toast({ title: "Error", description: "Skill name is required", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Skill name is required",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -472,7 +624,11 @@ export default function CrewsPage() {
 
   const handleSaveAssignment = (forceOverlap = false) => {
     if (!assignmentCrewId || !assignmentProjectId) {
-      toast({ title: "Error", description: "Crew and Project are required", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Crew and Project are required",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -482,8 +638,10 @@ export default function CrewsPage() {
       notes: assignmentNotes || null,
     };
 
-    if (assignmentStartDate) data.startDate = new Date(assignmentStartDate).toISOString();
-    if (assignmentEndDate) data.endDate = new Date(assignmentEndDate).toISOString();
+    if (assignmentStartDate)
+      data.startDate = new Date(assignmentStartDate).toISOString();
+    if (assignmentEndDate)
+      data.endDate = new Date(assignmentEndDate).toISOString();
     if (forceOverlap) data.allowOverlap = true;
 
     createAssignmentMutation.mutate(data);
@@ -501,7 +659,11 @@ export default function CrewsPage() {
 
   const handleAddMember = () => {
     if (!selectedUserId) {
-      toast({ title: "Error", description: "Please select a user", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "Please select a user",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -528,11 +690,13 @@ export default function CrewsPage() {
   if (!isManagerOrAdmin) {
     return (
       <div className="min-h-screen bg-background">
-        <main className="mx-auto max-w-7xl px-6 py-8">
+        <main className="mx-auto max-w-full px-6 py-8">
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <h2 className="text-2xl font-bold">Access Denied</h2>
-              <p className="text-muted-foreground">Admin or Manager access required</p>
+              <p className="text-muted-foreground">
+                Admin or Manager access required
+              </p>
             </div>
           </div>
         </main>
@@ -542,7 +706,7 @@ export default function CrewsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-full px-6 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
             <Users className="h-8 w-8 text-primary" />
@@ -555,9 +719,15 @@ export default function CrewsPage() {
 
         <Tabs defaultValue="crews" className="space-y-6">
           <TabsList data-testid="tabs-crews-skills">
-            <TabsTrigger value="crews" data-testid="tab-crews">Crews</TabsTrigger>
-            <TabsTrigger value="assignments" data-testid="tab-assignments">Assignments</TabsTrigger>
-            <TabsTrigger value="skills" data-testid="tab-skills">Skills</TabsTrigger>
+            <TabsTrigger value="crews" data-testid="tab-crews">
+              Crews
+            </TabsTrigger>
+            <TabsTrigger value="assignments" data-testid="tab-assignments">
+              Assignments
+            </TabsTrigger>
+            <TabsTrigger value="skills" data-testid="tab-skills">
+              Skills
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="crews" className="space-y-4">
@@ -574,9 +744,15 @@ export default function CrewsPage() {
                     data-testid="input-search-crews"
                   />
                 </div>
-                
-                <Select value={crewStatusFilter} onValueChange={setCrewStatusFilter}>
-                  <SelectTrigger className="w-[130px]" data-testid="select-crew-status-filter">
+
+                <Select
+                  value={crewStatusFilter}
+                  onValueChange={setCrewStatusFilter}
+                >
+                  <SelectTrigger
+                    className="w-[130px]"
+                    data-testid="select-crew-status-filter"
+                  >
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -585,7 +761,7 @@ export default function CrewsPage() {
                     <SelectItem value="INACTIVE">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
-                
+
                 <Button
                   onClick={() => {
                     resetCrewForm();
@@ -598,16 +774,18 @@ export default function CrewsPage() {
                 </Button>
               </div>
             </div>
-            
+
             {/* Active filter badges for crews */}
             {hasCrewFilters && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">Active filters:</span>
+                <span className="text-sm text-muted-foreground">
+                  Active filters:
+                </span>
                 {crewSearchTerm && (
                   <Badge variant="secondary" className="gap-1">
                     Search: "{crewSearchTerm}"
-                    <X 
-                      className="w-3 h-3 cursor-pointer" 
+                    <X
+                      className="w-3 h-3 cursor-pointer"
                       onClick={() => setCrewSearchTerm("")}
                       data-testid="button-clear-crew-search"
                     />
@@ -616,16 +794,16 @@ export default function CrewsPage() {
                 {crewStatusFilter !== "ALL" && (
                   <Badge variant="secondary" className="gap-1">
                     {crewStatusFilter}
-                    <X 
-                      className="w-3 h-3 cursor-pointer" 
+                    <X
+                      className="w-3 h-3 cursor-pointer"
                       onClick={() => setCrewStatusFilter("ALL")}
                       data-testid="button-clear-crew-status-filter"
                     />
                   </Badge>
                 )}
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setCrewSearchTerm("");
                     setCrewStatusFilter("ALL");
@@ -640,135 +818,166 @@ export default function CrewsPage() {
             <Card>
               <CardContent className="p-0">
                 {crewsLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">Loading crews...</div>
+                  <div className="p-8 text-center text-muted-foreground">
+                    Loading crews...
+                  </div>
                 ) : filteredCrews.length === 0 ? (
                   <div className="p-8 text-center text-muted-foreground">
-                    {hasCrewFilters ? "No crews match your filters" : "No crews found"}
+                    {hasCrewFilters
+                      ? "No crews match your filters"
+                      : "No crews found"}
                   </div>
                 ) : isMobile ? (
-                    <div className="space-y-3 p-4">
-                      {filteredCrews.map((crew) => (
-                        <Card key={crew.id} data-testid={`crew-row-${crew.id}`}>
-                          <CardContent className="p-4 space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="font-medium">{crew.name}</span>
-                              {crew.isActive ? (
-                                <Badge className="bg-green-500 hover:bg-green-600">Active</Badge>
-                              ) : (
-                                <Badge variant="secondary">Inactive</Badge>
-                              )}
-                            </div>
-                            <div className="text-sm space-y-1">
-                              <div>
-                                <span className="text-muted-foreground">Lead:</span>{" "}
-                                <span>{crew.lead ? `${crew.lead.firstName} ${crew.lead.lastName}` : "-"}</span>
-                              </div>
-                              <div>
-                                <span className="text-muted-foreground">Members:</span>{" "}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-auto p-0"
-                                  onClick={() => handleViewMembers(crew)}
-                                  data-testid={`button-view-members-${crew.id}`}
-                                >
-                                  {crew.memberCount} members
-                                </Button>
-                              </div>
-                              {crew.description && (
-                                <div className="text-muted-foreground truncate">{crew.description}</div>
-                              )}
-                            </div>
-                            <div className="flex gap-2 justify-end">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEditCrew(crew)}
-                                data-testid={`button-edit-crew-${crew.id}`}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              {user.role === "ADMIN" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => deleteCrewMutation.mutate(crew.id)}
-                                  data-testid={`button-delete-crew-${crew.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              )}
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
-                  <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Lead</TableHead>
-                        <TableHead>Members</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="hidden sm:table-cell">Description</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredCrews.map((crew) => (
-                        <TableRow key={crew.id} data-testid={`crew-row-${crew.id}`}>
-                          <TableCell className="font-medium">{crew.name}</TableCell>
-                          <TableCell>
-                            {crew.lead ? `${crew.lead.firstName} ${crew.lead.lastName}` : "-"}
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleViewMembers(crew)}
-                              data-testid={`button-view-members-${crew.id}`}
-                            >
-                              {crew.memberCount} members
-                            </Button>
-                          </TableCell>
-                          <TableCell>
+                  <div className="space-y-3 p-4">
+                    {filteredCrews.map((crew) => (
+                      <Card key={crew.id} data-testid={`crew-row-${crew.id}`}>
+                        <CardContent className="p-4 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-medium">{crew.name}</span>
                             {crew.isActive ? (
-                              <Badge className="bg-green-500 hover:bg-green-600">Active</Badge>
+                              <Badge className="bg-green-500 hover:bg-green-600">
+                                Active
+                              </Badge>
                             ) : (
                               <Badge variant="secondary">Inactive</Badge>
                             )}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground max-w-xs truncate hidden sm:table-cell">
-                            {crew.description || "-"}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex gap-2 justify-end">
+                          </div>
+                          <div className="text-sm space-y-1">
+                            <div>
+                              <span className="text-muted-foreground">
+                                Lead:
+                              </span>{" "}
+                              <span>
+                                {crew.lead
+                                  ? `${crew.lead.firstName} ${crew.lead.lastName}`
+                                  : "-"}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">
+                                Members:
+                              </span>{" "}
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleEditCrew(crew)}
-                                data-testid={`button-edit-crew-${crew.id}`}
+                                className="h-auto p-0"
+                                onClick={() => handleViewMembers(crew)}
+                                data-testid={`button-view-members-${crew.id}`}
                               >
-                                <Edit className="h-4 w-4" />
+                                {crew.memberCount} members
                               </Button>
-                              {user.role === "ADMIN" && (
+                            </div>
+                            {crew.description && (
+                              <div className="text-muted-foreground truncate">
+                                {crew.description}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex gap-2 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditCrew(crew)}
+                              data-testid={`button-edit-crew-${crew.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {user.role === "ADMIN" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  deleteCrewMutation.mutate(crew.id)
+                                }
+                                data-testid={`button-delete-crew-${crew.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Lead</TableHead>
+                          <TableHead>Members</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="hidden sm:table-cell">
+                            Description
+                          </TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredCrews.map((crew) => (
+                          <TableRow
+                            key={crew.id}
+                            data-testid={`crew-row-${crew.id}`}
+                          >
+                            <TableCell className="font-medium">
+                              {crew.name}
+                            </TableCell>
+                            <TableCell>
+                              {crew.lead
+                                ? `${crew.lead.firstName} ${crew.lead.lastName}`
+                                : "-"}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleViewMembers(crew)}
+                                data-testid={`button-view-members-${crew.id}`}
+                              >
+                                {crew.memberCount} members
+                              </Button>
+                            </TableCell>
+                            <TableCell>
+                              {crew.isActive ? (
+                                <Badge className="bg-green-500 hover:bg-green-600">
+                                  Active
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary">Inactive</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground max-w-xs truncate hidden sm:table-cell">
+                              {crew.description || "-"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex gap-2 justify-end">
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => deleteCrewMutation.mutate(crew.id)}
-                                  data-testid={`button-delete-crew-${crew.id}`}
+                                  onClick={() => handleEditCrew(crew)}
+                                  data-testid={`button-edit-crew-${crew.id}`}
                                 >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                  <Edit className="h-4 w-4" />
                                 </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                                {user.role === "ADMIN" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      deleteCrewMutation.mutate(crew.id)
+                                    }
+                                    data-testid={`button-delete-crew-${crew.id}`}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </CardContent>
@@ -793,9 +1002,13 @@ export default function CrewsPage() {
             <Card>
               <CardContent className="p-0">
                 {assignmentsLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">Loading assignments...</div>
+                  <div className="p-8 text-center text-muted-foreground">
+                    Loading assignments...
+                  </div>
                 ) : crewAssignments.length === 0 ? (
-                  <div className="p-8 text-center text-muted-foreground">No crew assignments found</div>
+                  <div className="p-8 text-center text-muted-foreground">
+                    No crew assignments found
+                  </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -811,23 +1024,34 @@ export default function CrewsPage() {
                       </TableHeader>
                       <TableBody>
                         {crewAssignments.map((ca) => (
-                          <TableRow key={ca.assignment.id} data-testid={`assignment-row-${ca.assignment.id}`}>
+                          <TableRow
+                            key={ca.assignment.id}
+                            data-testid={`assignment-row-${ca.assignment.id}`}
+                          >
                             <TableCell className="font-medium">
                               {ca.crew?.name || "Unknown Crew"}
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-wrap items-center gap-1">
                                 <Briefcase className="h-3 w-3 text-muted-foreground" />
-                                <span>{ca.project?.name || "Unknown Project"}</span>
+                                <span>
+                                  {ca.project?.name || "Unknown Project"}
+                                </span>
                                 {ca.project?.code && (
-                                  <Badge variant="outline" className="text-xs">{ca.project.code}</Badge>
+                                  <Badge variant="outline" className="text-xs">
+                                    {ca.project.code}
+                                  </Badge>
                                 )}
                               </div>
                             </TableCell>
-                            <TableCell data-testid={`text-start-date-${ca.assignment.id}`}>
+                            <TableCell
+                              data-testid={`text-start-date-${ca.assignment.id}`}
+                            >
                               {formatDateShort(ca.assignment.startDate)}
                             </TableCell>
-                            <TableCell data-testid={`text-end-date-${ca.assignment.id}`}>
+                            <TableCell
+                              data-testid={`text-end-date-${ca.assignment.id}`}
+                            >
                               {formatDateShort(ca.assignment.endDate)}
                             </TableCell>
                             <TableCell className="text-muted-foreground max-w-xs truncate">
@@ -837,7 +1061,11 @@ export default function CrewsPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => deleteAssignmentMutation.mutate(ca.assignment.id)}
+                                onClick={() =>
+                                  deleteAssignmentMutation.mutate(
+                                    ca.assignment.id,
+                                  )
+                                }
                                 data-testid={`button-delete-assignment-${ca.assignment.id}`}
                               >
                                 <Trash2 className="h-4 w-4 text-destructive" />
@@ -867,22 +1095,30 @@ export default function CrewsPage() {
                     data-testid="input-search-skills"
                   />
                 </div>
-                
+
                 {uniqueSkillCategories.length > 0 && (
-                  <Select value={skillCategoryFilter} onValueChange={setSkillCategoryFilter}>
-                    <SelectTrigger className="w-[160px]" data-testid="select-skill-category-filter">
+                  <Select
+                    value={skillCategoryFilter}
+                    onValueChange={setSkillCategoryFilter}
+                  >
+                    <SelectTrigger
+                      className="w-[160px]"
+                      data-testid="select-skill-category-filter"
+                    >
                       <Filter className="h-4 w-4 mr-2" />
                       <SelectValue placeholder="Category" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">All Categories</SelectItem>
-                      {uniqueSkillCategories.map(cat => (
-                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      {uniqueSkillCategories.map((cat) => (
+                        <SelectItem key={cat} value={cat}>
+                          {cat}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 )}
-                
+
                 <Button
                   onClick={() => setShowSkillDialog(true)}
                   data-testid="button-create-skill"
@@ -897,20 +1133,24 @@ export default function CrewsPage() {
                   data-testid="button-generate-skills"
                 >
                   <Sparkles className="h-4 w-4 mr-2" />
-                  {generateSkillsMutation.isPending ? "Generating..." : "Generate Skills"}
+                  {generateSkillsMutation.isPending
+                    ? "Generating..."
+                    : "Generate Skills"}
                 </Button>
               </div>
             </div>
-            
+
             {/* Active filter badges for skills */}
             {hasSkillFilters && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground">Active filters:</span>
+                <span className="text-sm text-muted-foreground">
+                  Active filters:
+                </span>
                 {skillSearchTerm && (
                   <Badge variant="secondary" className="gap-1">
                     Search: "{skillSearchTerm}"
-                    <X 
-                      className="w-3 h-3 cursor-pointer" 
+                    <X
+                      className="w-3 h-3 cursor-pointer"
                       onClick={() => setSkillSearchTerm("")}
                       data-testid="button-clear-skill-search"
                     />
@@ -919,16 +1159,16 @@ export default function CrewsPage() {
                 {skillCategoryFilter !== "ALL" && (
                   <Badge variant="secondary" className="gap-1">
                     {skillCategoryFilter}
-                    <X 
-                      className="w-3 h-3 cursor-pointer" 
+                    <X
+                      className="w-3 h-3 cursor-pointer"
                       onClick={() => setSkillCategoryFilter("ALL")}
                       data-testid="button-clear-skill-category-filter"
                     />
                   </Badge>
                 )}
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     setSkillSearchTerm("");
                     setSkillCategoryFilter("ALL");
@@ -943,42 +1183,53 @@ export default function CrewsPage() {
             <Card>
               <CardContent className="p-0">
                 {skillsLoading ? (
-                  <div className="p-8 text-center text-muted-foreground">Loading skills...</div>
+                  <div className="p-8 text-center text-muted-foreground">
+                    Loading skills...
+                  </div>
                 ) : filteredSkills.length === 0 ? (
                   <div className="p-8 text-center text-muted-foreground">
-                    {hasSkillFilters ? "No skills match your filters" : "No skills found"}
+                    {hasSkillFilters
+                      ? "No skills match your filters"
+                      : "No skills found"}
                   </div>
                 ) : isMobile ? (
-                    <div className="space-y-3 p-4">
-                      {filteredSkills.map((skill) => (
-                        <Card key={skill.id} data-testid={`skill-row-${skill.id}`}>
-                          <CardContent className="p-4 space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <span className="font-medium">{skill.name}</span>
-                              {skill.category ? (
-                                <Badge variant="outline">{skill.category}</Badge>
-                              ) : null}
+                  <div className="space-y-3 p-4">
+                    {filteredSkills.map((skill) => (
+                      <Card
+                        key={skill.id}
+                        data-testid={`skill-row-${skill.id}`}
+                      >
+                        <CardContent className="p-4 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-medium">{skill.name}</span>
+                            {skill.category ? (
+                              <Badge variant="outline">{skill.category}</Badge>
+                            ) : null}
+                          </div>
+                          {skill.description && (
+                            <p className="text-sm text-muted-foreground">
+                              {skill.description}
+                            </p>
+                          )}
+                          {user.role === "ADMIN" && (
+                            <div className="flex justify-end">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  deleteSkillMutation.mutate(skill.id)
+                                }
+                                data-testid={`button-delete-skill-${skill.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
                             </div>
-                            {skill.description && (
-                              <p className="text-sm text-muted-foreground">{skill.description}</p>
-                            )}
-                            {user.role === "ADMIN" && (
-                              <div className="flex justify-end">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => deleteSkillMutation.mutate(skill.id)}
-                                  data-testid={`button-delete-skill-${skill.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </div>
-                            )}
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
-                  ) : (
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -990,8 +1241,13 @@ export default function CrewsPage() {
                     </TableHeader>
                     <TableBody>
                       {filteredSkills.map((skill) => (
-                        <TableRow key={skill.id} data-testid={`skill-row-${skill.id}`}>
-                          <TableCell className="font-medium">{skill.name}</TableCell>
+                        <TableRow
+                          key={skill.id}
+                          data-testid={`skill-row-${skill.id}`}
+                        >
+                          <TableCell className="font-medium">
+                            {skill.name}
+                          </TableCell>
                           <TableCell>
                             {skill.category ? (
                               <Badge variant="outline">{skill.category}</Badge>
@@ -1007,7 +1263,9 @@ export default function CrewsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => deleteSkillMutation.mutate(skill.id)}
+                                onClick={() =>
+                                  deleteSkillMutation.mutate(skill.id)
+                                }
                                 data-testid={`button-delete-skill-${skill.id}`}
                               >
                                 <Trash2 className="h-4 w-4 text-destructive" />
@@ -1029,9 +1287,13 @@ export default function CrewsPage() {
       <Dialog open={showCrewDialog} onOpenChange={setShowCrewDialog}>
         <DialogContent data-testid="dialog-crew">
           <DialogHeader>
-            <DialogTitle>{selectedCrew ? "Edit Crew" : "Create New Crew"}</DialogTitle>
+            <DialogTitle>
+              {selectedCrew ? "Edit Crew" : "Create New Crew"}
+            </DialogTitle>
             <DialogDescription>
-              {selectedCrew ? "Update crew information" : "Add a new crew to organize your team"}
+              {selectedCrew
+                ? "Update crew information"
+                : "Add a new crew to organize your team"}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1057,14 +1319,22 @@ export default function CrewsPage() {
             </div>
             <div>
               <Label htmlFor="crew-lead">Crew Lead</Label>
-              <Select value={crewLeadId || "none"} onValueChange={(val) => setCrewLeadId(val === "none" ? "" : val)}>
+              <Select
+                value={crewLeadId || "none"}
+                onValueChange={(val) =>
+                  setCrewLeadId(val === "none" ? "" : val)
+                }
+              >
                 <SelectTrigger id="crew-lead" data-testid="select-crew-lead">
                   <SelectValue placeholder="Select a crew lead" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   {users
-                    .filter((u) => u.role === "SUPERINTENDENT" || u.role === "MANAGER")
+                    .filter(
+                      (u) =>
+                        u.role === "SUPERINTENDENT" || u.role === "MANAGER",
+                    )
                     .map((u) => (
                       <SelectItem key={u.id} value={u.id}>
                         {u.firstName} {u.lastName} ({u.role})
@@ -1095,7 +1365,9 @@ export default function CrewsPage() {
             </Button>
             <Button
               onClick={handleSaveCrew}
-              disabled={createCrewMutation.isPending || updateCrewMutation.isPending}
+              disabled={
+                createCrewMutation.isPending || updateCrewMutation.isPending
+              }
               data-testid="button-save-crew"
             >
               {selectedCrew ? "Update" : "Create"}
@@ -1109,7 +1381,9 @@ export default function CrewsPage() {
         <DialogContent data-testid="dialog-skill">
           <DialogHeader>
             <DialogTitle>Create New Skill</DialogTitle>
-            <DialogDescription>Add a skill that can be assigned to employees</DialogDescription>
+            <DialogDescription>
+              Add a skill that can be assigned to employees
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -1166,9 +1440,7 @@ export default function CrewsPage() {
       <Dialog open={showMembersDialog} onOpenChange={setShowMembersDialog}>
         <DialogContent className="max-w-2xl" data-testid="dialog-crew-members">
           <DialogHeader>
-            <DialogTitle>
-              {selectedCrewForMembers?.name} - Members
-            </DialogTitle>
+            <DialogTitle>{selectedCrewForMembers?.name} - Members</DialogTitle>
             <DialogDescription>
               Manage crew members and their roles
             </DialogDescription>
@@ -1199,11 +1471,16 @@ export default function CrewsPage() {
                 </TableHeader>
                 <TableBody>
                   {crewMembers.map(({ crewMember, user }) => (
-                    <TableRow key={crewMember.id} data-testid={`member-row-${user.id}`}>
+                    <TableRow
+                      key={crewMember.id}
+                      data-testid={`member-row-${user.id}`}
+                    >
                       <TableCell className="font-medium">
                         {user.firstName} {user.lastName}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{user.email}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {user.email}
+                      </TableCell>
                       <TableCell>
                         {crewMember.role ? (
                           <Badge variant="outline">{crewMember.role}</Badge>
@@ -1249,20 +1526,26 @@ export default function CrewsPage() {
         <DialogContent data-testid="dialog-add-member">
           <DialogHeader>
             <DialogTitle>Add Member to Crew</DialogTitle>
-            <DialogDescription>Select a user to add to this crew</DialogDescription>
+            <DialogDescription>
+              Select a user to add to this crew
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label htmlFor="select-user">User</Label>
               <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger id="select-user" data-testid="select-member-user">
+                <SelectTrigger
+                  id="select-user"
+                  data-testid="select-member-user"
+                >
                   <SelectValue placeholder="Select a user" />
                 </SelectTrigger>
                 <SelectContent>
                   {users
-                    .filter((u) => 
-                      u.role === "HOURLY_EMPLOYEE" &&
-                      !crewMembers.some((cm) => cm.user.id === u.id)
+                    .filter(
+                      (u) =>
+                        u.role === "HOURLY_EMPLOYEE" &&
+                        !crewMembers.some((cm) => cm.user.id === u.id),
                     )
                     .map((u) => (
                       <SelectItem key={u.id} value={u.id}>
@@ -1304,9 +1587,14 @@ export default function CrewsPage() {
                     <div key={index} className="flex items-center gap-2">
                       <Select
                         value={row.category}
-                        onValueChange={(value) => updateSkillRow(index, "category", value)}
+                        onValueChange={(value) =>
+                          updateSkillRow(index, "category", value)
+                        }
                       >
-                        <SelectTrigger className="flex-1" data-testid={`select-skill-category-${index}`}>
+                        <SelectTrigger
+                          className="flex-1"
+                          data-testid={`select-skill-category-${index}`}
+                        >
                           <SelectValue placeholder="Select Category" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1320,10 +1608,15 @@ export default function CrewsPage() {
 
                       <Select
                         value={row.skillId}
-                        onValueChange={(value) => updateSkillRow(index, "skillId", value)}
+                        onValueChange={(value) =>
+                          updateSkillRow(index, "skillId", value)
+                        }
                         disabled={!row.category}
                       >
-                        <SelectTrigger className="flex-1" data-testid={`select-skill-name-${index}`}>
+                        <SelectTrigger
+                          className="flex-1"
+                          data-testid={`select-skill-name-${index}`}
+                        >
                           <SelectValue placeholder="Select Skill" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1370,36 +1663,57 @@ export default function CrewsPage() {
       </Dialog>
 
       {/* Assign Crew to Project Dialog */}
-      <Dialog open={showAssignmentDialog} onOpenChange={(open) => {
-        setShowAssignmentDialog(open);
-        if (!open) {
-          setShowConflictWarning(false);
-          setAssignmentConflicts([]);
-        }
-      }}>
+      <Dialog
+        open={showAssignmentDialog}
+        onOpenChange={(open) => {
+          setShowAssignmentDialog(open);
+          if (!open) {
+            setShowConflictWarning(false);
+            setAssignmentConflicts([]);
+          }
+        }}
+      >
         <DialogContent data-testid="dialog-assignment">
           <DialogHeader>
             <DialogTitle>Assign Crew to Project</DialogTitle>
-            <DialogDescription>Select a crew and project with optional date range</DialogDescription>
+            <DialogDescription>
+              Select a crew and project with optional date range
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Label htmlFor="assignment-crew">Crew</Label>
-              <Select value={assignmentCrewId} onValueChange={setAssignmentCrewId}>
-                <SelectTrigger id="assignment-crew" data-testid="select-assignment-crew">
+              <Select
+                value={assignmentCrewId}
+                onValueChange={setAssignmentCrewId}
+              >
+                <SelectTrigger
+                  id="assignment-crew"
+                  data-testid="select-assignment-crew"
+                >
                   <SelectValue placeholder="Select a crew" />
                 </SelectTrigger>
                 <SelectContent>
-                  {crews.filter(c => c.isActive).map((c) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                  ))}
+                  {crews
+                    .filter((c) => c.isActive)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
               <Label htmlFor="assignment-project">Project</Label>
-              <Select value={assignmentProjectId} onValueChange={setAssignmentProjectId}>
-                <SelectTrigger id="assignment-project" data-testid="select-assignment-project">
+              <Select
+                value={assignmentProjectId}
+                onValueChange={setAssignmentProjectId}
+              >
+                <SelectTrigger
+                  id="assignment-project"
+                  data-testid="select-assignment-project"
+                >
                   <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1445,18 +1759,25 @@ export default function CrewsPage() {
             </div>
 
             {showConflictWarning && assignmentConflicts.length > 0 && (
-              <Alert variant="destructive" data-testid="alert-scheduling-conflict">
+              <Alert
+                variant="destructive"
+                data-testid="alert-scheduling-conflict"
+              >
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Scheduling Conflict Detected</AlertTitle>
                 <AlertDescription>
-                  <p className="mb-2">This crew has overlapping assignments with {assignmentConflicts.length} project(s):</p>
+                  <p className="mb-2">
+                    This crew has overlapping assignments with{" "}
+                    {assignmentConflicts.length} project(s):
+                  </p>
                   <ul className="list-disc pl-4 space-y-1">
                     {assignmentConflicts.map((c) => (
                       <li key={c.assignmentId} className="text-sm">
                         <span className="font-medium">{c.projectName}</span>
                         {c.projectCode && <span> ({c.projectCode})</span>}
                         {" — "}
-                        {formatDateShort(c.existingStart)} to {formatDateShort(c.existingEnd)}
+                        {formatDateShort(c.existingStart)} to{" "}
+                        {formatDateShort(c.existingEnd)}
                       </li>
                     ))}
                   </ul>

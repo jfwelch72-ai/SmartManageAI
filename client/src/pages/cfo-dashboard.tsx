@@ -10,12 +10,15 @@ import { useToast } from "@/hooks/use-toast";
 import { FinancialKPICards } from "@/components/cfo/FinancialKPICards";
 import { ProjectProfitabilityTable } from "@/components/cfo/ProjectProfitabilityTable";
 import { EquipmentMetrics } from "@/components/cfo/EquipmentMetrics";
-import type { ProjectProfitability, EquipmentMetricsData } from "@/components/cfo/types";
+import type {
+  ProjectProfitability,
+  EquipmentMetricsData,
+} from "@/components/cfo/types";
 
 const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
@@ -28,32 +31,37 @@ export default function CFODashboard() {
 
   const { data: profitability, isLoading } = useQuery<ProjectProfitability[]>({
     queryKey: ["/api/cfo/profitability"],
-    enabled: !!user && (user.role === 'ADMIN' || user.role === 'MANAGER'),
+    enabled: !!user && (user.role === "ADMIN" || user.role === "MANAGER"),
   });
 
-  const { data: equipmentMetrics, isLoading: equipmentLoading } = useQuery<EquipmentMetricsData>({
-    queryKey: ["/api/cfo/equipment-metrics"],
-    enabled: !!user && (user.role === 'ADMIN' || user.role === 'MANAGER'),
-  });
+  const { data: equipmentMetrics, isLoading: equipmentLoading } =
+    useQuery<EquipmentMetricsData>({
+      queryKey: ["/api/cfo/equipment-metrics"],
+      enabled: !!user && (user.role === "ADMIN" || user.role === "MANAGER"),
+    });
 
   const runFullAnalysis = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('POST', '/api/ai-pm/run');
+      const response = await apiRequest("POST", "/api/ai-pm/run");
       return response.json();
     },
     onSuccess: () => {
       toast({
         title: "Full CFO Analysis Complete",
-        description: "Profitability data and equipment metrics have been updated with AI insights.",
+        description:
+          "Profitability data and equipment metrics have been updated with AI insights.",
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/cfo/profitability'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/cfo/equipment-metrics'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/ai-insights'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cfo/profitability"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/cfo/equipment-metrics"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-insights"] });
     },
     onError: (error: any) => {
       toast({
         title: "Analysis Failed",
-        description: error.message || "Failed to run full CFO analysis. Please try again.",
+        description:
+          error.message || "Failed to run full CFO analysis. Please try again.",
         variant: "destructive",
       });
     },
@@ -64,54 +72,94 @@ export default function CFODashboard() {
   };
 
   const handleEquipmentClick = () => {
-    setLocation('/equipment');
+    setLocation("/equipment");
   };
 
   const exportToCSV = () => {
     if (!profitability || profitability.length === 0) {
-      toast({ title: "No Data", description: "No profitability data to export.", variant: "destructive" });
+      toast({
+        title: "No Data",
+        description: "No profitability data to export.",
+        variant: "destructive",
+      });
       return;
     }
     const headers = [
-      "Project Code", "Project Name", "Budget", "Adjusted Budget", "Labor Cost",
-      "Material Cost", "Other Expenses", "Approved COs", "Total Actual Cost",
-      "Variance", "Variance %", "Status", "Projected Completion Cost", "Estimated Margin",
-      "Labor Hours", "Labor Efficiency", "Material Spend Rate", "Pending COs Value"
+      "Project Code",
+      "Project Name",
+      "Budget",
+      "Adjusted Budget",
+      "Labor Cost",
+      "Material Cost",
+      "Other Expenses",
+      "Approved COs",
+      "Total Actual Cost",
+      "Variance",
+      "Variance %",
+      "Status",
+      "Projected Completion Cost",
+      "Estimated Margin",
+      "Labor Hours",
+      "Labor Efficiency",
+      "Material Spend Rate",
+      "Pending COs Value",
     ];
-    const rows = profitability.map(p => [
-      p.project_code, `"${p.project_name}"`, p.budget, p.adjusted_budget,
-      p.total_labor_cost, p.total_material_cost, p.total_other_expenses,
-      p.approved_change_orders_value, p.total_actual_cost, p.variance,
-      `${p.variance_percent.toFixed(1)}%`, p.status, p.projected_completion_cost,
-      p.estimated_margin, p.key_metrics.labor_hours, p.key_metrics.labor_efficiency,
-      p.key_metrics.material_spend_rate, p.key_metrics.pending_change_orders_value
+    const rows = profitability.map((p) => [
+      p.project_code,
+      `"${p.project_name}"`,
+      p.budget,
+      p.adjusted_budget,
+      p.total_labor_cost,
+      p.total_material_cost,
+      p.total_other_expenses,
+      p.approved_change_orders_value,
+      p.total_actual_cost,
+      p.variance,
+      `${p.variance_percent.toFixed(1)}%`,
+      p.status,
+      p.projected_completion_cost,
+      p.estimated_margin,
+      p.key_metrics.labor_hours,
+      p.key_metrics.labor_efficiency,
+      p.key_metrics.material_spend_rate,
+      p.key_metrics.pending_change_orders_value,
     ]);
-    const csvContent = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((r) => r.join(",")),
+    ].join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `cfo-dashboard-${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `cfo-dashboard-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
-    toast({ title: "Export Complete", description: `Exported ${profitability.length} projects to CSV.` });
+    toast({
+      title: "Export Complete",
+      description: `Exported ${profitability.length} projects to CSV.`,
+    });
   };
 
   if (!user) {
     return (
       <div className="min-h-screen bg-background">
         <main className="p-8 text-center">
-          <p className="text-muted-foreground">Please log in to view profitability data</p>
+          <p className="text-muted-foreground">
+            Please log in to view profitability data
+          </p>
         </main>
       </div>
     );
   }
 
-  if (user.role !== 'ADMIN' && user.role !== 'MANAGER') {
+  if (user.role !== "ADMIN" && user.role !== "MANAGER") {
     return (
       <div className="min-h-screen bg-background">
         <main className="p-8 text-center">
-          <p className="text-muted-foreground">Admin or Manager access required</p>
+          <p className="text-muted-foreground">
+            Admin or Manager access required
+          </p>
         </main>
       </div>
     );
@@ -119,7 +167,7 @@ export default function CFODashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 py-6 sm:py-8">
+      <main className="mx-auto max-w-full px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
@@ -143,14 +191,16 @@ export default function CFODashboard() {
               ) : (
                 <Sparkles className="h-4 w-4 mr-2" />
               )}
-              <span className="hidden sm:inline">{runFullAnalysis.isPending ? 'Running...' : 'Run Full CFO Analysis'}</span>
-              <span className="sm:hidden">{runFullAnalysis.isPending ? 'Running...' : 'CFO Analysis'}</span>
+              <span className="hidden sm:inline">
+                {runFullAnalysis.isPending
+                  ? "Running..."
+                  : "Run Full CFO Analysis"}
+              </span>
+              <span className="sm:hidden">
+                {runFullAnalysis.isPending ? "Running..." : "CFO Analysis"}
+              </span>
             </Button>
-            <AIAnalysisButton
-              showDropdown={true}
-              variant="outline"
-              size="sm"
-            />
+            <AIAnalysisButton showDropdown={true} variant="outline" size="sm" />
             <Button
               variant="outline"
               size="sm"
@@ -168,7 +218,7 @@ export default function CFODashboard() {
         {isLoading ? (
           <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-4">
-              {[1, 2, 3, 4].map(i => (
+              {[1, 2, 3, 4].map((i) => (
                 <Skeleton key={i} className="h-32 w-full" />
               ))}
             </div>
