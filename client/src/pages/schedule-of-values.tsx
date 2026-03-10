@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,7 @@ const getStatusBadge = (status: string) => {
 
 export default function ScheduleOfValuesPage() {
   const { user } = useAuth();
+  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
   const { toast } = useToast();
   const [mainTab, setMainTab] = useState("pay-apps");
   const [activeTab, setActiveTab] = useState("all");
@@ -63,12 +65,12 @@ export default function ScheduleOfValuesPage() {
 
   const { data: projects = [] } = useQuery<SovProject[]>({
     queryKey: ["/api/sov/projects"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)
+    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
   });
 
   const { data: sovs = [], isLoading: loadingSOVs } = useQuery<SOV[]>({
     queryKey: ["/api/sov"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(user.role)
+    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(user.role) || hasFinancialsPermission)
   });
 
   useEffect(() => {
@@ -122,7 +124,7 @@ export default function ScheduleOfValuesPage() {
     );
   }
 
-  if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(user.role)) {
+  if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"].includes(user.role) && !hasFinancialsPermission) {
     return (
       <div className="p-8 text-center">
         <p className="text-muted-foreground">You don't have access to Schedule of Values</p>

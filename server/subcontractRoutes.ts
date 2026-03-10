@@ -10,7 +10,7 @@ import {
   insertSubcontractorContractSchema
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { requireAuth, requireRole, AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { generateSubcontractPDF } from "./subcontract-pdf-service";
 import { createAutoPayableFromContract } from "./subcontractorPayablesRoutes";
@@ -58,7 +58,7 @@ async function verifyContractAccess(contractId: string, orgId: string | null, sh
   return { contract, hasAccess: true };
 }
 
-router.get("/subcontracts", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -103,7 +103,7 @@ router.get("/subcontracts", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
   }
 });
 
-router.get("/subcontracts/projects", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/projects", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -133,7 +133,7 @@ router.get("/subcontracts/projects", requireAuth, requireRole("SUPER_ADMIN", "AD
   }
 });
 
-router.get("/subcontracts/subcontractors", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/subcontractors", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -163,7 +163,7 @@ router.get("/subcontracts/subcontractors", requireAuth, requireRole("SUPER_ADMIN
   }
 });
 
-router.get("/subcontracts/project/:projectId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/project/:projectId", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { projectId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -197,7 +197,7 @@ router.get("/subcontracts/project/:projectId", requireAuth, requireRole("SUPER_A
   }
 });
 
-router.get("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "HOURLY_EMPLOYEE"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -253,7 +253,7 @@ const createSubcontractSchema = z.object({
   notes: z.string().optional().nullable()
 });
 
-router.post("/subcontracts", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -335,7 +335,7 @@ const updateSubcontractSchema = z.object({
   status: z.enum(["PENDING", "ACTIVE", "COMPLETED", "TERMINATED"]).optional()
 });
 
-router.patch("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
@@ -440,7 +440,7 @@ router.delete("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMI
   }
 });
 
-router.get("/subcontracts/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);

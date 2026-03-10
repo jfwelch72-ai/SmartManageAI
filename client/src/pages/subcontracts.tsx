@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +76,7 @@ interface SubcontractorContract {
 
 export default function SubcontractsPage() {
   const { user } = useAuth();
+  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("all");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -96,17 +98,17 @@ export default function SubcontractsPage() {
 
   const { data: projects = [], isLoading: loadingProjects } = useQuery<Project[]>({
     queryKey: ["/api/subcontracts/projects"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)
+    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
   });
 
   const { data: subcontractors = [], isLoading: loadingSubs } = useQuery<Subcontractor[]>({
     queryKey: ["/api/subcontracts/subcontractors"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)
+    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role) || hasFinancialsPermission)
   });
 
   const { data: contracts = [], isLoading: loadingContracts } = useQuery<SubcontractorContract[]>({
     queryKey: ["/api/subcontracts"],
-    enabled: !!user && ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)
+    enabled: !!user && (["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role) || hasFinancialsPermission)
   });
 
   const createContractMutation = useMutation({
@@ -286,7 +288,7 @@ export default function SubcontractsPage() {
     );
   }
 
-  if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
+  if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role) && !hasFinancialsPermission) {
     return (
       <div className="p-8 text-center">
         <p className="text-muted-foreground">You don't have access to Subcontract Agreements</p>

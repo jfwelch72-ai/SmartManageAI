@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,11 +55,13 @@ export default function SubcontractorPayablesPage() {
   const [isRejectOpen, setIsRejectOpen] = useState(false);
   const [isPayOpen, setIsPayOpen] = useState(false);
 
+  const hasFinancialsPermission = useFeaturePermission('canAccessFinancials');
   const isAuthorized =
     !!user &&
     (user.role === "ADMIN" ||
       user.role === "MANAGER" ||
-      user.role === "OFFICE_MANAGER");
+      user.role === "OFFICE_MANAGER" ||
+      hasFinancialsPermission);
 
   const { data: payables = [], isLoading } = useQuery<Payable[]>({
     queryKey: ["/api/payables"],
