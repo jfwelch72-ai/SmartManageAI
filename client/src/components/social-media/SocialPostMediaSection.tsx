@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import {
   Plus, Loader2, Sparkles, Link2, Upload, Wand2, Trash2
 } from "lucide-react";
-import { ObjectUploader } from "@/components/ObjectUploader";
 
 interface SocialPostMediaSectionProps {
   mediaUrls: string[];
@@ -20,6 +19,8 @@ export function SocialPostMediaSection({ mediaUrls, onMediaUrlsChange }: SocialP
   const [mediaUrlInput, setMediaUrlInput] = useState("");
   const [mediaMode, setMediaMode] = useState<"none" | "url" | "ai">("none");
   const [aiImagePrompt, setAiImagePrompt] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const generateImageMutation = useMutation({
     mutationFn: async (prompt: string) => {
@@ -31,27 +32,42 @@ export function SocialPostMediaSection({ mediaUrls, onMediaUrlsChange }: SocialP
         onMediaUrlsChange([...mediaUrls, data.imageUrl]);
         setAiImagePrompt("");
         setMediaMode("none");
+        queryClient.invalidateQueries({ queryKey: ["/api/website/media"] });
         toast({ title: "Image generated" });
       }
     },
     onError: (e: Error) => toast({ title: "Image generation failed", description: e.message, variant: "destructive" }),
   });
 
-  const onGetUploadParameters = async () => {
-    const response = await apiRequest("POST", "/api/objects/upload");
-    const data = await response.json();
-    return { method: "PUT" as const, url: data.uploadURL };
-  };
-
-  const handleUploadComplete = (result: any) => {
-    if (!result.successful || result.successful.length === 0) {
-      toast({ title: "Upload failed", variant: "destructive" });
+  const handleFileUpload = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Invalid file type", description: "Only image files are supported.", variant: "destructive" });
       return;
     }
-    const fileUrl = result.successful[0].uploadURL;
-    if (fileUrl) {
-      onMediaUrlsChange([...mediaUrls, fileUrl]);
-      toast({ title: "Image uploaded" });
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 10MB.", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/social/upload-media", { method: "POST", body: formData, credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        toast({ title: "Upload failed", description: err.error, variant: "destructive" });
+        return;
+      }
+      const data = await res.json();
+      if (data.url) {
+        onMediaUrlsChange([...mediaUrls, data.url]);
+        queryClient.invalidateQueries({ queryKey: ["/api/website/media"] });
+        toast({ title: "Image uploaded" });
+      }
+    } catch {
+      toast({ title: "Upload failed", variant: "destructive" });
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -77,19 +93,30 @@ export function SocialPostMediaSection({ mediaUrls, onMediaUrlsChange }: SocialP
       {mediaUrls.length < 4 && (
         <div className="space-y-2">
           <div className="flex gap-2">
-            <ObjectUploader
-              maxNumberOfFiles={1}
-              maxFileSize={10485760}
-              allowedFileTypes={["image/*"]}
-              onGetUploadParameters={onGetUploadParameters}
-              onComplete={handleUploadComplete}
-              testId="button-upload-media"
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleFileUpload(file);
+                e.target.value = "";
+              }}
+              data-testid="input-social-upload-file"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              className="gap-1.5"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              data-testid="button-upload-media"
             >
-              <Button variant="outline" size="sm" type="button" className="gap-1.5" data-testid="button-upload-media">
-                <Upload className="h-3.5 w-3.5" />
-                Upload
-              </Button>
-            </ObjectUploader>
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+              Upload
+            </Button>
             <Button
               variant={mediaMode === "url" ? "secondary" : "outline"}
               size="sm"

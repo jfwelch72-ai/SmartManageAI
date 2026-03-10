@@ -5,12 +5,25 @@ import { socialAccounts, socialMediaPosts } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { randomUUID } from "crypto";
 import crypto from "crypto";
+import multer from "multer";
 import { publishToPlatform } from "./social/publishService";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { openai } from "./ai/openaiClient";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
 
 const objectStorage = new ObjectStorageService();
+const STORAGE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024;
+const socialUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed"));
+    }
+  },
+});
 
 const router = Router();
 
@@ -197,7 +210,7 @@ router.post("/posts/generate-image", requireAuth, async (req: AuthRequest, res: 
     await blob.save(imageBuffer, {
       metadata: {
         contentType: "image/png",
-        metadata: { originalName: `social-ai-${uniqueId}.png` },
+        metadata: { originalName: `social-ai-${uniqueId}.png`, source: "social-media" },
       },
     });
 
@@ -212,6 +225,67 @@ router.post("/posts/generate-image", requireAuth, async (req: AuthRequest, res: 
       return res.status(501).json({ error: "AI image generation is not available. Please upload an image manually." });
     }
     res.status(500).json({ error: error?.message || "Failed to generate image" });
+  }
+});
+
+router.post("/upload-media", requireAuth, socialUpload.single("file"), async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = getOrgId(req);
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "No file provided" });
+
+    const publicPaths = objectStorage.getPublicObjectSearchPaths();
+    if (publicPaths.length === 0) {
+      return res.status(500).json({ error: "Object storage not configured" });
+    }
+
+    const basePath = publicPaths[0];
+    const prefix = `gallery/${orgId}/`;
+    const basePathParts = basePath.split("/").filter(p => p.length > 0);
+    const checkBucketName = basePathParts[0];
+    const bucketPrefix = basePathParts.length > 1 ? basePathParts.slice(1).join("/") + "/" + prefix : prefix;
+    const checkBucket = objectStorageClient.bucket(checkBucketName);
+    const [existingFiles] = await checkBucket.getFiles({ prefix: bucketPrefix });
+    let currentTotalSize = 0;
+    for (const f of existingFiles) {
+      const [meta] = await f.getMetadata();
+      currentTotalSize += parseInt(meta.size as string) || 0;
+    }
+    if (currentTotalSize + file.size > STORAGE_LIMIT_BYTES) {
+      return res.status(413).json({
+        error: "Storage limit exceeded. You have used " + (currentTotalSize / (1024 * 1024 * 1024)).toFixed(2) + " GB of 3 GB.",
+      });
+    }
+
+    const ext = file.originalname.split(".").pop() || "jpg";
+    const uniqueId = randomUUID();
+    const fileName = `gallery/${orgId}/social-${uniqueId}.${ext}`;
+    const fullPath = `${basePath}/${fileName}`;
+    const pathParts = fullPath.split("/").filter(p => p.length > 0);
+    const bucketName = pathParts[0];
+    const objectName = pathParts.slice(1).join("/");
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const blob = bucket.file(objectName);
+
+    await blob.save(file.buffer, {
+      metadata: {
+        contentType: file.mimetype,
+        metadata: {
+          originalName: file.originalname,
+          source: "social-media",
+        },
+      },
+    });
+
+    const proxyUrl = `/api/social/image/${orgId}/social-${uniqueId}.${ext}`;
+    res.json({ url: proxyUrl, fileName: file.originalname, size: file.size, mimeType: file.mimetype });
+  } catch (error: any) {
+    console.error("Error uploading social media file:", error);
+    res.status(500).json({ error: "Failed to upload file" });
   }
 });
 

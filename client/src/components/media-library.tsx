@@ -30,6 +30,7 @@ interface MediaFile {
   url: string;
   size: number;
   contentType: string;
+  source: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -247,7 +248,12 @@ export function MediaLibraryTab() {
                 <p className="text-xs truncate" title={file.originalName} data-testid={`text-filename-${file.name}`}>
                   {file.originalName}
                 </p>
-                <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
+                  {file.source === "social-media" && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4" data-testid={`badge-source-${file.name}`}>Social</Badge>
+                  )}
+                </div>
               </CardContent>
               <div className="absolute top-1 right-1 flex gap-1 invisible group-hover:visible">
                 <Button
@@ -291,7 +297,12 @@ export function MediaLibraryTab() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate" data-testid={`text-list-filename-${file.name}`}>{file.originalName}</p>
-                <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
+                <div className="flex items-center gap-1">
+                  <p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p>
+                  {file.source === "social-media" && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4" data-testid={`badge-list-source-${file.name}`}>Social</Badge>
+                  )}
+                </div>
               </div>
               <div className="flex gap-1 invisible group-hover:visible">
                 <Button

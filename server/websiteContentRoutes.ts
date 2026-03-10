@@ -155,7 +155,7 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
 router.get("/media", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const user = req.user!;
-    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+    if (!["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role)) {
       return res.status(403).json({ error: "Admin access required" });
     }
 
@@ -191,6 +191,7 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response) => {
           url: `/api/website/image/${orgId}/${fileName}`,
           size,
           contentType: metadata.contentType || 'application/octet-stream',
+          source: metadata.metadata?.source || null,
           createdAt: metadata.timeCreated || new Date().toISOString(),
           updatedAt: metadata.updated || new Date().toISOString(),
         };
