@@ -10,7 +10,7 @@ import {
   OrganizationWebsite,
   websiteDeployments
 } from "@shared/schema";
-import { requireAuth, AuthRequest } from "./auth";
+import { requireAuth, AuthRequest, requireFeaturePermission } from "./auth";
 import { logCreate, logUpdate } from "./auditLogger";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 
@@ -20,6 +20,7 @@ import websiteContentRoutes from "./websiteContentRoutes";
 import websiteAiSeoRoutes from "./websiteAiSeoRoutes";
 
 const router = express.Router();
+router.use(requireAuth, requireFeaturePermission('canManageWebsite'));
 
 const objectStorage = new ObjectStorageService();
 

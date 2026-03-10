@@ -13,6 +13,117 @@ import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole } from "./da
 
 const router = Router();
 
+type FeaturePermissionKeys = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement';
+
+type PermissionSet = Record<FeaturePermissionKeys, boolean>;
+
+const ALL_FALSE: PermissionSet = {
+  canAccessFinancials: false,
+  canManagePayroll: false,
+  canAccessReports: false,
+  canUseAiFeatures: false,
+  canPostSocialMedia: false,
+  canManageWebsite: false,
+  canManageEquipment: false,
+  canManageProcurement: false,
+};
+
+const ALL_TRUE: PermissionSet = {
+  canAccessFinancials: true,
+  canManagePayroll: true,
+  canAccessReports: true,
+  canUseAiFeatures: true,
+  canPostSocialMedia: true,
+  canManageWebsite: true,
+  canManageEquipment: true,
+  canManageProcurement: true,
+};
+
+export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
+  ADMIN: ALL_TRUE,
+  SUPER_ADMIN: ALL_TRUE,
+  MANAGER: {
+    canAccessFinancials: true,
+    canManagePayroll: true,
+    canAccessReports: true,
+    canUseAiFeatures: true,
+    canPostSocialMedia: true,
+    canManageWebsite: false,
+    canManageEquipment: true,
+    canManageProcurement: true,
+  },
+  SUPERINTENDENT: {
+    canAccessFinancials: true,
+    canManagePayroll: false,
+    canAccessReports: true,
+    canUseAiFeatures: false,
+    canPostSocialMedia: false,
+    canManageWebsite: false,
+    canManageEquipment: true,
+    canManageProcurement: false,
+  },
+  ESTIMATOR: {
+    canAccessFinancials: true,
+    canManagePayroll: false,
+    canAccessReports: true,
+    canUseAiFeatures: true,
+    canPostSocialMedia: false,
+    canManageWebsite: false,
+    canManageEquipment: false,
+    canManageProcurement: false,
+  },
+  OFFICE_MANAGER: {
+    canAccessFinancials: true,
+    canManagePayroll: true,
+    canAccessReports: false,
+    canUseAiFeatures: false,
+    canPostSocialMedia: false,
+    canManageWebsite: false,
+    canManageEquipment: false,
+    canManageProcurement: false,
+  },
+  HUSTLER: {
+    canAccessFinancials: true,
+    canManagePayroll: false,
+    canAccessReports: false,
+    canUseAiFeatures: false,
+    canPostSocialMedia: false,
+    canManageWebsite: false,
+    canManageEquipment: false,
+    canManageProcurement: false,
+  },
+  MAINTENANCE_MANAGER: {
+    ...ALL_FALSE,
+    canManageEquipment: true,
+  },
+  EQUIPMENT_MANAGER: {
+    ...ALL_FALSE,
+    canManageEquipment: true,
+  },
+  PROCUREMENT_MANAGER: {
+    ...ALL_FALSE,
+    canManageProcurement: true,
+  },
+};
+
+export function getRoleDefaults(role?: string | null): PermissionSet {
+  if (!role) return { ...ALL_FALSE };
+  return { ...(ROLE_DEFAULT_PERMISSIONS[role] || ALL_FALSE) };
+}
+
+export function mergePermissions(roleDefaults: PermissionSet, dbPerms: Partial<PermissionSet> | null): PermissionSet {
+  return {
+    canAccessFinancials: roleDefaults.canAccessFinancials || (dbPerms?.canAccessFinancials ?? false),
+    canManagePayroll: roleDefaults.canManagePayroll || (dbPerms?.canManagePayroll ?? false),
+    canAccessReports: roleDefaults.canAccessReports || (dbPerms?.canAccessReports ?? false),
+    canUseAiFeatures: roleDefaults.canUseAiFeatures || (dbPerms?.canUseAiFeatures ?? false),
+    canPostSocialMedia: roleDefaults.canPostSocialMedia || (dbPerms?.canPostSocialMedia ?? false),
+    canManageWebsite: roleDefaults.canManageWebsite || (dbPerms?.canManageWebsite ?? false),
+    canManageEquipment: roleDefaults.canManageEquipment || (dbPerms?.canManageEquipment ?? false),
+    canManageProcurement: roleDefaults.canManageProcurement || (dbPerms?.canManageProcurement ?? false),
+  };
+}
+
 router.get('/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), async (req: AuthRequest, res: Response) => {
   try {
     const orgId = req.user!.organizationId;
@@ -33,8 +144,8 @@ router.get('/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), asy
 
     const usersWithPermissions = orgUsers.map(user => {
       const perm = permissions.find(p => p.userId === user.id);
-      return {
-        ...user,
+      const roleDefaults = getRoleDefaults(user.role);
+      const dbPerms = {
         canAccessFinancials: perm?.canAccessFinancials || false,
         canManagePayroll: perm?.canManagePayroll || false,
         canAccessReports: perm?.canAccessReports || false,
@@ -43,6 +154,13 @@ router.get('/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), asy
         canManageWebsite: perm?.canManageWebsite || false,
         canManageEquipment: perm?.canManageEquipment || false,
         canManageProcurement: perm?.canManageProcurement || false,
+      };
+      const effective = mergePermissions(roleDefaults, dbPerms);
+      return {
+        ...user,
+        ...dbPerms,
+        roleDefaults,
+        effective,
         grantedAt: perm?.grantedAt,
       };
     });
@@ -120,36 +238,16 @@ router.get('/my-permissions', requireAuth, async (req: AuthRequest, res: Respons
   try {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
-    const role = req.user!.role;
+    const effectiveRole = req.user!.effectiveRole || req.user!.role;
 
-    const allTrue = {
-      canAccessFinancials: true,
-      canManagePayroll: true,
-      canAccessReports: true,
-      canUseAiFeatures: true,
-      canPostSocialMedia: true,
-      canManageWebsite: true,
-      canManageEquipment: true,
-      canManageProcurement: true,
-    };
+    const roleDefaults = getRoleDefaults(effectiveRole);
 
-    const allFalse = {
-      canAccessFinancials: false,
-      canManagePayroll: false,
-      canAccessReports: false,
-      canUseAiFeatures: false,
-      canPostSocialMedia: false,
-      canManageWebsite: false,
-      canManageEquipment: false,
-      canManageProcurement: false,
-    };
-
-    if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
-      return res.json(allTrue);
+    if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
+      return res.json(ALL_TRUE);
     }
 
     if (!orgId) {
-      return res.json(allFalse);
+      return res.json(roleDefaults);
     }
 
     const [permission] = await db.select().from(userDashboardPermissions)
@@ -158,16 +256,18 @@ router.get('/my-permissions', requireAuth, async (req: AuthRequest, res: Respons
         eq(userDashboardPermissions.userId, userId)
       ));
 
-    res.json({
-      canAccessFinancials: permission?.canAccessFinancials ?? false,
-      canManagePayroll: permission?.canManagePayroll ?? false,
-      canAccessReports: permission?.canAccessReports ?? false,
-      canUseAiFeatures: permission?.canUseAiFeatures ?? false,
-      canPostSocialMedia: permission?.canPostSocialMedia ?? false,
-      canManageWebsite: permission?.canManageWebsite ?? false,
-      canManageEquipment: permission?.canManageEquipment ?? false,
-      canManageProcurement: permission?.canManageProcurement ?? false,
-    });
+    const dbPerms = permission ? {
+      canAccessFinancials: permission.canAccessFinancials ?? false,
+      canManagePayroll: permission.canManagePayroll ?? false,
+      canAccessReports: permission.canAccessReports ?? false,
+      canUseAiFeatures: permission.canUseAiFeatures ?? false,
+      canPostSocialMedia: permission.canPostSocialMedia ?? false,
+      canManageWebsite: permission.canManageWebsite ?? false,
+      canManageEquipment: permission.canManageEquipment ?? false,
+      canManageProcurement: permission.canManageProcurement ?? false,
+    } : null;
+
+    res.json(mergePermissions(roleDefaults, dbPerms));
   } catch (error) {
     console.error('Error fetching user permissions:', error);
     res.status(500).json({ error: 'Failed to fetch permissions' });

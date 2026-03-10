@@ -8,11 +8,12 @@ import {
   takeoffMeasurements,
   quantityCategories,
 } from "@shared/schema";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canAccessReports'));
 
 function getProjectFilter(req: AuthRequest, projectId?: string) {
   const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -28,7 +29,7 @@ function getProjectFilter(req: AuthRequest, projectId?: string) {
   return conditions;
 }
 
-router.get("/api/reports/takeoff/quantity", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/quantity", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -86,7 +87,7 @@ router.get("/api/reports/takeoff/quantity", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.get("/api/reports/takeoff/summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/summary", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -136,7 +137,7 @@ router.get("/api/reports/takeoff/summary", requireAuth, requireRole("ADMIN", "MA
   }
 });
 
-router.get("/api/reports/takeoff/by-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/by-takeoff", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -193,7 +194,7 @@ router.get("/api/reports/takeoff/by-takeoff", requireAuth, requireRole("ADMIN", 
   }
 });
 
-router.get("/api/reports/takeoff/items", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/items", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -232,7 +233,7 @@ router.get("/api/reports/takeoff/items", requireAuth, requireRole("ADMIN", "MANA
   }
 });
 
-router.get("/api/reports/takeoff/item-cost", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/item-cost", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -285,7 +286,7 @@ router.get("/api/reports/takeoff/item-cost", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -347,7 +348,7 @@ router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, requireRole("A
   }
 });
 
-router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     const conditions = getProjectFilter(req, projectId);
@@ -414,7 +415,7 @@ router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, requireRole
   }
 });
 
-router.get("/api/reports/estimates/summary", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/estimates/summary", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     if (!projectId) return res.json([]);
@@ -458,7 +459,7 @@ router.get("/api/reports/estimates/summary", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/api/reports/estimates/cost-breakdown", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/estimates/cost-breakdown", requireAuth, async (req: AuthRequest, res) => {
   try {
     const projectId = req.query.projectId as string | undefined;
     if (!projectId) return res.json({ categories: [], grandTotal: 0 });
@@ -509,7 +510,7 @@ router.get("/api/reports/estimates/cost-breakdown", requireAuth, requireRole("AD
   }
 });
 
-router.get("/api/reports/export/csv", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/reports/export/csv", requireAuth, async (req: AuthRequest, res) => {
   try {
     const reportType = req.query.type as string;
     const projectId = req.query.projectId as string | undefined;
@@ -589,7 +590,7 @@ router.get("/api/reports/export/csv", requireAuth, requireRole("ADMIN", "MANAGER
   }
 });
 
-router.get("/api/reports/export/pdf", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (_req: AuthRequest, res) => {
+router.get("/api/reports/export/pdf", requireAuth, async (_req: AuthRequest, res) => {
   res.status(200).json({
     message: "PDF export is handled via browser print (window.print()). Use the Print button in the Reports UI.",
   });

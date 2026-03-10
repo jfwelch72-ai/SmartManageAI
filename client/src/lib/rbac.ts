@@ -439,6 +439,17 @@ export function canViewProjectStatus(role?: string, status?: string): boolean {
   return allowedStatuses.includes(status || "");
 }
 
+export interface FeaturePerms {
+  canAccessFinancials?: boolean;
+  canManagePayroll?: boolean;
+  canAccessReports?: boolean;
+  canUseAiFeatures?: boolean;
+  canPostSocialMedia?: boolean;
+  canManageWebsite?: boolean;
+  canManageEquipment?: boolean;
+  canManageProcurement?: boolean;
+}
+
 /**
  * Navigation items configuration for contractors
  */
@@ -446,7 +457,7 @@ export interface NavItem {
   href: string;
   label: string;
   testId: string;
-  visible: (role?: string) => boolean;
+  visible: (role?: string, perms?: FeaturePerms) => boolean;
 }
 
 /**
@@ -521,7 +532,7 @@ export const NavigationConfig = {
       href: "/equipment",
       label: "Equipment",
       testId: "nav-equipment",
-      visible: (role?: string) => hasEquipmentAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role) || perms?.canManageEquipment === true,
     },
     {
       href: "/delay-claims",
@@ -581,43 +592,43 @@ export const NavigationConfig = {
       href: "/cfo",
       label: "CFO Dashboard",
       testId: "nav-cfo",
-      visible: (role?: string) => isAdminOrManager(role),
+      visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || perms?.canAccessFinancials === true,
     },
     {
       href: "/cost-rates",
       label: "Cost Rates",
       testId: "nav-cost-rates",
-      visible: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {
       href: "/schedule-of-values",
       label: "Schedule of Values",
       testId: "nav-sov",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {
       href: "/subcontracts",
       label: "Subcontracts",
       testId: "nav-subcontracts",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || perms?.canAccessFinancials === true,
     },
     {
       href: "/subcontractor-payables",
       label: "Subcontractor Payables",
       testId: "nav-subcontractor-payables",
-      visible: (role?: string) => isOrganizationAdmin(role),
+      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || perms?.canAccessFinancials === true,
     },
     {
       href: "/tm-billing",
       label: "T&M Billing",
       testId: "nav-tm-billing",
-      visible: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {
       href: "/vendor-pricing",
       label: "Vendor Pricing Sync",
       testId: "nav-vendor-pricing",
-      visible: (role?: string) => hasManagementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canManageProcurement === true,
     },
   ],
 
@@ -626,19 +637,19 @@ export const NavigationConfig = {
       href: "/ai-bid-analysis",
       label: "AI Bid Analysis",
       testId: "nav-ai-bid-analysis",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || perms?.canUseAiFeatures === true,
     },
     {
       href: "/ai-contract-analysis",
       label: "AI Contract Analysis",
       testId: "nav-ai-contract-analysis",
-      visible: (role?: string) => isAdminOrManager(role),
+      visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || perms?.canUseAiFeatures === true,
     },
     {
       href: "/ai-pm",
       label: "AI Project Manager",
       testId: "nav-ai-pm",
-      visible: (role?: string) => hasManagementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
     },
     {
       href: "/ai-settings",
@@ -650,13 +661,13 @@ export const NavigationConfig = {
       href: "/production-rates",
       label: "Production Rates",
       testId: "nav-production-rates",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || perms?.canAccessReports === true,
     },
     {
       href: "/email-assistant",
       label: "Email Assistant",
       testId: "nav-email-assistant",
-      visible: (role?: string) => hasManagementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
     },
   ],
 
@@ -701,7 +712,7 @@ export const NavigationConfig = {
       href: "/website-builder",
       label: "Website Builder",
       testId: "nav-website-builder",
-      visible: (role?: string) => isOrganizationAdmin(role),
+      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || perms?.canManageWebsite === true,
     },
     {
       href: "/manage-workers",
@@ -713,7 +724,7 @@ export const NavigationConfig = {
       href: "/payroll-management",
       label: "Payroll Management",
       testId: "nav-payroll-management",
-      visible: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER" || perms?.canManagePayroll === true,
     },
     {
       href: "/integrations",

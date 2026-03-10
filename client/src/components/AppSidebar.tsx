@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
-import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess, type FeaturePerms } from "@/lib/rbac";
+import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { useTour } from "@/components/TourProvider";
 import {
   Sidebar,
@@ -96,6 +97,7 @@ export function AppSidebar() {
   });
   
   const { entitlements } = useEntitlements();
+  const { permissions: featurePerms } = useDashboardCustomization();
 
   const showTutorialButton = walkthroughStatus?.walkthroughCompleted || 
     (walkthroughStatus?.walkthroughStep === 0 && !walkthroughStatus?.walkthroughCompleted);
@@ -115,14 +117,16 @@ export function AppSidebar() {
     ? `${user.firstName[0]}${user.lastName[0]}`.toUpperCase()
     : user.email?.substring(0, 2).toUpperCase() || "U";
 
-  const visibleProjectsItems = NavigationConfig.projectsMenu.filter(item => item.visible(userRole));
-  const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole));
-  const visibleOperationsItems = NavigationConfig.operationsMenu.filter(item => item.visible(userRole));
-  const visiblePreconstructionItems = NavigationConfig.preconstructionMenu.filter(item => item.visible(userRole));
-  const visibleFinancialsItems = NavigationConfig.financialsMenu.filter(item => item.visible(userRole));
-  const visibleInsightsItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole));
-  const visibleAdministrationItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole));
-  const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole));
+  const perms: FeaturePerms = featurePerms;
+
+  const visibleProjectsItems = NavigationConfig.projectsMenu.filter(item => item.visible(userRole, perms));
+  const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole, perms));
+  const visibleOperationsItems = NavigationConfig.operationsMenu.filter(item => item.visible(userRole, perms));
+  const visiblePreconstructionItems = NavigationConfig.preconstructionMenu.filter(item => item.visible(userRole, perms));
+  const visibleFinancialsItems = NavigationConfig.financialsMenu.filter(item => item.visible(userRole, perms));
+  const visibleInsightsItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole, perms));
+  const visibleAdministrationItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole, perms));
+  const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole, perms));
 
   const hasProjectsMenu = visibleProjectsItems.length > 0;
   const hasOperationsMenu = visibleOperationsItems.length > 0 || visibleTimeClockItems.length > 0;

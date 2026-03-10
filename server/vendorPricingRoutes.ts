@@ -9,17 +9,18 @@ import {
   auditLog, users,
 } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canManageProcurement'));
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-router.get("/api/crm/organisations/:id/pricing", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRequest, res) => {
   try {
     const items = await db
       .select()
@@ -34,7 +35,7 @@ router.get("/api/crm/organisations/:id/pricing", requireAuth, requireRole("ADMIN
   }
 });
 
-router.get("/api/crm/organisations/:id/pricing/current", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing/current", requireAuth, async (req: AuthRequest, res) => {
   try {
     const now = new Date();
     const currentQuarter = `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
@@ -56,7 +57,7 @@ router.get("/api/crm/organisations/:id/pricing/current", requireAuth, requireRol
   }
 });
 
-router.post("/api/crm/organisations/:id/pricing", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRequest, res) => {
   try {
     const [org] = await db.select().from(crmOrganisations).where(eq(crmOrganisations.id, req.params.id)).limit(1);
     if (!org) {
@@ -96,7 +97,7 @@ router.post("/api/crm/organisations/:id/pricing", requireAuth, requireRole("ADMI
   }
 });
 
-router.put("/api/crm/pricing/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const [existing] = await db.select().from(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id)).limit(1);
     if (!existing) {
@@ -138,7 +139,7 @@ router.put("/api/crm/pricing/:id", requireAuth, requireRole("ADMIN", "MANAGER"),
   }
 });
 
-router.delete("/api/crm/pricing/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const [existing] = await db.select().from(vendorPricingCatalogs).where(eq(vendorPricingCatalogs.id, req.params.id)).limit(1);
     if (!existing) {
@@ -163,7 +164,7 @@ router.delete("/api/crm/pricing/:id", requireAuth, requireRole("ADMIN", "MANAGER
   }
 });
 
-router.get("/api/vendor-pricing/search", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { category, search, quarter } = req.query;
     const now = new Date();
@@ -210,7 +211,7 @@ router.get("/api/vendor-pricing/search", requireAuth, requireRole("ADMIN", "MANA
   }
 });
 
-router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -240,7 +241,7 @@ router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole
   }
 });
 
-router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -290,7 +291,7 @@ router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, requireRol
   }
 });
 
-router.put("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.put("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -344,7 +345,7 @@ router.put("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MAN
   }
 });
 
-router.delete("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -386,7 +387,7 @@ router.delete("/api/crm/rental-catalog/:id", requireAuth, requireRole("ADMIN", "
   }
 });
 
-router.get("/api/rental-catalog/search", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/rental-catalog/search", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -443,7 +444,7 @@ router.get("/api/rental-catalog/search", requireAuth, requireRole("ADMIN", "MANA
   }
 });
 
-router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -482,7 +483,7 @@ router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, requireRol
   }
 });
 
-router.post("/api/crm/pricing/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/pricing/:id/approve", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -531,7 +532,7 @@ router.post("/api/crm/pricing/:id/approve", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.post("/api/crm/pricing/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/pricing/:id/reject", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -580,7 +581,7 @@ router.post("/api/crm/pricing/:id/reject", requireAuth, requireRole("ADMIN", "MA
   }
 });
 
-router.get("/api/crm/pricing-reviews", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/crm/pricing-reviews", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -620,7 +621,7 @@ router.get("/api/crm/pricing-reviews", requireAuth, requireRole("ADMIN", "MANAGE
   }
 });
 
-router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -663,7 +664,7 @@ router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, requireRole("AD
   }
 });
 
-router.get("/api/ai-features/vendor-pricebooks", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/ai-features/vendor-pricebooks", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -696,7 +697,7 @@ router.get("/api/ai-features/vendor-pricebooks", requireAuth, requireRole("ADMIN
   }
 });
 
-router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -729,7 +730,7 @@ router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth,
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, requireRole("ADMIN", "MANAGER"), upload.single("file"), async (req: AuthRequest, res) => {
+router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, upload.single("file"), async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -827,7 +828,7 @@ router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, requireRol
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -870,7 +871,7 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth
   }
 });
 
-router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -910,7 +911,7 @@ router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, requir
   }
 });
 
-router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth, async (req: AuthRequest, res) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {

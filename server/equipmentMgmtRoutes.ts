@@ -6,20 +6,21 @@ import {
   equipmentRateProfiles, insertEquipmentRateProfileSchema, validatedEquipmentSchema,
   projects, users, auditLog,
 } from "@shared/schema";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, or } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canManageEquipment'));
 
   // ============================================================
   // EQUIPMENT & TOOL MANAGEMENT ROUTES
   // ============================================================
 
   // Get all equipment with optional filters
-  router.get("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -70,7 +71,7 @@ const router = Router();
   });
 
   // Get available projects for equipment assignment (must be before :idOrCode route)
-  router.get("/api/equipment/available-projects", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/available-projects", async (req: AuthRequest, res) => {
     try {
       // Organization filtering: Only show projects from user's organization
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -103,7 +104,7 @@ const router = Router();
   });
 
   // Get single equipment by ID or code
-  router.get("/api/equipment/:idOrCode", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:idOrCode", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -145,7 +146,7 @@ const router = Router();
   });
 
   // Create new equipment
-  router.post("/api/equipment", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -218,7 +219,7 @@ const router = Router();
   });
 
   // Update equipment
-  router.patch("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/:id", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -294,7 +295,7 @@ const router = Router();
   });
 
   // Delete equipment
-  router.delete("/api/equipment/:id", requireAuth, requireRole("ADMIN", "MANAGER", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.delete("/api/equipment/:id", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -339,7 +340,7 @@ const router = Router();
   });
 
   // Get upcoming maintenance due (for alerts) — must be before /:equipmentId routes to avoid route shadowing
-  router.get("/api/equipment/maintenance/upcoming", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/maintenance/upcoming", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -394,7 +395,7 @@ const router = Router();
   });
 
   // Get equipment assignments for a piece of equipment
-  router.get("/api/equipment/:equipmentId/assignments", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/assignments", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -451,7 +452,7 @@ const router = Router();
   });
 
   // Assign equipment to project
-  router.post("/api/equipment/:equipmentId/assign", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/assign", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -517,7 +518,7 @@ const router = Router();
   });
 
   // Return equipment from assignment
-  router.post("/api/equipment/:equipmentId/return", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/return", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -591,7 +592,7 @@ const router = Router();
   });
 
   // Get maintenance schedules for equipment
-  router.get("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/maintenance-schedules", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -626,7 +627,7 @@ const router = Router();
   });
 
   // Create maintenance schedule
-  router.post("/api/equipment/:equipmentId/maintenance-schedules", requireAuth, requireRole("ADMIN", "MANAGER", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/maintenance-schedules", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -676,7 +677,7 @@ const router = Router();
   });
 
   // Record maintenance completion
-  router.post("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -758,7 +759,7 @@ const router = Router();
   });
 
   // Get maintenance history for equipment
-  router.get("/api/equipment/:equipmentId/maintenance-history", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -797,7 +798,7 @@ const router = Router();
   // ============================================
 
   // Get rate profiles for equipment
-  router.get("/api/equipment/:equipmentId/rate-profiles", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/rate-profiles", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -850,7 +851,7 @@ const router = Router();
   });
 
   // Get active rate profile for equipment (most recent active)
-  router.get("/api/equipment/:equipmentId/active-rate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "MAINTENANCE_MANAGER", "ESTIMATOR", "EQUIPMENT_MANAGER"), async (req: AuthRequest, res) => {
+  router.get("/api/equipment/:equipmentId/active-rate", async (req: AuthRequest, res) => {
     try {
       const { equipmentId } = req.params;
       
@@ -876,7 +877,7 @@ const router = Router();
   });
 
   // Create rate profile for equipment
-  router.post("/api/equipment/:equipmentId/rate-profiles", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/rate-profiles", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -939,7 +940,7 @@ const router = Router();
   });
 
   // Update rate profile
-  router.patch("/api/equipment/:equipmentId/rate-profiles/:profileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.patch("/api/equipment/:equipmentId/rate-profiles/:profileId", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1001,7 +1002,7 @@ const router = Router();
   });
 
   // Activate rate profile (deactivates others for same equipment)
-  router.post("/api/equipment/:equipmentId/rate-profiles/:profileId/activate", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.post("/api/equipment/:equipmentId/rate-profiles/:profileId/activate", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -1057,7 +1058,7 @@ const router = Router();
   });
 
   // Delete rate profile
-  router.delete("/api/equipment/rate-profiles/:profileId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  router.delete("/api/equipment/rate-profiles/:profileId", async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       

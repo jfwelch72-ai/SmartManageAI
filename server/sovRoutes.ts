@@ -8,13 +8,14 @@ import {
   estimateLineItems,
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { requireAuth, AuthRequest, requireRole } from "./auth";
+import { requireAuth, AuthRequest, requireRole, requireFeaturePermission } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovHelpers";
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canAccessFinancials'));
 
-router.get("/sov", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/sov", async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     

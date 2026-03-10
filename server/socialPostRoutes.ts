@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, ilike, sql } from "drizzle-orm";
 import { socialAccounts, socialMediaPosts } from "@shared/schema";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireFeaturePermission, type AuthRequest } from "./auth";
 import { randomUUID } from "crypto";
 import crypto from "crypto";
 import multer from "multer";
@@ -26,6 +26,7 @@ const socialUpload = multer({
 });
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canPostSocialMedia'));
 
 const ENCRYPTION_KEY = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || "";
 

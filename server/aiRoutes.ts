@@ -15,7 +15,7 @@ import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
 import { fromZodError } from "zod-validation-error";
-import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { type AuthRequest, requireAuth, requireRole, requireFeaturePermission } from "./auth";
 import { openai } from "./ai/openaiClient";
 import { AI_ASSISTANT_SYSTEM_PROMPT, getPageContext } from "./ai/assistantPrompt";
 import { z } from "zod";
@@ -36,8 +36,9 @@ import { aiInsights, aiGanttRecommendations, aiVendorComparisons } from "@shared
 import { equipment as equipmentTable } from "@shared/schema";
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canUseAiFeatures'));
 
-router.get("/ai-settings", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
     let [settings] = await db.select().from(aiSettings).limit(1);
 
@@ -52,7 +53,7 @@ router.get("/ai-settings", requireAuth, requireRole("ADMIN"), async (req: AuthRe
   }
 });
 
-router.patch("/ai-settings", sensitiveLimiter, requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/ai-settings", sensitiveLimiter, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
     const sanitizedInput = {
       ...req.body,
@@ -98,7 +99,7 @@ router.patch("/ai-settings", sensitiveLimiter, requireAuth, requireRole("ADMIN")
   }
 });
 
-router.post("/ai-pm/run", sensitiveLimiter, requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const orgId = req.user?.organizationId;
     if (orgId) {
@@ -148,7 +149,7 @@ router.post("/ai-pm/run", sensitiveLimiter, requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.get("/ai-pm/latest-run", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-pm/latest-run", requireAuth, async (req: AuthRequest, res) => {
   try {
     const run = await getLatestAIRun();
     
@@ -170,7 +171,7 @@ router.get("/ai-pm/latest-run", requireAuth, requireRole("ADMIN", "MANAGER"), as
   }
 });
 
-router.get("/ai-pm/runs/:runId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-pm/runs/:runId", requireAuth, async (req: AuthRequest, res) => {
   try {
     const run = await getAIRunById(req.params.runId);
 
@@ -192,7 +193,7 @@ router.get("/ai-pm/runs/:runId", requireAuth, requireRole("ADMIN", "MANAGER"), a
   }
 });
 
-router.get("/ai-pm/tasks", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-pm/tasks", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { role, status } = req.query;
 
@@ -213,7 +214,7 @@ router.get("/ai-pm/tasks", requireAuth, requireRole("ADMIN", "MANAGER"), async (
   }
 });
 
-router.get("/ai-pm/tasks/role/:role", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-pm/tasks/role/:role", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { role } = req.params;
     const { status } = req.query;
@@ -234,7 +235,7 @@ router.get("/ai-pm/tasks/role/:role", requireAuth, requireRole("ADMIN", "MANAGER
   }
 });
 
-router.patch("/ai-pm/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/ai-pm/tasks/:taskId", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { status } = req.body;
 
@@ -276,7 +277,7 @@ router.patch("/ai-pm/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.get("/cfo/profitability", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/cfo/profitability", requireAuth, async (req: AuthRequest, res) => {
   try {
     const latestRun = await getLatestAIRun();
 
@@ -294,7 +295,7 @@ router.get("/cfo/profitability", requireAuth, requireRole("ADMIN", "MANAGER"), a
   }
 });
 
-router.get("/cfo/equipment-metrics", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res) => {
   try {
     const latestRun = await getLatestAIRun();
 
@@ -373,7 +374,7 @@ router.get("/cfo/equipment-metrics", requireAuth, requireRole("ADMIN", "MANAGER"
   }
 });
 
-router.get("/ai-pm/runs", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/ai-pm/runs", requireAuth, async (req: AuthRequest, res) => {
   try {
     const runs = await db
       .select()
@@ -511,7 +512,7 @@ const aiAnalysisSchema = z.object({
   saveResults: z.boolean().optional().default(true),
 });
 
-router.post("/ai-analyze", sensitiveLimiter, requireAuth, requireRole("ADMIN", "MANAGER", "SUPER_ADMIN"), async (req: AuthRequest, res) => {
+router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
   try {
     const validationResult = aiAnalysisSchema.safeParse(req.body);
     if (!validationResult.success) {

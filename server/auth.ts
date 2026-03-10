@@ -2,8 +2,9 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { users, hustlerOrganizations, type User, type SelectUser } from "@shared/schema";
+import { users, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
+import { getRoleDefaults, mergePermissions } from "./dashboardLayoutRoutes";
 
 // Enforce SESSION_SECRET - fail fast if not set
 if (!process.env.SESSION_SECRET) {
@@ -183,6 +184,50 @@ export function requireRole(...roles: UserRole[]) {
 // Helper to get the effective role for permission checks
 export function getEffectiveRole(user: SanitizedUser): UserRole {
   return (user.effectiveRole || user.role) as UserRole;
+}
+
+export type FeaturePermissionKey = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement';
+
+export function requireFeaturePermission(permKey: FeaturePermissionKey) {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    if (!req.user) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+
+    const effectiveRole = req.user.effectiveRole || req.user.role;
+
+    if (effectiveRole === 'ADMIN' || effectiveRole === 'SUPER_ADMIN') {
+      next();
+      return;
+    }
+
+    const roleDefaults = getRoleDefaults(effectiveRole);
+    if (roleDefaults[permKey]) {
+      next();
+      return;
+    }
+
+    const orgId = req.user.organizationId;
+    if (orgId) {
+      try {
+        const [perm] = await db.select().from(userDashboardPermissions)
+          .where(and(
+            eq(userDashboardPermissions.organizationId, orgId),
+            eq(userDashboardPermissions.userId, req.user.id)
+          ));
+
+        if (perm && perm[permKey]) {
+          next();
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking feature permission:', error);
+      }
+    }
+
+    res.status(403).json({ error: "Feature permission required: " + permKey });
+  };
 }
 
 // Helper function to increment tokenVersion (revokes all existing tokens)

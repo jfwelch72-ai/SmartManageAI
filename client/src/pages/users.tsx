@@ -67,6 +67,17 @@ import {
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
+interface PermissionSet {
+  canAccessFinancials: boolean;
+  canManagePayroll: boolean;
+  canAccessReports: boolean;
+  canUseAiFeatures: boolean;
+  canPostSocialMedia: boolean;
+  canManageWebsite: boolean;
+  canManageEquipment: boolean;
+  canManageProcurement: boolean;
+}
+
 interface UserWithPermissions extends SelectUser {
   canAccessFinancials?: boolean;
   canManagePayroll?: boolean;
@@ -76,6 +87,8 @@ interface UserWithPermissions extends SelectUser {
   canManageWebsite?: boolean;
   canManageEquipment?: boolean;
   canManageProcurement?: boolean;
+  roleDefaults?: PermissionSet;
+  effective?: PermissionSet;
   grantedAt?: string;
 }
 
@@ -340,10 +353,10 @@ export default function UsersPage() {
     await updatePermissionsMutation.mutateAsync({ userId, permissions: allGranted });
   };
 
-  const handleRevokeAll = async (userId: string) => {
-    const allRevoked: Record<string, boolean> = {};
-    ALL_PERM_KEYS.forEach(k => { allRevoked[k] = false; });
-    await updatePermissionsMutation.mutateAsync({ userId, permissions: allRevoked });
+  const handleRevokeAll = async (userId: string, roleDefaults?: PermissionSet) => {
+    const revoked: Record<string, boolean> = {};
+    ALL_PERM_KEYS.forEach(k => { revoked[k] = roleDefaults?.[k] ? true : false; });
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: revoked });
   };
 
   const toggleUserExpanded = (userId: string) => {
@@ -878,7 +891,8 @@ export default function UsersPage() {
                     {filteredPermUsers.map((u) => {
                       const isAdmin = u.role === "ADMIN" || u.role === "SUPER_ADMIN";
                       const isExpanded = expandedUsers.has(u.id) || isMobile;
-                      const grantedCount = isAdmin ? ALL_PERM_KEYS.length : ALL_PERM_KEYS.filter(k => !!(u as any)[k]).length;
+                      const effectivePerms = u.effective;
+                      const grantedCount = isAdmin ? ALL_PERM_KEYS.length : effectivePerms ? ALL_PERM_KEYS.filter(k => effectivePerms[k]).length : ALL_PERM_KEYS.filter(k => !!(u as any)[k]).length;
 
                       return (
                         <Card key={u.id} data-testid={`row-permission-${u.id}`} className="overflow-hidden">
@@ -931,7 +945,7 @@ export default function UsersPage() {
                                     size="sm"
                                     variant="outline"
                                     className="flex-1 sm:flex-none"
-                                    onClick={() => handleRevokeAll(u.id)}
+                                    onClick={() => handleRevokeAll(u.id, u.roleDefaults)}
                                     disabled={updatePermissionsMutation.isPending}
                                     data-testid={`button-revoke-all-${u.id}`}
                                   >
@@ -952,7 +966,9 @@ export default function UsersPage() {
                                     <CardContent className="px-3 pb-3 pt-0 space-y-1">
                                       {group.permissions.map((perm) => {
                                         const Icon = perm.icon;
-                                        const value = isAdmin ? true : !!(u as any)[perm.key];
+                                        const isRoleDefault = u.roleDefaults?.[perm.key] ?? false;
+                                        const dbValue = !!(u as any)[perm.key];
+                                        const effectiveValue = isAdmin ? true : (isRoleDefault || dbValue);
                                         return (
                                           <div
                                             key={perm.key}
@@ -962,7 +978,14 @@ export default function UsersPage() {
                                             <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                               <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                                               <div className="min-w-0">
-                                                <div className="text-sm font-medium leading-tight">{perm.label}</div>
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="text-sm font-medium leading-tight">{perm.label}</span>
+                                                  {!isAdmin && isRoleDefault && (
+                                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-blue-300 text-blue-600 dark:border-blue-600 dark:text-blue-400 shrink-0">
+                                                      Role default
+                                                    </Badge>
+                                                  )}
+                                                </div>
                                                 <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
                                               </div>
                                             </div>
@@ -973,9 +996,9 @@ export default function UsersPage() {
                                               </div>
                                             ) : (
                                               <Switch
-                                                checked={value}
-                                                onCheckedChange={() => handleTogglePermission(u.id, perm.key, value, u)}
-                                                disabled={updatePermissionsMutation.isPending}
+                                                checked={effectiveValue}
+                                                onCheckedChange={() => handleTogglePermission(u.id, perm.key, dbValue, u)}
+                                                disabled={updatePermissionsMutation.isPending || isRoleDefault}
                                                 data-testid={`switch-${perm.key}-${u.id}`}
                                               />
                                             )}

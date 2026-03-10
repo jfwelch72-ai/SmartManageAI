@@ -9,12 +9,13 @@ import {
   organizations, jobClassifications, employeeClassifications, prevailingWageRates
 } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
+router.use(requireAuth, requireFeaturePermission('canManagePayroll'));
 
 const DEFAULT_REGULAR_RATE = 45;
 const DEFAULT_OVERTIME_RATE = 67.5;
@@ -76,7 +77,7 @@ async function getEffectiveRate(
   };
 }
 
-router.get("/api/payroll/overview", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/overview", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -163,7 +164,7 @@ router.get("/api/payroll/overview", requireAuth, requireRole("ADMIN", "OFFICE_MA
   }
 });
 
-router.get("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/pay-runs", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -182,7 +183,7 @@ router.get("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_MA
   }
 });
 
-router.get("/api/payroll/pay-runs/:id", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -214,7 +215,7 @@ router.get("/api/payroll/pay-runs/:id", requireAuth, requireRole("ADMIN", "OFFIC
   }
 });
 
-router.post("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -388,7 +389,7 @@ router.post("/api/payroll/pay-runs", requireAuth, requireRole("ADMIN", "OFFICE_M
   }
 });
 
-router.put("/api/payroll/pay-runs/:id/status", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.put("/api/payroll/pay-runs/:id/status", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -446,7 +447,7 @@ router.put("/api/payroll/pay-runs/:id/status", requireAuth, requireRole("ADMIN",
   }
 });
 
-router.get("/api/payroll/workers", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/workers", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -479,7 +480,7 @@ router.get("/api/payroll/workers", requireAuth, requireRole("ADMIN", "OFFICE_MAN
   }
 });
 
-router.get("/api/payroll/time-entries", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/time-entries", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -675,7 +676,7 @@ async function calculateDeductionsForEmployee(
   return { deductions: results, totalDeductions: Math.round(totalDed * 100) / 100 };
 }
 
-router.get("/api/payroll/deduction-types", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/deduction-types", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -692,7 +693,7 @@ router.get("/api/payroll/deduction-types", requireAuth, requireRole("ADMIN", "OF
   }
 });
 
-router.post("/api/payroll/deduction-types", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.post("/api/payroll/deduction-types", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -717,7 +718,7 @@ router.post("/api/payroll/deduction-types", requireAuth, requireRole("ADMIN", "O
   }
 });
 
-router.patch("/api/payroll/deduction-types/:id", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.patch("/api/payroll/deduction-types/:id", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -749,7 +750,7 @@ router.patch("/api/payroll/deduction-types/:id", requireAuth, requireRole("ADMIN
   }
 });
 
-router.delete("/api/payroll/deduction-types/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+router.delete("/api/payroll/deduction-types/:id", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -767,7 +768,7 @@ router.delete("/api/payroll/deduction-types/:id", requireAuth, requireRole("ADMI
   }
 });
 
-router.get("/api/payroll/employee-deductions", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/employee-deductions", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -795,7 +796,7 @@ router.get("/api/payroll/employee-deductions", requireAuth, requireRole("ADMIN",
   }
 });
 
-router.get("/api/payroll/employee-deductions/:userId", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/employee-deductions/:userId", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -825,7 +826,7 @@ router.get("/api/payroll/employee-deductions/:userId", requireAuth, requireRole(
   }
 });
 
-router.post("/api/payroll/employee-deductions", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.post("/api/payroll/employee-deductions", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -856,7 +857,7 @@ router.post("/api/payroll/employee-deductions", requireAuth, requireRole("ADMIN"
   }
 });
 
-router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.patch("/api/payroll/employee-deductions/:id", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -883,7 +884,7 @@ router.patch("/api/payroll/employee-deductions/:id", requireAuth, requireRole("A
   }
 });
 
-router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+router.delete("/api/payroll/employee-deductions/:id", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -901,7 +902,7 @@ router.delete("/api/payroll/employee-deductions/:id", requireAuth, requireRole("
   }
 });
 
-router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -999,7 +1000,7 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, requireRole("ADMI
   }
 });
 
-router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1092,7 +1093,7 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, requireRo
   }
 });
 
-router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, requireRole("ADMIN", "OFFICE_MANAGER", "MANAGER", "SUPER_ADMIN"), async (req, res) => {
+router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -1233,7 +1234,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, requireRol
   }
 });
 
-router.delete("/api/payroll/pay-runs/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req, res) => {
+router.delete("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
