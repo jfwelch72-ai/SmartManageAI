@@ -37,7 +37,8 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Takeoff Enhancements**: Sheet management, visual revision comparison, addenda overlays, advanced calibration, and new measurement types.
 *   **Libraries System**: Provides reusable library management for custom items, assemblies, and saved takeoffs, with backend API for CRUD, bulk import, and trade-aware seeding.
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
-*   **Dashboard Customization**: WYSIWYG editor with section-based layout, configurable widgets, and role-based default layouts.
+*   **Dashboard Customization**: WYSIWYG editor with section-based layout, configurable widgets, and role-based default layouts. Dashboard layout and color scheme customization are now available to all users without permission gating.
+*   **Feature Permissions System**: Granular per-user feature access control with 8 permissions in 4 categories: Financial (`canAccessFinancials`, `canManagePayroll`), Operations (`canAccessReports`, `canUseAiFeatures`), Marketing (`canPostSocialMedia`, `canManageWebsite`), Management (`canManageEquipment`, `canManageProcurement`). Admins always bypass all checks. Managed via "Feature Permissions" tab in User Management (`/users`). Backend routes at `/api/dashboard/permissions` and `/api/dashboard/my-permissions`. Hook: `useFeaturePermission(key)` for frontend gating.
 *   **WCAG Compliance**: Theme picker colors meet WCAG AA 4.5:1 contrast ratio.
 *   **Custom KPI Management System**: Org-level custom KPI definitions, assignment to employees with targets, and performance tracking. Integrated as tabs within Workforce Management (`/manage-workers`).
 *   **Contractor Onboarding Library**: A hard-coded, normalized reference data system for trades, scopes, materials, formulas, and grammar, powering AI onboarding and dynamic UI components.

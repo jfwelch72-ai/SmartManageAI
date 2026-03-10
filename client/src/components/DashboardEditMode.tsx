@@ -84,10 +84,6 @@ export function DashboardEditMode({ onToggleWidgetLibrary, widgetLibraryOpen }: 
     setNewSectionCols(1);
   };
 
-  if (!permissions.canCustomizeDashboard) {
-    return null;
-  }
-
   if (isEditMode) {
     return (
       <>

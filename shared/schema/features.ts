@@ -3616,15 +3616,27 @@ export type EmailSummary = typeof emailSummaries.$inferSelect;
 // DASHBOARD CUSTOMIZATION SYSTEM
 // ============================================
 
-// Dashboard Widget Types - Available widgets for the dashboard
+// Feature Permissions - Granular per-user feature access control
 export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   
-  // Customization permissions
-  canCustomizeDashboard: boolean("can_customize_dashboard").notNull().default(false),
-  canCustomizeColorScheme: boolean("can_customize_color_scheme").notNull().default(false),
+  // Financial permissions
+  canAccessFinancials: boolean("can_access_financials").notNull().default(false),
+  canManagePayroll: boolean("can_manage_payroll").notNull().default(false),
+  
+  // Operations permissions
+  canAccessReports: boolean("can_access_reports").notNull().default(false),
+  canUseAiFeatures: boolean("can_use_ai_features").notNull().default(false),
+  
+  // Marketing permissions
+  canPostSocialMedia: boolean("can_post_social_media").notNull().default(false),
+  canManageWebsite: boolean("can_manage_website").notNull().default(false),
+  
+  // Management permissions
+  canManageEquipment: boolean("can_manage_equipment").notNull().default(false),
+  canManageProcurement: boolean("can_manage_procurement").notNull().default(false),
   
   // Granted by admin
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),

@@ -34,8 +34,14 @@ export interface DashboardLayoutConfig {
 }
 
 interface UserPermissions {
-  canCustomizeDashboard: boolean;
-  canCustomizeColorScheme: boolean;
+  canAccessFinancials: boolean;
+  canManagePayroll: boolean;
+  canAccessReports: boolean;
+  canUseAiFeatures: boolean;
+  canPostSocialMedia: boolean;
+  canManageWebsite: boolean;
+  canManageEquipment: boolean;
+  canManageProcurement: boolean;
 }
 
 interface ColorPalette {
@@ -124,7 +130,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
   const [isEditMode, setIsEditMode] = useState(false);
   const [localLayout, setLocalLayout] = useState<DashboardLayoutConfig | null>(null);
 
-  const { data: permissions = { canCustomizeDashboard: false, canCustomizeColorScheme: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
+  const { data: permissions = { canAccessFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
   });
 
@@ -287,10 +293,6 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
   }, [paletteData, applyPaletteToDOM]);
 
   const setEditMode = useCallback((value: boolean) => {
-    if (value && !permissions.canCustomizeDashboard) {
-      toast({ title: "Permission denied", description: "You don't have permission to customize your dashboard", variant: "destructive" });
-      return;
-    }
     if (value && layoutData?.layout) {
       setLocalLayout(JSON.parse(JSON.stringify(layoutData.layout)));
     }
@@ -595,4 +597,11 @@ export function useDashboardCustomization() {
     throw new Error("useDashboardCustomization must be used within a DashboardCustomizationProvider");
   }
   return context;
+}
+
+export type FeaturePermissionKey = keyof UserPermissions;
+
+export function useFeaturePermission(permissionKey: FeaturePermissionKey): boolean {
+  const { permissions } = useDashboardCustomization();
+  return permissions[permissionKey] ?? false;
 }

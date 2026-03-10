@@ -35,8 +35,14 @@ router.get('/permissions', requireAuth, requireRole('ADMIN', 'SUPER_ADMIN'), asy
       const perm = permissions.find(p => p.userId === user.id);
       return {
         ...user,
-        canCustomizeDashboard: perm?.canCustomizeDashboard || false,
-        canCustomizeColorScheme: perm?.canCustomizeColorScheme || false,
+        canAccessFinancials: perm?.canAccessFinancials || false,
+        canManagePayroll: perm?.canManagePayroll || false,
+        canAccessReports: perm?.canAccessReports || false,
+        canUseAiFeatures: perm?.canUseAiFeatures || false,
+        canPostSocialMedia: perm?.canPostSocialMedia || false,
+        canManageWebsite: perm?.canManageWebsite || false,
+        canManageEquipment: perm?.canManageEquipment || false,
+        canManageProcurement: perm?.canManageProcurement || false,
         grantedAt: perm?.grantedAt,
       };
     });
@@ -59,8 +65,14 @@ router.put('/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMI
     }
 
     const schema = z.object({
-      canCustomizeDashboard: z.boolean(),
-      canCustomizeColorScheme: z.boolean(),
+      canAccessFinancials: z.boolean(),
+      canManagePayroll: z.boolean(),
+      canAccessReports: z.boolean(),
+      canUseAiFeatures: z.boolean(),
+      canPostSocialMedia: z.boolean(),
+      canManageWebsite: z.boolean(),
+      canManageEquipment: z.boolean(),
+      canManageProcurement: z.boolean(),
     });
 
     const data = schema.parse(req.body);
@@ -81,8 +93,7 @@ router.put('/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMI
     if (existing.length > 0) {
       await db.update(userDashboardPermissions)
         .set({
-          canCustomizeDashboard: data.canCustomizeDashboard,
-          canCustomizeColorScheme: data.canCustomizeColorScheme,
+          ...data,
           grantedByUserId: adminId,
           grantedAt: new Date(),
           updatedAt: new Date(),
@@ -92,8 +103,7 @@ router.put('/permissions/:userId', requireAuth, requireRole('ADMIN', 'SUPER_ADMI
       await db.insert(userDashboardPermissions).values({
         organizationId: orgId,
         userId,
-        canCustomizeDashboard: data.canCustomizeDashboard,
-        canCustomizeColorScheme: data.canCustomizeColorScheme,
+        ...data,
         grantedByUserId: adminId,
         grantedAt: new Date(),
       });
@@ -112,18 +122,34 @@ router.get('/my-permissions', requireAuth, async (req: AuthRequest, res: Respons
     const orgId = req.user!.organizationId;
     const role = req.user!.role;
 
+    const allTrue = {
+      canAccessFinancials: true,
+      canManagePayroll: true,
+      canAccessReports: true,
+      canUseAiFeatures: true,
+      canPostSocialMedia: true,
+      canManageWebsite: true,
+      canManageEquipment: true,
+      canManageProcurement: true,
+    };
+
+    const allFalse = {
+      canAccessFinancials: false,
+      canManagePayroll: false,
+      canAccessReports: false,
+      canUseAiFeatures: false,
+      canPostSocialMedia: false,
+      canManageWebsite: false,
+      canManageEquipment: false,
+      canManageProcurement: false,
+    };
+
     if (role === 'ADMIN' || role === 'SUPER_ADMIN') {
-      return res.json({
-        canCustomizeDashboard: true,
-        canCustomizeColorScheme: true,
-      });
+      return res.json(allTrue);
     }
 
     if (!orgId) {
-      return res.json({
-        canCustomizeDashboard: false,
-        canCustomizeColorScheme: false,
-      });
+      return res.json(allFalse);
     }
 
     const [permission] = await db.select().from(userDashboardPermissions)
@@ -133,8 +159,14 @@ router.get('/my-permissions', requireAuth, async (req: AuthRequest, res: Respons
       ));
 
     res.json({
-      canCustomizeDashboard: permission?.canCustomizeDashboard ?? true,
-      canCustomizeColorScheme: permission?.canCustomizeColorScheme ?? true,
+      canAccessFinancials: permission?.canAccessFinancials ?? false,
+      canManagePayroll: permission?.canManagePayroll ?? false,
+      canAccessReports: permission?.canAccessReports ?? false,
+      canUseAiFeatures: permission?.canUseAiFeatures ?? false,
+      canPostSocialMedia: permission?.canPostSocialMedia ?? false,
+      canManageWebsite: permission?.canManageWebsite ?? false,
+      canManageEquipment: permission?.canManageEquipment ?? false,
+      canManageProcurement: permission?.canManageProcurement ?? false,
     });
   } catch (error) {
     console.error('Error fetching user permissions:', error);
@@ -195,18 +227,6 @@ router.put('/layout', requireAuth, async (req: AuthRequest, res: Response) => {
 
     if (!orgId) {
       return res.status(403).json({ error: 'Organization required' });
-    }
-
-    if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
-      const [permission] = await db.select().from(userDashboardPermissions)
-        .where(and(
-          eq(userDashboardPermissions.organizationId, orgId),
-          eq(userDashboardPermissions.userId, userId)
-        ));
-
-      if (permission && !permission.canCustomizeDashboard) {
-        return res.status(403).json({ error: 'Dashboard customization not permitted' });
-      }
     }
 
     const widgetSchema = z.object({

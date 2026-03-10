@@ -50,16 +50,32 @@ import {
   Search,
   Filter,
   X,
-  Layout,
-  Palette,
   Settings,
   Info,
+  DollarSign,
+  FileBarChart,
+  Sparkles,
+  Share2,
+  Globe,
+  Wrench,
+  ShoppingCart,
+  CreditCard,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
 interface UserWithPermissions extends SelectUser {
-  canCustomizeDashboard?: boolean;
-  canCustomizeColorScheme?: boolean;
+  canAccessFinancials?: boolean;
+  canManagePayroll?: boolean;
+  canAccessReports?: boolean;
+  canUseAiFeatures?: boolean;
+  canPostSocialMedia?: boolean;
+  canManageWebsite?: boolean;
+  canManageEquipment?: boolean;
+  canManageProcurement?: boolean;
   grantedAt?: string;
 }
 
@@ -262,70 +278,97 @@ export default function UsersPage() {
     });
   };
 
-  // Mutation for updating dashboard permissions
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
+  const [permSearchTerm, setPermSearchTerm] = useState("");
+
+  const PERMISSION_GROUPS = [
+    {
+      label: "Financial",
+      permissions: [
+        { key: "canAccessFinancials" as const, label: "Financials Access", icon: DollarSign, description: "View budgets, cost rates, and CFO dashboard" },
+        { key: "canManagePayroll" as const, label: "Payroll Management", icon: CreditCard, description: "Manage payroll, pay runs, and deductions" },
+      ],
+    },
+    {
+      label: "Operations",
+      permissions: [
+        { key: "canAccessReports" as const, label: "Reports Access", icon: FileBarChart, description: "View and export all report types" },
+        { key: "canUseAiFeatures" as const, label: "AI Features", icon: Sparkles, description: "Use AI assistant, analysis, and generation tools" },
+      ],
+    },
+    {
+      label: "Marketing",
+      permissions: [
+        { key: "canPostSocialMedia" as const, label: "Social Media", icon: Share2, description: "Create, edit, and publish social media posts" },
+        { key: "canManageWebsite" as const, label: "Website Management", icon: Globe, description: "Manage website builder, SEO, and media" },
+      ],
+    },
+    {
+      label: "Management",
+      permissions: [
+        { key: "canManageEquipment" as const, label: "Equipment", icon: Wrench, description: "Manage equipment and maintenance records" },
+        { key: "canManageProcurement" as const, label: "Procurement", icon: ShoppingCart, description: "Manage procurement and vendor pricing" },
+      ],
+    },
+  ];
+
+  const ALL_PERM_KEYS = PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key));
+
   const updatePermissionsMutation = useMutation({
-    mutationFn: async ({
-      userId,
-      canCustomizeDashboard,
-      canCustomizeColorScheme,
-    }: {
-      userId: string;
-      canCustomizeDashboard: boolean;
-      canCustomizeColorScheme: boolean;
-    }) => {
-      return await apiRequest("PUT", `/api/dashboard/permissions/${userId}`, {
-        canCustomizeDashboard,
-        canCustomizeColorScheme,
-      });
+    mutationFn: async ({ userId, permissions }: { userId: string; permissions: Record<string, boolean> }) => {
+      return await apiRequest("PUT", `/api/dashboard/permissions/${userId}`, permissions);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/dashboard/permissions"],
-      });
-      toast({
-        title: "Success",
-        description: "User permissions updated",
-      });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/permissions"] });
+      toast({ title: "Success", description: "User permissions updated" });
     },
     onError: (error: any) => {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update permissions",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: error.message || "Failed to update permissions", variant: "destructive" });
     },
   });
 
-  const handleToggleDashboardPermission = async (
-    userId: string,
-    currentValue: boolean,
-    userPerms: UserWithPermissions,
-  ) => {
-    await updatePermissionsMutation.mutateAsync({
-      userId,
-      canCustomizeDashboard: !currentValue,
-      canCustomizeColorScheme: userPerms.canCustomizeColorScheme || false,
+  const handleTogglePermission = async (userId: string, permKey: string, currentValue: boolean, userPerms: UserWithPermissions) => {
+    const currentPermissions: Record<string, boolean> = {};
+    ALL_PERM_KEYS.forEach(k => { currentPermissions[k] = !!(userPerms as any)[k]; });
+    currentPermissions[permKey] = !currentValue;
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: currentPermissions });
+  };
+
+  const handleGrantAll = async (userId: string) => {
+    const allGranted: Record<string, boolean> = {};
+    ALL_PERM_KEYS.forEach(k => { allGranted[k] = true; });
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: allGranted });
+  };
+
+  const handleRevokeAll = async (userId: string) => {
+    const allRevoked: Record<string, boolean> = {};
+    ALL_PERM_KEYS.forEach(k => { allRevoked[k] = false; });
+    await updatePermissionsMutation.mutateAsync({ userId, permissions: allRevoked });
+  };
+
+  const toggleUserExpanded = (userId: string) => {
+    setExpandedUsers(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) { next.delete(userId); } else { next.add(userId); }
+      return next;
     });
   };
 
-  const handleToggleColorSchemePermission = async (
-    userId: string,
-    currentValue: boolean,
-    userPerms: UserWithPermissions,
-  ) => {
-    await updatePermissionsMutation.mutateAsync({
-      userId,
-      canCustomizeDashboard: userPerms.canCustomizeDashboard || false,
-      canCustomizeColorScheme: !currentValue,
-    });
-  };
+  const filteredPermUsers = useMemo(() => {
+    if (!permSearchTerm) return usersWithPermissions;
+    const term = permSearchTerm.toLowerCase();
+    return usersWithPermissions.filter(u =>
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(term) ||
+      u.email.toLowerCase().includes(term)
+    );
+  }, [usersWithPermissions, permSearchTerm]);
 
   if (!user) {
     return null;
   }
 
   // Only admins can access this page
-  if (user.role !== "ADMIN") {
+  if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
     return (
       <div className="min-h-screen bg-background">
         <main className="mx-auto max-w-full px-6 py-8">
@@ -492,12 +535,12 @@ export default function UsersPage() {
         >
           <TabsList data-testid="tabs-user-management">
             <TabsTrigger value="users" data-testid="tab-users">
-              <Settings className="w-4 h-4 mr-2" />
+              <UserPlus className="w-4 h-4 mr-2" />
               Users
             </TabsTrigger>
             <TabsTrigger value="customization" data-testid="tab-customization">
-              <Layout className="w-4 h-4 mr-2" />
-              Customization Permissions
+              <Settings className="w-4 h-4 mr-2" />
+              Feature Permissions
             </TabsTrigger>
           </TabsList>
 
@@ -788,237 +831,162 @@ export default function UsersPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
-                  <CardTitle>Dashboard Customization Permissions</CardTitle>
+                  <CardTitle>Feature Permissions</CardTitle>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Info className="w-4 h-4 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       <p>
-                        Control which users can customize their dashboard layout
-                        and color scheme. Admins always have full customization
-                        access.
+                        Control which features each user can access. Admins always have full access to all features. Permissions are additive — they grant access on top of the user's base role.
                       </p>
                     </TooltipContent>
                   </Tooltip>
                 </div>
                 <CardDescription>
-                  Grant or revoke dashboard and color scheme customization
-                  permissions for team members
+                  Grant or revoke granular feature access for team members
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                <div className="mb-4">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search users..."
+                      value={permSearchTerm}
+                      onChange={(e) => setPermSearchTerm(e.target.value)}
+                      className="pl-9"
+                      data-testid="input-perm-search"
+                    />
+                  </div>
+                </div>
+
                 {permissionsLoading ? (
-                  <div
-                    className="text-center py-8"
-                    data-testid="text-permissions-loading"
-                  >
-                    Loading permissions...
+                  <div className="space-y-4" data-testid="text-permissions-loading">
+                    {[1, 2, 3].map(i => (
+                      <div key={i} className="animate-pulse">
+                        <div className="h-16 bg-muted rounded-lg" />
+                      </div>
+                    ))}
                   </div>
-                ) : usersWithPermissions.length === 0 ? (
+                ) : filteredPermUsers.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No users found
+                    {permSearchTerm ? "No users match your search" : "No users found"}
                   </div>
-                ) : isMobile ? (
+                ) : (
                   <div className="space-y-3">
-                    {usersWithPermissions.map((u) => {
-                      const isAdmin =
-                        u.role === "ADMIN" || u.role === "SUPER_ADMIN";
+                    {filteredPermUsers.map((u) => {
+                      const isAdmin = u.role === "ADMIN" || u.role === "SUPER_ADMIN";
+                      const isExpanded = expandedUsers.has(u.id) || isMobile;
+                      const grantedCount = isAdmin ? ALL_PERM_KEYS.length : ALL_PERM_KEYS.filter(k => !!(u as any)[k]).length;
+
                       return (
-                        <Card key={u.id} data-testid={`row-permission-${u.id}`}>
-                          <CardContent className="p-4 space-y-3">
-                            <div className="flex items-start justify-between gap-2 flex-wrap">
-                              <div>
-                                <div
-                                  className="font-medium"
-                                  data-testid={`text-perm-name-${u.id}`}
-                                >
-                                  {u.firstName} {u.lastName}
+                        <Card key={u.id} data-testid={`row-permission-${u.id}`} className="overflow-hidden">
+                          <div
+                            className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors min-h-[56px]"
+                            onClick={() => !isMobile && toggleUserExpanded(u.id)}
+                            data-testid={`button-expand-${u.id}`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium truncate" data-testid={`text-perm-name-${u.id}`}>
+                                    {u.firstName} {u.lastName}
+                                  </span>
+                                  <Badge variant={ROLE_COLORS[u.role] || "secondary"} className="shrink-0">
+                                    {ROLE_LABELS[u.role] || u.role}
+                                  </Badge>
                                 </div>
-                                <div
-                                  className="text-sm text-muted-foreground"
-                                  data-testid={`text-perm-email-${u.id}`}
-                                >
+                                <div className="text-sm text-muted-foreground truncate" data-testid={`text-perm-email-${u.id}`}>
                                   {u.email}
                                 </div>
                               </div>
-                              <Badge
-                                variant={ROLE_COLORS[u.role] || "secondary"}
-                              >
-                                {ROLE_LABELS[u.role] || u.role}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-sm">
-                                <Layout className="w-4 h-4 text-muted-foreground" />
-                                Dashboard Layout
+                              <div className="flex items-center gap-2 shrink-0">
+                                <Badge variant={grantedCount === ALL_PERM_KEYS.length ? "default" : grantedCount > 0 ? "secondary" : "outline"} className="text-xs">
+                                  {grantedCount}/{ALL_PERM_KEYS.length}
+                                </Badge>
+                                {!isMobile && (
+                                  isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                )}
                               </div>
-                              {isAdmin ? (
-                                <div className="flex items-center gap-2">
-                                  <Switch checked={true} disabled />
-                                  <span className="text-xs text-muted-foreground">
-                                    Always
-                                  </span>
-                                </div>
-                              ) : (
-                                <Switch
-                                  checked={u.canCustomizeDashboard || false}
-                                  onCheckedChange={() =>
-                                    handleToggleDashboardPermission(
-                                      u.id,
-                                      u.canCustomizeDashboard || false,
-                                      u,
-                                    )
-                                  }
-                                  disabled={updatePermissionsMutation.isPending}
-                                  data-testid={`switch-dashboard-${u.id}`}
-                                />
-                              )}
                             </div>
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-sm">
-                                <Palette className="w-4 h-4 text-muted-foreground" />
-                                Color Scheme
-                              </div>
-                              {isAdmin ? (
-                                <div className="flex items-center gap-2">
-                                  <Switch checked={true} disabled />
-                                  <span className="text-xs text-muted-foreground">
-                                    Always
-                                  </span>
+                          </div>
+
+                          {isExpanded && (
+                            <div className="border-t px-4 pb-4 pt-3 space-y-4">
+                              {!isAdmin && (
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1 sm:flex-none"
+                                    onClick={() => handleGrantAll(u.id)}
+                                    disabled={updatePermissionsMutation.isPending}
+                                    data-testid={`button-grant-all-${u.id}`}
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                                    Grant All
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="flex-1 sm:flex-none"
+                                    onClick={() => handleRevokeAll(u.id)}
+                                    disabled={updatePermissionsMutation.isPending}
+                                    data-testid={`button-revoke-all-${u.id}`}
+                                  >
+                                    <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                                    Revoke All
+                                  </Button>
                                 </div>
-                              ) : (
-                                <Switch
-                                  checked={u.canCustomizeColorScheme || false}
-                                  onCheckedChange={() =>
-                                    handleToggleColorSchemePermission(
-                                      u.id,
-                                      u.canCustomizeColorScheme || false,
-                                      u,
-                                    )
-                                  }
-                                  disabled={updatePermissionsMutation.isPending}
-                                  data-testid={`switch-colorscheme-${u.id}`}
-                                />
                               )}
+
+                              {PERMISSION_GROUPS.map((group) => (
+                                <div key={group.label}>
+                                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                                    {group.label}
+                                  </div>
+                                  <div className="space-y-1">
+                                    {group.permissions.map((perm) => {
+                                      const Icon = perm.icon;
+                                      const value = isAdmin ? true : !!(u as any)[perm.key];
+                                      return (
+                                        <div
+                                          key={perm.key}
+                                          className="flex items-center justify-between gap-3 py-2 px-2 rounded-md hover:bg-muted/30 transition-colors"
+                                          style={{ minHeight: "44px" }}
+                                        >
+                                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                            <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                                            <div className="min-w-0">
+                                              <div className="text-sm font-medium leading-tight">{perm.label}</div>
+                                              <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
+                                            </div>
+                                          </div>
+                                          {isAdmin ? (
+                                            <div className="flex items-center gap-2 shrink-0">
+                                              <Switch checked={true} disabled />
+                                              <span className="text-xs text-muted-foreground whitespace-nowrap">Always</span>
+                                            </div>
+                                          ) : (
+                                            <Switch
+                                              checked={value}
+                                              onCheckedChange={() => handleTogglePermission(u.id, perm.key, value, u)}
+                                              disabled={updatePermissionsMutation.isPending}
+                                              data-testid={`switch-${perm.key}-${u.id}`}
+                                            />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          </CardContent>
+                          )}
                         </Card>
                       );
                     })}
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto -mx-4 sm:mx-0">
-                    <Table className="min-w-[600px]">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="whitespace-nowrap">
-                            User
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap">
-                            Role
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Layout className="w-4 h-4" />
-                              Dashboard Layout
-                            </div>
-                          </TableHead>
-                          <TableHead className="whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Palette className="w-4 h-4" />
-                              Color Scheme
-                            </div>
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {usersWithPermissions.map((u) => {
-                          const isAdmin =
-                            u.role === "ADMIN" || u.role === "SUPER_ADMIN";
-                          return (
-                            <TableRow
-                              key={u.id}
-                              data-testid={`row-permission-${u.id}`}
-                            >
-                              <TableCell>
-                                <div className="flex flex-col">
-                                  <span
-                                    className="font-medium"
-                                    data-testid={`text-perm-name-${u.id}`}
-                                  >
-                                    {u.firstName} {u.lastName}
-                                  </span>
-                                  <span
-                                    className="text-sm text-muted-foreground"
-                                    data-testid={`text-perm-email-${u.id}`}
-                                  >
-                                    {u.email}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge
-                                  variant={ROLE_COLORS[u.role] || "secondary"}
-                                >
-                                  {ROLE_LABELS[u.role] || u.role}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                {isAdmin ? (
-                                  <div className="flex items-center gap-2">
-                                    <Switch checked={true} disabled />
-                                    <span className="text-xs text-muted-foreground">
-                                      Always enabled
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <Switch
-                                    checked={u.canCustomizeDashboard || false}
-                                    onCheckedChange={() =>
-                                      handleToggleDashboardPermission(
-                                        u.id,
-                                        u.canCustomizeDashboard || false,
-                                        u,
-                                      )
-                                    }
-                                    disabled={
-                                      updatePermissionsMutation.isPending
-                                    }
-                                    data-testid={`switch-dashboard-${u.id}`}
-                                  />
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {isAdmin ? (
-                                  <div className="flex items-center gap-2">
-                                    <Switch checked={true} disabled />
-                                    <span className="text-xs text-muted-foreground">
-                                      Always enabled
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <Switch
-                                    checked={u.canCustomizeColorScheme || false}
-                                    onCheckedChange={() =>
-                                      handleToggleColorSchemePermission(
-                                        u.id,
-                                        u.canCustomizeColorScheme || false,
-                                        u,
-                                      )
-                                    }
-                                    disabled={
-                                      updatePermissionsMutation.isPending
-                                    }
-                                    data-testid={`switch-colorscheme-${u.id}`}
-                                  />
-                                )}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
                   </div>
                 )}
               </CardContent>

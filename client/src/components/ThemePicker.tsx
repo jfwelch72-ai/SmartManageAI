@@ -181,10 +181,6 @@ export function ThemePicker() {
     darkBorder: "217 33% 17%",
   });
 
-  if (!permissions.canCustomizeColorScheme) {
-    return null;
-  }
-
   const handleSelectPreset = async (presetKey: string) => {
     const preset = presetPalettes[presetKey];
     if (!preset) return;

@@ -1,7 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
 import {
-  userDashboardPermissions,
   userColorPalettes,
   type UserColorPalette,
   type PaletteValidationResult,
@@ -213,18 +212,6 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
 
     if (!orgId) {
       return res.status(403).json({ error: 'Organization required' });
-    }
-
-    if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
-      const [permission] = await db.select().from(userDashboardPermissions)
-        .where(and(
-          eq(userDashboardPermissions.organizationId, orgId),
-          eq(userDashboardPermissions.userId, userId)
-        ));
-
-      if (permission && !permission.canCustomizeColorScheme) {
-        return res.status(403).json({ error: 'Color scheme customization not permitted' });
-      }
     }
 
     const schema = z.object({
