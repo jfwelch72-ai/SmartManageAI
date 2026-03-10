@@ -941,47 +941,51 @@ export default function UsersPage() {
                                 </div>
                               )}
 
-                              {PERMISSION_GROUPS.map((group) => (
-                                <div key={group.label}>
-                                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                                    {group.label}
-                                  </div>
-                                  <div className="space-y-1">
-                                    {group.permissions.map((perm) => {
-                                      const Icon = perm.icon;
-                                      const value = isAdmin ? true : !!(u as any)[perm.key];
-                                      return (
-                                        <div
-                                          key={perm.key}
-                                          className="flex items-center justify-between gap-3 py-2 px-2 rounded-md hover:bg-muted/30 transition-colors"
-                                          style={{ minHeight: "44px" }}
-                                        >
-                                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                            <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                            <div className="min-w-0">
-                                              <div className="text-sm font-medium leading-tight">{perm.label}</div>
-                                              <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {PERMISSION_GROUPS.map((group) => (
+                                  <Card key={group.label} className="border">
+                                    <CardHeader className="px-3 py-2.5 pb-1">
+                                      <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                        {group.label}
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="px-3 pb-3 pt-0 space-y-1">
+                                      {group.permissions.map((perm) => {
+                                        const Icon = perm.icon;
+                                        const value = isAdmin ? true : !!(u as any)[perm.key];
+                                        return (
+                                          <div
+                                            key={perm.key}
+                                            className="flex items-center justify-between gap-3 py-2 px-2 rounded-md hover:bg-muted/30 transition-colors"
+                                            style={{ minHeight: "44px" }}
+                                          >
+                                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                              <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
+                                              <div className="min-w-0">
+                                                <div className="text-sm font-medium leading-tight">{perm.label}</div>
+                                                <div className="text-xs text-muted-foreground leading-tight hidden sm:block">{perm.description}</div>
+                                              </div>
                                             </div>
+                                            {isAdmin ? (
+                                              <div className="flex items-center gap-2 shrink-0">
+                                                <Switch checked={true} disabled />
+                                                <span className="text-xs text-muted-foreground whitespace-nowrap">Always</span>
+                                              </div>
+                                            ) : (
+                                              <Switch
+                                                checked={value}
+                                                onCheckedChange={() => handleTogglePermission(u.id, perm.key, value, u)}
+                                                disabled={updatePermissionsMutation.isPending}
+                                                data-testid={`switch-${perm.key}-${u.id}`}
+                                              />
+                                            )}
                                           </div>
-                                          {isAdmin ? (
-                                            <div className="flex items-center gap-2 shrink-0">
-                                              <Switch checked={true} disabled />
-                                              <span className="text-xs text-muted-foreground whitespace-nowrap">Always</span>
-                                            </div>
-                                          ) : (
-                                            <Switch
-                                              checked={value}
-                                              onCheckedChange={() => handleTogglePermission(u.id, perm.key, value, u)}
-                                              disabled={updatePermissionsMutation.isPending}
-                                              data-testid={`switch-${perm.key}-${u.id}`}
-                                            />
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              ))}
+                                        );
+                                      })}
+                                    </CardContent>
+                                  </Card>
+                                ))}
+                              </div>
                             </div>
                           )}
                         </Card>
