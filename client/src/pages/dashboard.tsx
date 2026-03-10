@@ -52,7 +52,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-8">
+      <main className="mx-auto max-w-full px-3 sm:px-6 py-4 sm:py-8">
         <div className="mb-6 sm:mb-8" data-testid="welcome-section">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="flex items-center gap-3 sm:gap-4">
