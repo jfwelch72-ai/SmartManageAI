@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight } from "lucide-react";
+import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -68,6 +68,23 @@ interface WorkType {
   unit: string;
   defaultProductionRate: string | null;
   isActive: boolean;
+}
+
+interface DbUsageMetrics {
+  users: number;
+  projects: number;
+  bids: number;
+  estimates: number;
+  changeOrders: number;
+  tasks: number;
+  equipment: number;
+  socialPosts: number;
+  auditEntries: number;
+  documents: number;
+  sowItems: number;
+  workTypes: number;
+  payRuns: number;
+  calendarEvents: number;
 }
 
 const tradeTypeOptions = [
@@ -142,6 +159,16 @@ export default function PlatformOrganizationDetail() {
 
   const { data: workTypes, isLoading: workTypesLoading } = useQuery<WorkType[]>({
     queryKey: ["/api/platform/organizations", orgId, "work-types"],
+    enabled: !!orgId,
+  });
+
+  const { data: dbUsage, isLoading: dbUsageLoading } = useQuery<DbUsageMetrics>({
+    queryKey: ["/api/platform/organizations", orgId, "db-usage"],
+    queryFn: async () => {
+      const res = await fetch(`/api/platform/organizations/${orgId}/db-usage`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch database usage");
+      return res.json();
+    },
     enabled: !!orgId,
   });
 
@@ -422,6 +449,10 @@ export default function PlatformOrganizationDetail() {
             <Activity className="h-4 w-4 mr-2" />
             Activity
           </TabsTrigger>
+          <TabsTrigger value="db-usage" data-testid="tab-org-db-usage">
+            <Database className="h-4 w-4 mr-2" />
+            DB Usage
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="users">
@@ -648,6 +679,69 @@ export default function PlatformOrganizationDetail() {
                       </div>
                     )}
                   </>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="db-usage">
+            <Card>
+              <CardHeader>
+                <CardTitle>Database Usage Metrics</CardTitle>
+                <CardDescription>Record counts across all tables for this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {dbUsageLoading ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {Array.from({ length: 12 }).map((_, i) => (
+                      <Skeleton key={i} className="h-24 rounded-lg" />
+                    ))}
+                  </div>
+                ) : dbUsage ? (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {[
+                        { label: "Users", value: dbUsage.users, icon: Users, color: "text-blue-500" },
+                        { label: "Projects", value: dbUsage.projects, icon: FolderKanban, color: "text-green-500" },
+                        { label: "Bids", value: dbUsage.bids, icon: FileText, color: "text-orange-500" },
+                        { label: "Estimates", value: dbUsage.estimates, icon: ClipboardList, color: "text-purple-500" },
+                        { label: "Change Orders", value: dbUsage.changeOrders, icon: Hammer, color: "text-red-500" },
+                        { label: "Tasks", value: dbUsage.tasks, icon: ListChecks, color: "text-cyan-500" },
+                        { label: "Equipment", value: dbUsage.equipment, icon: Wrench, color: "text-amber-500" },
+                        { label: "Documents", value: dbUsage.documents, icon: Image, color: "text-pink-500" },
+                        { label: "SOW Items", value: dbUsage.sowItems, icon: ClipboardList, color: "text-indigo-500" },
+                        { label: "Work Types", value: dbUsage.workTypes, icon: Briefcase, color: "text-teal-500" },
+                        { label: "Social Posts", value: dbUsage.socialPosts, icon: Share2, color: "text-violet-500" },
+                        { label: "Pay Runs", value: dbUsage.payRuns, icon: DollarSign, color: "text-emerald-500" },
+                        { label: "Calendar Events", value: dbUsage.calendarEvents, icon: CalendarDays, color: "text-sky-500" },
+                        { label: "Audit Entries", value: dbUsage.auditEntries, icon: ScrollText, color: "text-slate-500" },
+                      ].map(({ label, value, icon: Icon, color }) => (
+                        <div
+                          key={label}
+                          className="flex items-center gap-3 p-4 rounded-lg border bg-card"
+                          data-testid={`metric-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                        >
+                          <div className={`p-2 rounded-md bg-muted ${color}`}>
+                            <Icon className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="text-2xl font-bold">{value.toLocaleString()}</div>
+                            <div className="text-xs text-muted-foreground">{label}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-6 p-4 rounded-lg border bg-muted/50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium">Total Records</span>
+                        <span className="text-lg font-bold" data-testid="text-total-records">
+                          {Object.values(dbUsage).reduce((sum, val) => sum + val, 0).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">Failed to load database usage metrics</p>
                 )}
               </CardContent>
             </Card>

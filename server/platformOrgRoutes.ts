@@ -216,6 +216,68 @@ router.get("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, asy
   }
 });
 
+router.get("/platform/organizations/:orgId/db-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [org] = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, orgId));
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const metrics = await db.execute(sql`
+      WITH org_users AS (
+        SELECT id FROM users WHERE organization_id = ${orgId}
+      ),
+      org_projects AS (
+        SELECT id FROM projects WHERE estimator_id IN (SELECT id FROM org_users)
+          OR superintendent_id IN (SELECT id FROM org_users)
+          OR project_manager_id IN (SELECT id FROM org_users)
+      ),
+      org_bids AS (
+        SELECT id FROM bids WHERE estimator_id IN (SELECT id FROM org_users)
+      )
+      SELECT
+        (SELECT COUNT(*) FROM org_users)::int AS users,
+        (SELECT COUNT(*) FROM org_projects)::int AS projects,
+        (SELECT COUNT(*) FROM org_bids)::int AS bids,
+        (SELECT COUNT(*) FROM estimates WHERE project_id IN (SELECT id FROM org_projects) OR bid_id IN (SELECT id FROM org_bids))::int AS estimates,
+        (SELECT COUNT(*) FROM change_orders WHERE project_id IN (SELECT id FROM org_projects))::int AS change_orders,
+        (SELECT COUNT(*) FROM tasks WHERE organization_id = ${orgId})::int AS tasks,
+        (SELECT COUNT(*) FROM equipment WHERE organization_id = ${orgId})::int AS equipment,
+        (SELECT COUNT(*) FROM social_media_posts WHERE organization_id = ${orgId})::int AS social_posts,
+        (SELECT COUNT(*) FROM audit_log WHERE user_id IN (SELECT id FROM org_users))::int AS audit_entries,
+        (SELECT COUNT(*) FROM media WHERE project_id IN (SELECT id FROM org_projects))::int AS documents,
+        (SELECT COUNT(*) FROM organization_sow_items WHERE organization_id = ${orgId})::int AS sow_items,
+        (SELECT COUNT(*) FROM organization_work_types WHERE organization_id = ${orgId})::int AS work_types,
+        (SELECT COUNT(*) FROM pay_runs WHERE organization_id = ${orgId})::int AS pay_runs,
+        (SELECT COUNT(*) FROM calendar_events WHERE created_by_id IN (SELECT id FROM org_users))::int AS calendar_events
+    `);
+
+    const row = metrics.rows[0] || {};
+
+    res.json({
+      users: row.users || 0,
+      projects: row.projects || 0,
+      bids: row.bids || 0,
+      estimates: row.estimates || 0,
+      changeOrders: row.change_orders || 0,
+      tasks: row.tasks || 0,
+      equipment: row.equipment || 0,
+      socialPosts: row.social_posts || 0,
+      auditEntries: row.audit_entries || 0,
+      documents: row.documents || 0,
+      sowItems: row.sow_items || 0,
+      workTypes: row.work_types || 0,
+      payRuns: row.pay_runs || 0,
+      calendarEvents: row.calendar_events || 0,
+    });
+  } catch (error: any) {
+    console.error("Platform org db-usage error:", error.message);
+    res.status(500).json({ error: "Failed to fetch database usage" });
+  }
+});
+
 router.get("/platform/organizations/:orgId/sow-items", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
     const { orgId } = req.params;
