@@ -115,6 +115,127 @@ const FIELD_WORKER_LAYOUT: DashboardLayoutConfig = {
   version: 3,
 };
 
+const SUPERINTENDENT_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-my-crew',
+      title: 'My Crew',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'sup-crew', type: 'CREW_OVERVIEW', x: 0, y: 0, w: 4, h: 5, visible: true, minW: 2, minH: 3, maxW: 6, maxH: 8 },
+        { id: 'sup-active-projects', type: 'ACTIVE_PROJECTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-schedule-safety',
+      title: 'Schedule & Safety',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'sup-schedule', type: 'SCHEDULE_IMPACT', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'sup-alerts', type: 'ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-financial-overview',
+      title: 'Financial Overview',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'sup-cash', type: 'CASH_POSITION', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'sup-labor', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 3, minH: 3, maxW: 12, maxH: 6, config: { metric: 'TOTAL_LABOR_COST', dateRange: 'THIS_WEEK', comparison: 'LAST_WEEK' } },
+      ],
+    },
+    {
+      id: 'section-calendar',
+      title: 'Calendar',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'sup-calendar', type: 'CALENDAR_EVENTS', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const EQUIPMENT_FOCUSED_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-overview',
+      title: 'Overview',
+      columns: 1,
+      collapsed: false,
+      widgets: [
+        { id: 'eq-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 12, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+      ],
+    },
+    {
+      id: 'section-projects-alerts',
+      title: 'Projects & Alerts',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'eq-active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'eq-alerts', type: 'ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 3, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'eq-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'eq-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'eq-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
+const BASIC_LAYOUT: DashboardLayoutConfig = {
+  sections: [
+    {
+      id: 'section-overview',
+      title: 'Overview',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'basic-quick-stats', type: 'QUICK_STATS', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 2, minH: 2, maxW: 12, maxH: 4 },
+        { id: 'basic-weather', type: 'WEATHER', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-my-projects',
+      title: 'My Projects',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'basic-active-projects', type: 'ACTIVE_PROJECTS', x: 0, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'basic-assignments', type: 'PROJECT_ASSIGNMENTS', x: 6, y: 0, w: 6, h: 4, visible: true, minW: 2, minH: 3, maxW: 12, maxH: 6 },
+      ],
+    },
+    {
+      id: 'section-communications',
+      title: 'Communications',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'basic-messages', type: 'MESSAGES', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'basic-notifications', type: 'NOTIFICATIONS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+        { id: 'basic-calendar', type: 'CALENDAR_EVENTS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+  ],
+  gridCols: 12,
+  version: 3,
+};
+
 const PROJECT_MANAGER_LAYOUT: DashboardLayoutConfig = {
   sections: [
     {
@@ -423,20 +544,33 @@ export const PRESET_PALETTES = {
 
 export function getDefaultLayoutForRole(role: string): DashboardLayoutConfig {
   switch (role) {
-    case 'HOURLY_EMPLOYEE':
-    case 'SUPERINTENDENT':
-      return FIELD_WORKER_LAYOUT;
+    case 'SUPER_ADMIN':
+      return DEFAULT_WIDGETS;
+    case 'ADMIN':
+    case 'HUSTLER':
+      return EXECUTIVE_LAYOUT;
     case 'MANAGER':
-    case 'MAINTENANCE_MANAGER':
       return PROJECT_MANAGER_LAYOUT;
+    case 'SUPERINTENDENT':
+      return SUPERINTENDENT_LAYOUT;
     case 'ESTIMATOR':
       return ESTIMATOR_LAYOUT;
     case 'OFFICE_MANAGER':
       return CFO_LAYOUT;
-    case 'ADMIN':
-    case 'HUSTLER':
-      return EXECUTIVE_LAYOUT;
+    case 'HOURLY_EMPLOYEE':
+      return FIELD_WORKER_LAYOUT;
+    case 'MAINTENANCE_MANAGER':
+    case 'EQUIPMENT_MANAGER':
+      return EQUIPMENT_FOCUSED_LAYOUT;
+    case 'SAFETY_MANAGER':
+    case 'HR_MANAGER':
+    case 'PROJECT_ENGINEER':
+    case 'SALES':
+    case 'MARKETING':
+    case 'VENDOR':
+    case 'DISPATCHER':
+    case 'PROCUREMENT_MANAGER':
     default:
-      return DEFAULT_WIDGETS;
+      return BASIC_LAYOUT;
   }
 }
