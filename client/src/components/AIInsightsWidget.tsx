@@ -166,22 +166,6 @@ export function AIInsightsWidget({
     enabled: !compact && hasPermission,
   });
 
-  if (!hasPermission) {
-    return (
-      <Card data-testid="ai-insights-no-permission">
-        <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">AI Insights</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view AI insights.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const runAnalysisMutation = useMutation({
     mutationFn: async (module: string = 'ALL') => {
       const response = await apiRequest('POST', '/api/ai-analyze', { module, projectId, saveResults: true });
@@ -219,6 +203,22 @@ export function AIInsightsWidget({
       refetchInsights();
     },
   });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="ai-insights-no-permission">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">AI Insights</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view AI insights.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const displayInsights = compact 
     ? (summary?.recentInsights || []).slice(0, 5)
