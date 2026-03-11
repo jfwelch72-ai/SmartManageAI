@@ -1,0 +1,194 @@
+1. Admin (Organization Owner)
+Purpose: Company-wide management
+Top Summary
+•	Active Projects
+•	Total Employees
+•	Pending Approvals
+•	Monthly Revenue / Cost
+Widgets
+•	Project Status Overview
+•	Workforce Overview
+•	Payroll Summary
+•	Financial Snapshot
+•	Procurement Requests
+•	Safety Alerts
+Quick Actions
+•	Create Project
+•	Invite User
+•	Approve Payroll
+•	Approve Purchase Orders
+________________________________________
+2. Manager (Project Manager)
+Top Summary
+•	Active Projects
+•	Tasks Due Today
+•	Budget Usage
+•	Crew Assigned
+Widgets
+•	Project Timeline
+•	Project Budget vs Actual
+•	Crew Schedule
+•	RFIs / Submittals
+•	Issues / Delays
+Quick Actions
+•	Assign Crew
+•	Update Schedule
+•	Submit RFI
+•	Approve Time Logs
+________________________________________
+3. Superintendent (Field Operations)
+Top Summary
+•	Crews On Site
+•	Today's Tasks
+•	Equipment In Use
+•	Safety Incidents
+Widgets
+•	Daily Construction Log
+•	Crew Attendance
+•	Equipment Usage
+•	Site Issues
+•	Material Deliveries
+Quick Actions
+•	Submit Daily Report
+•	Log Issue
+•	Assign Work
+•	Request Equipment
+________________________________________
+4. Estimator
+Top Summary
+•	Active Bids
+•	Pending Estimates
+•	Bid Win Rate
+•	Total Bid Value
+Widgets
+•	Plans & Takeoff Status
+•	Estimate Breakdown
+•	Vendor Pricing Updates
+•	Bid Deadlines
+Quick Actions
+•	Upload Plans
+•	Create Takeoff
+•	Generate Estimate
+•	Submit Bid
+________________________________________
+5. Office Manager
+Top Summary
+•	Pending Documents
+•	Payroll Tasks
+•	Vendor Bills
+•	HR Requests
+Widgets
+•	Payroll Processing Status
+•	Employee Records
+•	Invoices & Bills
+•	Compliance Documents
+Quick Actions
+•	Process Payroll
+•	Upload Documents
+•	Create Invoice
+________________________________________
+6. Field Worker
+Top Summary
+•	Today’s Job
+•	Hours Logged
+•	Tasks Assigned
+Widgets
+•	My Schedule
+•	Time Log
+•	Assigned Tasks
+•	Safety Notices
+Quick Actions
+•	Clock In / Out
+•	Submit Time Log
+•	Upload Site Photo
+•	Report Issue
+Simple mobile-first layout.
+________________________________________
+7. HR Manager
+Top Summary
+•	Employees
+•	New Hires
+•	Pending Reviews
+•	Payroll Issues
+Widgets
+•	Employee Directory
+•	Performance Ratings
+•	Leave Requests
+•	Onboarding Progress
+Quick Actions
+•	Add Employee
+•	Start Review
+•	Approve Leave
+________________________________________
+8. Safety Manager
+Top Summary
+•	Open Incidents
+•	Safety Inspections
+•	Compliance Score
+Widgets
+•	Incident Reports
+•	Safety Inspection Checklist
+•	Compliance Violations
+•	Training Status
+Quick Actions
+•	Report Incident
+•	Schedule Inspection
+________________________________________
+9. Procurement Manager
+Top Summary
+•	Pending Purchase Orders
+•	Vendor Quotes
+•	Material Requests
+Widgets
+•	Vendor Pricing
+•	PO Approvals
+•	Delivery Tracking
+Quick Actions
+•	Create PO
+•	Request Quote
+•	Approve Vendor
+________________________________________
+10. Equipment Manager
+Top Summary
+•	Equipment Available
+•	Equipment In Use
+•	Maintenance Due
+Widgets
+•	Equipment Registry
+•	Maintenance Schedule
+•	Equipment Assignment
+Quick Actions
+•	Log Maintenance
+•	Assign Equipment
+________________________________________
+11. Sales / Marketing
+Sales Dashboard
+•	Leads Pipeline
+•	Deals Closing
+•	Revenue Forecast
+Marketing Dashboard
+•	Campaign Performance
+•	Social Media Scheduler
+•	Website Traffic
+________________________________________
+12. Dispatcher
+Top Summary
+•	Crews Available
+•	Jobs Today
+•	Equipment Availability
+Widgets
+•	Crew Dispatch Board
+•	Schedule Calendar
+•	Vehicle Tracking
+Quick Actions
+•	Assign Crew
+•	Update Schedule
+________________________________________
+Recommended Universal Widgets
+Every dashboard should support:
+•	Notifications
+•	Recent Activity
+•	Tasks Due Today
+•	Calendar
+•	AI Assistant
+
