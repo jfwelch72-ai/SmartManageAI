@@ -18,6 +18,7 @@ import {
   Landmark,
   PieChart,
   CalendarDays,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import type { FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
@@ -43,6 +44,7 @@ import { SOVProgressWidget } from "./SOVProgressWidget";
 import { BidPipelineWidget } from "./BidPipelineWidget";
 import { CostCodeBreakdownWidget } from "./CostCodeBreakdownWidget";
 import { ScheduleImpactWidget } from "./ScheduleImpactWidget";
+import { QuickActionsWidget } from "./QuickActionsWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -399,6 +401,20 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 3,
     maxW: 12,
     maxH: 6,
+    singleton: true,
+  },
+  {
+    type: "QUICK_ACTIONS",
+    label: "Quick Actions",
+    description: "Role-specific shortcut buttons for common tasks",
+    icon: Zap,
+    component: QuickActionsWidget,
+    defaultW: 12,
+    defaultH: 3,
+    minW: 4,
+    minH: 2,
+    maxW: 12,
+    maxH: 4,
     singleton: true,
   },
 ];
