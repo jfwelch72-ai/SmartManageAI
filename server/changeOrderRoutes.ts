@@ -80,42 +80,51 @@ async function notifyStatusChange(
   notifyRequestedBy: boolean = true,
   tx?: DbTransaction
 ) {
-  const dbClient = tx || db;
-  const notificationsToCreate: any[] = [];
+  try {
+    const dbClient = tx || db;
+    const notificationsToCreate: any[] = [];
 
-  // Always notify the requester
-  if (notifyRequestedBy) {
-    notificationsToCreate.push({
-      userId: order.requestedById,
-      type: "GENERAL" as const,
-      title: `Change Order ${newStatus}`,
-      message,
-      relatedEntityId: order.id,
-      relatedEntityType: "changeOrder",
-    });
-  }
+    const statusTypeMap: Record<string, string> = {
+      SUBMITTED: "CHANGE_ORDER_PENDING",
+      APPROVED: "CHANGE_ORDER_APPROVED",
+      REJECTED: "CHANGE_ORDER_REJECTED",
+      DRAFT: "GENERAL",
+    };
 
-  // Notify admins and managers when a change order is submitted
-  if (newStatus === "SUBMITTED") {
-    const adminsAndManagers = await dbClient
-      .select()
-      .from(users)
-      .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
-
-    adminsAndManagers.forEach((user: any) => {
+    if (notifyRequestedBy) {
       notificationsToCreate.push({
-        userId: user.id,
-        type: "CHANGE_ORDER_PENDING" as const,
-        title: "Change Order Submitted",
-        message: `Change order ${order.changeOrderNumber} has been submitted to client`,
+        userId: order.requestedById,
+        type: (statusTypeMap[newStatus] || "GENERAL") as any,
+        title: `Change Order ${newStatus}`,
+        message,
         relatedEntityId: order.id,
         relatedEntityType: "changeOrder",
       });
-    });
-  }
+    }
 
-  if (notificationsToCreate.length > 0) {
-    await dbClient.insert(notifications).values(notificationsToCreate);
+    if (newStatus === "SUBMITTED") {
+      const adminsAndManagers = await dbClient
+        .select()
+        .from(users)
+        .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
+
+      adminsAndManagers.forEach((user: any) => {
+        notificationsToCreate.push({
+          userId: user.id,
+          type: "CHANGE_ORDER_PENDING" as const,
+          title: "Change Order Submitted",
+          message: `Change order ${order.changeOrderNumber} has been submitted to client`,
+          relatedEntityId: order.id,
+          relatedEntityType: "changeOrder",
+        });
+      });
+    }
+
+    if (notificationsToCreate.length > 0) {
+      await dbClient.insert(notifications).values(notificationsToCreate);
+    }
+  } catch (error) {
+    console.error("Failed to create change order notifications:", error);
   }
 }
 

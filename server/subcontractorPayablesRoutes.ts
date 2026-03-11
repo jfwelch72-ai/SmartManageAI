@@ -69,11 +69,18 @@ async function sendPayableNotifications(
         )
       );
 
+    const typeMap: Record<string, string> = {
+      CREATED: "PAYABLE_CREATED",
+      APPROVED: "PAYABLE_APPROVED",
+      REJECTED: "PAYABLE_REJECTED",
+    };
+    const notificationType = typeMap[action] || "GENERAL";
+
     const notificationRecords = eligibleUsers
       .filter(u => u.id !== triggeredByUserId)
       .map(user => ({
         userId: user.id,
-        type: "GENERAL" as const,
+        type: notificationType as any,
         title: `Subcontractor Payable ${action}`,
         message: `A ${action === "CREATED" ? "new" : action.toLowerCase()} payable for ${subcontractorName} - $${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
         isRead: false,

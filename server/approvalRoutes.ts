@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "./auth";
 import * as approvalService from "./services/approvalService";
 import { logInfo, logError } from "./utils/logger";
+import { notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 
@@ -56,6 +57,18 @@ router.post("/:id/approve", requireAuth, async (req, res) => {
     }
     const result = await approvalService.approveRequest(req.params.id, user.organizationId, user.id, user.role, req.body.notes);
     if (!result) return res.status(404).json({ error: "Approval not found or already decided" });
+
+    if (result.requestedByUserId) {
+      const entityLabel = (result.entityType || "Request").replace(/_/g, " ");
+      notifySubmitter(result.requestedByUserId, {
+        type: "APPROVAL_REQUEST_APPROVED",
+        title: "Approval Request Approved",
+        message: `Your ${entityLabel} has been approved${req.body.notes ? `: ${req.body.notes}` : ""}`,
+        relatedEntityId: result.entityId || req.params.id,
+        relatedEntityType: result.entityType || "approval",
+      });
+    }
+
     res.json(result);
   } catch (err) {
     logError("Failed to approve", { error: String(err) });
@@ -71,6 +84,18 @@ router.post("/:id/reject", requireAuth, async (req, res) => {
     }
     const result = await approvalService.rejectRequest(req.params.id, user.organizationId, user.id, user.role, req.body.notes);
     if (!result) return res.status(404).json({ error: "Approval not found or already decided" });
+
+    if (result.requestedByUserId) {
+      const entityLabel = (result.entityType || "Request").replace(/_/g, " ");
+      notifySubmitter(result.requestedByUserId, {
+        type: "APPROVAL_REQUEST_REJECTED",
+        title: "Approval Request Rejected",
+        message: `Your ${entityLabel} has been rejected${req.body.notes ? `: ${req.body.notes}` : ""}`,
+        relatedEntityId: result.entityId || req.params.id,
+        relatedEntityType: result.entityType || "approval",
+      });
+    }
+
     res.json(result);
   } catch (err) {
     logError("Failed to reject", { error: String(err) });

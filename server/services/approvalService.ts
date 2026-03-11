@@ -2,6 +2,7 @@ import { db } from "../db";
 import { approvalRequests } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
+import { notifyApprovers } from "./approvalNotificationService";
 
 export type ApprovalEntityType = "CHANGE_ORDER" | "SOV_PAY_APP" | "TIME_APPROVAL" | "VENDOR_BILL" | "ESIGN_SEND" | "QBO_EXPORT";
 
@@ -22,6 +23,16 @@ export async function createApprovalRequest(
   }).returning();
 
   logInfo("Approval request created", { requestId: request.id, orgId, entityType, entityId });
+
+  const entityLabel = entityType.replace(/_/g, " ");
+  notifyApprovers(orgId, requestedByUserId, {
+    type: "APPROVAL_REQUEST_NEW",
+    title: "New Approval Request",
+    message: `A ${entityLabel} requires your approval`,
+    relatedEntityId: entityId,
+    relatedEntityType: entityType,
+  });
+
   return request;
 }
 

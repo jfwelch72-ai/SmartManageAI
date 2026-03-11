@@ -24,6 +24,8 @@ export function getNotificationDestination(notification: {
       return getProjectDestination();
 
     case "CHANGE_ORDER_PENDING":
+    case "CHANGE_ORDER_APPROVED":
+    case "CHANGE_ORDER_REJECTED":
       if (relatedEntityType === "changeOrder" && relatedEntityId) {
         return projectCode ? `/projects/${projectCode}` : "/projects";
       }
@@ -51,7 +53,6 @@ export function getNotificationDestination(notification: {
     case "PORTAL_ACTIVITY":
     case "PROGRESS_MILESTONE":
     case "DAILY_PROGRESS_LOGGED":
-    case "CHANGE_ORDER_APPROVED":
     case "SOV_ITEM_COMPLETED":
       return getProjectDestination();
 
@@ -63,6 +64,32 @@ export function getNotificationDestination(notification: {
         return `/bid-inbox/${relatedEntityId}`;
       }
       return "/bid-inbox";
+
+    case "SUBMITTAL_SUBMITTED":
+    case "SUBMITTAL_APPROVED":
+    case "SUBMITTAL_REJECTED":
+    case "SUBMITTAL_REVISION_REQUESTED":
+      return "/submittals";
+
+    case "TM_TICKET_SUBMITTED":
+    case "TM_TICKET_APPROVED":
+    case "TM_TICKET_REJECTED":
+      return getProjectDestination();
+
+    case "OVERTIME_REQUESTED":
+    case "OVERTIME_APPROVED":
+    case "OVERTIME_REJECTED":
+      return "/time-clock-manager";
+
+    case "PAYABLE_CREATED":
+    case "PAYABLE_APPROVED":
+    case "PAYABLE_REJECTED":
+      return "/subcontractor-payables";
+
+    case "APPROVAL_REQUEST_NEW":
+    case "APPROVAL_REQUEST_APPROVED":
+    case "APPROVAL_REQUEST_REJECTED":
+      return "/approvals";
 
     case "GENERAL":
     default:

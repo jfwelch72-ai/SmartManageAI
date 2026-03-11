@@ -43,6 +43,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Social Media Management System**: Comprehensive content management with scheduling, AI generation, and multi-platform support, including a rich media picker and approval workflow. Uploads are stored in a shared `gallery` path.
 *   **Reports System**: Provides 9 report types across Takeoff and Estimate categories, with CSV export, browser print, and snapshot creation.
 *   **Change Order Workflow Enhancement**: Includes revision history tracking and a multi-level approval chain.
+*   **Approval Workflow Notifications**: In-app notifications across all 6 approval workflows (Change Orders, Submittals, T&M Tickets, Overtime Requests, Subcontractor Payables, Unified Approval Center). Approvers are notified on submission; submitters are notified on approval/rejection. Uses a shared `approvalNotificationService` with non-blocking error handling.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

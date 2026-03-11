@@ -7,6 +7,7 @@ import {
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "./auth";
+import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 
 function hasTMApprovalAccess(role: string): boolean {
   return ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role);
@@ -47,6 +48,18 @@ export function registerTMApprovalRoutes(app: Express) {
         entityId: ticketId,
         newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber }),
       });
+
+      notifyApprovers(
+        ticket.organizationId,
+        userId,
+        {
+          type: "TM_TICKET_SUBMITTED",
+          title: "T&M Ticket Submitted",
+          message: `T&M Ticket ${ticket.ticketNumber} has been submitted for approval`,
+          relatedEntityId: ticket.projectId || ticketId,
+          relatedEntityType: "project",
+        }
+      );
       
       res.json(updatedTicket);
     } catch (error) {
@@ -94,6 +107,16 @@ export function registerTMApprovalRoutes(app: Express) {
         entityId: ticketId,
         newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber, grandTotal: ticket.grandTotal }),
       });
+
+      if (ticket.submittedById) {
+        notifySubmitter(ticket.submittedById, {
+          type: "TM_TICKET_APPROVED",
+          title: "T&M Ticket Approved",
+          message: `T&M Ticket ${ticket.ticketNumber} has been approved`,
+          relatedEntityId: ticket.projectId || ticketId,
+          relatedEntityType: "project",
+        });
+      }
       
       res.json(updatedTicket);
     } catch (error) {
@@ -142,6 +165,16 @@ export function registerTMApprovalRoutes(app: Express) {
         entityId: ticketId,
         newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber, reason }),
       });
+
+      if (ticket.submittedById) {
+        notifySubmitter(ticket.submittedById, {
+          type: "TM_TICKET_REJECTED",
+          title: "T&M Ticket Rejected",
+          message: `T&M Ticket ${ticket.ticketNumber} has been rejected${reason ? `: ${reason}` : ""}`,
+          relatedEntityId: ticket.projectId || ticketId,
+          relatedEntityType: "project",
+        });
+      }
       
       res.json(updatedTicket);
     } catch (error) {
