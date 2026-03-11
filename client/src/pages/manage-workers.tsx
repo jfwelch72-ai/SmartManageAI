@@ -57,6 +57,10 @@ import {
   Check,
   X,
   Loader2,
+  ArrowUpRight,
+  ArrowDownRight,
+  Gauge,
+  Settings2,
 } from "lucide-react";
 import {
   BarChart,
@@ -123,7 +127,8 @@ interface KpiDashboardData {
   }>;
 }
 
-interface Criteria { id: string; name: string; description: string; weight: string; maxScore: number; isActive: boolean; sortOrder: number; }
+interface Criteria { id: string; name: string; description: string; weight: string; maxScore: number; isActive: boolean; sortOrder: number; kpiTemplateId?: string | null; }
+interface KpiCriteria { id: string; kpiTemplateId: string; name: string; description: string | null; category: string; unit: string; direction: string; weight: string; maxScore: number; isActive: boolean; sortOrder: number; targetValue: number | null; periodType: string | null; assignmentId: string | null; isKpiBased: true; }
 interface EligibleEmployee { id: string; firstName: string; lastName: string; role: string; }
 interface RatingScore { criteriaId: string; score: string; comment?: string; criteriaName: string; }
 interface Rating { id: string; employeeId: string; evaluatorId: string; projectId?: string; period?: string; overallScore: string; weightedScore: string; comments?: string; createdAt: string; scores: RatingScore[]; employeeName: string; evaluatorName: string; }
@@ -875,9 +880,11 @@ function ManageCriteriaDialog() {
   );
 }
 
-function RatingTab() {
+function PerformanceTab() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER";
+  const [perfSubTab, setPerfSubTab] = useState<"rate" | "kpi-library" | "history">("rate");
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [scores, setScores] = useState<Record<string, number>>({});
   const [period, setPeriod] = useState("");
@@ -885,7 +892,10 @@ function RatingTab() {
   const [historyView, setHistoryView] = useState<"received" | "given">("received");
   const [expandedRating, setExpandedRating] = useState<string | null>(null);
 
-  const { data: criteria = [] } = useQuery<Criteria[]>({ queryKey: ["/api/performance/criteria"] });
+  const { data: kpiCriteria = [], isLoading: loadingKpi } = useQuery<KpiCriteria[]>({
+    queryKey: ["/api/performance/kpi-criteria", selectedEmployee],
+    queryFn: () => fetch(`/api/performance/kpi-criteria${selectedEmployee ? `?employeeId=${selectedEmployee}` : ""}`, { credentials: "include" }).then((r) => r.json()),
+  });
   const { data: employees = [], isLoading: loadingEmp } = useQuery<EligibleEmployee[]>({ queryKey: ["/api/performance/eligible-employees"] });
   const { data: myRatings = [], isLoading: loadingMy } = useQuery<Rating[]>({ queryKey: ["/api/performance/ratings/my"] });
   const { data: givenRatings = [], isLoading: loadingGiven } = useQuery<Rating[]>({
@@ -894,13 +904,15 @@ function RatingTab() {
     enabled: !!user?.id,
   });
 
-  const activeCriteria = criteria.filter((c) => c.isActive);
-
   const submitMut = useMutation({
     mutationFn: async () => {
+      const scoresToSubmit = kpiCriteria
+        .filter((c) => scores[c.id] !== undefined && scores[c.id] !== null)
+        .map((c) => ({ criteriaId: c.id, score: scores[c.id] || 0 }));
+      if (scoresToSubmit.length === 0) throw new Error("Please score at least one KPI");
       const res = await apiRequest("POST", "/api/performance/ratings", {
         employeeId: selectedEmployee, period: period || undefined, comments: ratingComment || undefined,
-        scores: activeCriteria.map((c) => ({ criteriaId: c.id, score: scores[c.id] || 0 })),
+        scores: scoresToSubmit,
       });
       return res.json();
     },
@@ -908,6 +920,7 @@ function RatingTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/performance/ratings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/performance/ratings/my"] });
       queryClient.invalidateQueries({ queryKey: ["/api/performance/leaderboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/performance/kpi-criteria"] });
       setSelectedEmployee(""); setScores({}); setPeriod(""); setRatingComment("");
       toast({ title: "Rating submitted successfully" });
     },
@@ -917,110 +930,222 @@ function RatingTab() {
   const displayed = historyView === "received" ? myRatings : givenRatings;
   const loadingHist = historyView === "received" ? loadingMy : loadingGiven;
 
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Star className="w-5 h-5" />Rate an Employee</CardTitle>
-          <CardDescription>Select an employee and provide your rating</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {loadingEmp ? <Skeleton className="h-10 w-full" /> : (
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Employee</label>
-              <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
-                <SelectTrigger data-testid="select-employee-to-rate"><SelectValue placeholder="Select an employee..." /></SelectTrigger>
-                <SelectContent>
-                  {employees.map((e) => (<SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName} - {e.role}</SelectItem>))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          {selectedEmployee && activeCriteria.length > 0 && (<>
-            <div className="space-y-4">
-              {activeCriteria.map((c) => (
-                <div key={c.id} className="space-y-1.5">
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <label className="text-sm font-medium">{c.name}</label>
-                    <Badge variant="outline" className="text-xs">Max: {c.maxScore}</Badge>
-                  </div>
-                  {c.description && <p className="text-xs text-muted-foreground">{c.description}</p>}
-                  <Input type="number" min={0} max={c.maxScore} value={scores[c.id] ?? ""} onChange={(e) => setScores((p) => ({ ...p, [c.id]: Number(e.target.value) }))} placeholder={`0 - ${c.maxScore}`} data-testid={`input-score-${c.id}`} />
-                </div>
-              ))}
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Period</label>
-              <Input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="e.g. Q1 2026" data-testid="input-rating-period" />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-1.5 block">Overall Comments</label>
-              <Textarea value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} placeholder="Provide overall feedback..." rows={3} data-testid="textarea-rating-comments" />
-            </div>
-            <Button onClick={() => submitMut.mutate()} disabled={submitMut.isPending || !selectedEmployee} className="w-full" data-testid="button-submit-rating">
-              {submitMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}Submit Rating
-            </Button>
-          </>)}
-          {selectedEmployee && activeCriteria.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">No active rating criteria configured. Ask an admin to set up criteria.</p>
-          )}
-        </CardContent>
-      </Card>
+  const getScorePercentage = (kpi: KpiCriteria, score: number) => {
+    if (kpi.targetValue && kpi.targetValue > 0) {
+      return Math.min((score / kpi.targetValue) * 100, 100);
+    }
+    return (score / kpi.maxScore) * 100;
+  };
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <CardTitle className="flex items-center gap-2"><Award className="w-5 h-5" />Rating History</CardTitle>
-            <div className="flex gap-1">
-              <Button variant={historyView === "received" ? "default" : "outline"} size="sm" onClick={() => setHistoryView("received")} data-testid="button-my-ratings">My Ratings</Button>
-              <Button variant={historyView === "given" ? "default" : "outline"} size="sm" onClick={() => setHistoryView("given")} data-testid="button-given-ratings">Given</Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loadingHist ? <div className="space-y-3"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div> : displayed.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No ratings found</p>
-          ) : (
-            <div className="space-y-3">
-              {displayed.map((r) => (
-                <div key={r.id} className="border rounded-md p-3 hover-elevate cursor-pointer" onClick={() => setExpandedRating(expandedRating === r.id ? null : r.id)} data-testid={`rating-card-${r.id}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(historyView === "received" ? r.evaluatorName : r.employeeName)?.[0]}</AvatarFallback></Avatar>
-                      <div>
-                        <p className="text-sm font-medium">{historyView === "received" ? r.evaluatorName : r.employeeName}</p>
-                        <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}{r.period && ` - ${r.period}`}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{parseFloat(String(r.overallScore)).toFixed(1)}</Badge>
-                      {expandedRating === r.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                    </div>
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 border-b pb-3">
+        <Button variant={perfSubTab === "rate" ? "default" : "outline"} size="sm" onClick={() => setPerfSubTab("rate")} data-testid="button-perf-rate">
+          <Star className="w-4 h-4 mr-1.5" />Rate Employee
+        </Button>
+        {canManageKpis && (
+          <Button variant={perfSubTab === "kpi-library" ? "default" : "outline"} size="sm" onClick={() => setPerfSubTab("kpi-library")} data-testid="button-perf-kpi-library">
+            <Settings2 className="w-4 h-4 mr-1.5" />KPI Library
+          </Button>
+        )}
+        <Button variant={perfSubTab === "history" ? "default" : "outline"} size="sm" onClick={() => setPerfSubTab("history")} data-testid="button-perf-history">
+          <Award className="w-4 h-4 mr-1.5" />Rating History
+        </Button>
+      </div>
+
+      {perfSubTab === "rate" && (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+          <div className="lg:col-span-3">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><Gauge className="w-5 h-5" />Rate Employee by KPIs</CardTitle>
+                <CardDescription>Score employees against their assigned KPI targets</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {loadingEmp ? <Skeleton className="h-10 w-full" /> : (
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Employee</label>
+                    <Select value={selectedEmployee} onValueChange={(v) => { setSelectedEmployee(v); setScores({}); }}>
+                      <SelectTrigger data-testid="select-employee-to-rate"><SelectValue placeholder="Select an employee..." /></SelectTrigger>
+                      <SelectContent>
+                        {employees.map((e) => (<SelectItem key={e.id} value={String(e.id)}>{e.firstName} {e.lastName} - {e.role}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="mt-2">
-                    <Progress value={(parseFloat(String(r.overallScore)) / 10) * 100} className="h-2" />
-                    <span className="text-xs text-muted-foreground mt-1 block">Weighted: {parseFloat(String(r.weightedScore)).toFixed(2)}</span>
-                  </div>
-                  {expandedRating === r.id && (
-                    <div className="mt-3 pt-3 border-t space-y-2">
-                      {r.scores?.map((s, i) => (
-                        <div key={i} className="flex items-center justify-between gap-2">
-                          <span className="text-sm">{s.criteriaName}</span>
-                          <div className="flex items-center gap-2">
-                            <Progress value={(parseFloat(String(s.score)) / 10) * 100} className="h-1.5 w-20" />
-                            <span className="text-sm font-medium w-8 text-right">{s.score}</span>
+                )}
+
+                {selectedEmployee && loadingKpi && <Skeleton className="h-40 w-full" />}
+
+                {selectedEmployee && !loadingKpi && kpiCriteria.length > 0 && (<>
+                  <div className="space-y-4">
+                    {kpiCriteria.map((kpi) => {
+                      const scoreVal = scores[kpi.id];
+                      const pct = scoreVal !== undefined ? getScorePercentage(kpi, scoreVal) : 0;
+                      const dirIcon = kpi.direction === "higher_is_better"
+                        ? <ArrowUpRight className="w-3 h-3 text-green-600" />
+                        : <ArrowDownRight className="w-3 h-3 text-orange-600" />;
+
+                      return (
+                        <div key={kpi.id} className="border rounded-lg p-3 space-y-2" data-testid={`kpi-criterion-${kpi.id}`}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm font-medium">{kpi.name}</label>
+                              {dirIcon}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Badge variant="outline" className="text-xs">{kpi.unit}</Badge>
+                              <Badge variant="secondary" className="text-xs">{kpi.category}</Badge>
+                            </div>
+                          </div>
+                          {kpi.description && <p className="text-xs text-muted-foreground">{kpi.description}</p>}
+                          {kpi.targetValue !== null && (
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Target className="w-3 h-3" />
+                              <span>Target: {kpi.targetValue} {kpi.unit}</span>
+                              {kpi.periodType && <span className="text-muted-foreground/60">({kpi.periodType})</span>}
+                            </div>
+                          )}
+                          <div className="flex items-center gap-3">
+                            <Input
+                              type="number"
+                              min={0}
+                              max={kpi.maxScore}
+                              value={scores[kpi.id] ?? ""}
+                              onChange={(e) => setScores((p) => ({ ...p, [kpi.id]: Number(e.target.value) }))}
+                              placeholder={`Score 0 - ${kpi.maxScore}`}
+                              className="w-32"
+                              data-testid={`input-score-${kpi.id}`}
+                            />
+                            <div className="flex-1">
+                              <Progress value={pct} className="h-2" />
+                            </div>
+                            <span className="text-xs font-medium w-12 text-right">{pct.toFixed(0)}%</span>
                           </div>
                         </div>
-                      ))}
-                      {r.comments && <p className="text-sm text-muted-foreground mt-2 italic">{r.comments}</p>}
-                    </div>
-                  )}
+                      );
+                    })}
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Period</label>
+                    <Input value={period} onChange={(e) => setPeriod(e.target.value)} placeholder="e.g. Q1 2026" data-testid="input-rating-period" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Overall Comments</label>
+                    <Textarea value={ratingComment} onChange={(e) => setRatingComment(e.target.value)} placeholder="Provide overall feedback..." rows={3} data-testid="textarea-rating-comments" />
+                  </div>
+                  <Button onClick={() => submitMut.mutate()} disabled={submitMut.isPending || !selectedEmployee} className="w-full" data-testid="button-submit-rating">
+                    {submitMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}Submit Rating
+                  </Button>
+                </>)}
+                {selectedEmployee && !loadingKpi && kpiCriteria.length === 0 && (
+                  <div className="text-center py-6 space-y-2">
+                    <Target className="w-8 h-8 mx-auto text-muted-foreground/50" />
+                    <p className="text-sm text-muted-foreground">No KPIs configured yet. Create KPIs in the KPI Library to use them as rating criteria.</p>
+                    {canManageKpis && (
+                      <Button variant="outline" size="sm" onClick={() => setPerfSubTab("kpi-library")} data-testid="button-go-kpi-library">
+                        <Settings2 className="w-4 h-4 mr-1.5" />Go to KPI Library
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2"><Activity className="w-4 h-4" />Quick Stats</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="border rounded-md p-3 text-center">
+                    <p className="text-2xl font-bold" data-testid="text-kpi-count">{kpiCriteria.length}</p>
+                    <p className="text-xs text-muted-foreground">Active KPIs</p>
+                  </div>
+                  <div className="border rounded-md p-3 text-center">
+                    <p className="text-2xl font-bold" data-testid="text-assigned-count">
+                      {kpiCriteria.filter(k => k.assignmentId).length}
+                    </p>
+                    <p className="text-xs text-muted-foreground">With Targets</p>
+                  </div>
                 </div>
-              ))}
+                {selectedEmployee && kpiCriteria.length > 0 && Object.keys(scores).length > 0 && (
+                  <div className="border rounded-md p-3">
+                    <p className="text-xs text-muted-foreground mb-1">Average Score</p>
+                    <p className="text-xl font-bold" data-testid="text-avg-score">
+                      {(Object.values(scores).reduce((a, b) => a + b, 0) / Object.values(scores).length).toFixed(1)}
+                    </p>
+                    <Progress
+                      value={(Object.values(scores).reduce((a, b) => a + b, 0) / Object.values(scores).length / 10) * 100}
+                      className="h-2 mt-2"
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {perfSubTab === "kpi-library" && canManageKpis && <KpiManagementPage />}
+
+      {perfSubTab === "history" && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <CardTitle className="flex items-center gap-2"><Award className="w-5 h-5" />Rating History</CardTitle>
+              <div className="flex gap-1">
+                <Button variant={historyView === "received" ? "default" : "outline"} size="sm" onClick={() => setHistoryView("received")} data-testid="button-my-ratings">My Ratings</Button>
+                <Button variant={historyView === "given" ? "default" : "outline"} size="sm" onClick={() => setHistoryView("given")} data-testid="button-given-ratings">Given</Button>
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent>
+            {loadingHist ? <div className="space-y-3"><Skeleton className="h-20 w-full" /><Skeleton className="h-20 w-full" /></div> : displayed.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No ratings found</p>
+            ) : (
+              <div className="space-y-3">
+                {displayed.map((r) => (
+                  <div key={r.id} className="border rounded-md p-3 hover-elevate cursor-pointer" onClick={() => setExpandedRating(expandedRating === r.id ? null : r.id)} data-testid={`rating-card-${r.id}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(historyView === "received" ? r.evaluatorName : r.employeeName)?.[0]}</AvatarFallback></Avatar>
+                        <div>
+                          <p className="text-sm font-medium">{historyView === "received" ? r.evaluatorName : r.employeeName}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleDateString()}{r.period && ` - ${r.period}`}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{parseFloat(String(r.overallScore)).toFixed(1)}</Badge>
+                        {expandedRating === r.id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    </div>
+                    <div className="mt-2">
+                      <Progress value={(parseFloat(String(r.overallScore)) / 10) * 100} className="h-2" />
+                      <span className="text-xs text-muted-foreground mt-1 block">Weighted: {parseFloat(String(r.weightedScore)).toFixed(2)}</span>
+                    </div>
+                    {expandedRating === r.id && (
+                      <div className="mt-3 pt-3 border-t space-y-2">
+                        {r.scores?.map((s, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2">
+                            <span className="text-sm">{s.criteriaName}</span>
+                            <div className="flex items-center gap-2">
+                              <Progress value={(parseFloat(String(s.score)) / 10) * 100} className="h-1.5 w-20" />
+                              <span className="text-sm font-medium w-8 text-right">{s.score}</span>
+                            </div>
+                          </div>
+                        ))}
+                        {r.comments && <p className="text-sm text-muted-foreground mt-2 italic">{r.comments}</p>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -1347,20 +1472,18 @@ export default function ManageWorkersPage() {
   const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
   const canManageWorkers = isAdmin || isManager;
   const canViewAnalytics = isAdmin || isManager;
-  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER";
-  const defaultTab = canManageWorkers ? "workers" : "ratings";
+  const defaultTab = canManageWorkers ? "workers" : "performance";
   const [activeTab, setActiveTab] = useState(defaultTab);
 
   const tabOptions = useMemo(() => {
     const opts: { value: string; label: string }[] = [];
     if (canManageWorkers) opts.push({ value: "workers", label: "Workers" });
-    opts.push({ value: "ratings", label: "Ratings" });
+    opts.push({ value: "performance", label: "Performance" });
     opts.push({ value: "rewards", label: "Rewards" });
     if (canViewAnalytics) opts.push({ value: "analytics", label: "Analytics" });
-    if (canManageKpis) opts.push({ value: "kpi-management", label: "KPI Management" });
     opts.push({ value: "my-kpis", label: "My KPIs" });
     return opts;
-  }, [canManageWorkers, canViewAnalytics, canManageKpis]);
+  }, [canManageWorkers, canViewAnalytics]);
 
   if (!user) return <div className="p-6 space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /></div>;
 
@@ -1375,7 +1498,7 @@ export default function ManageWorkersPage() {
               <p className="text-sm text-muted-foreground mt-1">Manage your team, track performance, and recognize achievements</p>
             </div>
           </div>
-          {isAdmin && <ManageCriteriaDialog />}
+          
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
@@ -1393,18 +1516,16 @@ export default function ManageWorkersPage() {
           ) : (
             <TabsList data-testid="workforce-tabs">
               {canManageWorkers && <TabsTrigger value="workers" data-testid="tab-workers"><Users className="w-4 h-4 mr-1.5" />Workers</TabsTrigger>}
-              <TabsTrigger value="ratings" data-testid="tab-ratings"><Star className="w-4 h-4 mr-1.5" />Ratings</TabsTrigger>
+              <TabsTrigger value="performance" data-testid="tab-performance"><Gauge className="w-4 h-4 mr-1.5" />Performance</TabsTrigger>
               <TabsTrigger value="rewards" data-testid="tab-rewards"><Gift className="w-4 h-4 mr-1.5" />Rewards</TabsTrigger>
               {canViewAnalytics && <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>}
-              {canManageKpis && <TabsTrigger value="kpi-management" data-testid="tab-kpi-management"><Target className="w-4 h-4 mr-1.5" />KPI Management</TabsTrigger>}
               <TabsTrigger value="my-kpis" data-testid="tab-my-kpis"><Target className="w-4 h-4 mr-1.5" />My KPIs</TabsTrigger>
             </TabsList>
           )}
           {canManageWorkers && <TabsContent value="workers"><WorkersTab /></TabsContent>}
-          <TabsContent value="ratings"><RatingTab /></TabsContent>
+          <TabsContent value="performance"><PerformanceTab /></TabsContent>
           <TabsContent value="rewards"><RewardsTab /></TabsContent>
           {canViewAnalytics && <TabsContent value="analytics"><AnalyticsTab /></TabsContent>}
-          {canManageKpis && <TabsContent value="kpi-management"><KpiManagementPage /></TabsContent>}
           <TabsContent value="my-kpis"><MyKpisPage /></TabsContent>
         </Tabs>
       </div>

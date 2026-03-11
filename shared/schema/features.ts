@@ -4611,6 +4611,7 @@ export const ratingCriteria = pgTable("rating_criteria", {
   maxScore: integer("max_score").notNull().default(10),
   isActive: boolean("is_active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+  kpiTemplateId: varchar("kpi_template_id").references(() => kpiTemplates.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("rating_criteria_org_idx").on(table.organizationId),
