@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardList, DollarSign, ShieldCheck, ArrowRight } from "lucide-react";
+import { ClipboardList, DollarSign, ShieldCheck, ArrowRight, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
 interface SOVProject {
   name: string;
@@ -50,10 +51,29 @@ function ProgressBar({ label, percent, color }: { label: string; percent: number
 }
 
 export function SOVProgressWidget() {
+  const hasPermission = useFeaturePermission("canAccessFinancials");
+
   const { data, isLoading } = useQuery<SOVProgress>({
     queryKey: ["/api/dashboard/sov-progress"],
     refetchInterval: 300000,
+    enabled: hasPermission,
   });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="sov-progress-no-permission">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">SOV Progress</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view financial data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

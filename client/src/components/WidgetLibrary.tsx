@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Check, Search, LayoutGrid } from "lucide-react";
-import { useDashboardCustomization, getAllWidgets } from "@/hooks/use-dashboard-customization";
+import { useDashboardCustomization, getAllWidgets, type FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
 import {
   WIDGET_REGISTRY,
   type WidgetDefinition,
@@ -35,18 +35,24 @@ interface WidgetLibraryProps {
 
 function isWidgetAvailableForRole(
   widget: WidgetDefinition,
-  userRole?: string
+  userRole?: string,
+  userPermissions?: Record<FeaturePermissionKey, boolean>
 ): boolean {
-  if (!widget.roleGate) return true;
-  if (widget.roleGate === "management") return hasManagementAccess(userRole);
-  if (widget.roleGate === "superintendent")
-    return userRole === "SUPERINTENDENT";
-  return true;
+  const roleOk = !widget.roleGate
+    || (widget.roleGate === "management" && hasManagementAccess(userRole))
+    || (widget.roleGate === "superintendent" && userRole === "SUPERINTENDENT")
+    || (!["management", "superintendent"].includes(widget.roleGate));
+
+  if (!widget.featurePerm) return roleOk;
+
+  const hasFeaturePerm = userPermissions?.[widget.featurePerm] ?? false;
+
+  return roleOk || hasFeaturePerm;
 }
 
 export function WidgetLibrary({ open, onOpenChange, defaultSectionId }: WidgetLibraryProps) {
   const { user } = useAuth();
-  const { localLayout, addWidget } = useDashboardCustomization();
+  const { localLayout, addWidget, permissions } = useDashboardCustomization();
   const [searchQuery, setSearchQuery] = useState("");
   const [targetSectionId, setTargetSectionId] = useState<string>(defaultSectionId || "");
 
@@ -63,7 +69,7 @@ export function WidgetLibrary({ open, onOpenChange, defaultSectionId }: WidgetLi
   const effectiveTargetSection = targetSectionId || (sections.length > 0 ? sections[sections.length - 1].id : "");
 
   const availableWidgets = WIDGET_REGISTRY.filter((widget) =>
-    isWidgetAvailableForRole(widget, user?.role)
+    isWidgetAvailableForRole(widget, user?.role, permissions)
   );
 
   const filteredWidgets = searchQuery

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems } from "@shared/schema";
-import { requireAuth, requireRole, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
 import { sensitiveLimiter } from "./rateLimiter";
@@ -1537,7 +1537,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
 // Workforce Snapshot Widget
 // ====================
 
-router.get("/api/dashboard/workforce-snapshot", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER", "HR_MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -1618,7 +1618,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, async (req: AuthReq
 // Cash Position Widget
 // ====================
 
-router.get("/api/dashboard/cash-position", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -1700,7 +1700,7 @@ router.get("/api/dashboard/cash-position", requireAuth, async (req: AuthRequest,
 // SOV Progress Widget
 // ====================
 
-router.get("/api/dashboard/sov-progress", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -1939,7 +1939,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
 // Cost Code Breakdown Widget
 // ============================
 
-router.get("/api/dashboard/cost-code-breakdown", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 

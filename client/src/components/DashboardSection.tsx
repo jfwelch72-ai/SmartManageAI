@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { WidgetSettingsDialog, WIDGETS_WITH_SETTINGS } from "@/components/WidgetSettingsDialog";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
+import { hasManagementAccess } from "@/lib/rbac";
 
 interface DashboardSectionProps {
   section: DashboardSectionType;
@@ -26,7 +28,8 @@ const GRID_CLASSES: Record<number, string> = {
 };
 
 export function DashboardSectionComponent({ section, sectionIndex, totalSections, onAddWidget }: DashboardSectionProps) {
-  const { isEditMode, removeWidget, duplicateWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, duplicateSection, reorderSections } = useDashboardCustomization();
+  const { isEditMode, permissions, removeWidget, duplicateWidget, reorderWidgets, updateSectionTitle, updateSectionColumns, toggleSectionCollapse, removeSection, duplicateSection, reorderSections } = useDashboardCustomization();
+  const { user } = useAuth();
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(section.title);
   const [settingsWidget, setSettingsWidget] = useState<{ id: string; type: string } | null>(null);
@@ -36,8 +39,21 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
   }, [section.title]);
 
   const visibleWidgets = useMemo(() => {
-    return section.widgets.filter((w) => w.visible && getWidgetComponent(w.type));
-  }, [section.widgets]);
+    return section.widgets.filter((w) => {
+      if (!w.visible || !getWidgetComponent(w.type)) return false;
+      const def = getWidgetDefinition(w.type);
+      if (!def) return false;
+      if (def.roleGate) {
+        const roleOk = def.roleGate === "management" ? hasManagementAccess(user?.role) :
+          def.roleGate === "superintendent" ? user?.role === "SUPERINTENDENT" : true;
+        const hasFeaturePerm = def.featurePerm ? (permissions[def.featurePerm] ?? false) : false;
+        if (!roleOk && !hasFeaturePerm) return false;
+      } else if (def.featurePerm) {
+        if (!permissions[def.featurePerm]) return false;
+      }
+      return true;
+    });
+  }, [section.widgets, permissions, user?.role]);
 
   const handleSaveTitle = () => {
     if (titleDraft.trim()) {

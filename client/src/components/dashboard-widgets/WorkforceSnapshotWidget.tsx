@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Clock, DollarSign, UserMinus, HardHat } from "lucide-react";
+import { Users, Clock, DollarSign, UserMinus, HardHat, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
 interface WorkforceSnapshot {
   activeWorkers: number;
@@ -46,10 +47,29 @@ function getAbsentBg(absent: number, total: number): string {
 }
 
 export function WorkforceSnapshotWidget() {
+  const hasPermission = useFeaturePermission("canManagePayroll");
+
   const { data, isLoading } = useQuery<WorkforceSnapshot>({
     queryKey: ["/api/dashboard/workforce-snapshot"],
     refetchInterval: 120000,
+    enabled: hasPermission,
   });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="workforce-snapshot-no-permission">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Workforce Snapshot</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view payroll data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

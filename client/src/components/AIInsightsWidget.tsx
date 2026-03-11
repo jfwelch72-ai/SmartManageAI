@@ -20,7 +20,9 @@ import {
   Truck,
   Calendar,
   BarChart3,
+  Lock,
 } from "lucide-react";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -150,17 +152,35 @@ export function AIInsightsWidget({
   projectId?: string;
 }) {
   const { toast } = useToast();
+  const hasPermission = useFeaturePermission("canUseAiFeatures");
   const [selectedInsight, setSelectedInsight] = useState<AIInsight | null>(null);
   const [selectedModule, setSelectedModule] = useState<string | null>(null);
 
   const { data: summary, isLoading: summaryLoading, refetch: refetchSummary } = useQuery<DashboardSummary>({
     queryKey: ['/api/ai-insights/dashboard-summary'],
+    enabled: hasPermission,
   });
 
   const { data: insights, isLoading: insightsLoading, refetch: refetchInsights } = useQuery<AIInsight[]>({
     queryKey: ['/api/ai-insights', { module: selectedModule, projectId, acknowledged: 'false' }],
-    enabled: !compact,
+    enabled: !compact && hasPermission,
   });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="ai-insights-no-permission">
+        <CardHeader className="pb-2">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">AI Insights</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view AI insights.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const runAnalysisMutation = useMutation({
     mutationFn: async (module: string = 'ALL') => {

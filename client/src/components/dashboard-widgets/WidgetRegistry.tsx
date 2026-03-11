@@ -20,6 +20,7 @@ import {
   CalendarDays,
   type LucideIcon,
 } from "lucide-react";
+import type { FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
 import { QuickStatsWidget } from "./QuickStatsWidget";
 import { MessagesWidget } from "./MessagesWidget";
 import { NotificationsWidget } from "./NotificationsWidget";
@@ -57,6 +58,7 @@ export interface WidgetDefinition {
   maxH: number;
   singleton: boolean;
   roleGate?: string;
+  featurePerm?: FeaturePermissionKey;
   hasSettings?: boolean;
 }
 
@@ -157,6 +159,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: false,
+    featurePerm: "canManagePayroll",
     hasSettings: false,
   },
   {
@@ -172,6 +175,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 6,
     singleton: false,
+    featurePerm: "canAccessFinancials",
     hasSettings: false,
   },
   {
@@ -187,6 +191,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: false,
+    featurePerm: "canAccessFinancials",
     hasSettings: false,
   },
   {
@@ -217,6 +222,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 8,
     singleton: false,
+    featurePerm: "canAccessFinancials",
     hasSettings: true,
   },
   {
@@ -262,6 +268,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 8,
     singleton: true,
     roleGate: "management",
+    featurePerm: "canUseAiFeatures",
   },
   {
     type: "MESSAGES",
@@ -318,6 +325,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 8,
     maxH: 8,
     singleton: true,
+    featurePerm: "canUseAiFeatures",
   },
   {
     type: "OUTSTANDING_ITEMS",
@@ -333,6 +341,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: true,
     roleGate: "management",
+    featurePerm: "canAccessFinancials",
   },
   {
     type: "ACTIVE_PROJECTS",

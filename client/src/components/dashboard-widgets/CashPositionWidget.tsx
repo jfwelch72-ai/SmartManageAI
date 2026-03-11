@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowDownLeft, ArrowUpRight, Wallet, TrendingUp, TrendingDown, Landmark } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Wallet, TrendingUp, TrendingDown, Landmark, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
 interface CashPosition {
   accountsReceivable: number;
@@ -25,10 +26,29 @@ function formatSignedCurrency(value: number): string {
 }
 
 export function CashPositionWidget() {
+  const hasPermission = useFeaturePermission("canAccessFinancials");
+
   const { data, isLoading } = useQuery<CashPosition>({
     queryKey: ["/api/dashboard/cash-position"],
     refetchInterval: 300000,
+    enabled: hasPermission,
   });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="cash-position-no-permission">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Cash Position</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view financial data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (

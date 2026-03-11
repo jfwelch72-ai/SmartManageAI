@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PieChart as PieChartIcon } from "lucide-react";
+import { PieChart as PieChartIcon, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import {
   PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -69,6 +70,7 @@ interface CostCodeBreakdownWidgetProps {
 }
 
 export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps) {
+  const hasPermission = useFeaturePermission("canAccessFinancials");
   const merged = { ...DEFAULT_COST_CODE_CONFIG, ...config };
 
   const params = new URLSearchParams({ mode: merged.mode || "labor" });
@@ -77,7 +79,24 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
   const { data, isLoading } = useQuery<CostCodeResponse>({
     queryKey: [`/api/dashboard/cost-code-breakdown?${params.toString()}`],
     refetchInterval: 300000,
+    enabled: hasPermission,
   });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="cost-code-no-permission">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Cost Code Breakdown</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view financial data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading) {
     return (
