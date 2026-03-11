@@ -3737,6 +3737,50 @@ export const insertUserColorPaletteSchema = createInsertSchema(userColorPalettes
 export type InsertUserColorPalette = z.infer<typeof insertUserColorPaletteSchema>;
 export type UserColorPalette = typeof userColorPalettes.$inferSelect;
 
+export const orgColorPalettes = pgTable("org_color_palettes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  paletteName: text("palette_name").notNull().default("Organization Default"),
+  isPreset: boolean("is_preset").notNull().default(false),
+  lightPrimary: text("light_primary"),
+  lightPrimaryForeground: text("light_primary_foreground"),
+  lightSecondary: text("light_secondary"),
+  lightSecondaryForeground: text("light_secondary_foreground"),
+  lightAccent: text("light_accent"),
+  lightAccentForeground: text("light_accent_foreground"),
+  lightBackground: text("light_background"),
+  lightForeground: text("light_foreground"),
+  lightMuted: text("light_muted"),
+  lightMutedForeground: text("light_muted_foreground"),
+  lightCard: text("light_card"),
+  lightCardForeground: text("light_card_foreground"),
+  lightBorder: text("light_border"),
+  darkPrimary: text("dark_primary"),
+  darkPrimaryForeground: text("dark_primary_foreground"),
+  darkSecondary: text("dark_secondary"),
+  darkSecondaryForeground: text("dark_secondary_foreground"),
+  darkAccent: text("dark_accent"),
+  darkAccentForeground: text("dark_accent_foreground"),
+  darkBackground: text("dark_background"),
+  darkForeground: text("dark_foreground"),
+  darkMuted: text("dark_muted"),
+  darkMutedForeground: text("dark_muted_foreground"),
+  darkCard: text("dark_card"),
+  darkCardForeground: text("dark_card_foreground"),
+  darkBorder: text("dark_border"),
+  contrastValidated: boolean("contrast_validated").notNull().default(false),
+  lastValidatedAt: timestamp("last_validated_at"),
+  isActive: boolean("is_active").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("org_color_palettes_org_idx").on(table.organizationId),
+}));
+
+export const insertOrgColorPaletteSchema = createInsertSchema(orgColorPalettes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrgColorPalette = z.infer<typeof insertOrgColorPaletteSchema>;
+export type OrgColorPalette = typeof orgColorPalettes.$inferSelect;
+
 // Hustler Multi-Organization System
 // Allows HUSTLER role users to own/manage multiple organizations
 export const hustlerOrganizations = pgTable("hustler_organizations", {

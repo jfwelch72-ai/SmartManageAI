@@ -26,8 +26,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Palette, Check, Trash2, AlertTriangle, Sun, Moon } from "lucide-react";
+import { Palette, Check, Trash2, AlertTriangle, Sun, Moon, Building2, X } from "lucide-react";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
 interface ColorInputProps {
@@ -136,15 +137,22 @@ export function ThemePicker() {
   const { 
     permissions, 
     activePalette, 
+    orgPalette,
+    isOrgDefault,
     savedPalettes, 
     presetPalettes,
     savePalette,
+    saveOrgPalette,
+    deactivateOrgPalette,
     activatePalette,
     deactivatePalette,
     deletePalette,
     isSavingPalette,
     applyPaletteToDOM
   } = useDashboardCustomization();
+
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("presets");
@@ -231,7 +239,48 @@ export function ThemePicker() {
 
   const handleUseDefault = async () => {
     await deactivatePalette();
-    applyPaletteToDOM(null, document.documentElement.classList.contains('dark'));
+    const isDark = document.documentElement.classList.contains('dark');
+    if (orgPalette) {
+      applyPaletteToDOM(orgPalette, isDark);
+    } else {
+      applyPaletteToDOM(null, isDark);
+    }
+  };
+
+  const handleSetOrgDefault = async (palette: any) => {
+    await saveOrgPalette({
+      paletteName: palette.paletteName || palette.name || "Organization Default",
+      lightPrimary: palette.lightPrimary || palette.light?.primary,
+      lightPrimaryForeground: palette.lightPrimaryForeground || palette.light?.primaryForeground,
+      lightSecondary: palette.lightSecondary || palette.light?.secondary,
+      lightSecondaryForeground: palette.lightSecondaryForeground || palette.light?.secondaryForeground,
+      lightAccent: palette.lightAccent || palette.light?.accent,
+      lightAccentForeground: palette.lightAccentForeground || palette.light?.accentForeground,
+      lightBackground: palette.lightBackground || palette.light?.background,
+      lightForeground: palette.lightForeground || palette.light?.foreground,
+      lightMuted: palette.lightMuted || palette.light?.muted,
+      lightMutedForeground: palette.lightMutedForeground || palette.light?.mutedForeground,
+      lightCard: palette.lightCard || palette.light?.card,
+      lightCardForeground: palette.lightCardForeground || palette.light?.cardForeground,
+      lightBorder: palette.lightBorder || palette.light?.border,
+      darkPrimary: palette.darkPrimary || palette.dark?.primary,
+      darkPrimaryForeground: palette.darkPrimaryForeground || palette.dark?.primaryForeground,
+      darkSecondary: palette.darkSecondary || palette.dark?.secondary,
+      darkSecondaryForeground: palette.darkSecondaryForeground || palette.dark?.secondaryForeground,
+      darkAccent: palette.darkAccent || palette.dark?.accent,
+      darkAccentForeground: palette.darkAccentForeground || palette.dark?.accentForeground,
+      darkBackground: palette.darkBackground || palette.dark?.background,
+      darkForeground: palette.darkForeground || palette.dark?.foreground,
+      darkMuted: palette.darkMuted || palette.dark?.muted,
+      darkMutedForeground: palette.darkMutedForeground || palette.dark?.mutedForeground,
+      darkCard: palette.darkCard || palette.dark?.card,
+      darkCardForeground: palette.darkCardForeground || palette.dark?.cardForeground,
+      darkBorder: palette.darkBorder || palette.dark?.border,
+    });
+  };
+
+  const handleRemoveOrgDefault = async () => {
+    await deactivateOrgPalette();
   };
 
   const handleDeletePalette = async () => {
@@ -262,6 +311,37 @@ export function ThemePicker() {
             </DialogDescription>
           </DialogHeader>
 
+          {isOrgDefault && (
+            <div className="flex items-center gap-2 p-3 bg-blue-500/10 rounded-lg" data-testid="org-theme-indicator">
+              <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Using organization default theme{orgPalette?.paletteName ? `: ${orgPalette.paletteName}` : ""}
+              </p>
+            </div>
+          )}
+
+          {isAdmin && orgPalette && (
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg" data-testid="org-theme-admin-controls">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground">
+                  Org default: <span className="font-medium text-foreground">{orgPalette.paletteName}</span>
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs text-destructive hover:text-destructive"
+                onClick={handleRemoveOrgDefault}
+                disabled={isSavingPalette}
+                data-testid="button-remove-org-default"
+              >
+                <X className="w-3 h-3 mr-1" />
+                Remove
+              </Button>
+            </div>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="w-full">
               <TabsTrigger value="presets" className="flex-1">Presets</TabsTrigger>
@@ -281,9 +361,31 @@ export function ThemePicker() {
                   />
                 ))}
               </div>
+              {isAdmin && (
+                <>
+                  <Separator className="my-4" />
+                  <p className="text-xs text-muted-foreground mb-2">Select a preset above, then set it as the org default:</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {Object.entries(presetPalettes).map(([key, preset]: [string, any]) => (
+                      <Button
+                        key={key}
+                        size="sm"
+                        variant="outline"
+                        className="text-xs justify-start"
+                        onClick={() => handleSetOrgDefault({ name: preset.name, ...preset })}
+                        disabled={isSavingPalette}
+                        data-testid={`button-org-default-${key}`}
+                      >
+                        <Building2 className="w-3 h-3 mr-1 shrink-0" />
+                        {preset.name}
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
               <Separator className="my-4" />
               <Button variant="outline" className="w-full" onClick={handleUseDefault} data-testid="button-use-default">
-                Use Default Theme
+                {orgPalette ? "Use Organization Default" : "Use System Default"}
               </Button>
             </TabsContent>
 
@@ -359,6 +461,18 @@ export function ThemePicker() {
                     Save & Apply
                   </Button>
                 </div>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    className="w-full text-sm"
+                    onClick={() => handleSetOrgDefault({ paletteName: paletteName.trim() || "Custom Org Theme", ...customColors })}
+                    disabled={isSavingPalette}
+                    data-testid="button-set-custom-org-default"
+                  >
+                    <Building2 className="w-4 h-4 mr-2" />
+                    Set as Organization Default
+                  </Button>
+                )}
                 
                 <div className="flex items-center gap-2 p-3 bg-amber-500/10 rounded-lg">
                   <AlertTriangle className="w-4 h-4 text-amber-600" />
@@ -400,6 +514,18 @@ export function ThemePicker() {
                               data-testid={`button-activate-${palette.id}`}
                             >
                               Apply
+                            </Button>
+                          )}
+                          {isAdmin && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSetOrgDefault(palette)}
+                              disabled={isSavingPalette}
+                              data-testid={`button-org-default-saved-${palette.id}`}
+                            >
+                              <Building2 className="w-3 h-3 mr-1" />
+                              Org
                             </Button>
                           )}
                           <Button 

@@ -112,10 +112,14 @@ interface DashboardCustomizationContextType {
   saveCurrentLayout: () => Promise<void>;
   discardChanges: () => void;
   activePalette: ColorPalette | null;
+  orgPalette: ColorPalette | null;
+  isOrgDefault: boolean;
   isLoadingPalette: boolean;
   savedPalettes: ColorPalette[];
   presetPalettes: Record<string, any>;
   savePalette: (palette: ColorPalette & { setActive?: boolean }) => Promise<void>;
+  saveOrgPalette: (palette: ColorPalette) => Promise<void>;
+  deactivateOrgPalette: () => Promise<void>;
   activatePalette: (paletteId: string) => Promise<void>;
   deactivatePalette: () => Promise<void>;
   deletePalette: (paletteId: string) => Promise<void>;
@@ -138,7 +142,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     queryKey: ["/api/dashboard/layout"],
   });
 
-  const { data: paletteData, isLoading: isLoadingPalette } = useQuery<{ palette: ColorPalette | null; isActive: boolean }>({
+  const { data: paletteData, isLoading: isLoadingPalette } = useQuery<{ palette: ColorPalette | null; orgPalette: ColorPalette | null; isActive: boolean }>({
     queryKey: ["/api/dashboard/palette"],
   });
 
@@ -229,11 +233,40 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
       return await apiRequest("DELETE", `/api/dashboard/palette/${paletteId}`);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/palette"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/palettes"] });
       toast({ title: "Theme deleted", description: "Your color scheme has been removed" });
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to delete theme", variant: "destructive" });
+    },
+  });
+
+  const saveOrgPaletteMutation = useMutation({
+    mutationFn: async (palette: ColorPalette) => {
+      return await apiRequest("POST", "/api/dashboard/org-palette", palette);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/palette"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/org-palette"] });
+      toast({ title: "Organization theme saved", description: "The default theme has been set for all users" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to save organization theme", variant: "destructive" });
+    },
+  });
+
+  const deactivateOrgPaletteMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/dashboard/org-palette/deactivate");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/palette"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/org-palette"] });
+      toast({ title: "Organization theme removed", description: "Users will see the system default unless they have a personal theme" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to remove organization theme", variant: "destructive" });
     },
   });
 
@@ -268,29 +301,29 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     setCSSVar('--border', palette[`${prefix}Border` as keyof ColorPalette] as string);
   }, []);
 
+  const effectivePalette = paletteData?.palette && paletteData.isActive
+    ? paletteData.palette
+    : paletteData?.orgPalette || null;
+
+  const isOrgDefault = !paletteData?.isActive && !!paletteData?.orgPalette;
+
   useEffect(() => {
-    if (paletteData?.palette && paletteData.isActive) {
-      const isDark = document.documentElement.classList.contains('dark');
-      applyPaletteToDOM(paletteData.palette, isDark);
-    }
-  }, [paletteData, applyPaletteToDOM]);
+    const isDark = document.documentElement.classList.contains('dark');
+    applyPaletteToDOM(effectivePalette, isDark);
+  }, [effectivePalette, applyPaletteToDOM]);
 
   useEffect(() => {
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
           const isDark = document.documentElement.classList.contains('dark');
-          if (paletteData?.palette && paletteData.isActive) {
-            applyPaletteToDOM(paletteData.palette, isDark);
-          } else {
-            applyPaletteToDOM(null, isDark);
-          }
+          applyPaletteToDOM(effectivePalette, isDark);
         }
       }
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     return () => observer.disconnect();
-  }, [paletteData, applyPaletteToDOM]);
+  }, [effectivePalette, applyPaletteToDOM]);
 
   const setEditMode = useCallback((value: boolean) => {
     if (value && layoutData?.layout) {
@@ -573,14 +606,18 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
     saveCurrentLayout,
     discardChanges,
     activePalette: paletteData?.palette || null,
+    orgPalette: paletteData?.orgPalette || null,
+    isOrgDefault,
     isLoadingPalette,
     savedPalettes,
     presetPalettes,
     savePalette: async (palette) => { await savePaletteMutation.mutateAsync(palette); },
+    saveOrgPalette: async (palette) => { await saveOrgPaletteMutation.mutateAsync(palette); },
+    deactivateOrgPalette: async () => { await deactivateOrgPaletteMutation.mutateAsync(); },
     activatePalette: async (id) => { await activatePaletteMutation.mutateAsync(id); },
     deactivatePalette: async () => { await deactivatePaletteMutation.mutateAsync(); },
     deletePalette: async (id) => { await deletePaletteMutation.mutateAsync(id); },
-    isSavingPalette: savePaletteMutation.isPending || activatePaletteMutation.isPending || deactivatePaletteMutation.isPending,
+    isSavingPalette: savePaletteMutation.isPending || activatePaletteMutation.isPending || deactivatePaletteMutation.isPending || saveOrgPaletteMutation.isPending || deactivateOrgPaletteMutation.isPending,
     applyPaletteToDOM,
   };
 

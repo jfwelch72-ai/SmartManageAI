@@ -2,7 +2,9 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import {
   userColorPalettes,
+  orgColorPalettes,
   type UserColorPalette,
+  type OrgColorPalette,
   type PaletteValidationResult,
   type ColorContrastResult
 } from "@shared/schema";
@@ -147,7 +149,7 @@ router.get('/palette', requireAuth, async (req: AuthRequest, res: Response) => {
     const orgId = req.user!.organizationId;
 
     if (!orgId) {
-      return res.json({ palette: null, isActive: false });
+      return res.json({ palette: null, orgPalette: null, isActive: false });
     }
 
     const [palette] = await db.select().from(userColorPalettes)
@@ -157,7 +159,13 @@ router.get('/palette', requireAuth, async (req: AuthRequest, res: Response) => {
         eq(userColorPalettes.isActive, true)
       ));
 
-    res.json({ palette: palette || null, isActive: !!palette });
+    const [orgPalette] = await db.select().from(orgColorPalettes)
+      .where(and(
+        eq(orgColorPalettes.organizationId, orgId),
+        eq(orgColorPalettes.isActive, true)
+      ));
+
+    res.json({ palette: palette || null, orgPalette: orgPalette || null, isActive: !!palette });
   } catch (error) {
     console.error('Error fetching palette:', error);
     res.status(500).json({ error: 'Failed to fetch palette' });
@@ -372,6 +380,154 @@ router.post('/palette/deactivate', requireAuth, async (req: AuthRequest, res: Re
   } catch (error) {
     console.error('Error deactivating palette:', error);
     res.status(500).json({ error: 'Failed to deactivate palette' });
+  }
+});
+
+router.get('/org-palette', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) {
+      return res.json({ palette: null, isActive: false });
+    }
+
+    const [palette] = await db.select().from(orgColorPalettes)
+      .where(and(
+        eq(orgColorPalettes.organizationId, orgId),
+        eq(orgColorPalettes.isActive, true)
+      ));
+
+    res.json({ palette: palette || null, isActive: !!palette });
+  } catch (error) {
+    console.error('Error fetching org palette:', error);
+    res.status(500).json({ error: 'Failed to fetch organization palette' });
+  }
+});
+
+router.post('/org-palette', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const role = req.user!.role;
+
+    if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only admins can set the organization default theme' });
+    }
+
+    if (!orgId) {
+      return res.status(403).json({ error: 'Organization required' });
+    }
+
+    const schema = z.object({
+      paletteName: z.string().min(1).max(50),
+      isPreset: z.boolean().optional(),
+      lightPrimary: z.string().optional(),
+      lightPrimaryForeground: z.string().optional(),
+      lightSecondary: z.string().optional(),
+      lightSecondaryForeground: z.string().optional(),
+      lightAccent: z.string().optional(),
+      lightAccentForeground: z.string().optional(),
+      lightBackground: z.string().optional(),
+      lightForeground: z.string().optional(),
+      lightMuted: z.string().optional(),
+      lightMutedForeground: z.string().optional(),
+      lightCard: z.string().optional(),
+      lightCardForeground: z.string().optional(),
+      lightBorder: z.string().optional(),
+      darkPrimary: z.string().optional(),
+      darkPrimaryForeground: z.string().optional(),
+      darkSecondary: z.string().optional(),
+      darkSecondaryForeground: z.string().optional(),
+      darkAccent: z.string().optional(),
+      darkAccentForeground: z.string().optional(),
+      darkBackground: z.string().optional(),
+      darkForeground: z.string().optional(),
+      darkMuted: z.string().optional(),
+      darkMutedForeground: z.string().optional(),
+      darkCard: z.string().optional(),
+      darkCardForeground: z.string().optional(),
+      darkBorder: z.string().optional(),
+    });
+
+    const data = schema.parse(req.body);
+
+    const lightValidation = validatePalette(data, 'light');
+    const darkValidation = validatePalette(data, 'dark');
+    const hasContrastWarnings = !lightValidation.isValid || !darkValidation.isValid;
+
+    await db.update(orgColorPalettes)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(orgColorPalettes.organizationId, orgId));
+
+    const [newPalette] = await db.insert(orgColorPalettes).values({
+      organizationId: orgId,
+      paletteName: data.paletteName,
+      isPreset: data.isPreset || false,
+      isActive: true,
+      contrastValidated: !hasContrastWarnings,
+      lastValidatedAt: new Date(),
+      lightPrimary: data.lightPrimary,
+      lightPrimaryForeground: data.lightPrimaryForeground,
+      lightSecondary: data.lightSecondary,
+      lightSecondaryForeground: data.lightSecondaryForeground,
+      lightAccent: data.lightAccent,
+      lightAccentForeground: data.lightAccentForeground,
+      lightBackground: data.lightBackground,
+      lightForeground: data.lightForeground,
+      lightMuted: data.lightMuted,
+      lightMutedForeground: data.lightMutedForeground,
+      lightCard: data.lightCard,
+      lightCardForeground: data.lightCardForeground,
+      lightBorder: data.lightBorder,
+      darkPrimary: data.darkPrimary,
+      darkPrimaryForeground: data.darkPrimaryForeground,
+      darkSecondary: data.darkSecondary,
+      darkSecondaryForeground: data.darkSecondaryForeground,
+      darkAccent: data.darkAccent,
+      darkAccentForeground: data.darkAccentForeground,
+      darkBackground: data.darkBackground,
+      darkForeground: data.darkForeground,
+      darkMuted: data.darkMuted,
+      darkMutedForeground: data.darkMutedForeground,
+      darkCard: data.darkCard,
+      darkCardForeground: data.darkCardForeground,
+      darkBorder: data.darkBorder,
+    }).returning();
+
+    const response: any = { success: true, palette: newPalette };
+    if (hasContrastWarnings) {
+      response.contrastWarnings = {
+        message: 'Some color pairs may have low contrast for accessibility',
+        light: lightValidation,
+        dark: darkValidation,
+      };
+    }
+    res.json(response);
+  } catch (error) {
+    console.error('Error saving org palette:', error);
+    res.status(500).json({ error: 'Failed to save organization palette' });
+  }
+});
+
+router.post('/org-palette/deactivate', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const role = req.user!.role;
+
+    if (role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Only admins can modify the organization default theme' });
+    }
+
+    if (!orgId) {
+      return res.json({ success: true });
+    }
+
+    await db.update(orgColorPalettes)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(orgColorPalettes.organizationId, orgId));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deactivating org palette:', error);
+    res.status(500).json({ error: 'Failed to deactivate organization palette' });
   }
 });
 
