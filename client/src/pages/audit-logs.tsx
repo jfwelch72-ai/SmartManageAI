@@ -5,9 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Download, Search, Shield, Activity, FileText, Clock, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { Download, Search, Shield, Activity, FileText, Clock, Loader2, ChevronLeft, ChevronRight, CalendarIcon } from "lucide-react";
 import { FeatureGate } from "@/components/FeatureGate";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
 interface AuditStats {
   actionStats: { action: string; count: number }[];
@@ -44,8 +48,10 @@ export default function AuditLogsPage() {
   const isMobile = useIsMobile();
   const [entityType, setEntityType] = useState<string>("all");
   const [action, setAction] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+  const [dateFromOpen, setDateFromOpen] = useState(false);
+  const [dateToOpen, setDateToOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [appliedFilters, setAppliedFilters] = useState<{
     entityType: string;
@@ -53,6 +59,8 @@ export default function AuditLogsPage() {
     dateFrom: string;
     dateTo: string;
   }>({ entityType: "all", action: "all", dateFrom: "", dateTo: "" });
+
+  const formatDateParam = (d: Date | undefined) => d ? format(d, "yyyy-MM-dd") : "";
 
   const buildSearchParams = (filters: typeof appliedFilters, p: number) => {
     const params = new URLSearchParams();
@@ -81,7 +89,7 @@ export default function AuditLogsPage() {
   });
 
   const handleSearch = () => {
-    setAppliedFilters({ entityType, action, dateFrom, dateTo });
+    setAppliedFilters({ entityType, action, dateFrom: formatDateParam(dateFrom), dateTo: formatDateParam(dateTo) });
     setPage(1);
   };
 
@@ -193,21 +201,49 @@ export default function AuditLogsPage() {
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">From</label>
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                data-testid="input-date-from"
-              />
+              <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn("w-[160px] justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}
+                    data-testid="input-date-from"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateFrom ? format(dateFrom, "MMM dd, yyyy") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateFrom}
+                    onSelect={(d) => { setDateFrom(d); setDateFromOpen(false); }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">To</label>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                data-testid="input-date-to"
-              />
+              <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn("w-[160px] justify-start text-left font-normal", !dateTo && "text-muted-foreground")}
+                    data-testid="input-date-to"
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateTo ? format(dateTo, "MMM dd, yyyy") : "Pick a date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={dateTo}
+                    onSelect={(d) => { setDateTo(d); setDateToOpen(false); }}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-muted-foreground">Entity Type</label>
