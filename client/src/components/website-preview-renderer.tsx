@@ -164,9 +164,10 @@ interface WebsitePreviewRendererProps {
   deviceType: "desktop" | "tablet" | "mobile";
   websiteId?: string;
   trackingEnabled?: boolean;
+  onPageChange?: (slug: string) => void;
 }
 
-export default function WebsitePreviewRenderer({ data, deviceType, websiteId, trackingEnabled }: WebsitePreviewRendererProps) {
+export default function WebsitePreviewRenderer({ data, deviceType, websiteId, trackingEnabled, onPageChange }: WebsitePreviewRendererProps) {
   const { website, organization, socialLinks } = data;
   // Default to empty arrays to prevent crashes when data is undefined
   const pages = data.pages || [];
@@ -185,6 +186,10 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
 
   const sessionIdRef = useRef(`session_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`);
   const trackedPagesRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (onPageChange) onPageChange(currentPage);
+  }, [currentPage, onPageChange]);
 
   useEffect(() => {
     if (!trackingEnabled || !websiteId) return;

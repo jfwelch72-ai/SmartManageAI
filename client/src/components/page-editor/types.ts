@@ -63,6 +63,9 @@ export interface PageSettings {
   status: string;
   metaTitle: string;
   metaDescription: string;
+  ogImageUrl: string;
+  canonicalUrl: string;
+  noIndex: boolean;
 }
 
 export type { BodyComponent, SharedStyles, BodyComponentType };

@@ -2858,6 +2858,7 @@ export const organizationWebsites = pgTable("organization_websites", {
   defaultMetaTitle: text("default_meta_title"),
   defaultMetaDescription: text("default_meta_description"),
   defaultKeywords: text("default_keywords").array(),
+  ogImageUrl: text("og_image_url"),
   googleAnalyticsId: text("google_analytics_id"),
   
   // Contact Info (can override organization)
@@ -2967,6 +2968,7 @@ export const organizationWebsitePages = pgTable("organization_website_pages", {
   richSchemaJson: text("rich_schema_json"), // JSON-LD structured data
   canonicalUrl: text("canonical_url"),
   noIndex: boolean("no_index").default(false),
+  ogImageUrl: text("og_image_url"),
   
   // Display Settings
   isPublished: boolean("is_published").default(false),

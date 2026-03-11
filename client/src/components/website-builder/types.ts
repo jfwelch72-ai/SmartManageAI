@@ -57,6 +57,7 @@ export interface Website {
   lastPublishedAt: string | null;
   defaultMetaTitle: string | null;
   defaultMetaDescription: string | null;
+  ogImageUrl: string | null;
   googleAnalyticsId: string | null;
   createdAt: string;
   updatedAt: string | null;
@@ -269,6 +270,7 @@ export interface WebsiteFormState {
   templateId: string;
   metaTitle: string;
   metaDescription: string;
+  ogImageUrl: string;
   contactEmail: string;
   contactPhone: string;
   showBlog: boolean;

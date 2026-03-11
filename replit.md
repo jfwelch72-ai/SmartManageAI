@@ -25,7 +25,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Compliance & Audit**: Comprehensive audit logging, document management with versioning, expiration tracking, and an Approval Workflows Framework, including an Addenda Tracking System.
 *   **Production Rate Tracking**: Analytics for crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM).
 *   **Communication & Collaboration**: Unified Messaging System (Team Messages, Portal Chat), Client Portal Chat, and Subcontractor Portal System.
-*   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, publishing controls, and token-protected staging preview links.
+*   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, publishing controls, token-protected staging preview links, and full SEO support including dynamic Open Graph/Twitter Card meta tags, per-page canonical URLs and noindex control, social share images (site-wide and per-page), dynamic sitemap.xml, and robots.txt generation.
 *   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, GDPR compliance, feature flags, and a 4-tier subscription model, including Super Admin tools.
 *   **HTTP Security**: Helmet middleware for security headers and API log redaction for sensitive data.
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling, with security hardened via AES-256-GCM token encryption.

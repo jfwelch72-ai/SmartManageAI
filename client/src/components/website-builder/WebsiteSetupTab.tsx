@@ -406,6 +406,19 @@ export default function WebsiteSetupTab({
                 {(websiteForm.metaDescription || website?.metaDescription || "").length}/160 characters
               </p>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="ogImageUrl">Social Share Image URL</Label>
+              <Input
+                id="ogImageUrl"
+                value={websiteForm.ogImageUrl || website?.ogImageUrl || ""}
+                onChange={(e) => setWebsiteForm(prev => ({ ...prev, ogImageUrl: e.target.value }))}
+                placeholder="https://example.com/share-image.jpg"
+                data-testid="input-og-image-url"
+              />
+              <p className="text-xs text-muted-foreground">
+                Image displayed when your site is shared on social media (recommended: 1200×630px)
+              </p>
+            </div>
           </CardContent>
           <CardFooter className="flex justify-end gap-2">
             <Button 

@@ -530,6 +530,9 @@ async function createVersionSnapshot(
     isPublished: page.isPublished,
     metaTitle: page.metaTitle,
     metaDescription: page.metaDescription,
+    canonicalUrl: page.canonicalUrl,
+    noIndex: page.noIndex,
+    ogImageUrl: page.ogImageUrl,
   });
 
   const [version] = await db.insert(pageVersions).values({
@@ -816,6 +819,9 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
         if (settings.showInNavigation !== undefined) settingsToRestore.showInNavigation = settings.showInNavigation;
         if (settings.metaTitle !== undefined) settingsToRestore.metaTitle = settings.metaTitle;
         if (settings.metaDescription !== undefined) settingsToRestore.metaDescription = settings.metaDescription;
+        if (settings.canonicalUrl !== undefined) settingsToRestore.canonicalUrl = settings.canonicalUrl;
+        if (settings.noIndex !== undefined) settingsToRestore.noIndex = settings.noIndex;
+        if (settings.ogImageUrl !== undefined) settingsToRestore.ogImageUrl = settings.ogImageUrl;
       } catch {}
     }
 

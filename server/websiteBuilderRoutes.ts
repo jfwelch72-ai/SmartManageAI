@@ -20,7 +20,6 @@ import websiteContentRoutes from "./websiteContentRoutes";
 import websiteAiSeoRoutes from "./websiteAiSeoRoutes";
 
 const router = express.Router();
-router.use(requireAuth, requireFeaturePermission('canManageWebsite'));
 
 const objectStorage = new ObjectStorageService();
 
@@ -44,13 +43,11 @@ function orgLogoProxyUrl(orgId: string, url: string | null | undefined): string 
   return url;
 }
 
-// Mount sub-routers
-router.use(websitePageRoutes);
-router.use(websiteBlogRoutes);
-router.use(websiteContentRoutes);
-router.use(websiteAiSeoRoutes);
+function escapeXml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}
 
-// GET /api/website/org-logo/:orgId - Serve organization logo directly from GCS
+// GET /api/website/org-logo/:orgId - Serve organization logo directly from GCS (PUBLIC)
 router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
   try {
     const { orgId } = req.params;
@@ -326,6 +323,120 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/website/public/:subdomain/sitemap.xml - Dynamic sitemap for published website
+router.get("/public/:subdomain/sitemap.xml", async (req: Request, res: Response) => {
+  try {
+    const { subdomain } = req.params;
+    if (!subdomain) {
+      return res.status(400).send("Subdomain is required");
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: and(
+        eq(organizationWebsites.subdomain, subdomain),
+        eq(organizationWebsites.status, "PUBLISHED")
+      ),
+    });
+
+    if (!website) {
+      return res.status(404).send("Website not found");
+    }
+
+    const orgId = website.organizationId;
+    const baseUrl = `https://${subdomain}.smartmanageai-sites.com`;
+
+    const pages = await db.query.organizationWebsitePages.findMany({
+      where: and(
+        eq(organizationWebsitePages.organizationId, orgId),
+        eq(organizationWebsitePages.isPublished, true)
+      ),
+    });
+
+    const blogPostsResult = await db.execute(sql`
+      SELECT slug, updated_at FROM website_blog_posts
+      WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
+    `);
+    const blogPosts = blogPostsResult.rows;
+
+    const projectsResult = await db.execute(sql`
+      SELECT slug, updated_at FROM website_projects
+      WHERE organization_id = ${orgId} AND status = 'PUBLISHED'
+    `);
+    const projects = projectsResult.rows;
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+    xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+
+    for (const page of pages) {
+      if (page.noIndex) continue;
+      const slug = page.pageSlug === "home" ? "" : encodeURIComponent(page.pageSlug);
+      const loc = escapeXml(`${baseUrl}/${slug}`);
+      const lastmod = page.updatedAt ? new Date(page.updatedAt).toISOString().split("T")[0] : undefined;
+      xml += `  <url>\n    <loc>${loc}</loc>\n`;
+      if (lastmod) xml += `    <lastmod>${lastmod}</lastmod>\n`;
+      xml += `    <changefreq>weekly</changefreq>\n  </url>\n`;
+    }
+
+    for (const post of blogPosts) {
+      const loc = escapeXml(`${baseUrl}/blog/${encodeURIComponent((post as any).slug)}`);
+      const lastmod = (post as any).updated_at ? new Date((post as any).updated_at).toISOString().split("T")[0] : undefined;
+      xml += `  <url>\n    <loc>${loc}</loc>\n`;
+      if (lastmod) xml += `    <lastmod>${lastmod}</lastmod>\n`;
+      xml += `    <changefreq>monthly</changefreq>\n  </url>\n`;
+    }
+
+    for (const project of projects) {
+      const loc = escapeXml(`${baseUrl}/projects/${encodeURIComponent((project as any).slug)}`);
+      const lastmod = (project as any).updated_at ? new Date((project as any).updated_at).toISOString().split("T")[0] : undefined;
+      xml += `  <url>\n    <loc>${loc}</loc>\n`;
+      if (lastmod) xml += `    <lastmod>${lastmod}</lastmod>\n`;
+      xml += `    <changefreq>monthly</changefreq>\n  </url>\n`;
+    }
+
+    xml += `</urlset>`;
+    res.set("Content-Type", "application/xml");
+    res.send(xml);
+  } catch (error) {
+    console.error("Error generating sitemap:", error);
+    res.status(500).send("Failed to generate sitemap");
+  }
+});
+
+// GET /api/website/public/:subdomain/robots.txt - Dynamic robots.txt for published website
+router.get("/public/:subdomain/robots.txt", async (req: Request, res: Response) => {
+  try {
+    const { subdomain } = req.params;
+    if (!subdomain) {
+      return res.status(400).send("Subdomain is required");
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: and(
+        eq(organizationWebsites.subdomain, subdomain),
+        eq(organizationWebsites.status, "PUBLISHED")
+      ),
+    });
+
+    if (!website) {
+      return res.status(404).send("Website not found");
+    }
+
+    const baseUrl = `https://${subdomain}.smartmanageai-sites.com`;
+
+    let robotsTxt = `User-agent: *\n`;
+    robotsTxt += `Allow: /\n`;
+    robotsTxt += `Disallow: /api/\n`;
+    robotsTxt += `Disallow: /staging/\n\n`;
+    robotsTxt += `Sitemap: ${baseUrl}/api/website/public/${subdomain}/sitemap.xml\n`;
+
+    res.set("Content-Type", "text/plain");
+    res.send(robotsTxt);
+  } catch (error) {
+    console.error("Error generating robots.txt:", error);
+    res.status(500).send("Failed to generate robots.txt");
+  }
+});
+
 // GET /api/website/staging-token - Get current staging token
 router.get("/staging-token", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
@@ -475,6 +586,16 @@ router.get("/staging/:subdomain", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to fetch staging website" });
   }
 });
+
+// ============================================
+// AUTHENTICATED ROUTES (require auth + feature permission)
+// ============================================
+
+// Mount authenticated sub-routers
+router.use(requireAuth, requireFeaturePermission('canManageWebsite'), websitePageRoutes);
+router.use(requireAuth, requireFeaturePermission('canManageWebsite'), websiteBlogRoutes);
+router.use(requireAuth, requireFeaturePermission('canManageWebsite'), websiteContentRoutes);
+router.use(requireAuth, requireFeaturePermission('canManageWebsite'), websiteAiSeoRoutes);
 
 // GET /api/website/preview - Get all data needed for website preview
 router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {

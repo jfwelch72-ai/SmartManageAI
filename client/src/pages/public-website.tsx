@@ -1,7 +1,98 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useSearch } from "wouter";
+import { useState, useEffect, useCallback } from "react";
 import WebsitePreviewRenderer from "@/components/website-preview-renderer";
 import { Eye } from "lucide-react";
+
+function useDocumentHead(data: any, activePage: string | null, isStaging: boolean) {
+  useEffect(() => {
+    if (!data || isStaging) return;
+
+    const website = data.website;
+    const pages = data.pages || [];
+    const subdomain = website?.subdomain;
+    const baseUrl = subdomain ? `https://${subdomain}.smartmanageai-sites.com` : "";
+
+    const currentSlug = activePage || "home";
+    const currentPage = pages.find((p: any) => (p.pageSlug || p.page_slug) === currentSlug);
+
+    const siteTitle = website?.siteTitle || website?.defaultMetaTitle || data.organization?.name || "";
+    const pageTitle = currentPage?.metaTitle || currentPage?.meta_title || currentPage?.pageTitle || currentPage?.page_title || "";
+    const fullTitle = pageTitle ? `${pageTitle} | ${siteTitle}` : siteTitle;
+
+    const description = currentPage?.metaDescription || currentPage?.meta_description || website?.defaultMetaDescription || "";
+    const ogImage = currentPage?.ogImageUrl || currentPage?.og_image_url || website?.ogImageUrl || website?.og_image_url || website?.logoUrl || "";
+    const canonicalUrl = currentPage?.canonicalUrl || currentPage?.canonical_url || "";
+    const noIndex = currentPage?.noIndex ?? currentPage?.no_index ?? false;
+
+    const pageUrl = baseUrl ? `${baseUrl}/${currentSlug === "home" ? "" : currentSlug}` : "";
+
+    document.title = fullTitle;
+
+    const setMeta = (attr: string, key: string, content: string) => {
+      if (!content) return;
+      let el = document.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
+      if (!el) {
+        el = document.createElement("meta");
+        el.setAttribute(attr, key);
+        document.head.appendChild(el);
+      }
+      el.setAttribute("content", content);
+    };
+
+    if (description) setMeta("name", "description", description);
+
+    setMeta("property", "og:title", fullTitle);
+    if (description) setMeta("property", "og:description", description);
+    setMeta("property", "og:type", "website");
+    if (pageUrl) setMeta("property", "og:url", pageUrl);
+    if (ogImage) setMeta("property", "og:image", ogImage);
+
+    setMeta("name", "twitter:card", ogImage ? "summary_large_image" : "summary");
+    setMeta("name", "twitter:title", fullTitle);
+    if (description) setMeta("name", "twitter:description", description);
+    if (ogImage) setMeta("name", "twitter:image", ogImage);
+
+    if (noIndex) {
+      setMeta("name", "robots", "noindex, nofollow");
+    } else {
+      const robotsEl = document.querySelector('meta[name="robots"]');
+      if (robotsEl) robotsEl.remove();
+    }
+
+    let canonicalEl = document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null;
+    if (canonicalUrl) {
+      if (!canonicalEl) {
+        canonicalEl = document.createElement("link");
+        canonicalEl.setAttribute("rel", "canonical");
+        document.head.appendChild(canonicalEl);
+      }
+      canonicalEl.setAttribute("href", canonicalUrl);
+    } else if (pageUrl) {
+      if (!canonicalEl) {
+        canonicalEl = document.createElement("link");
+        canonicalEl.setAttribute("rel", "canonical");
+        document.head.appendChild(canonicalEl);
+      }
+      canonicalEl.setAttribute("href", pageUrl);
+    }
+
+    return () => {
+      document.title = "SmartManageAI";
+      const tagsToClean = [
+        'meta[property="og:title"]', 'meta[property="og:description"]',
+        'meta[property="og:type"]', 'meta[property="og:url"]', 'meta[property="og:image"]',
+        'meta[name="twitter:card"]', 'meta[name="twitter:title"]',
+        'meta[name="twitter:description"]', 'meta[name="twitter:image"]',
+        'meta[name="robots"]', 'link[rel="canonical"]',
+      ];
+      tagsToClean.forEach(sel => {
+        const el = document.querySelector(sel);
+        if (el) el.remove();
+      });
+    };
+  }, [data, activePage, isStaging]);
+}
 
 export default function PublicWebsite({ isStaging = false }: { isStaging?: boolean }) {
   const params = useParams<{ subdomain: string }>();
@@ -9,6 +100,7 @@ export default function PublicWebsite({ isStaging = false }: { isStaging?: boole
   const searchString = useSearch();
   const searchParams = new URLSearchParams(searchString);
   const token = searchParams.get("token");
+  const [activePage, setActivePage] = useState<string | null>(null);
 
   const apiUrl = isStaging
     ? `/api/website/staging/${subdomain}?token=${encodeURIComponent(token || "")}`
@@ -26,6 +118,12 @@ export default function PublicWebsite({ isStaging = false }: { isStaging?: boole
     },
     enabled: !!subdomain && (!isStaging || !!token),
   });
+
+  useDocumentHead(data, activePage, isStaging);
+
+  const handlePageChange = useCallback((slug: string) => {
+    setActivePage(slug);
+  }, []);
 
   if (isStaging && !token) {
     return (
@@ -93,6 +191,10 @@ export default function PublicWebsite({ isStaging = false }: { isStaging?: boole
       navigationLabel: p.navigationLabel || p.navigation_label || p.pageTitle || p.page_title || null,
       navigationOrder: p.navigationOrder ?? p.navigation_order ?? 0,
       metaDescription: p.metaDescription || p.meta_description || null,
+      metaTitle: p.metaTitle || p.meta_title || null,
+      canonicalUrl: p.canonicalUrl || p.canonical_url || null,
+      noIndex: p.noIndex ?? p.no_index ?? false,
+      ogImageUrl: p.ogImageUrl || p.og_image_url || null,
       content: p.content || p.contentHtml || p.content_html || null,
       contentJson: p.contentJson || p.content_json || null,
       parentPageId: p.parentPageId || p.parent_page_id || null,
@@ -162,6 +264,7 @@ export default function PublicWebsite({ isStaging = false }: { isStaging?: boole
           deviceType="desktop"
           websiteId={data.website.id}
           trackingEnabled={!isStaging}
+          onPageChange={handlePageChange}
         />
       </div>
     </div>

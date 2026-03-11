@@ -72,6 +72,9 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
     status: "DRAFT",
     metaTitle: "",
     metaDescription: "",
+    ogImageUrl: "",
+    canonicalUrl: "",
+    noIndex: false,
   });
   const dragItem = useRef<number | null>(null);
   const dragOverItem = useRef<number | null>(null);
@@ -114,6 +117,9 @@ export default function PageEditor({ pageId, onBack }: PageEditorProps) {
         status: pageData.status || (pageData.isPublished ? "PUBLISHED" : "DRAFT"),
         metaTitle: pageData.metaTitle || "",
         metaDescription: pageData.metaDescription || "",
+        ogImageUrl: pageData.ogImageUrl || "",
+        canonicalUrl: pageData.canonicalUrl || "",
+        noIndex: pageData.noIndex ?? false,
       });
     }
   }, [pageData]);

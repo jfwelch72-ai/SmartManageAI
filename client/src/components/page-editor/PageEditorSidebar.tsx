@@ -526,6 +526,37 @@ export function PageSettingsPanel({
                 data-testid="input-settings-meta-desc"
               />
             </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Social Share Image URL</Label>
+              <Input
+                value={settings.ogImageUrl || ""}
+                onChange={(e) => update("ogImageUrl", e.target.value)}
+                className="h-8 text-sm"
+                placeholder="https://example.com/share-image.jpg"
+                data-testid="input-settings-og-image"
+              />
+              <p className="text-xs text-muted-foreground">Overrides site-wide share image for this page</p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Canonical URL</Label>
+              <Input
+                value={settings.canonicalUrl || ""}
+                onChange={(e) => update("canonicalUrl", e.target.value)}
+                className="h-8 text-sm"
+                placeholder="https://example.com/preferred-url"
+                data-testid="input-settings-canonical-url"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.noIndex || false}
+                onChange={(e) => update("noIndex", e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+                data-testid="input-settings-no-index"
+              />
+              <Label className="text-xs">Hide from search engines (noindex)</Label>
+            </div>
           </div>
         </div>
       </ScrollArea>
