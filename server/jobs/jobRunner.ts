@@ -4,12 +4,13 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, notifications, users } from "@shared/schema";
-import { eq, and, lt, lte, sql, or, isNotNull, inArray } from "drizzle-orm";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, notifications, users, projects, projectProfitabilitySnapshots } from "@shared/schema";
+import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 import { publishToPlatform } from "../social/publishService";
 import { socialAccounts } from "@shared/schema";
+import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -17,6 +18,7 @@ let syncScheduleTask: ReturnType<typeof cron.schedule> | null = null;
 let socialPostTask: ReturnType<typeof cron.schedule> | null = null;
 let tokenExpiryTask: ReturnType<typeof cron.schedule> | null = null;
 let complianceCheckTask: ReturnType<typeof cron.schedule> | null = null;
+let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -69,7 +71,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, and compliance schedulers)");
+  profitabilityMonitorTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      await processProfitabilityMonitor();
+    } catch (err) {
+      logError("Profitability monitor failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, and profitability monitor schedulers)");
 }
 
 export function stopJobRunner() {
@@ -96,6 +106,10 @@ export function stopJobRunner() {
   if (complianceCheckTask) {
     complianceCheckTask.stop();
     complianceCheckTask = null;
+  }
+  if (profitabilityMonitorTask) {
+    profitabilityMonitorTask.stop();
+    profitabilityMonitorTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -599,4 +613,132 @@ async function processComplianceExpirations() {
       logInfo("Compliance check: all notifications already exist (unread)");
     }
   }
+}
+
+async function processProfitabilityMonitor() {
+  logInfo("Starting profitability monitor run");
+
+  const FINANCIAL_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HUSTLER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER"];
+  const THRESHOLDS = [
+    { pct: 5, label: "5%", severity: "MINOR_CONCERN" },
+    { pct: 10, label: "10%", severity: "MINOR_CONCERN" },
+    { pct: 20, label: "20%", severity: "MAJOR_RISK" },
+  ];
+
+  let profitabilityResults: Awaited<ReturnType<typeof calculateAllProjectsProfitability>>;
+  try {
+    profitabilityResults = await calculateAllProjectsProfitability();
+  } catch (err) {
+    logError("Profitability calculation error in monitor", { error: String(err) });
+    return;
+  }
+
+  if (profitabilityResults.length === 0) return;
+
+  const notificationValues: Array<{
+    userId: string;
+    type: string;
+    title: string;
+    message: string;
+    relatedEntityId: string | null;
+    relatedEntityType: string;
+  }> = [];
+
+  for (const result of profitabilityResults) {
+    const varianceAbs = Math.abs(result.variance_percent);
+    const isOverBudget = result.variance < 0;
+    if (!isOverBudget) continue;
+
+    const [proj] = await db.select({ id: projects.id, organizationId: projects.organizationId })
+      .from(projects)
+      .where(sql`${projects.code} = ${result.project_code}`)
+      .limit(1);
+
+    if (!proj) continue;
+
+    const [lastSnap] = await db.select()
+      .from(projectProfitabilitySnapshots)
+      .where(eq(projectProfitabilitySnapshots.projectId, proj.id))
+      .orderBy(desc(projectProfitabilitySnapshots.createdAt))
+      .limit(1);
+
+    await db.insert(projectProfitabilitySnapshots).values({
+      organizationId: proj.organizationId,
+      projectId: proj.id,
+      projectCode: result.project_code,
+      budget: String(result.budget),
+      adjustedBudget: String(result.adjusted_budget),
+      totalLaborCost: String(result.total_labor_cost),
+      totalMaterialCost: String(result.total_material_cost),
+      totalSubcontractorCost: String(result.total_subcontractor_cost),
+      totalEquipmentCost: String(result.total_equipment_cost),
+      totalTmCost: String(result.total_tm_cost),
+      totalOtherExpenses: String(result.total_other_expenses),
+      totalActualCost: String(result.total_actual_cost),
+      variance: String(result.variance),
+      variancePercent: String(result.variance_percent),
+      estimatedMargin: String(result.estimated_margin),
+      projectedCompletionCost: String(result.projected_completion_cost),
+      status: result.status,
+      alertThresholdFired: null,
+    });
+
+    for (const threshold of THRESHOLDS) {
+      if (varianceAbs < threshold.pct) continue;
+
+      const alreadyFired = lastSnap?.alertThresholdFired === threshold.label;
+      if (alreadyFired) continue;
+
+      const orgUsers = await db.select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.organizationId, proj.organizationId),
+            sql`${users.role} IN (${FINANCIAL_ROLES.map(r => `'${r}'`).join(",")})`,
+            eq(users.isActive, true)
+          )
+        )
+        .limit(50);
+
+      const title = `Budget Alert: ${result.project_name} — ${threshold.label} Over`;
+      const message = `${result.project_name} is running ${varianceAbs.toFixed(1)}% over budget. Actual cost: $${result.total_actual_cost.toLocaleString()} vs budget $${result.adjusted_budget.toLocaleString()}. Status: ${result.status.replace("_", " ")}.`;
+
+      const existingNotifs = await db.select({ userId: notifications.userId })
+        .from(notifications)
+        .where(
+          and(
+            sql`${notifications.relatedEntityType} = 'PROJECT_PROFITABILITY'`,
+            sql`${notifications.relatedEntityId} = ${proj.id}`,
+            sql`${notifications.title} = ${title}`,
+            eq(notifications.isRead, false)
+          )
+        );
+      const alreadyNotifiedUsers = new Set(existingNotifs.map(n => n.userId));
+
+      for (const u of orgUsers) {
+        if (alreadyNotifiedUsers.has(u.id)) continue;
+        notificationValues.push({
+          userId: u.id,
+          type: "GENERAL",
+          title,
+          message,
+          relatedEntityId: proj.id,
+          relatedEntityType: "PROJECT_PROFITABILITY",
+        });
+      }
+
+      await db.update(projectProfitabilitySnapshots)
+        .set({ alertThresholdFired: threshold.label })
+        .where(eq(projectProfitabilitySnapshots.projectId, proj.id));
+
+      break;
+    }
+  }
+
+  if (notificationValues.length > 0) {
+    await db.insert(notifications).values(notificationValues as any);
+    logInfo("Profitability alert notifications sent", { count: notificationValues.length });
+  }
+
+  logInfo("Profitability monitor run complete", { projectsChecked: profitabilityResults.length });
 }

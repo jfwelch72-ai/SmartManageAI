@@ -5769,3 +5769,35 @@ export const insertSafetyTrainingAssignmentSchema = createInsertSchema(safetyTra
 export type InsertSafetyTrainingAssignment = z.infer<typeof insertSafetyTrainingAssignmentSchema>;
 export type SafetyTrainingAssignment = typeof safetyTrainingAssignments.$inferSelect;
 
+// ─── Project Profitability Snapshots ─────────────────────────────────────────
+export const projectProfitabilitySnapshots = pgTable("project_profitability_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectCode: varchar("project_code").notNull(),
+  budget: decimal("budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  adjustedBudget: decimal("adjusted_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalLaborCost: decimal("total_labor_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalMaterialCost: decimal("total_material_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalSubcontractorCost: decimal("total_subcontractor_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalEquipmentCost: decimal("total_equipment_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalTmCost: decimal("total_tm_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalOtherExpenses: decimal("total_other_expenses", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalActualCost: decimal("total_actual_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  variance: decimal("variance", { precision: 12, scale: 2 }).notNull().default("0"),
+  variancePercent: decimal("variance_percent", { precision: 8, scale: 2 }).notNull().default("0"),
+  estimatedMargin: decimal("estimated_margin", { precision: 12, scale: 2 }).notNull().default("0"),
+  projectedCompletionCost: decimal("projected_completion_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  status: text("status").notNull().default("ON_BUDGET"),
+  alertThresholdFired: text("alert_threshold_fired"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("prof_snapshot_org_idx").on(table.organizationId),
+  projectIdx: index("prof_snapshot_project_idx").on(table.projectId),
+  createdIdx: index("prof_snapshot_created_idx").on(table.createdAt),
+}));
+
+export const insertProjectProfitabilitySnapshotSchema = createInsertSchema(projectProfitabilitySnapshots).omit({ id: true, createdAt: true });
+export type InsertProjectProfitabilitySnapshot = z.infer<typeof insertProjectProfitabilitySnapshotSchema>;
+export type ProjectProfitabilitySnapshot = typeof projectProfitabilitySnapshots.$inferSelect;
+
