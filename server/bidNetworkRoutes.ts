@@ -747,6 +747,56 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
             .set({ responseCount: sql`${subcontractorBidRequests.responseCount} + 1` })
             .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
         }
+
+        const [bidRequestForSync] = await db
+          .select()
+          .from(subcontractorBidRequests)
+          .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
+
+        if (bidRequestForSync?.bidId) {
+          try {
+            const { bidSubcontractorQuotes } = await import("@shared/schema");
+            const [subOrg] = await db
+              .select({ name: organizations.name })
+              .from(organizations)
+              .where(eq(organizations.id, user.organizationId!));
+
+            const [existingQuote] = await db
+              .select()
+              .from(bidSubcontractorQuotes)
+              .where(and(
+                eq(bidSubcontractorQuotes.bidId, bidRequestForSync.bidId),
+                eq(bidSubcontractorQuotes.notes, `bid_network_response:${data.invitationId}`)
+              ))
+              .limit(1);
+
+            if (existingQuote) {
+              await db
+                .update(bidSubcontractorQuotes)
+                .set({
+                  quoteAmount: updated.totalBidAmount || "0",
+                  subcontractorName: subOrg?.name || existingQuote.subcontractorName,
+                  rfqStatus: "responded",
+                  updatedAt: new Date()
+                })
+                .where(eq(bidSubcontractorQuotes.id, existingQuote.id));
+            } else {
+              await db.insert(bidSubcontractorQuotes).values({
+                bidId: bidRequestForSync.bidId,
+                subcontractorName: subOrg?.name || "Unknown Sub",
+                scopeOfWork: bidRequestForSync.scopeOfWork.substring(0, 500),
+                quoteAmount: updated.totalBidAmount || "0",
+                contactName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : undefined,
+                contactEmail: user.email || undefined,
+                rfqStatus: "responded",
+                notes: `bid_network_response:${data.invitationId}`,
+              });
+            }
+            logInfo("Auto-synced resubmitted bid response to internal quote", { responseId: updated.id, bidId: bidRequestForSync.bidId });
+          } catch (syncError) {
+            logError("Auto-sync to internal quote failed (resubmission)", undefined, syncError as Error);
+          }
+        }
       }
       
       return res.json(updated);
@@ -847,6 +897,8 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
                   subcontractorName: subName,
                   scopeOfWork: bidRequest.scopeOfWork.substring(0, 500),
                   quoteAmount: created.totalBidAmount || "0",
+                  contactName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : undefined,
+                  contactEmail: user.email || undefined,
                   rfqStatus: "responded",
                   notes: `bid_network_response:${data.invitationId}`,
                 });

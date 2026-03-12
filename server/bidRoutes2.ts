@@ -1164,7 +1164,7 @@ router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole
     const sent = await sendRfqEmail(
       recipientEmail,
       quote.contactName || "",
-      bid.title || "Untitled Bid",
+      bid.name || "Untitled Bid",
       quote.scopeOfWork,
       gcOrg?.name || "Unknown",
       "subcontractor",
@@ -1438,7 +1438,7 @@ router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, re
     const sent = await sendRfqEmail(
       recipientEmail,
       quote.supplierContact || quote.supplierName || "",
-      bid.title || "Untitled Bid",
+      bid.name || "Untitled Bid",
       scopeDesc,
       gcOrg?.name || "Unknown",
       "material",

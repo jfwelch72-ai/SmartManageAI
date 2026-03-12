@@ -1,7 +1,7 @@
 import { sendEmail } from "./email";
 import { db } from "./db";
 import { users, organizations, organizationNetworkSettings, notifications } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
 
 interface NotificationRecipient {
@@ -491,7 +491,7 @@ export async function createBidNetworkInAppNotification(
       .from(users)
       .where(and(
         eq(users.organizationId, organizationId),
-        eq(users.role, "ADMIN")
+        or(eq(users.role, "ADMIN"), eq(users.role, "MANAGER"))
       ));
 
     if (admins.length === 0) return;

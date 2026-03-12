@@ -162,6 +162,12 @@ export default function BidSubcontractorsStep({
                             Responded
                           </Badge>
                         )}
+                        {quote.notes?.startsWith("bid_network_response:") && (
+                          <Badge variant="outline" className="gap-1 text-blue-600 border-blue-300 bg-blue-50" data-testid={`badge-bid-network-${quote.id}`}>
+                            <Users className="w-3 h-3" />
+                            From Bid Network
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs sm:text-sm text-muted-foreground mb-1">{quote.scopeOfWork}</p>
                       {quote.contactName && (
