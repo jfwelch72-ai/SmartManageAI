@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -30,8 +30,15 @@ import {
   Trash2,
   FileText,
   AlertTriangle,
-  Users
+  Users,
+  Loader2,
+  RefreshCw,
+  AlertCircle
 } from "lucide-react";
+import { PayablesKPICards } from "@/components/payables/PayablesKPICards";
+import { PayablesTable } from "@/components/payables/PayablesTable";
+import { PayableApprovalDialogs } from "@/components/payables/PayableApprovalDialogs";
+import type { Payable, PayableSummary } from "@/components/payables/types";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -83,6 +90,16 @@ export default function SubcontractsPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [selectedContract, setSelectedContract] = useState<SubcontractorContract | null>(null);
+
+  const [mainTab, setMainTab] = useState("contracts");
+
+  // Payables state
+  const [paySearchTerm, setPaySearchTerm] = useState("");
+  const [payStatusFilter, setPayStatusFilter] = useState<string>("ALL");
+  const [selectedPayable, setSelectedPayable] = useState<Payable | null>(null);
+  const [isPayDetailOpen, setIsPayDetailOpen] = useState(false);
+  const [isPayRejectOpen, setIsPayRejectOpen] = useState(false);
+  const [isPayOpen, setIsPayOpen] = useState(false);
 
   const [createForm, setCreateForm] = useState({
     projectId: "",
@@ -182,6 +199,68 @@ export default function SubcontractsPage() {
       });
     }
   });
+
+  // Payables queries & mutations
+  const isPayablesAuthorized = !!user && (["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user.role) || hasFinancialsPermission);
+
+  const { data: payables = [], isLoading: payablesLoading } = useQuery<Payable[]>({
+    queryKey: ["/api/payables"],
+    enabled: isPayablesAuthorized,
+    refetchInterval: 15000,
+  });
+
+  const { data: payablesSummary } = useQuery<PayableSummary>({
+    queryKey: ["/api/payables/summary"],
+    enabled: isPayablesAuthorized,
+    refetchInterval: 15000,
+  });
+
+  const invalidatePayables = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/payables"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/payables/summary"] });
+  };
+
+  const approvablePayMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("POST", `/api/payables/${id}/approve`, {}),
+    onSuccess: () => { toast({ title: "Payable approved" }); invalidatePayables(); setIsPayDetailOpen(false); },
+    onError: (e: Error) => toast({ title: "Failed to approve", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectPayMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => apiRequest("POST", `/api/payables/${id}/reject`, { rejectionReason: reason }),
+    onSuccess: () => { toast({ title: "Payable rejected" }); invalidatePayables(); setIsPayRejectOpen(false); setIsPayDetailOpen(false); },
+    onError: (e: Error) => toast({ title: "Failed to reject", description: e.message, variant: "destructive" }),
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: async ({ id, paymentDate, checkNumber, paymentMethod }: { id: string; paymentDate: string; checkNumber?: string; paymentMethod?: string }) =>
+      apiRequest("POST", `/api/payables/${id}/mark-paid`, { paymentDate, checkNumber, paymentMethod }),
+    onSuccess: () => { toast({ title: "Payment recorded" }); invalidatePayables(); setIsPayOpen(false); setIsPayDetailOpen(false); },
+    onError: (e: Error) => toast({ title: "Failed to record payment", description: e.message, variant: "destructive" }),
+  });
+
+  const backfillMutation = useMutation({
+    mutationFn: async () => { const r = await apiRequest("POST", "/api/payables/backfill", {}); return r.json() as Promise<{ message: string; created: number }>; },
+    onSuccess: (data) => { toast({ title: "Backfill complete", description: data.message }); invalidatePayables(); },
+    onError: (e: Error) => toast({ title: "Backfill failed", description: e.message, variant: "destructive" }),
+  });
+
+  const filteredPayables = useMemo(() => payables.filter(p => {
+    if (!p.subcontractor || !p.project) return false;
+    const q = paySearchTerm.toLowerCase();
+    const matchSearch = !q || p.subcontractor.companyName?.toLowerCase().includes(q) || p.project.name?.toLowerCase().includes(q) || p.project.code?.toLowerCase().includes(q) || p.contract.contractNumber?.toLowerCase().includes(q) || p.invoiceNumber?.toLowerCase().includes(q);
+    return matchSearch && (payStatusFilter === "ALL" || p.status === payStatusFilter);
+  }), [payables, paySearchTerm, payStatusFilter]);
+
+  const getPayableStatusBadge = (status: string) => {
+    switch (status) {
+      case "PENDING": return <Badge variant="outline" className="text-yellow-600 border-yellow-600">Pending</Badge>;
+      case "APPROVED": return <Badge className="bg-blue-500 hover:bg-blue-600">Approved</Badge>;
+      case "PAID": return <Badge className="bg-green-500 hover:bg-green-600">Paid</Badge>;
+      case "REJECTED": return <Badge variant="destructive">Rejected</Badge>;
+      default: return <Badge variant="outline">{status}</Badge>;
+    }
+  };
 
   const resetCreateForm = () => {
     setCreateForm({
@@ -302,69 +381,84 @@ export default function SubcontractsPage() {
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <FileSignature className="h-8 w-8 text-primary" />
-            Subcontract Agreements
+            Subcontracts & Payables
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage subcontractor contracts and agreements
+            Manage subcontractor contracts, agreements, and payments
           </p>
         </div>
-        {canEdit && (
+        {canEdit && mainTab === "contracts" && (
           <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-subcontract">
             <Plus className="h-4 w-4 mr-2" />
             New Subcontract
           </Button>
         )}
+        {user?.role === "ADMIN" && mainTab === "payables" && payables.length === 0 && (
+          <Button variant="outline" onClick={() => backfillMutation.mutate()} disabled={backfillMutation.isPending} data-testid="button-run-backfill">
+            {backfillMutation.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Running...</> : <><RefreshCw className="w-4 h-4 mr-2" />Sync Completed Contracts</>}
+          </Button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <FileSignature className="h-4 w-4" />
-              Total Contracts
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{contracts.length}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              Active
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{activeContracts.length}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              Total Value
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalContractValue.toString())}</div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <DollarSign className="h-4 w-4" />
-              Active Value
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(activeContractValue.toString())}</div>
-          </CardContent>
-        </Card>
-      </div>
+      <Tabs value={mainTab} onValueChange={setMainTab} data-testid="tabs-main-section">
+        <TabsList>
+          <TabsTrigger value="contracts" data-testid="tab-section-contracts">
+            <FileSignature className="h-4 w-4 mr-2" />
+            Contracts ({contracts.length})
+          </TabsTrigger>
+          <TabsTrigger value="payables" data-testid="tab-section-payables">
+            <DollarSign className="h-4 w-4 mr-2" />
+            Payables {payables.length > 0 && `(${payables.length})`}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="contracts" className="mt-6 space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <FileSignature className="h-4 w-4" />
+                  Total Contracts
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{contracts.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Active
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{activeContracts.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Total Value
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(totalContractValue.toString())}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Active Value
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{formatCurrency(activeContractValue.toString())}</div>
+              </CardContent>
+            </Card>
+          </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList data-testid="tabs-subcontracts">
@@ -449,6 +543,61 @@ export default function SubcontractsPage() {
             )}
           </TabsContent>
         ))}
+      </Tabs>
+        </TabsContent>
+
+        <TabsContent value="payables" className="mt-6">
+          {!isPayablesAuthorized ? (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <AlertCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <p className="text-muted-foreground">Admin, Manager, or Office Manager access required to view subcontractor payables.</p>
+              </CardContent>
+            </Card>
+          ) : payablesLoading ? (
+            <div className="flex items-center justify-center py-12 gap-2 text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Loading payables...
+            </div>
+          ) : (
+            <>
+              <PayablesKPICards summary={payablesSummary} formatCurrency={(v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(typeof v === "string" ? parseFloat(v) : v)} />
+              <PayablesTable
+                payables={filteredPayables}
+                searchTerm={paySearchTerm}
+                onSearchChange={setPaySearchTerm}
+                statusFilter={payStatusFilter}
+                onStatusFilterChange={setPayStatusFilter}
+                userRole={user.role}
+                onApprove={(payable) => approvablePayMutation.mutate(payable.id)}
+                onRejectOpen={(payable) => { setSelectedPayable(payable); setIsPayRejectOpen(true); }}
+                onPayOpen={(payable) => { setSelectedPayable(payable); setIsPayOpen(true); }}
+                onViewDetail={(payable) => { setSelectedPayable(payable); setIsPayDetailOpen(true); }}
+                isApproving={approvablePayMutation.isPending}
+                formatCurrency={(v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(typeof v === "string" ? parseFloat(v) : v)}
+                getStatusBadge={getPayableStatusBadge}
+              />
+            </>
+          )}
+          <PayableApprovalDialogs
+            selectedPayable={selectedPayable}
+            isDetailOpen={isPayDetailOpen}
+            onDetailOpenChange={(open) => { setIsPayDetailOpen(open); if (!open) setSelectedPayable(null); }}
+            isRejectOpen={isPayRejectOpen}
+            onRejectOpenChange={setIsPayRejectOpen}
+            isPayOpen={isPayOpen}
+            onPayOpenChange={setIsPayOpen}
+            userRole={user.role}
+            onApprove={(payable) => approvablePayMutation.mutate(payable.id)}
+            onReject={(id, reason) => rejectPayMutation.mutate({ id, reason })}
+            onMarkPaid={(params) => markPaidMutation.mutate(params)}
+            isApproving={approvablePayMutation.isPending}
+            isRejecting={rejectPayMutation.isPending}
+            isMarkingPaid={markPaidMutation.isPending}
+            formatCurrency={(v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(typeof v === "string" ? parseFloat(v) : v)}
+            getStatusBadge={getPayableStatusBadge}
+          />
+        </TabsContent>
       </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>

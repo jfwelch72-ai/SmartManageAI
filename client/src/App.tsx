@@ -37,7 +37,6 @@ import CFODashboard from "@/pages/cfo-dashboard";
 import AISettingsPage from "@/pages/ai-settings";
 import CrewsPage from "@/pages/crews";
 import CostRatesPage from "@/pages/cost-rates";
-import SubcontractorPayablesPage from "@/pages/subcontractor-payables";
 import CompanyCommunicationsPage from "@/pages/company-communications";
 import TasksPage from "@/pages/tasks";
 import ProductionRatesPage from "@/pages/production-rates";
@@ -219,7 +218,7 @@ function Router() {
       <Route path="/ai-settings" component={() => <ProtectedRoute component={AISettingsPage} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} featurePerm="canAccessFinancials" />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} />} />
-      <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={SubcontractorPayablesPage} permission={RoutePermissions.SUBCONTRACTOR_PAYABLES} featurePerm="canAccessFinancials" />} />
+      <Route path="/subcontractor-payables" component={() => <Redirect to="/subcontracts" />} />
       <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/integrations" component={() => <ProtectedRoute component={IntegrationsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/approvals" component={() => <ProtectedRoute component={ApprovalsPage} />} />

@@ -608,15 +608,9 @@ export const NavigationConfig = {
     },
     {
       href: "/subcontracts",
-      label: "Subcontracts",
+      label: "Subcontracts & Payables",
       testId: "nav-subcontracts",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || perms?.canAccessFinancials === true,
-    },
-    {
-      href: "/subcontractor-payables",
-      label: "Subcontractor Payables",
-      testId: "nav-subcontractor-payables",
-      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || perms?.canAccessFinancials === true,
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {
       href: "/tm-billing",
