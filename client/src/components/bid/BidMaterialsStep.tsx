@@ -185,7 +185,7 @@ export default function BidMaterialsStep({
                   </div>
                   {canEdit && (
                     <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
-                      {onSendRfq && quote.supplierEmail && !quote.rfqSentAt && (
+                      {onSendRfq && quote.supplierEmail && !quote.rfqSentAt && quote.rfqStatus !== "sent" && quote.rfqStatus !== "responded" && (
                         <Button
                           size="sm"
                           variant="outline"
