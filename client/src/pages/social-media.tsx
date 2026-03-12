@@ -71,14 +71,37 @@ export default function SocialMediaPage() {
   });
 
   const publishMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("POST", `/api/social/posts/${id}/publish`),
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/social/posts/${id}/publish`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/social/posts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/social/stats"] });
+      if (data?.warning) {
+        toast({ title: "Published (with notice)", description: data.warning });
+      } else if (data?.externalPostUrl) {
+        toast({ title: "Published successfully", description: "Post is now live on the platform." });
+      } else {
+        toast({ title: "Post published", description: "Status updated to Published." });
+      }
+    },
+    onError: (e: Error) => toast({ title: "Publish failed", description: e.message, variant: "destructive" }),
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/social/posts/${id}/approve`);
+      return res.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/social/posts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/social/calendar"] });
       queryClient.invalidateQueries({ queryKey: ["/api/social/stats"] });
-      toast({ title: "Post marked as published" });
+      toast({ title: "Post approved", description: "The post has been approved and is ready to publish." });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Approval failed", description: e.message, variant: "destructive" }),
   });
 
   const duplicateMutation = useMutation({
@@ -205,6 +228,7 @@ export default function SocialMediaPage() {
                     onPublish={id => publishMutation.mutate(id)}
                     onDuplicate={id => duplicateMutation.mutate(id)}
                     onReject={handleRejectClick}
+                    onApprove={id => approveMutation.mutate(id)}
                   />
                 ))
               ) : (
@@ -274,6 +298,7 @@ export default function SocialMediaPage() {
                   onPublish={id => publishMutation.mutate(id)}
                   onDuplicate={id => duplicateMutation.mutate(id)}
                   onReject={handleRejectClick}
+                  onApprove={id => approveMutation.mutate(id)}
                 />
               ))}
             </div>

@@ -3,21 +3,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   MoreHorizontal, Edit, Copy, Send, AlertCircle, Trash2,
-  Clock, CheckCircle, Megaphone, Hash, ExternalLink, Sparkles
+  Clock, CheckCircle, Megaphone, Hash, ExternalLink, Sparkles, ThumbsUp
 } from "lucide-react";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
 import { type SocialPost, STATUS_COLORS, getPlatformInfo } from "./types";
 
-export function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onReject }: {
+export function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onReject, onApprove }: {
   post: SocialPost;
   onEdit: (post: SocialPost) => void;
   onDelete: (id: string) => void;
   onPublish: (id: string) => void;
   onDuplicate: (id: string) => void;
   onReject: (id: string) => void;
+  onApprove?: (id: string) => void;
 }) {
   const info = getPlatformInfo(post.platform || "FACEBOOK");
   const Icon = info.icon;
@@ -105,28 +106,37 @@ export function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onRej
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => onEdit(post)} data-testid={`edit-post-${post.id}`}>
-                <Edit className="h-4 w-4 mr-2" />Edit
-              </DropdownMenuItem>
+              {post.status !== "POSTED" && (
+                <DropdownMenuItem onClick={() => onEdit(post)} data-testid={`edit-post-${post.id}`}>
+                  <Edit className="h-4 w-4 mr-2" />Edit
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => onDuplicate(post.id)} data-testid={`duplicate-post-${post.id}`}>
                 <Copy className="h-4 w-4 mr-2" />Duplicate
               </DropdownMenuItem>
-              {post.status !== "POSTED" && (
+              <DropdownMenuSeparator />
+              {post.status === "PENDING_APPROVAL" && onApprove && (
+                <DropdownMenuItem onClick={() => onApprove(post.id)} className="text-green-600 focus:text-green-600" data-testid={`approve-post-${post.id}`}>
+                  <ThumbsUp className="h-4 w-4 mr-2" />Approve
+                </DropdownMenuItem>
+              )}
+              {post.status === "PENDING_APPROVAL" && (
+                <DropdownMenuItem onClick={() => onReject(post.id)} className="text-amber-600 focus:text-amber-600" data-testid={`reject-post-${post.id}`}>
+                  <AlertCircle className="h-4 w-4 mr-2" />Reject
+                </DropdownMenuItem>
+              )}
+              {post.status !== "POSTED" && post.status !== "PENDING_APPROVAL" && (
                 <DropdownMenuItem onClick={() => onPublish(post.id)} data-testid={`publish-post-${post.id}`}>
                   <Send className="h-4 w-4 mr-2" />Publish Now
                 </DropdownMenuItem>
               )}
-              {post.status === "PENDING_APPROVAL" && (
-                <DropdownMenuItem onClick={() => onReject(post.id)} className="text-amber-600" data-testid={`reject-post-${post.id}`}>
-                  <AlertCircle className="h-4 w-4 mr-2" />Reject
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => {
                 navigator.clipboard.writeText(post.content + (post.hashtags?.length ? "\n\n" + post.hashtags.map(h => "#" + h).join(" ") : ""));
-              }}>
+              }} data-testid={`copy-content-${post.id}`}>
                 <Copy className="h-4 w-4 mr-2" />Copy Content
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDelete(post.id)} className="text-destructive" data-testid={`delete-post-${post.id}`}>
+              <DropdownMenuItem onClick={() => onDelete(post.id)} className="text-destructive focus:text-destructive" data-testid={`delete-post-${post.id}`}>
                 <Trash2 className="h-4 w-4 mr-2" />Delete
               </DropdownMenuItem>
             </DropdownMenuContent>

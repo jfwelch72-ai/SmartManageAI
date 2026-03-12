@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   Plus, Loader2, Edit, Clock, Eye,
-  Check, ChevronDown
+  Check, ChevronDown, Send
 } from "lucide-react";
 import { type SocialPost, type SocialAccount, PLATFORMS, CHAR_LIMITS, getPlatformInfo } from "./types";
 import { PlatformPreview } from "./SocialPlatformPreview";
@@ -447,6 +447,16 @@ export function SocialPostEditor({ open, onClose, editingPost, prefilledDate }: 
           >
             {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Edit className="h-4 w-4 mr-2" />}
             Save as Draft
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => handleSubmit("PENDING_APPROVAL")}
+            disabled={isPending || !form.content.trim() || isOverLimit}
+            data-testid="button-submit-for-approval"
+            className="border-amber-500 text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:border-amber-400 dark:text-amber-400 dark:hover:bg-amber-950"
+          >
+            {isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+            Submit for Approval
           </Button>
           {form.scheduleMode === "schedule" && form.scheduledAt && (
             <Button
