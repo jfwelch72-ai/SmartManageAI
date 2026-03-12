@@ -198,6 +198,7 @@ export default function BidDetailPage() {
       leadTime: "",
       supplierName: "",
       supplierContact: "",
+      supplierEmail: "",
     },
   });
   const equipmentForm = useForm({
@@ -368,6 +369,7 @@ export default function BidDetailPage() {
       leadTime: quote.leadTime || "",
       supplierName: quote.supplierName || "",
       supplierContact: quote.supplierContact || "",
+      supplierEmail: (quote as any).supplierEmail || "",
     });
     setShowMaterialQuoteDialog(true);
   };
@@ -916,6 +918,8 @@ export default function BidDetailPage() {
                     isSelected: sel,
                   })
                 }
+                onSendRfq={(quoteId) => mutations.sendMaterialRfq.mutate(quoteId)}
+                sendRfqPending={mutations.sendMaterialRfq.isPending}
                 onPrevStep={() => setCurrentStep(2)}
                 onNextStep={() => setCurrentStep(4)}
               />
@@ -953,6 +957,8 @@ export default function BidDetailPage() {
                     isSelected: sel,
                   })
                 }
+                onSendRfq={(quoteId) => mutations.sendSubRfq.mutate(quoteId)}
+                sendRfqPending={mutations.sendSubRfq.isPending}
                 onPrevStep={() => setCurrentStep(4)}
                 onNextStep={() => setCurrentStep(6)}
               />

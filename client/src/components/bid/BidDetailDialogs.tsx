@@ -602,6 +602,19 @@ export function MaterialQuoteDialog({
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="supplierEmail"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Supplier Email (for RFQ)</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value || ""} type="email" placeholder="supplier@example.com" data-testid="input-supplier-email" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <div className="space-y-2">
               <Label>Quote Document</Label>
               {uploadedFileData ? (

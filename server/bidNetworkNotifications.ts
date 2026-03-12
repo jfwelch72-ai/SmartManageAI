@@ -1,6 +1,6 @@
 import { sendEmail } from "./email";
 import { db } from "./db";
-import { users, organizations, organizationNetworkSettings } from "@shared/schema";
+import { users, organizations, organizationNetworkSettings, notifications } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
 
@@ -49,6 +49,15 @@ function formatDate(date: Date): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function formatCurrency(amount: number): string {
@@ -461,6 +470,136 @@ export async function sendClarificationNotification(
     return true;
   } catch (error) {
     logError("Failed to send clarification notification", error as Error);
+    return false;
+  }
+}
+
+export async function createBidNetworkInAppNotification(
+  organizationId: string,
+  type: "BID_INVITATION_RECEIVED" | "BID_RESPONSE_RECEIVED" | "BID_CLARIFICATION_NEW",
+  title: string,
+  message: string,
+  relatedEntityId?: string,
+  relatedEntityType?: string
+): Promise<void> {
+  try {
+    const settings = await getOrgNotificationSettings(organizationId);
+    if (!settings.notifyInApp) return;
+
+    const admins = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, organizationId),
+        eq(users.role, "ADMIN")
+      ));
+
+    if (admins.length === 0) return;
+
+    for (const admin of admins) {
+      await db.insert(notifications).values({
+        userId: admin.id,
+        type,
+        title,
+        message,
+        relatedEntityId: relatedEntityId || null,
+        relatedEntityType: relatedEntityType || null,
+        isRead: false,
+      });
+    }
+
+    logInfo("In-app notification created", { organizationId, type, recipientCount: admins.length });
+  } catch (error) {
+    logError("Failed to create in-app notification", error as Error);
+  }
+}
+
+export async function sendRfqEmail(
+  recipientEmail: string,
+  recipientName: string,
+  bidTitle: string,
+  scopeDescription: string,
+  gcOrganizationName: string,
+  quoteType: "subcontractor" | "material",
+  bidDueDate?: Date
+): Promise<boolean> {
+  try {
+    const safeBidTitle = escapeHtml(bidTitle);
+    const safeGcName = escapeHtml(gcOrganizationName);
+    const safeRecipientName = escapeHtml(recipientName);
+    const safeScope = escapeHtml(scopeDescription.substring(0, 500));
+
+    const subject = `Request for Quote: ${bidTitle} - ${gcOrganizationName}`;
+    const typeLabel = quoteType === "subcontractor" ? "Subcontractor Services" : "Materials & Supplies";
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #6366f1, #4f46e5); color: white; padding: 30px; border-radius: 8px 8px 0 0; }
+          .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
+          .details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+          .detail-row { padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+          .detail-label { color: #64748b; font-size: 13px; }
+          .detail-value { font-weight: 600; margin-top: 4px; }
+          .scope-box { background: white; padding: 20px; border-left: 4px solid #6366f1; border-radius: 4px; margin: 20px 0; }
+          .footer { text-align: center; color: #64748b; font-size: 12px; margin-top: 30px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1 style="margin: 0;">Request for Quote</h1>
+            <p style="margin: 10px 0 0 0; opacity: 0.9;">from ${safeGcName}</p>
+          </div>
+          <div class="content">
+            <p>Hi${safeRecipientName ? ` ${safeRecipientName}` : ""},</p>
+            <p>${safeGcName} is requesting a quote from you for the following project:</p>
+            
+            <div class="details">
+              <div class="detail-row">
+                <div class="detail-label">Project</div>
+                <div class="detail-value">${safeBidTitle}</div>
+              </div>
+              <div class="detail-row">
+                <div class="detail-label">Quote Type</div>
+                <div class="detail-value">${typeLabel}</div>
+              </div>
+              ${bidDueDate ? `
+              <div class="detail-row">
+                <div class="detail-label">Response Needed By</div>
+                <div class="detail-value">${formatDate(bidDueDate)}</div>
+              </div>
+              ` : ""}
+            </div>
+            
+            <div class="scope-box">
+              <strong>Scope Description:</strong>
+              <p style="margin: 10px 0 0 0; color: #475569;">${safeScope}${scopeDescription.length > 500 ? "..." : ""}</p>
+            </div>
+            
+            <p style="color: #64748b; font-size: 14px;">
+              Please respond to ${safeGcName} with your pricing and availability at your earliest convenience.
+            </p>
+          </div>
+          <div class="footer">
+            <p>This email was sent by ${APP_NAME} on behalf of ${safeGcName}</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const text = `Request for Quote from ${gcOrganizationName}\n\nHi${recipientName ? ` ${recipientName}` : ""},\n\n${gcOrganizationName} is requesting a quote from you for: ${bidTitle}\nType: ${typeLabel}\n${bidDueDate ? `Response Needed By: ${formatDate(bidDueDate)}\n` : ""}\nScope: ${scopeDescription.substring(0, 500)}\n\nPlease respond with your pricing and availability.\n\n---\nThis email was sent by ${APP_NAME}`;
+
+    await sendEmail({ to: recipientEmail, subject, html, text });
+    logInfo("RFQ email sent", { to: recipientEmail, bidTitle, quoteType });
+    return true;
+  } catch (error) {
+    logError("Failed to send RFQ email", error as Error);
     return false;
   }
 }

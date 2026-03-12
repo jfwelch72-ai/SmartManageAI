@@ -1125,6 +1125,74 @@ router.delete("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN
   }
 });
 
+router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const { bidSubcontractorQuotes } = await import("@shared/schema");
+    const { sendRfqEmail } = await import("./bidNetworkNotifications");
+    const { organizations } = await import("@shared/schema");
+
+    const [quote] = await db
+      .select()
+      .from(bidSubcontractorQuotes)
+      .where(eq(bidSubcontractorQuotes.id, req.params.quoteId))
+      .limit(1);
+
+    if (!quote || quote.bidId !== bid.id) {
+      res.status(404).json({ error: "Quote not found" });
+      return;
+    }
+
+    const recipientEmail = quote.contactEmail;
+    if (!recipientEmail) {
+      res.status(400).json({ error: "Quote has no contact email. Add a contact email first." });
+      return;
+    }
+
+    const [gcOrg] = await db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, bid.gcOrganizationId));
+
+    const sent = await sendRfqEmail(
+      recipientEmail,
+      quote.contactName || "",
+      bid.title || "Untitled Bid",
+      quote.scopeOfWork,
+      gcOrg?.name || "Unknown",
+      "subcontractor",
+      bid.dueDate ? new Date(bid.dueDate) : undefined
+    );
+
+    if (sent) {
+      await db
+        .update(bidSubcontractorQuotes)
+        .set({ rfqSentAt: new Date(), rfqStatus: "sent", updatedAt: new Date() })
+        .where(eq(bidSubcontractorQuotes.id, quote.id));
+
+      const [updated] = await db
+        .select()
+        .from(bidSubcontractorQuotes)
+        .where(eq(bidSubcontractorQuotes.id, quote.id))
+        .limit(1);
+
+      res.json(updated);
+    } else {
+      res.status(500).json({ error: "Failed to send RFQ email" });
+    }
+  } catch (error) {
+    console.error("Send RFQ error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ====================
 // Bid Material Quotes Routes
 // ====================
@@ -1174,6 +1242,7 @@ router.post("/api/bids/:code/material-quotes", requireAuth, requireRole("ADMIN",
       leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
       supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
       supplierContact: req.body.supplierContact ? sanitizeText(req.body.supplierContact) : undefined,
+      supplierEmail: req.body.supplierEmail ? sanitizeEmail(req.body.supplierEmail) : undefined,
     };
 
     const validated = insertBidMaterialQuoteSchema.parse({
@@ -1221,6 +1290,7 @@ router.patch("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRol
       leadTime: req.body.leadTime ? sanitizeShortText(req.body.leadTime) : undefined,
       supplierName: req.body.supplierName ? sanitizeShortText(req.body.supplierName) : undefined,
       supplierContact: req.body.supplierContact ? sanitizeText(req.body.supplierContact) : undefined,
+      supplierEmail: req.body.supplierEmail ? sanitizeEmail(req.body.supplierEmail) : undefined,
       cost: req.body.cost !== undefined ? req.body.cost : undefined,
       fileUrl: req.body.fileUrl !== undefined ? req.body.fileUrl : undefined,
       fileName: req.body.fileName !== undefined ? req.body.fileName : undefined,
@@ -1323,6 +1393,76 @@ router.delete("/api/bids/:code/material-quotes/:quoteId", requireAuth, requireRo
     res.json({ success: true });
   } catch (error) {
     console.error("Delete bid material quote error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/bids/:code/material-quotes/:quoteId/send-rfq", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const { bidMaterialQuotes } = await import("@shared/schema");
+    const { sendRfqEmail } = await import("./bidNetworkNotifications");
+    const { organizations } = await import("@shared/schema");
+
+    const [quote] = await db
+      .select()
+      .from(bidMaterialQuotes)
+      .where(eq(bidMaterialQuotes.id, req.params.quoteId))
+      .limit(1);
+
+    if (!quote || quote.bidId !== bid.id) {
+      res.status(404).json({ error: "Material quote not found" });
+      return;
+    }
+
+    const recipientEmail = quote.supplierEmail;
+    if (!recipientEmail) {
+      res.status(400).json({ error: "Quote has no supplier email. Add a supplier email first." });
+      return;
+    }
+
+    const [gcOrg] = await db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, bid.gcOrganizationId));
+
+    const scopeDesc = [quote.materialName, quote.description, quote.specs].filter(Boolean).join(" - ");
+
+    const sent = await sendRfqEmail(
+      recipientEmail,
+      quote.supplierContact || quote.supplierName || "",
+      bid.title || "Untitled Bid",
+      scopeDesc,
+      gcOrg?.name || "Unknown",
+      "material",
+      bid.dueDate ? new Date(bid.dueDate) : undefined
+    );
+
+    if (sent) {
+      await db
+        .update(bidMaterialQuotes)
+        .set({ rfqSentAt: new Date(), rfqStatus: "sent", updatedAt: new Date() })
+        .where(eq(bidMaterialQuotes.id, quote.id));
+
+      const [updated] = await db
+        .select()
+        .from(bidMaterialQuotes)
+        .where(eq(bidMaterialQuotes.id, quote.id))
+        .limit(1);
+
+      res.json(updated);
+    } else {
+      res.status(500).json({ error: "Failed to send RFQ email" });
+    }
+  } catch (error) {
+    console.error("Send material RFQ error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

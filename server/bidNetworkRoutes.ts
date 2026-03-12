@@ -17,7 +17,8 @@ import { logInfo, logError } from "./utils/logger";
 import { 
   sendBidInvitationNotification, 
   sendBidResponseNotification,
-  sendClarificationNotification 
+  sendClarificationNotification,
+  createBidNetworkInAppNotification 
 } from "./bidNetworkNotifications";
 
 const router = Router();
@@ -490,6 +491,15 @@ router.post("/invitations/send", requireAuth, requireRole("ADMIN", "MANAGER", "E
             personalMessage: personalMessage || undefined,
           }
         ).catch(err => logError("Email notification failed", err));
+
+        createBidNetworkInAppNotification(
+          invitee.organizationId,
+          "BID_INVITATION_RECEIVED",
+          "New Bid Invitation",
+          `${gcOrg?.name || "A general contractor"} has invited you to bid on "${request.title}"`,
+          invitation.id,
+          "bid_invitation"
+        ).catch(err => logError("In-app notification failed", err));
         
         logInfo("Bid invitation sent", { 
           invitationId: invitation.id, 
@@ -788,7 +798,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
               scopeOfWork: bidRequest.scopeOfWork,
               bidDueDate: new Date(bidRequest.bidDueDate),
               requiredTrades: bidRequest.requiredTrades || [],
-              gcOrganizationName: "", // Not needed for this notification
+              gcOrganizationName: "",
             },
             {
               id: created.id,
@@ -797,6 +807,55 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
               submittedAt: new Date(),
             }
           ).catch(err => logError("Response notification failed", undefined, err as Error));
+
+          const bidAmount = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(parseFloat(created.totalBidAmount || "0"));
+          createBidNetworkInAppNotification(
+            bidRequest.organizationId,
+            "BID_RESPONSE_RECEIVED",
+            "New Bid Response",
+            `${subOrg?.name || "A subcontractor"} submitted a bid of ${bidAmount} for "${bidRequest.title}"`,
+            created.id,
+            "bid_response"
+          ).catch(err => logError("In-app notification failed", undefined, err as Error));
+
+          if (bidRequest.bidId) {
+            try {
+              const { bidSubcontractorQuotes } = await import("@shared/schema");
+              const subName = subOrg?.name || "Unknown Sub";
+              const [existingQuote] = await db
+                .select()
+                .from(bidSubcontractorQuotes)
+                .where(and(
+                  eq(bidSubcontractorQuotes.bidId, bidRequest.bidId),
+                  eq(bidSubcontractorQuotes.notes, `bid_network_response:${data.invitationId}`)
+                ))
+                .limit(1);
+
+              if (existingQuote) {
+                await db
+                  .update(bidSubcontractorQuotes)
+                  .set({
+                    quoteAmount: created.totalBidAmount || "0",
+                    subcontractorName: subName,
+                    rfqStatus: "responded",
+                    updatedAt: new Date()
+                  })
+                  .where(eq(bidSubcontractorQuotes.id, existingQuote.id));
+              } else {
+                await db.insert(bidSubcontractorQuotes).values({
+                  bidId: bidRequest.bidId,
+                  subcontractorName: subName,
+                  scopeOfWork: bidRequest.scopeOfWork.substring(0, 500),
+                  quoteAmount: created.totalBidAmount || "0",
+                  rfqStatus: "responded",
+                  notes: `bid_network_response:${data.invitationId}`,
+                });
+              }
+              logInfo("Auto-synced bid response to internal quote", { responseId: created.id, bidId: bidRequest.bidId, invitationId: data.invitationId });
+            } catch (syncError) {
+              logError("Auto-sync to internal quote failed", undefined, syncError as Error);
+            }
+          }
         }
       }
       
@@ -980,6 +1039,22 @@ router.post("/clarifications", requireAuth, requireRole("ADMIN", "MANAGER", "EST
       })
       .returning();
     
+    const [bidReq] = await db
+      .select()
+      .from(subcontractorBidRequests)
+      .where(eq(subcontractorBidRequests.id, bidRequestId));
+
+    if (bidReq) {
+      createBidNetworkInAppNotification(
+        bidReq.organizationId,
+        "BID_CLARIFICATION_NEW",
+        "New Clarification Question",
+        `A subcontractor asked a question about "${bidReq.title}"`,
+        clarification.id,
+        "bid_clarification"
+      ).catch(err => logError("In-app notification failed", undefined, err as Error));
+    }
+
     logInfo("Clarification question asked", { clarificationId: clarification.id });
     res.status(201).json(clarification);
   } catch (error) {
@@ -1026,6 +1101,17 @@ router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "MA
       })
       .where(eq(bidRequestClarifications.id, id))
       .returning();
+
+    if (clarification.askedByOrganizationId) {
+      createBidNetworkInAppNotification(
+        clarification.askedByOrganizationId,
+        "BID_CLARIFICATION_NEW",
+        "Clarification Answered",
+        `Your question about "${request.title}" has been answered`,
+        updated.id,
+        "bid_clarification"
+      ).catch(err => logError("In-app notification failed", undefined, err as Error));
+    }
     
     res.json(updated);
   } catch (error) {

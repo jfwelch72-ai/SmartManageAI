@@ -150,6 +150,18 @@ export function useBidMutations(opts: UseBidMutationsOptions) {
     onError: errHandler("Failed to update selection"),
   });
 
+  const sendSubRfq = useMutation({
+    mutationFn: async (quoteId: string) => { const res = await apiRequest("POST", `/api/bids/${opts.bidCode}/quotes/${quoteId}/send-rfq`); return res.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/bids", opts.bidCode, "quotes"] }); toast({ title: "RFQ Sent", description: "Request for quote email sent to subcontractor" }); },
+    onError: errHandler("Failed to send RFQ"),
+  });
+
+  const sendMaterialRfq = useMutation({
+    mutationFn: async (quoteId: string) => { const res = await apiRequest("POST", `/api/bids/${opts.bidCode}/material-quotes/${quoteId}/send-rfq`); return res.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/bids", opts.bidCode, "material-quotes"] }); toast({ title: "RFQ Sent", description: "Request for quote email sent to supplier" }); },
+    onError: errHandler("Failed to send RFQ"),
+  });
+
   const updateBidMutation = useMutation({
     mutationFn: async (data: BidEditFormValues) => {
       const payload: any = {};
@@ -174,6 +186,7 @@ export function useBidMutations(opts: UseBidMutationsOptions) {
     createMaterialQuote, updateMaterialQuote, deleteMaterialQuote,
     createEquipmentSelection, updateEquipmentSelection, deleteEquipmentSelection,
     toggleQuoteSelection, toggleMaterialQuoteSelection,
+    sendSubRfq, sendMaterialRfq,
     updateBidMutation, createEstimateMutation,
   };
 }

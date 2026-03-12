@@ -46,6 +46,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Reports System**: Provides 9 report types across Takeoff and Estimate categories, with CSV export, browser print, and snapshot creation.
 *   **Change Order Workflow Enhancement**: Includes revision history tracking and a multi-level approval chain.
 *   **Approval Workflow Notifications**: In-app notifications across all 6 approval workflows (Change Orders, Submittals, T&M Tickets, Overtime Requests, Subcontractor Payables, Unified Approval Center). Approvers are notified on submission; submitters are notified on approval/rejection. Uses a shared `approvalNotificationService` with non-blocking error handling.
+*   **Vendor & Sub RFQ Flow**: Send RFQ emails to subcontractors (via `contactEmail`) and material suppliers (via `supplierEmail`) directly from bid Steps 3 & 5. Schema tracks `rfqSentAt`, `rfqStatus` on both `bidSubcontractorQuotes` and `bidMaterialQuotes`. In-app notifications fire for Bid Network events (invitation received, response submitted, clarification posted/answered). Auto-sync creates/updates internal `bidSubcontractorQuote` records when Bid Network responses are submitted, keyed by `invitationId` in the notes field.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

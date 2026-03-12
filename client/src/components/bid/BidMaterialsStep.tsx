@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Package, Plus, Edit, Trash2, FileText, CheckCircle2, ChevronRight } from "lucide-react";
+import { Package, Plus, Edit, Trash2, FileText, CheckCircle2, ChevronRight, Send, Clock } from "lucide-react";
 import type { BidMaterialQuote } from "@shared/schema";
 
 interface DerivedMaterialRequirement {
@@ -26,6 +26,8 @@ interface BidMaterialsStepProps {
   onEditQuote: (quote: BidMaterialQuote) => void;
   onDeleteQuote: (quoteId: string) => void;
   onToggleSelection: (quoteId: string, isSelected: boolean) => void;
+  onSendRfq?: (quoteId: string) => void;
+  sendRfqPending?: boolean;
   onPrevStep: () => void;
   onNextStep: () => void;
 }
@@ -41,6 +43,8 @@ export default function BidMaterialsStep({
   onEditQuote,
   onDeleteQuote,
   onToggleSelection,
+  onSendRfq,
+  sendRfqPending,
   onPrevStep,
   onNextStep,
 }: BidMaterialsStepProps) {
@@ -149,6 +153,18 @@ export default function BidMaterialsStep({
                             Selected
                           </Badge>
                         )}
+                        {(quote as any).rfqStatus === "sent" && (
+                          <Badge variant="outline" className="gap-1 text-indigo-600 border-indigo-300">
+                            <Send className="w-3 h-3" />
+                            RFQ Sent
+                          </Badge>
+                        )}
+                        {(quote as any).rfqStatus === "responded" && (
+                          <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-300">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Responded
+                          </Badge>
+                        )}
                       </div>
                       {quote.description && (
                         <p className="text-xs sm:text-sm text-muted-foreground mb-2">{quote.description}</p>
@@ -159,10 +175,28 @@ export default function BidMaterialsStep({
                       {quote.leadTime && (
                         <p className="text-xs text-muted-foreground">Lead Time: {quote.leadTime}</p>
                       )}
+                      {(quote as any).rfqSentAt && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                          <Clock className="w-3 h-3" />
+                          RFQ sent {new Date((quote as any).rfqSentAt).toLocaleDateString()}
+                        </p>
+                      )}
                     </div>
                   </div>
                   {canEdit && (
                     <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
+                      {onSendRfq && (quote as any).supplierEmail && !(quote as any).rfqSentAt && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onSendRfq(quote.id)}
+                          disabled={sendRfqPending}
+                          data-testid={`button-send-rfq-material-${quote.id}`}
+                        >
+                          <Send className="w-3 h-3 mr-1" />
+                          Send RFQ
+                        </Button>
+                      )}
                       <Button
                         size="icon"
                         variant="ghost"
