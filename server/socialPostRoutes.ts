@@ -101,6 +101,7 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
     if (scheduledAt && postStatus === "DRAFT") {
       postStatus = "SCHEDULED";
     }
+    const approvalStatus = postStatus === "PENDING_APPROVAL" ? "pending" : undefined;
 
     let warning: string | undefined;
     if (platform && content) {
@@ -124,6 +125,7 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
       platform: platform || null,
       platforms: platforms || null,
       status: postStatus,
+      approvalStatus: approvalStatus || null,
       mediaUrls: mediaUrls || null,
       hashtags: hashtags || null,
       scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
@@ -349,6 +351,10 @@ router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response) 
 
     if (updates.scheduledAt && updates.status === undefined && existing.status === "DRAFT") {
       updates.status = "SCHEDULED";
+    }
+    if (updates.status === "PENDING_APPROVAL") {
+      updates.approvalStatus = "pending";
+      updates.rejectionReason = null;
     }
 
     const [updated] = await db.update(socialMediaPosts)

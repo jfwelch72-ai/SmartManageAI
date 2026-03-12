@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   MoreHorizontal, Edit, Copy, Send, AlertCircle, Trash2,
-  Clock, CheckCircle, Megaphone, Hash, ExternalLink, Sparkles, ThumbsUp
+  Clock, CheckCircle, Megaphone, Hash, ExternalLink, Sparkles, ThumbsUp, RefreshCw
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger
@@ -125,7 +125,12 @@ export function PostCard({ post, onEdit, onDelete, onPublish, onDuplicate, onRej
                   <AlertCircle className="h-4 w-4 mr-2" />Reject
                 </DropdownMenuItem>
               )}
-              {post.status !== "POSTED" && post.status !== "PENDING_APPROVAL" && (
+              {post.status === "FAILED" && (
+                <DropdownMenuItem onClick={() => onPublish(post.id)} className="text-blue-600 focus:text-blue-600" data-testid={`publish-post-${post.id}`}>
+                  <RefreshCw className="h-4 w-4 mr-2" />Retry Publish
+                </DropdownMenuItem>
+              )}
+              {post.status !== "POSTED" && post.status !== "PENDING_APPROVAL" && post.status !== "FAILED" && (
                 <DropdownMenuItem onClick={() => onPublish(post.id)} data-testid={`publish-post-${post.id}`}>
                   <Send className="h-4 w-4 mr-2" />Publish Now
                 </DropdownMenuItem>

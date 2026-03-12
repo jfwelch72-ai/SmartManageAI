@@ -264,9 +264,10 @@ export default function SocialMediaPage() {
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="DRAFT">Draft</SelectItem>
+                <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
+                <SelectItem value="APPROVED">Approved</SelectItem>
                 <SelectItem value="SCHEDULED">Scheduled</SelectItem>
                 <SelectItem value="POSTED">Posted</SelectItem>
-                <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
                 <SelectItem value="FAILED">Failed</SelectItem>
               </SelectContent>
             </Select>
