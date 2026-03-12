@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 
 interface BidScopeStepProps {
@@ -84,9 +85,15 @@ export default function BidScopeStep({
           </div>
         ) : (
           <div className="space-y-4">
+            <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
+                These costs come directly from your estimate line items. Labor is always sourced from here. If you don't add vendor quotes in steps 3–5, these costs will also be used in the Bid Summary.
+              </AlertDescription>
+            </Alert>
             <div className="border rounded-md divide-y">
-              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <span className="text-sm font-medium">Total Estimate</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-muted/30">
+                <span className="text-sm font-semibold">Total Estimate</span>
                 <div className="text-right min-w-0">
                   <span className="text-lg font-bold font-mono" data-testid="text-estimate-total">
                     ${estimate.totals.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -109,6 +116,30 @@ export default function BidScopeStep({
                   ${estimate.totals.materialCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
               </div>
+              {Number(estimate.totals.equipmentCost) > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <span className="text-sm font-medium">Equipment Cost</span>
+                  <span className="font-mono font-semibold min-w-0">
+                    ${Number(estimate.totals.equipmentCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              {Number(estimate.totals.subcontractCost) > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <span className="text-sm font-medium">Subcontract Cost</span>
+                  <span className="font-mono font-semibold min-w-0">
+                    ${Number(estimate.totals.subcontractCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+              {Number(estimate.totals.consumablesCost) > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <span className="text-sm font-medium">Consumables</span>
+                  <span className="font-mono font-semibold min-w-0">
+                    ${Number(estimate.totals.consumablesCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <span className="text-sm font-medium">Status</span>
                 <Badge variant={estimate.status === "APPROVED" ? "default" : "secondary"}>

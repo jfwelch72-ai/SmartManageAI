@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -23,6 +24,9 @@ interface BidSummaryStepProps {
   canEdit: boolean;
   canGeneratePDFs: boolean;
   userRole: string;
+  useVendorMaterial: boolean;
+  useVendorEquipment: boolean;
+  useVendorSubs: boolean;
   onOverheadChange: (value: number) => void;
   onProfitChange: (value: number) => void;
   onPrevStep: () => void;
@@ -46,6 +50,9 @@ export default function BidSummaryStep({
   canEdit,
   canGeneratePDFs,
   userRole,
+  useVendorMaterial,
+  useVendorEquipment,
+  useVendorSubs,
   onOverheadChange,
   onProfitChange,
   onPrevStep,
@@ -65,32 +72,52 @@ export default function BidSummaryStep({
         <CardContent className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 bg-muted rounded-md">
-              <div className="flex items-center gap-2 mb-1">
-                <Package className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-medium">Materials</p>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">Materials</p>
+                </div>
+                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${useVendorMaterial ? 'text-green-600 border-green-300' : 'text-blue-600 border-blue-300'}`}>
+                  {useVendorMaterial ? 'Vendor Quotes' : 'Estimate'}
+                </Badge>
               </div>
-              <p className="text-lg font-bold font-mono">${totalMaterialCost.toLocaleString()}</p>
+              <p className="text-lg font-bold font-mono" data-testid="text-summary-material">${totalMaterialCost.toLocaleString()}</p>
             </div>
             <div className="p-4 bg-muted rounded-md">
-              <div className="flex items-center gap-2 mb-1">
-                <Truck className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-medium">Equipment</p>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">Equipment</p>
+                </div>
+                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${useVendorEquipment ? 'text-green-600 border-green-300' : 'text-blue-600 border-blue-300'}`}>
+                  {useVendorEquipment ? 'Selections' : 'Estimate'}
+                </Badge>
               </div>
-              <p className="text-lg font-bold font-mono">${totalEquipmentCost.toLocaleString()}</p>
+              <p className="text-lg font-bold font-mono" data-testid="text-summary-equipment">${totalEquipmentCost.toLocaleString()}</p>
             </div>
             <div className="p-4 bg-muted rounded-md">
-              <div className="flex items-center gap-2 mb-1">
-                <Clock className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-medium">Labor</p>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">Labor</p>
+                </div>
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-blue-600 border-blue-300">
+                  Estimate
+                </Badge>
               </div>
-              <p className="text-lg font-bold font-mono">${laborCost.toLocaleString()}</p>
+              <p className="text-lg font-bold font-mono" data-testid="text-summary-labor">${laborCost.toLocaleString()}</p>
             </div>
             <div className="p-4 bg-muted rounded-md">
-              <div className="flex items-center gap-2 mb-1">
-                <Users className="w-4 h-4 text-muted-foreground" />
-                <p className="text-sm font-medium">Subcontractors</p>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm font-medium">Subcontractors</p>
+                </div>
+                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${useVendorSubs ? 'text-green-600 border-green-300' : 'text-blue-600 border-blue-300'}`}>
+                  {useVendorSubs ? 'Vendor Quotes' : 'Estimate'}
+                </Badge>
               </div>
-              <p className="text-lg font-bold font-mono">${totalSubcontractorCost.toLocaleString()}</p>
+              <p className="text-lg font-bold font-mono" data-testid="text-summary-subs">${totalSubcontractorCost.toLocaleString()}</p>
             </div>
           </div>
 

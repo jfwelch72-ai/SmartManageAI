@@ -5,7 +5,7 @@ import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
-  Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy
+  Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2
 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
@@ -24,6 +24,7 @@ interface BidPlansTabProps {
   bidId: string;
   bidCode: string;
   canEdit: boolean;
+  estimateId?: string;
   onNextStep: () => void;
 }
 
@@ -53,7 +54,7 @@ const DEFAULT_GROUPS: DocGroup[] = [
   { name: "Supporting Documents", expanded: true, types: ["OTHER"] },
 ];
 
-export default function BidPlansTab({ bidId, bidCode, canEdit, onNextStep }: BidPlansTabProps) {
+export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNextStep }: BidPlansTabProps) {
   const { toast } = useToast();
 
   const { data: documents = [], isLoading: documentsLoading } = useQuery<BidDocument[]>({
@@ -253,6 +254,29 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, onNextStep }: Bid
       toast({ title: "Error", description: error?.message || "Failed to import plan", variant: "destructive" });
     }
   };
+
+  const importToEstimateMutation = useMutation({
+    mutationFn: async () => {
+      if (!estimateId) throw new Error("No estimate found. Create an estimate in Step 2 first.");
+      const catRes = await apiRequest("GET", `/api/bids/${bidId}/takeoff/categories`);
+      const categories: { id: string; name: string }[] = await catRes.json();
+      if (!categories.length) throw new Error("No takeoff categories found. Add measurements in the workspace first.");
+      const categoryIds = categories.map((c) => c.id);
+      const res = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, { estimateId, categoryIds });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Import failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "estimate"] });
+      toast({ title: "Import complete", description: `${data.count} line item(s) added to your estimate` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const handleDeleteDocument = async (docId: string) => {
     deleteDocMutation.mutate(docId);
@@ -609,7 +633,24 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, onNextStep }: Bid
               </div>
             )}
 
-            <div className="border-t p-2 shrink-0">
+            <div className="border-t p-2 shrink-0 space-y-1.5">
+              {estimateId && sheets.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => importToEstimateMutation.mutate()}
+                  disabled={importToEstimateMutation.isPending}
+                  data-testid="button-import-to-estimate"
+                >
+                  {importToEstimateMutation.isPending ? (
+                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                  ) : (
+                    <ArrowRight className="w-3 h-3 mr-1" />
+                  )}
+                  Import Measurements to Estimate
+                </Button>
+              )}
               <Button size="sm" className="w-full" onClick={onNextStep} data-testid="button-continue-scope-sidebar">
                 Continue to Scope of Work
                 <ChevronRight className="w-4 h-4 ml-1" />

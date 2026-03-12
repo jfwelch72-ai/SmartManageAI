@@ -526,6 +526,112 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     }
   });
 
+  // Import takeoff measurements into a bid estimate
+  router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { bidId } = req.params;
+      const { estimateId, categoryIds } = req.body as { estimateId: string, categoryIds: string[] };
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Verify estimate belongs to this bid
+      const estimate = await db.query.estimates.findFirst({
+        where: and(
+          eq(estimates.id, estimateId),
+          eq(estimates.bidId, bidId)
+        ),
+      });
+
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found for this bid" });
+      }
+
+      const categories = await db.query.quantityCategories.findMany({
+        where: sql`${quantityCategories.id} = ANY(${categoryIds})`,
+      });
+
+      const lineItemsToCreate = [];
+
+      for (const category of categories) {
+        const measurements = await db.query.takeoffMeasurements.findMany({
+          where: eq(takeoffMeasurements.categoryId, category.id),
+        });
+
+        let linearTotal = 0;
+        let areaTotal = 0;
+        let volumeTotal = 0;
+        let countTotal = 0;
+
+        for (const measurement of measurements) {
+          if (measurement.type === "LINEAR" && measurement.computedLengthFt) {
+            linearTotal += Number(measurement.computedLengthFt);
+          } else if (measurement.type === "AREA" && measurement.computedAreaFt2) {
+            areaTotal += Number(measurement.computedAreaFt2);
+          } else if (measurement.type === "VOLUME" && measurement.computedVolumeCy) {
+            volumeTotal += Number(measurement.computedVolumeCy);
+          } else if (measurement.type === "COUNT") {
+            countTotal += 1;
+          }
+        }
+
+        const zeroFields = {
+          materialCost: "0", laborHours: "0", laborCost: "0",
+          equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
+          overheadAllocation: "0", profitAllocation: "0", totalCost: "0",
+        };
+
+        if (linearTotal > 0) {
+          lineItemsToCreate.push({
+            estimateId, category: "GENERAL" as const,
+            description: `${category.name} - Linear`, quantity: linearTotal.toString(),
+            unit: "LF", source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: category.id, computedQuantity: linearTotal.toString(),
+            ...zeroFields,
+          });
+        }
+        if (areaTotal > 0) {
+          lineItemsToCreate.push({
+            estimateId, category: "GENERAL" as const,
+            description: `${category.name} - Area`, quantity: areaTotal.toString(),
+            unit: "SF", source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: category.id, computedQuantity: areaTotal.toString(),
+            ...zeroFields,
+          });
+        }
+        if (volumeTotal > 0) {
+          lineItemsToCreate.push({
+            estimateId, category: "GENERAL" as const,
+            description: `${category.name} - Volume`, quantity: volumeTotal.toString(),
+            unit: "CY", source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: category.id, computedQuantity: volumeTotal.toString(),
+            ...zeroFields,
+          });
+        }
+        if (countTotal > 0) {
+          lineItemsToCreate.push({
+            estimateId, category: "GENERAL" as const,
+            description: `${category.name} - Count`, quantity: countTotal.toString(),
+            unit: "EA", source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: category.id, computedQuantity: countTotal.toString(),
+            ...zeroFields,
+          });
+        }
+      }
+
+      if (lineItemsToCreate.length > 0) {
+        const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
+        res.json({ lineItems: newLineItems, count: newLineItems.length });
+      } else {
+        res.json({ lineItems: [], count: 0 });
+      }
+    } catch (error) {
+      console.error("Error importing bid takeoff:", error);
+      res.status(500).json({ error: "Failed to import takeoff" });
+    }
+  });
+
   // Production rate labor estimation — must be before /:estimateId routes to avoid route shadowing
   router.post("/api/estimates/production-rates/estimate-labor", requireAuth, async (req: AuthRequest, res) => {
     try {

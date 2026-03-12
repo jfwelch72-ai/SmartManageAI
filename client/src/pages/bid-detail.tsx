@@ -599,13 +599,6 @@ export default function BidDetailPage() {
     "No location specified";
   const canEdit = canEditBids(user?.role);
 
-  const totalMaterialCost = materialQuotes
-    .filter((q: any) => q.isSelected)
-    .reduce((sum, q) => sum + Number(q.cost || 0), 0);
-  const totalEquipmentCostCalc = equipmentSelections.reduce(
-    (sum, sel) => sum + parseFloat(sel.estimatedCost || "0"),
-    0,
-  );
   const estimateTotals = estimate?.totals || {
     laborCost: 0,
     materialCost: 0,
@@ -615,9 +608,25 @@ export default function BidDetailPage() {
     totalCost: 0,
     laborHours: 0,
   };
-  const totalSubcontractorCost = quotes
+  const selectedMaterialQuotesTotal = materialQuotes
+    .filter((q: any) => q.isSelected)
+    .reduce((sum, q) => sum + Number(q.cost || 0), 0);
+  const equipmentSelectionsTotal = equipmentSelections.reduce(
+    (sum, sel) => sum + parseFloat(sel.estimatedCost || "0"),
+    0,
+  );
+  const selectedSubQuotesTotal = quotes
     .filter((q: any) => q.isSelected)
     .reduce((sum, q) => sum + Number(q.quoteAmount || 0), 0);
+
+  // Use bid-level vendor quotes when available; fall back to estimate line-item costs
+  const totalMaterialCost =
+    selectedMaterialQuotesTotal > 0 ? selectedMaterialQuotesTotal : estimateTotals.materialCost;
+  const totalEquipmentCostCalc =
+    equipmentSelectionsTotal > 0 ? equipmentSelectionsTotal : estimateTotals.equipmentCost;
+  const totalSubcontractorCost =
+    selectedSubQuotesTotal > 0 ? selectedSubQuotesTotal : estimateTotals.subcontractCost;
+
   const directCost =
     totalMaterialCost +
     totalEquipmentCostCalc +
@@ -633,7 +642,7 @@ export default function BidDetailPage() {
       id: 2,
       name: "Scope of Work",
       icon: FileText,
-      cost: estimateTotals.laborCost + estimateTotals.materialCost,
+      cost: estimateTotals.totalCost,
     },
     {
       id: 3,
@@ -659,6 +668,10 @@ export default function BidDetailPage() {
     6: true,
   };
 
+  const hasMaterialQuotes = materialQuotes.length > 0;
+  const hasEquipmentSelections = equipmentSelections.length > 0;
+  const hasSubQuotes = quotes.length > 0;
+
   const derivedMaterialRequirements =
     estimate?.lineItems
       ?.filter(
@@ -681,11 +694,7 @@ export default function BidDetailPage() {
         unit: item.unit,
         quantity: Number(item.quantity),
         materialCost: Number(item.materialCost),
-        needsVendorSelection: !materialQuotes.some((mq) =>
-          mq.materialName
-            ?.toLowerCase()
-            .includes(item.description.toLowerCase()),
-        ),
+        needsVendorSelection: !hasMaterialQuotes,
       })) || [];
   const derivedEquipmentRequirements =
     estimate?.lineItems
@@ -701,9 +710,7 @@ export default function BidDetailPage() {
         category: item.category,
         description: item.description,
         equipmentCost: Number(item.equipmentCost),
-        needsEquipmentSelection: !equipmentSelections.some((eq) =>
-          eq.notes?.toLowerCase().includes(item.description.toLowerCase()),
-        ),
+        needsEquipmentSelection: !hasEquipmentSelections,
       })) || [];
   const derivedSubRequirements =
     estimate?.lineItems
@@ -724,9 +731,7 @@ export default function BidDetailPage() {
         category: item.category,
         description: item.description,
         subcontractCost: Number(item.subcontractCost),
-        needsSubSelection: !quotes.some((q) =>
-          q.scopeOfWork?.toLowerCase().includes(item.description.toLowerCase()),
-        ),
+        needsSubSelection: !hasSubQuotes,
       })) || [];
 
   return (
@@ -869,6 +874,7 @@ export default function BidDetailPage() {
                 bidId={bid.id}
                 bidCode={bidCode}
                 canEdit={canEdit}
+                estimateId={estimate?.id}
                 onNextStep={() => setCurrentStep(2)}
               />
             )}
@@ -968,6 +974,9 @@ export default function BidDetailPage() {
                 canEdit={canEdit}
                 canGeneratePDFs={canGenerateBidPDFs(user?.role)}
                 userRole={user?.role || ""}
+                useVendorMaterial={selectedMaterialQuotesTotal > 0}
+                useVendorEquipment={equipmentSelectionsTotal > 0}
+                useVendorSubs={selectedSubQuotesTotal > 0}
                 onOverheadChange={setOverheadPercent}
                 onProfitChange={setProfitPercent}
                 onPrevStep={() => setCurrentStep(5)}
