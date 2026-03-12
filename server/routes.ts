@@ -99,6 +99,7 @@ import websiteBuilderRoutes from "./websiteBuilderRoutes";
 import socialAccountRoutes from "./socialAccountRoutes";
 import socialPostRoutes from "./socialPostRoutes";
 import socialAnalyticsRoutes from "./socialAnalyticsRoutes";
+import socialOAuthRoutes from "./socialOAuthRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import emailAccountRoutes from "./emailAccountRoutes";
 import kpiRoutes from "./kpiRoutes";
@@ -291,6 +292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/social", socialAccountRoutes);
   app.use("/api/social", socialPostRoutes);
   app.use("/api/social", socialAnalyticsRoutes);
+  app.use(socialOAuthRoutes);
 
   // Register Labor Rate routes
   app.use("/api/labor-rates", laborRateRoutes);
