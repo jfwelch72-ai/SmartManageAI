@@ -124,7 +124,7 @@ export default function BidMaterialsStep({
                 <div
                   key={quote.id}
                   className={`flex flex-col sm:flex-row sm:items-start sm:justify-between p-3 sm:p-4 border rounded-md transition-colors ${
-                    (quote as any).isSelected
+                    quote.isSelected
                       ? 'border-green-500 bg-green-50 dark:bg-green-950/20'
                       : ''
                   }`}
@@ -133,7 +133,7 @@ export default function BidMaterialsStep({
                   <div className="flex gap-3 flex-1 min-w-0">
                     <div className="pt-1">
                       <Checkbox
-                        checked={(quote as any).isSelected || false}
+                        checked={quote.isSelected || false}
                         onCheckedChange={(checked) => {
                           onToggleSelection(quote.id, !!checked);
                         }}
@@ -147,19 +147,19 @@ export default function BidMaterialsStep({
                         <Badge variant="outline" className="font-mono">
                           ${Number(quote.cost).toLocaleString()}
                         </Badge>
-                        {(quote as any).isSelected && (
+                        {quote.isSelected && (
                           <Badge variant="default" className="gap-1 bg-green-600">
                             <CheckCircle2 className="w-3 h-3" />
                             Selected
                           </Badge>
                         )}
-                        {(quote as any).rfqStatus === "sent" && (
+                        {quote.rfqStatus === "sent" && (
                           <Badge variant="outline" className="gap-1 text-indigo-600 border-indigo-300">
                             <Send className="w-3 h-3" />
                             RFQ Sent
                           </Badge>
                         )}
-                        {(quote as any).rfqStatus === "responded" && (
+                        {quote.rfqStatus === "responded" && (
                           <Badge variant="outline" className="gap-1 text-emerald-600 border-emerald-300">
                             <CheckCircle2 className="w-3 h-3" />
                             Responded
@@ -175,17 +175,17 @@ export default function BidMaterialsStep({
                       {quote.leadTime && (
                         <p className="text-xs text-muted-foreground">Lead Time: {quote.leadTime}</p>
                       )}
-                      {(quote as any).rfqSentAt && (
+                      {quote.rfqSentAt && (
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                           <Clock className="w-3 h-3" />
-                          RFQ sent {new Date((quote as any).rfqSentAt).toLocaleDateString()}
+                          RFQ sent {new Date(quote.rfqSentAt).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                   </div>
                   {canEdit && (
                     <div className="flex gap-2 mt-2 sm:mt-0 sm:ml-4 self-end sm:self-start">
-                      {onSendRfq && (quote as any).supplierEmail && !(quote as any).rfqSentAt && (
+                      {onSendRfq && quote.supplierEmail && !quote.rfqSentAt && (
                         <Button
                           size="sm"
                           variant="outline"

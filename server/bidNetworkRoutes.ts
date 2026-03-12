@@ -11,7 +11,7 @@ import {
   notifications,
   users
 } from "@shared/schema";
-import { eq, and, or, desc, sql, isNull, ne, inArray } from "drizzle-orm";
+import { eq, and, or, desc, sql, isNull, ne, inArray, like } from "drizzle-orm";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { 
@@ -766,7 +766,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
               .from(bidSubcontractorQuotes)
               .where(and(
                 eq(bidSubcontractorQuotes.bidId, bidRequestForSync.bidId),
-                eq(bidSubcontractorQuotes.notes, `bid_network_response:${data.invitationId}`)
+                like(bidSubcontractorQuotes.notes, `%[bid_network_response:${data.invitationId}]%`)
               ))
               .limit(1);
 
@@ -789,7 +789,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
                 contactName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : undefined,
                 contactEmail: user.email || undefined,
                 rfqStatus: "responded",
-                notes: `bid_network_response:${data.invitationId}`,
+                notes: `Auto-imported from Bid Network response [bid_network_response:${data.invitationId}]`,
               });
             }
             logInfo("Auto-synced resubmitted bid response to internal quote", { responseId: updated.id, bidId: bidRequestForSync.bidId });
@@ -877,7 +877,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
                 .from(bidSubcontractorQuotes)
                 .where(and(
                   eq(bidSubcontractorQuotes.bidId, bidRequest.bidId),
-                  eq(bidSubcontractorQuotes.notes, `bid_network_response:${data.invitationId}`)
+                  like(bidSubcontractorQuotes.notes, `%[bid_network_response:${data.invitationId}]%`)
                 ))
                 .limit(1);
 
@@ -900,7 +900,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
                   contactName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : undefined,
                   contactEmail: user.email || undefined,
                   rfqStatus: "responded",
-                  notes: `bid_network_response:${data.invitationId}`,
+                  notes: `Auto-imported from Bid Network response [bid_network_response:${data.invitationId}]`,
                 });
               }
               logInfo("Auto-synced bid response to internal quote", { responseId: created.id, bidId: bidRequest.bidId, invitationId: data.invitationId });
