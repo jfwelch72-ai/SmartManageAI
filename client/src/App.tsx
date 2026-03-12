@@ -110,6 +110,7 @@ import AIGovernancePage from "@/pages/ai-governance";
 import AuditLogsPage from "@/pages/audit-logs";
 import EnterpriseSettingsPage from "@/pages/enterprise-settings";
 import ReportsPage from "@/pages/reports";
+import SafetyTrainingPage from "@/pages/safety-training";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function ProtectedRoute({ 
@@ -283,6 +284,7 @@ function Router() {
       <Route path="/reports" component={() => <ProtectedRoute component={ReportsPage} permission={RoutePermissions.REPORTS} featurePerm="canAccessReports" />} />
       <Route path="/manage-workers/:id" component={() => <ProtectedRoute component={WorkerDetailPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
+      <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} featurePerm="canAccessFinancials" />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canAccessFinancials" />} />

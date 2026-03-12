@@ -762,6 +762,12 @@ export const NavigationConfig = {
       testId: "nav-enterprise-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
+    {
+      href: "/safety-training",
+      label: "Safety Training",
+      testId: "nav-safety-training",
+      visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
+    },
   ],
 
   toolsMenu: [

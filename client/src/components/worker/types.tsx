@@ -1,7 +1,7 @@
 import { Star } from "lucide-react";
 import { Label } from "@/components/ui/label";
 
-export type TabKey = "overview" | "skills" | "performance" | "projects" | "logs";
+export type TabKey = "overview" | "skills" | "performance" | "projects" | "logs" | "safety-training";
 
 export interface WorkerData {
   user: {

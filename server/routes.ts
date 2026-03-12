@@ -173,6 +173,7 @@ import mobileSyncRoutes from "./mobileSyncRoutes";
 import clientPortalRoutes from "./clientPortalRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
+import safetyTrainingRoutes from "./safetyTrainingRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -347,6 +348,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/audit", auditExportRoutes);
   app.use("/api/retention", retentionRoutes);
   app.use("/api/privacy", privacyRoutes);
+
+  // Register Safety Training routes
+  app.use(safetyTrainingRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

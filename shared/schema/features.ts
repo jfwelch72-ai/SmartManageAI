@@ -5728,3 +5728,44 @@ export const insertSavedTakeoffSchema = createInsertSchema(savedTakeoffs).omit({
 export type InsertSavedTakeoff = z.infer<typeof insertSavedTakeoffSchema>;
 export type SavedTakeoff = typeof savedTakeoffs.$inferSelect;
 
+// ─── Safety Training Programs ───────────────────────────────────────────────
+export const safetyTrainings = pgTable("safety_trainings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category").notNull(),
+  frequency: text("frequency").notNull().default("ONCE"),
+  durationMinutes: integer("duration_minutes"),
+  materials: text("materials"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSafetyTrainingSchema = createInsertSchema(safetyTrainings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSafetyTraining = z.infer<typeof insertSafetyTrainingSchema>;
+export type SafetyTraining = typeof safetyTrainings.$inferSelect;
+
+// ─── Safety Training Assignments ─────────────────────────────────────────────
+export const safetyTrainingAssignments = pgTable("safety_training_assignments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  trainingId: varchar("training_id").notNull().references(() => safetyTrainings.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  employeeId: varchar("employee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  assignedBy: varchar("assigned_by").references(() => users.id),
+  assignedAt: timestamp("assigned_at").notNull().defaultNow(),
+  dueDate: text("due_date"),
+  status: text("status").notNull().default("PENDING"),
+  completedAt: timestamp("completed_at"),
+  completedByName: text("completed_by_name"),
+  notes: text("notes"),
+  acknowledgmentSignature: text("acknowledgment_signature"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSafetyTrainingAssignmentSchema = createInsertSchema(safetyTrainingAssignments).omit({ id: true, createdAt: true, assignedAt: true });
+export type InsertSafetyTrainingAssignment = z.infer<typeof insertSafetyTrainingAssignmentSchema>;
+export type SafetyTrainingAssignment = typeof safetyTrainingAssignments.$inferSelect;
+

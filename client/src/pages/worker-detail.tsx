@@ -3,6 +3,7 @@ import { useRoute, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,11 @@ import {
   ToggleRight,
   Mail,
   Loader2,
+  ShieldCheck,
+  CheckCircle2,
+  Clock,
+  AlertCircle,
+  Download,
 } from "lucide-react";
 import { type WorkerData, type TabKey } from "@/components/worker/types";
 import { OverviewTab, SkillsTab, PerformanceTab, ProjectsTab, LogsTab } from "@/components/worker/WorkerTabs";
@@ -198,6 +204,7 @@ export default function WorkerDetailPage() {
     { key: "performance", label: "Performance" },
     { key: "projects", label: "Project History" },
     { key: "logs", label: "Logs / Notes" },
+    { key: "safety-training", label: "Safety Training" },
   ];
 
   const toggleProject = (pid: string) => {
@@ -383,6 +390,9 @@ export default function WorkerDetailPage() {
               addLogMutation={addLogMutation}
             />
           )}
+          {activeTab === "safety-training" && (
+            <WorkerSafetyTrainingTab workerId={workerId!} workerName={fullName} />
+          )}
         </div>
       </div>
 
@@ -409,3 +419,166 @@ export default function WorkerDetailPage() {
     </div>
   );
 }
+
+interface WorkerAssignment {
+  id: string;
+  status: string;
+  assignedAt: string;
+  dueDate: string | null;
+  completedAt: string | null;
+  completedByName: string | null;
+  notes: string | null;
+  acknowledgmentSignature: string | null;
+  trainingTitle: string;
+  trainingCategory: string;
+  trainingFrequency: string;
+  trainingDuration: number | null;
+  trainingDescription: string | null;
+  trainingMaterials: string | null;
+  employeeId: string;
+}
+
+function WorkerSafetyTrainingTab({ workerId, workerName }: { workerId: string; workerName: string }) {
+  const { toast } = useToast();
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [completing, setCompleting] = useState<WorkerAssignment | null>(null);
+  const [completedByName, setCompletedByName] = useState("");
+  const [notes, setNotes] = useState("");
+  const [ack, setAck] = useState("");
+
+  const { data: assignments = [], isLoading } = useQuery<WorkerAssignment[]>({
+    queryKey: ["/api/safety-training/assignments", workerId],
+    queryFn: async () => {
+      const all = await fetch("/api/safety-training/assignments", { credentials: "include" }).then(r => r.json());
+      return Array.isArray(all) ? all.filter((a: any) => a.employeeId === workerId) : [];
+    },
+  });
+
+  const completeMutation = useMutation({
+    mutationFn: ({ id, ...body }: any) =>
+      apiRequest("PATCH", `/api/safety-training/assignments/${id}`, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/safety-training/assignments", workerId] });
+      setShowCompleteDialog(false);
+      setCompleting(null);
+      toast({ title: "Training marked complete" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const fmtDate = (d: string | null | undefined) => {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  const completed = assignments.filter(a => a.status === "COMPLETED").length;
+  const total = assignments.length;
+
+  if (isLoading) {
+    return <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16 rounded" />)}</div>;
+  }
+
+  return (
+    <div className="space-y-4" data-testid="worker-safety-training-tab">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-5 w-5 text-primary" />
+          <h3 className="font-semibold">Safety Training Records</h3>
+        </div>
+        <div className="flex gap-3 items-center">
+          <span className="text-sm text-muted-foreground">{completed}/{total} completed</span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open(`/api/safety-training/export/pdf?employeeId=${workerId}`, "_blank")}
+            data-testid="button-export-worker-pdf"
+          >
+            <Download className="h-3.5 w-3.5 mr-1" />
+            Export PDF
+          </Button>
+        </div>
+      </div>
+
+      {assignments.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border rounded-lg" data-testid="empty-worker-training">
+          <ShieldCheck className="h-10 w-10 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No safety training assigned</p>
+          <p className="text-xs mt-1">Assign training from the Safety Training module.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {assignments.map(a => (
+            <Card key={a.id} className="p-4" data-testid={`card-worker-assignment-${a.id}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">{a.trainingTitle}</span>
+                    {a.status === "COMPLETED" && <Badge className="bg-green-500/15 text-green-700 border-transparent text-xs">Completed</Badge>}
+                    {a.status === "OVERDUE" && <Badge className="bg-red-500/15 text-red-700 border-transparent text-xs">Overdue</Badge>}
+                    {a.status === "PENDING" && <Badge className="bg-amber-500/15 text-amber-700 border-transparent text-xs">Pending</Badge>}
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
+                    <span>{a.trainingCategory}</span>
+                    {a.trainingDuration && <span>{a.trainingDuration} min</span>}
+                    <span>Assigned {fmtDate(a.assignedAt)}</span>
+                    {a.dueDate && <span>Due {fmtDate(a.dueDate)}</span>}
+                    {a.completedAt && <span className="text-green-700">Completed {fmtDate(a.completedAt)}{a.completedByName ? ` by ${a.completedByName}` : ""}</span>}
+                  </div>
+                  {a.acknowledgmentSignature && (
+                    <p className="text-xs text-muted-foreground mt-1 italic">"{a.acknowledgmentSignature}"</p>
+                  )}
+                </div>
+                {a.status !== "COMPLETED" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 h-7 text-xs"
+                    onClick={() => { setCompleting(a); setCompletedByName(workerName); setNotes(""); setAck(""); setShowCompleteDialog(true); }}
+                    data-testid={`button-complete-worker-training-${a.id}`}
+                  >
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    Mark Complete
+                  </Button>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showCompleteDialog} onOpenChange={() => setShowCompleteDialog(false)}>
+        <DialogContent className="max-w-sm" data-testid="dialog-worker-complete">
+          <DialogHeader><DialogTitle>Mark Training Complete</DialogTitle></DialogHeader>
+          {completing && (
+            <div className="space-y-3 py-2">
+              <div className="bg-muted/40 rounded p-2 text-sm font-medium">{completing.trainingTitle}</div>
+              <div className="space-y-1.5">
+                <Label>Signed off by</Label>
+                <Input value={completedByName} onChange={e => setCompletedByName(e.target.value)} data-testid="input-worker-completed-by" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Notes (optional)</Label>
+                <Textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} data-testid="input-worker-notes" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Employee Acknowledgment</Label>
+                <Input value={ack} onChange={e => setAck(e.target.value)} placeholder='Type acknowledgment statement' data-testid="input-worker-ack" />
+              </div>
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowCompleteDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => completing && completeMutation.mutate({ id: completing.id, status: "COMPLETED", completedByName, notes, acknowledgmentSignature: ack })}
+              disabled={!completedByName || completeMutation.isPending}
+              data-testid="button-confirm-worker-complete"
+            >
+              {completeMutation.isPending ? "Saving..." : "Mark Complete"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
