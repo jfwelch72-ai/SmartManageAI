@@ -369,7 +369,7 @@ export default function BidDetailPage() {
       leadTime: quote.leadTime || "",
       supplierName: quote.supplierName || "",
       supplierContact: quote.supplierContact || "",
-      supplierEmail: (quote as any).supplierEmail || "",
+      supplierEmail: quote.supplierEmail || "",
     });
     setShowMaterialQuoteDialog(true);
   };

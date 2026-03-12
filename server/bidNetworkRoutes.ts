@@ -748,12 +748,47 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
             .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
         }
 
-        const [bidRequestForSync] = await db
+        const [bidRequestForNotify] = await db
           .select()
           .from(subcontractorBidRequests)
           .where(eq(subcontractorBidRequests.id, invitation.bidRequestId));
 
-        if (bidRequestForSync?.bidId) {
+        if (bidRequestForNotify) {
+          const [subOrgForNotify] = await db
+            .select({ name: organizations.name })
+            .from(organizations)
+            .where(eq(organizations.id, user.organizationId!));
+
+          sendBidResponseNotification(
+            bidRequestForNotify.organizationId,
+            {
+              id: bidRequestForNotify.id,
+              title: bidRequestForNotify.title,
+              scopeOfWork: bidRequestForNotify.scopeOfWork,
+              bidDueDate: new Date(bidRequestForNotify.bidDueDate),
+              requiredTrades: bidRequestForNotify.requiredTrades || [],
+              gcOrganizationName: "",
+            },
+            {
+              id: updated.id,
+              totalBidAmount: parseFloat(updated.totalBidAmount || "0"),
+              subOrganizationName: subOrgForNotify?.name || "Unknown Sub",
+              submittedAt: new Date(),
+            }
+          ).catch(err => logError("Response notification failed (resubmission)", undefined, err as Error));
+
+          const bidAmountFmt = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(parseFloat(updated.totalBidAmount || "0"));
+          createBidNetworkInAppNotification(
+            bidRequestForNotify.organizationId,
+            "BID_RESPONSE_RECEIVED",
+            "Updated Bid Response",
+            `${subOrgForNotify?.name || "A subcontractor"} resubmitted a bid of ${bidAmountFmt} for "${bidRequestForNotify.title}"`,
+            updated.id,
+            "bid_response"
+          ).catch(err => logError("In-app notification failed (resubmission)", undefined, err as Error));
+        }
+
+        if (bidRequestForNotify?.bidId) {
           try {
             const { bidSubcontractorQuotes } = await import("@shared/schema");
             const [subOrg] = await db
@@ -765,7 +800,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
               .select()
               .from(bidSubcontractorQuotes)
               .where(and(
-                eq(bidSubcontractorQuotes.bidId, bidRequestForSync.bidId),
+                eq(bidSubcontractorQuotes.bidId, bidRequestForNotify.bidId),
                 like(bidSubcontractorQuotes.notes, `%[bid_network_response:${data.invitationId}]%`)
               ))
               .limit(1);
@@ -782,9 +817,9 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
                 .where(eq(bidSubcontractorQuotes.id, existingQuote.id));
             } else {
               await db.insert(bidSubcontractorQuotes).values({
-                bidId: bidRequestForSync.bidId,
+                bidId: bidRequestForNotify.bidId,
                 subcontractorName: subOrg?.name || "Unknown Sub",
-                scopeOfWork: bidRequestForSync.scopeOfWork.substring(0, 500),
+                scopeOfWork: bidRequestForNotify.scopeOfWork.substring(0, 500),
                 quoteAmount: updated.totalBidAmount || "0",
                 contactName: user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : undefined,
                 contactEmail: user.email || undefined,
@@ -792,7 +827,7 @@ router.post("/responses", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATO
                 notes: `Auto-imported from Bid Network response [bid_network_response:${data.invitationId}]`,
               });
             }
-            logInfo("Auto-synced resubmitted bid response to internal quote", { responseId: updated.id, bidId: bidRequestForSync.bidId });
+            logInfo("Auto-synced resubmitted bid response to internal quote", { responseId: updated.id, bidId: bidRequestForNotify.bidId });
           } catch (syncError) {
             logError("Auto-sync to internal quote failed (resubmission)", undefined, syncError as Error);
           }
@@ -1097,6 +1132,20 @@ router.post("/clarifications", requireAuth, requireRole("ADMIN", "MANAGER", "EST
       .where(eq(subcontractorBidRequests.id, bidRequestId));
 
     if (bidReq) {
+      sendClarificationNotification(
+        bidReq.organizationId,
+        {
+          id: bidReq.id,
+          title: bidReq.title,
+          scopeOfWork: bidReq.scopeOfWork,
+          bidDueDate: new Date(bidReq.bidDueDate),
+          requiredTrades: bidReq.requiredTrades || [],
+          gcOrganizationName: "",
+        },
+        question,
+        false
+      ).catch(err => logError("Clarification email failed", undefined, err as Error));
+
       createBidNetworkInAppNotification(
         bidReq.organizationId,
         "BID_CLARIFICATION_NEW",
@@ -1155,6 +1204,21 @@ router.patch("/clarifications/:id/answer", requireAuth, requireRole("ADMIN", "MA
       .returning();
 
     if (clarification.askedByOrganizationId) {
+      sendClarificationNotification(
+        clarification.askedByOrganizationId,
+        {
+          id: request.id,
+          title: request.title,
+          scopeOfWork: request.scopeOfWork,
+          bidDueDate: new Date(request.bidDueDate),
+          requiredTrades: request.requiredTrades || [],
+          gcOrganizationName: "",
+        },
+        clarification.question,
+        true,
+        answer
+      ).catch(err => logError("Clarification answer email failed", undefined, err as Error));
+
       createBidNetworkInAppNotification(
         clarification.askedByOrganizationId,
         "BID_CLARIFICATION_NEW",
