@@ -344,14 +344,18 @@ async function processScheduledSocialPosts() {
         }
       } else {
         const retries = (post.retryCount || 0) + 1;
+        const isFinalFailure = retries >= 3;
         await db.update(socialMediaPosts)
           .set({
-            status: retries >= 3 ? "FAILED" as any : "SCHEDULED" as any,
+            status: isFinalFailure ? "FAILED" as any : "SCHEDULED" as any,
             retryCount: retries,
             lastError: "No social account linked to this post",
             updatedAt: now,
           })
           .where(eq(socialMediaPosts.id, post.id));
+        if (isFinalFailure) {
+          await notifyPostOwnerOfFailure(post, "No social account linked to this post");
+        }
         logError("No social account linked", { postId: post.id });
         continue;
       }
@@ -411,7 +415,8 @@ async function processScheduledSocialPosts() {
       logInfo("Social post published", { postId: post.id, platform: post.platform, externalId: externalPostId });
     } catch (err) {
       const retries = (post.retryCount || 0) + 1;
-      const newStatus = retries >= 3 ? "FAILED" : "SCHEDULED";
+      const isFinalFailure = retries >= 3;
+      const newStatus = isFinalFailure ? "FAILED" : "SCHEDULED";
       await db.update(socialMediaPosts)
         .set({
           status: newStatus as any,
@@ -420,8 +425,33 @@ async function processScheduledSocialPosts() {
           updatedAt: now,
         })
         .where(eq(socialMediaPosts.id, post.id));
+      if (isFinalFailure) {
+        await notifyPostOwnerOfFailure(post, String(err));
+      }
       logError("Failed to process social post", { postId: post.id, retries, error: String(err) });
     }
+  }
+}
+
+async function notifyPostOwnerOfFailure(
+  post: { id: string; title: string | null; content: string; platform: string | null; createdById: string | null },
+  errorMessage: string
+) {
+  try {
+    if (!post.createdById) return;
+    const postLabel = post.title || post.content.substring(0, 50);
+    const platformLabel = post.platform || "Unknown";
+    await db.insert(notifications).values({
+      userId: post.createdById,
+      type: "GENERAL",
+      title: `Scheduled post failed: ${platformLabel}`,
+      message: `Your scheduled ${platformLabel} post "${postLabel}" failed after 3 attempts. Error: ${errorMessage.substring(0, 200)}`,
+      relatedEntityId: post.id,
+      relatedEntityType: "SOCIAL_POST",
+    });
+    logInfo("Failure notification sent to post owner", { postId: post.id, userId: post.createdById });
+  } catch (notifErr) {
+    logError("Failed to send post failure notification", { postId: post.id, error: String(notifErr) });
   }
 }
 
