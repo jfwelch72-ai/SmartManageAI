@@ -1022,7 +1022,11 @@ export const notifications = pgTable("notifications", {
   relatedEntityId: varchar("related_entity_id"),
   relatedEntityType: text("related_entity_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  userIdIdx: index("notifications_user_id_idx").on(table.userId),
+  userReadIdx: index("notifications_user_read_idx").on(table.userId, table.isRead),
+  createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
+}));
 
 // Payroll Notifications table - tracks when time entries are ready for payroll processing
 export const payrollNotifications = pgTable("payroll_notifications", {

@@ -8,7 +8,7 @@ import { sensitiveLimiter } from "./rateLimiter";
 import { logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyUserOrgAccess } from "./orgFilter";
-import { cacheGet, cacheSet } from "./cache";
+import { orgScopedCache } from "./cache";
 
 const DASHBOARD_CACHE_TTL = 60_000;
 
@@ -38,123 +38,113 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
       });
     }
 
-    const cacheKey = "dashboard:stats";
-    const cacheOrgId = orgId || "__global__";
-    const cached = cacheGet(cacheOrgId, cacheKey);
-    if (cached) return res.json(cached);
-    
-    // Build organization filter condition for projects
-    const orgCondition = shouldFilter && orgId 
-      ? eq(projects.gcOrganizationId, orgId) 
-      : sql`true`;
+    const result = await orgScopedCache(orgId, "dashboard:stats", DASHBOARD_CACHE_TTL, async () => {
+      const orgCondition = shouldFilter && orgId 
+        ? eq(projects.gcOrganizationId, orgId) 
+        : sql`true`;
 
-    // Count active projects (filtered by org)
-    const activeProjectsResult = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(projects)
-      .where(and(eq(projects.status, "ACTIVE"), orgCondition));
-    const activeProjectsCount = activeProjectsResult[0]?.count || 0;
+      const activeProjectsResult = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(projects)
+        .where(and(eq(projects.status, "ACTIVE"), orgCondition));
+      const activeProjectsCount = activeProjectsResult[0]?.count || 0;
 
-    // Count submitted change orders awaiting client response (filtered by org via project join)
-    let pendingChangeOrdersCount = 0;
-    if (shouldFilter && orgId) {
-      const pendingCOResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(changeOrders)
-        .innerJoin(projects, eq(changeOrders.projectId, projects.id))
-        .where(and(
-          eq(changeOrders.status, "SUBMITTED"),
-          eq(projects.gcOrganizationId, orgId)
-        ));
-      pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
-    } else {
-      const pendingCOResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(changeOrders)
-        .where(eq(changeOrders.status, "SUBMITTED"));
-      pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
-    }
+      let pendingChangeOrdersCount = 0;
+      if (shouldFilter && orgId) {
+        const pendingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(changeOrders)
+          .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+          .where(and(
+            eq(changeOrders.status, "SUBMITTED"),
+            eq(projects.gcOrganizationId, orgId)
+          ));
+        pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
+      } else {
+        const pendingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(changeOrders)
+          .where(eq(changeOrders.status, "SUBMITTED"));
+        pendingChangeOrdersCount = pendingCOResult[0]?.count || 0;
+      }
 
-    // Count pending time-off requests (filtered by user's org)
-    let pendingTimeOffCount = 0;
-    if (shouldFilter && orgId) {
-      const pendingTimeOffResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(calendarEvents)
-        .innerJoin(users, eq(calendarEvents.userId, users.id))
-        .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL AND ${users.organizationId} = ${orgId}`);
-      pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
-    } else {
-      const pendingTimeOffResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(calendarEvents)
-        .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
-      pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
-    }
+      let pendingTimeOffCount = 0;
+      if (shouldFilter && orgId) {
+        const pendingTimeOffResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(calendarEvents)
+          .innerJoin(users, eq(calendarEvents.userId, users.id))
+          .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL AND ${users.organizationId} = ${orgId}`);
+        pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
+      } else {
+        const pendingTimeOffResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(calendarEvents)
+          .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
+        pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
+      }
 
-    // Count active delays (filtered by org via project join)
-    let activeDelaysCount = 0;
-    if (shouldFilter && orgId) {
-      const activeDelaysResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .innerJoin(projects, eq(projectDelays.projectId, projects.id))
-        .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED') AND ${projects.gcOrganizationId} = ${orgId}`);
-      activeDelaysCount = activeDelaysResult[0]?.count || 0;
-    } else {
-      const activeDelaysResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`);
-      activeDelaysCount = activeDelaysResult[0]?.count || 0;
-    }
+      let activeDelaysCount = 0;
+      if (shouldFilter && orgId) {
+        const activeDelaysResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+          .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED') AND ${projects.gcOrganizationId} = ${orgId}`);
+        activeDelaysCount = activeDelaysResult[0]?.count || 0;
+      } else {
+        const activeDelaysResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .where(sql`${projectDelays.status} IN ('DRAFT', 'SUBMITTED')`);
+        activeDelaysCount = activeDelaysResult[0]?.count || 0;
+      }
 
-    // Count delays requiring acknowledgment (filtered by org via project join)
-    let delaysNeedingAckCount = 0;
-    if (shouldFilter && orgId) {
-      const delaysNeedingAckResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .innerJoin(projects, eq(projectDelays.projectId, projects.id))
-        .where(and(
-          eq(projectDelays.status, "SUBMITTED"),
-          eq(projects.gcOrganizationId, orgId)
-        ));
-      delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
-    } else {
-      const delaysNeedingAckResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .where(eq(projectDelays.status, "SUBMITTED"));
-      delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
-    }
+      let delaysNeedingAckCount = 0;
+      if (shouldFilter && orgId) {
+        const delaysNeedingAckResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+          .where(and(
+            eq(projectDelays.status, "SUBMITTED"),
+            eq(projects.gcOrganizationId, orgId)
+          ));
+        delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
+      } else {
+        const delaysNeedingAckResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .where(eq(projectDelays.status, "SUBMITTED"));
+        delaysNeedingAckCount = delaysNeedingAckResult[0]?.count || 0;
+      }
 
-    // Count delays requiring change orders (filtered by org via project join)
-    let delaysNeedingChangeOrderCount = 0;
-    if (shouldFilter && orgId) {
-      const delaysNeedingCOResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .innerJoin(projects, eq(projectDelays.projectId, projects.id))
-        .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL AND ${projects.gcOrganizationId} = ${orgId}`);
-      delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
-    } else {
-      const delaysNeedingCOResult = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(projectDelays)
-        .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`);
-      delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
-    }
+      let delaysNeedingChangeOrderCount = 0;
+      if (shouldFilter && orgId) {
+        const delaysNeedingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .innerJoin(projects, eq(projectDelays.projectId, projects.id))
+          .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL AND ${projects.gcOrganizationId} = ${orgId}`);
+        delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
+      } else {
+        const delaysNeedingCOResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(projectDelays)
+          .where(sql`${projectDelays.changeOrderRequired} = true AND ${projectDelays.linkedChangeOrderId} IS NULL`);
+        delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
+      }
 
-    const result = {
-      activeProjectsCount,
-      pendingChangeOrdersCount,
-      pendingTimeOffCount,
-      activeDelaysCount,
-      delaysNeedingAckCount,
-      delaysNeedingChangeOrderCount,
-    };
-    cacheSet(cacheOrgId, cacheKey, result, DASHBOARD_CACHE_TTL);
+      return {
+        activeProjectsCount,
+        pendingChangeOrdersCount,
+        pendingTimeOffCount,
+        activeDelaysCount,
+        delaysNeedingAckCount,
+        delaysNeedingChangeOrderCount,
+      };
+    });
+
     res.json(result);
   } catch (error) {
     console.error("Dashboard stats error:", error);
@@ -747,9 +737,7 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
     }
 
     const trendCacheKey = `dashboard:trend:${metric}:${period}:${groupBy}`;
-    const trendCacheOrgId = orgId || "__global__";
-    const trendCached = cacheGet(trendCacheOrgId, trendCacheKey);
-    if (trendCached) return res.json(trendCached);
+    const trendResult = await orgScopedCache(orgId, trendCacheKey, DASHBOARD_CACHE_TTL, async () => {
 
     const { start, end, bucketFormat } = getPeriodDates(period);
 
@@ -956,8 +944,9 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
       }
     }
 
-    const trendResult = { points, metric, period, groupBy };
-    cacheSet(trendCacheOrgId, trendCacheKey, trendResult, DASHBOARD_CACHE_TTL);
+    return { points, metric, period, groupBy };
+    });
+
     res.json(trendResult);
   } catch (error) {
     console.error("Trend data error:", error);
@@ -1216,10 +1205,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
       return res.json({ alerts: [], counts: { critical: 0, warning: 0, info: 0 } });
     }
 
-    const alertsCacheOrgId = orgId || "__global__";
-    const alertsCached = cacheGet(alertsCacheOrgId, "dashboard:alerts");
-    if (alertsCached) return res.json(alertsCached);
-
+    const alertsResult = await orgScopedCache(orgId, "dashboard:alerts", DASHBOARD_CACHE_TTL, async () => {
     const alerts: Alert[] = [];
     const now = new Date();
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -1545,8 +1531,9 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
       info: alerts.filter(a => a.severity === "info").length,
     };
 
-    const alertsResult = { alerts, counts };
-    cacheSet(alertsCacheOrgId, "dashboard:alerts", alertsResult, DASHBOARD_CACHE_TTL);
+    return { alerts, counts };
+    });
+
     res.json(alertsResult);
   } catch (error) {
     console.error("Alerts endpoint error:", error);
@@ -1566,10 +1553,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
       return res.json({ activeWorkers: 0, totalWorkers: 0, overtimePercent: 0, laborCostToday: 0, absentWorkers: 0 });
     }
 
-    const wfCacheOrgId = orgId || "__global__";
-    const wfCached = cacheGet(wfCacheOrgId, "dashboard:workforce-snapshot");
-    if (wfCached) return res.json(wfCached);
-
+    const wfResult = await orgScopedCache(orgId, "dashboard:workforce-snapshot", DASHBOARD_CACHE_TTL, async () => {
     const today = new Date();
     const todayStr = today.toISOString().split("T")[0];
 
@@ -1626,14 +1610,15 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 
     const absentWorkers = Math.max(0, totalWorkers - activeWorkers);
 
-    const wfResult = {
+    return {
       activeWorkers,
       totalWorkers,
       overtimePercent: Math.round(overtimePercent * 10) / 10,
       laborCostToday: Math.round(laborCostToday * 100) / 100,
       absentWorkers,
     };
-    cacheSet(wfCacheOrgId, "dashboard:workforce-snapshot", wfResult, DASHBOARD_CACHE_TTL);
+    });
+
     res.json(wfResult);
   } catch (error) {
     console.error("Workforce snapshot error:", error);
@@ -1653,10 +1638,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
       return res.json({ accountsReceivable: 0, accountsPayable: 0, payrollLiability: 0, netCashFlow: 0 });
     }
 
-    const cpCacheOrgId = orgId || "__global__";
-    const cpCached = cacheGet(cpCacheOrgId, "dashboard:cash-position");
-    if (cpCached) return res.json(cpCached);
-
+    const cpResult = await orgScopedCache(orgId, "dashboard:cash-position", DASHBOARD_CACHE_TTL, async () => {
     const orgCond = shouldFilter && orgId ? sql`AND i."organization_id" = ${orgId}` : sql``;
     const projOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
     const payOrgCond = shouldFilter && orgId ? sql`AND sp."organization_id" = ${orgId}` : sql``;
@@ -1715,13 +1697,14 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 
     const netCashFlow = accountsReceivable - accountsPayable - payrollLiability;
 
-    const cpResult = {
+    return {
       accountsReceivable: Math.round(accountsReceivable * 100) / 100,
       accountsPayable: Math.round(accountsPayable * 100) / 100,
       payrollLiability: Math.round(payrollLiability * 100) / 100,
       netCashFlow: Math.round(netCashFlow * 100) / 100,
     };
-    cacheSet(cpCacheOrgId, "dashboard:cash-position", cpResult, DASHBOARD_CACHE_TTL);
+    });
+
     res.json(cpResult);
   } catch (error) {
     console.error("Cash position error:", error);
@@ -1895,10 +1878,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       return res.json({ activeBids: 0, pipelineValue: 0, winRate: 0, laborExposure: 0, awardedCount: 0, lostCount: 0 });
     }
 
-    const bpCacheOrgId = orgId || "__global__";
-    const bpCached = cacheGet(bpCacheOrgId, "dashboard:bid-pipeline");
-    if (bpCached) return res.json(bpCached);
-
+    const bpResult = await orgScopedCache(orgId, "dashboard:bid-pipeline", DASHBOARD_CACHE_TTL, async () => {
     const orgCond = shouldFilter && orgId ? sql`AND b."gc_organization_id" = ${orgId}` : sql``;
 
     let activeBids = 0;
@@ -1958,7 +1938,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       console.error("Bid pipeline: labor exposure error:", e);
     }
 
-    const bpResult = {
+    return {
       activeBids,
       pipelineValue: Math.round(pipelineValue * 100) / 100,
       winRate,
@@ -1966,7 +1946,8 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       awardedCount,
       lostCount,
     };
-    cacheSet(bpCacheOrgId, "dashboard:bid-pipeline", bpResult, DASHBOARD_CACHE_TTL);
+    });
+
     res.json(bpResult);
   } catch (error) {
     console.error("Bid pipeline error:", error);

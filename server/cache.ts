@@ -23,6 +23,20 @@ export function cacheSet<T>(orgId: string, key: string, data: T, ttlMs: number =
   store.set(fullKey, { data, expiresAt: Date.now() + ttlMs });
 }
 
+export async function orgScopedCache<T>(
+  orgId: string | null | undefined,
+  cacheKey: string,
+  ttlMs: number,
+  fetchFn: () => Promise<T>,
+): Promise<T> {
+  const resolvedOrg = orgId || "__global__";
+  const cached = cacheGet<T>(resolvedOrg, cacheKey);
+  if (cached !== undefined) return cached;
+  const data = await fetchFn();
+  cacheSet(resolvedOrg, cacheKey, data, ttlMs);
+  return data;
+}
+
 export function cacheInvalidate(orgId: string, key: string): void {
   store.delete(`${orgId}:${key}`);
 }
