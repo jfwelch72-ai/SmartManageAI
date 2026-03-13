@@ -22,6 +22,17 @@ import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import { TourProvider } from "@/components/TourProvider";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
+function LoadingSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center" data-testid="lazy-loading-fallback">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
 const ImpersonatePage = lazy(() => import("@/pages/impersonate"));
 const AcceptHustlerInvitePage = lazy(() => import("@/pages/accept-hustler-invite"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
@@ -369,26 +380,17 @@ function AppContent() {
     route => location === route || (route !== '/' && location.startsWith(route))
   ) || isStandaloneRoute;
 
-  const suspenseFallback = (
-    <div className="min-h-screen flex items-center justify-center" data-testid="lazy-loading-fallback">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      </div>
-    </div>
-  );
-
   if (isStandaloneRoute) {
-    return <Suspense fallback={suspenseFallback}><Router /></Suspense>;
+    return <Suspense fallback={<LoadingSpinner />}><Router /></Suspense>;
   }
   
   if (isPublicRoute && !user) {
-    return <Suspense fallback={suspenseFallback}><Router /></Suspense>;
+    return <Suspense fallback={<LoadingSpinner />}><Router /></Suspense>;
   }
   
   return (
     <AuthenticatedLayout>
-      <Suspense fallback={suspenseFallback}>
+      <Suspense fallback={<LoadingSpinner />}>
         <Router />
       </Suspense>
     </AuthenticatedLayout>
