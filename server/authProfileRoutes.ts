@@ -5,7 +5,8 @@ import {
   users, organizations, userPhotos, userSkills, skills,
   skillVerificationRequests, userCertifications, notifications,
   employeePerformanceProfiles, attendanceLogs, safetyIncidents,
-  qualityIssues, performanceReviews, supervisorNotes
+  qualityIssues, performanceReviews, supervisorNotes,
+  ssoConfigurations
 } from "@shared/schema";
 import {
   requireAuth, hashPassword, verifyPassword, generateToken,
@@ -153,6 +154,22 @@ const upload = multer({
       if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
         res.status(423).json({ error: "Account temporarily locked due to too many failed attempts. Please try again later." });
         return;
+      }
+
+      if (user.organizationId) {
+        const [ssoConfig] = await db
+          .select()
+          .from(ssoConfigurations)
+          .where(eq(ssoConfigurations.organizationId, user.organizationId))
+          .limit(1);
+
+        if (ssoConfig && ssoConfig.enabled && ssoConfig.enforceSSO) {
+          res.status(403).json({
+            error: "SSO is required for your organization. Please sign in via SSO.",
+            ssoEnforced: true,
+          });
+          return;
+        }
       }
 
       if (!user.passwordHash) {

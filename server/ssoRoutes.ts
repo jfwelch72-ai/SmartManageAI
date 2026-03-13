@@ -27,7 +27,13 @@ router.get(
         .where(eq(ssoConfigurations.organizationId, orgId))
         .limit(1);
 
-      return res.json({ config: config || null });
+      const [org] = await db
+        .select({ slug: organizations.slug })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      return res.json({ config: config || null, orgSlug: org?.slug || null });
     } catch (error: any) {
       console.error("Error fetching SSO config:", error);
       return res.status(500).json({ error: "Failed to fetch SSO configuration" });
@@ -195,7 +201,8 @@ router.get("/:orgSlug/login", async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "SSO is not configured or not enabled for this organization" });
     }
 
-    const protocol = req.protocol;
+    const forwardedProto = (req.headers["x-forwarded-proto"] as string || "").split(",")[0].trim().toLowerCase();
+    const protocol = (forwardedProto === "https" || forwardedProto === "http") ? forwardedProto : req.protocol;
     const host = req.get("host");
     const callbackUrl = `${protocol}://${host}/api/sso/${orgSlug}/callback`;
 
@@ -204,6 +211,7 @@ router.get("/:orgSlug/login", async (req: AuthRequest, res: Response) => {
       entryPoint: ssoConfig.ssoLoginUrl,
       issuer: ssoConfig.entityId,
       cert: ssoConfig.certificate,
+      nameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     });
 
     const loginUrl = await saml.getAuthorizeUrlAsync("", req.headers.host || "", {});
@@ -238,7 +246,8 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ error: "SSO is not configured or not enabled for this organization" });
     }
 
-    const protocol = req.protocol;
+    const forwardedProto = (req.headers["x-forwarded-proto"] as string || "").split(",")[0].trim().toLowerCase();
+    const protocol = (forwardedProto === "https" || forwardedProto === "http") ? forwardedProto : req.protocol;
     const host = req.get("host");
     const callbackUrl = `${protocol}://${host}/api/sso/${orgSlug}/callback`;
 
@@ -247,6 +256,7 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
       entryPoint: ssoConfig.ssoLoginUrl,
       issuer: ssoConfig.entityId,
       cert: ssoConfig.certificate,
+      nameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     });
 
     const { profile } = await saml.validatePostResponseAsync(req.body);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -25,20 +25,24 @@ function SSOTab() {
   const [enforceSSO, setEnforceSSO] = useState(false);
   const [enabled, setEnabled] = useState(false);
 
-  const { data: configData, isLoading } = useQuery<{ config: any }>({
+  const { data: configData, isLoading } = useQuery<{ config: any; orgSlug: string | null }>({
     queryKey: ["/api/sso/config"],
   });
 
   const config = configData?.config;
-  if (config && !entityId && config.entityId) {
-    setProvider(config.provider || "OKTA");
-    setEntityId(config.entityId || "");
-    setSsoLoginUrl(config.ssoLoginUrl || "");
-    setCertificate(config.certificate || "");
-    setMetadataUrl(config.metadataUrl || "");
-    setEnforceSSO(config.enforceSSO || false);
-    setEnabled(config.enabled || false);
-  }
+  const orgSlug = configData?.orgSlug;
+
+  useEffect(() => {
+    if (config) {
+      setProvider(config.provider || "OKTA");
+      setEntityId(config.entityId || "");
+      setSsoLoginUrl(config.ssoLoginUrl || "");
+      setCertificate(config.certificate || "");
+      setMetadataUrl(config.metadataUrl || "");
+      setEnforceSSO(config.enforceSSO || false);
+      setEnabled(config.enabled || false);
+    }
+  }, [config]);
 
   const testMutation = useMutation({
     mutationFn: async () => {
@@ -163,7 +167,7 @@ function SSOTab() {
         </CardHeader>
         <CardContent>
           <code className="block p-3 bg-muted rounded-md text-sm break-all" data-testid="text-sso-login-url">
-            {window.location.origin}/api/sso/{"<org-slug>"}/login
+            {window.location.origin}/api/sso/{orgSlug || "<org-slug>"}/login
           </code>
         </CardContent>
       </Card>
