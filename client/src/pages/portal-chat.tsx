@@ -28,6 +28,8 @@ import {
   CheckCircle2,
   XCircle,
   ArrowLeft,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 
 function formatDate(d: string | null | undefined) {
@@ -135,6 +137,20 @@ export function PortalChatContent() {
       queryClient.invalidateQueries({ queryKey: ["/api/team/chat/threads"] });
       setSelectedThread(updated);
       toast({ title: "Thread status updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update status", variant: "destructive" });
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async (data: { threadId: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/team/chat/threads/${data.threadId}`, { status: data.status });
+      return res.json();
+    },
+    onSuccess: (_: any, vars: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/team/chat/threads"] });
+      toast({ title: vars.status === "ARCHIVED" ? "Conversation archived" : "Conversation restored" });
     },
     onError: () => {
       toast({ title: "Failed to update status", variant: "destructive" });
@@ -376,7 +392,30 @@ export function PortalChatContent() {
                     <span className="text-xs text-muted-foreground" data-testid={`text-inbox-date-${thread.id}`}>
                       {formatDate(thread.lastMessageAt)}
                     </span>
-                    <Badge variant="outline" className="text-xs">{thread.status}</Badge>
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="text-xs">{thread.status}</Badge>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        title={thread.status === "ARCHIVED" ? "Restore conversation" : "Archive conversation"}
+                        disabled={archiveMutation.isPending}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          archiveMutation.mutate({
+                            threadId: thread.id,
+                            status: thread.status === "ARCHIVED" ? "OPEN" : "ARCHIVED",
+                          });
+                        }}
+                        data-testid={`button-archive-thread-${thread.id}`}
+                      >
+                        {thread.status === "ARCHIVED" ? (
+                          <ArchiveRestore className="h-3.5 w-3.5" />
+                        ) : (
+                          <Archive className="h-3.5 w-3.5" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>
