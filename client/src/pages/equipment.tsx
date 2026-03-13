@@ -363,7 +363,7 @@ export default function EquipmentPage() {
         escapeCSV(eq.status), escapeCSV(eq.make), escapeCSV(eq.model),
         escapeCSV(eq.year), escapeCSV(eq.serialNumber), escapeCSV(eq.vinNumber),
         escapeCSV(eq.licensePlate), escapeCSV(eq.currentHours),
-        escapeCSV(eq.purchaseDate ? new Date(eq.purchaseDate).toLocaleDateString() : ""),
+        escapeCSV(eq.purchaseDate ? new Date(eq.purchaseDate).toISOString().slice(0, 10) : ""),
         escapeCSV(eq.purchasePrice),
         escapeCSV(eq.warrantyExpirationDate || ""),
         escapeCSV(eq.homeLocation), escapeCSV(eq.currentLocation),
@@ -485,20 +485,12 @@ export default function EquipmentPage() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => { setShowImportDialog(true); setImportPreviewRows([]); setImportErrors([]); }}
                   data-testid="button-import-csv"
                 >
                   <Upload className="h-4 w-4 mr-2" />
                   Import CSV
                 </Button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".csv"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                  data-testid="input-import-file"
-                />
                 <Button
                   onClick={() => setShowCreateDialog(true)}
                   data-testid="button-add-equipment"
@@ -1134,9 +1126,30 @@ export default function EquipmentPage() {
               </div>
             </DialogTitle>
             <DialogDescription>
-              {importPreviewRows.length} row(s) found. Review the data below, then click Import to create new equipment records. Duplicate equipment codes will be skipped.
+              {importPreviewRows.length === 0
+                ? "Upload a CSV file with equipment data. Expected headers: Name, Code, Type, Status, Make, Model, Year, Serial Number, VIN, License Plate, etc."
+                : `${importPreviewRows.length} row(s) found. Review the data below, then click Import to create new equipment records. Duplicate equipment codes will be skipped.`}
             </DialogDescription>
           </DialogHeader>
+
+          {importPreviewRows.length === 0 && (
+            <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-8 gap-4">
+              <FileUp className="h-10 w-10 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Select a CSV file to upload</p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleFileSelect}
+                data-testid="input-import-file"
+              />
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-choose-file">
+                <Upload className="h-4 w-4 mr-2" />
+                Choose File
+              </Button>
+            </div>
+          )}
 
           {importErrors.length > 0 && (
             <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 space-y-1">
@@ -1152,51 +1165,55 @@ export default function EquipmentPage() {
             </div>
           )}
 
-          <div className="overflow-x-auto border rounded-md">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">#</TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Make</TableHead>
-                  <TableHead>Model</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {importPreviewRows.slice(0, 20).map((row, idx) => (
-                  <TableRow key={idx} data-testid={`row-import-preview-${idx}`}>
-                    <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
-                    <TableCell className="font-medium">{row.name || "-"}</TableCell>
-                    <TableCell>{row.equipmentCode || "(auto)"}</TableCell>
-                    <TableCell>{row.type || "-"}</TableCell>
-                    <TableCell>{row.status || "AVAILABLE"}</TableCell>
-                    <TableCell>{row.make || "-"}</TableCell>
-                    <TableCell>{row.model || "-"}</TableCell>
+          {importPreviewRows.length > 0 && (
+            <div className="overflow-x-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">#</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Make</TableHead>
+                    <TableHead>Model</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {importPreviewRows.length > 20 && (
-              <p className="text-sm text-muted-foreground p-2 text-center">
-                Showing 20 of {importPreviewRows.length} rows
-              </p>
-            )}
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {importPreviewRows.slice(0, 20).map((row, idx) => (
+                    <TableRow key={idx} data-testid={`row-import-preview-${idx}`}>
+                      <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                      <TableCell className="font-medium">{row.name || "-"}</TableCell>
+                      <TableCell>{row.equipmentCode || "(auto)"}</TableCell>
+                      <TableCell>{row.type || "-"}</TableCell>
+                      <TableCell>{row.status || "AVAILABLE"}</TableCell>
+                      <TableCell>{row.make || "-"}</TableCell>
+                      <TableCell>{row.model || "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {importPreviewRows.length > 20 && (
+                <p className="text-sm text-muted-foreground p-2 text-center">
+                  Showing 20 of {importPreviewRows.length} rows
+                </p>
+              )}
+            </div>
+          )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowImportDialog(false); setImportPreviewRows([]); setImportErrors([]); }}>
               Cancel
             </Button>
-            <Button
-              onClick={() => importEquipment.mutate(importPreviewRows)}
-              disabled={importEquipment.isPending}
-              data-testid="button-submit-import"
-            >
-              {importEquipment.isPending ? "Importing..." : `Import ${importPreviewRows.length} Record(s)`}
-            </Button>
+            {importPreviewRows.length > 0 && (
+              <Button
+                onClick={() => importEquipment.mutate(importPreviewRows)}
+                disabled={importEquipment.isPending}
+                data-testid="button-submit-import"
+              >
+                {importEquipment.isPending ? "Importing..." : `Import ${importPreviewRows.length} Record(s)`}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
