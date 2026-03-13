@@ -129,28 +129,18 @@ export function PortalChatContent() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async (data: { threadId: string; status: string }) => {
+    mutationFn: async (data: { threadId: string; status: string; fromList?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/team/chat/threads/${data.threadId}`, { status: data.status });
       return res.json();
     },
-    onSuccess: (updated: any) => {
+    onSuccess: (updated: any, vars: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/team/chat/threads"] });
-      setSelectedThread(updated);
-      toast({ title: "Thread status updated" });
-    },
-    onError: () => {
-      toast({ title: "Failed to update status", variant: "destructive" });
-    },
-  });
-
-  const archiveMutation = useMutation({
-    mutationFn: async (data: { threadId: string; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/team/chat/threads/${data.threadId}`, { status: data.status });
-      return res.json();
-    },
-    onSuccess: (_: any, vars: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/team/chat/threads"] });
-      toast({ title: vars.status === "ARCHIVED" ? "Conversation archived" : "Conversation restored" });
+      if (vars.fromList) {
+        toast({ title: vars.status === "ARCHIVED" ? "Conversation archived" : "Conversation restored" });
+      } else {
+        setSelectedThread(updated);
+        toast({ title: "Thread status updated" });
+      }
     },
     onError: () => {
       toast({ title: "Failed to update status", variant: "destructive" });
@@ -399,12 +389,13 @@ export function PortalChatContent() {
                         size="icon"
                         className="h-7 w-7"
                         title={thread.status === "ARCHIVED" ? "Restore conversation" : "Archive conversation"}
-                        disabled={archiveMutation.isPending}
+                        disabled={updateStatusMutation.isPending}
                         onClick={(e) => {
                           e.stopPropagation();
-                          archiveMutation.mutate({
+                          updateStatusMutation.mutate({
                             threadId: thread.id,
                             status: thread.status === "ARCHIVED" ? "OPEN" : "ARCHIVED",
+                            fromList: true,
                           });
                         }}
                         data-testid={`button-archive-thread-${thread.id}`}
