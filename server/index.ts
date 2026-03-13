@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
@@ -11,6 +12,8 @@ const app = express();
 
 // Trust proxy - Required for accurate IP detection behind Replit proxy
 app.set("trust proxy", 1);
+
+app.use(compression());
 
 app.use(helmet({
   contentSecurityPolicy: false,

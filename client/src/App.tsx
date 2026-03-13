@@ -12,12 +12,12 @@ import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import NotFound from "@/pages/not-found";
-import LandingPage from "@/pages/landing";
+const LandingPage = lazy(() => import("@/pages/landing"));
 import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
-import AIAssistantWidget from "@/components/AIAssistantWidget";
+const AIAssistantWidget = lazy(() => import("@/components/AIAssistantWidget"));
 import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import { TourProvider } from "@/components/TourProvider";
 import { VendorRoutePermissions } from "@/lib/rbac";
@@ -407,7 +407,7 @@ function App() {
               <Toaster />
               <AppContent />
               <FirstTimeWelcomeModal />
-              <AIAssistantWidget />
+              <Suspense fallback={null}><AIAssistantWidget /></Suspense>
             </TooltipProvider>
           </DashboardCustomizationProvider>
         </TourProvider>

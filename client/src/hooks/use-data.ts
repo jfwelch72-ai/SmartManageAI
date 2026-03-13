@@ -808,14 +808,14 @@ export function useRejectOvertimeRequest() {
 export function useActiveShifts() {
   return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/active-shifts"],
-    refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
+    refetchInterval: 30000,
   });
 }
 
 export function usePendingShiftApprovals() {
   return useQuery<TimeClockShift[]>({
     queryKey: ["/api/time-clock/pending-approvals"],
-    refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
+    refetchInterval: 30000,
   });
 }
 
@@ -894,7 +894,7 @@ export interface PendingTimeEntry {
 export function usePendingTimeEntryApprovals() {
   return useQuery<PendingTimeEntry[]>({
     queryKey: ["/api/time-entries/pending-approvals"],
-    refetchInterval: 15000, // Refresh every 15 seconds for live monitoring
+    refetchInterval: 30000,
   });
 }
 
