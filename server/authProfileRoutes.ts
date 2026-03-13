@@ -156,6 +156,11 @@ const upload = multer({
         return;
       }
 
+      if (!user.passwordHash) {
+        res.status(401).json({ error: "Invalid credentials" });
+        return;
+      }
+
       if (user.organizationId) {
         const [ssoConfig] = await db
           .select()
@@ -170,11 +175,6 @@ const upload = multer({
           });
           return;
         }
-      }
-
-      if (!user.passwordHash) {
-        res.status(401).json({ error: "Invalid credentials" });
-        return;
       }
 
       const isValid = await verifyPassword(password, user.passwordHash);
