@@ -914,7 +914,7 @@ export function useRejectTimeEntry() {
 export function useBulkApproveTimeEntries() {
   return useMutation({
     mutationFn: async (entryIds: string[]) => {
-      const response = await apiRequest("POST", "/api/time-entries/bulk-approve", { entryIds });
+      const response = await apiRequest("PATCH", "/api/time-entries/batch-approve", { entryIds });
       return response.json();
     },
     onSuccess: () => {
