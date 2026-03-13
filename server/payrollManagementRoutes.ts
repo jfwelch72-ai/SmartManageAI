@@ -37,7 +37,7 @@ async function buildRateMap(
     return rateMap;
   }
 
-  const [empRates, projRates, orgSettings] = await Promise.all([
+  const [empRates, projRates] = await Promise.all([
     db.select().from(projectEmployeeRates)
       .where(and(
         inArray(projectEmployeeRates.projectId, uniqueProjectIds),
@@ -45,14 +45,11 @@ async function buildRateMap(
       )),
     db.select().from(projectLaborRates)
       .where(inArray(projectLaborRates.projectId, uniqueProjectIds)),
-    db.select().from(organizationPayrollSettings)
-      .where(eq(organizationPayrollSettings.organizationId, orgId))
-      .limit(1),
   ]);
 
   const orgFallback: RateInfo = {
-    regularRate: orgSettings[0] ? DEFAULT_REGULAR_RATE : DEFAULT_REGULAR_RATE,
-    overtimeRate: orgSettings[0] ? DEFAULT_OVERTIME_RATE : DEFAULT_OVERTIME_RATE,
+    regularRate: DEFAULT_REGULAR_RATE,
+    overtimeRate: DEFAULT_OVERTIME_RATE,
   };
 
   const empRateMap = new Map<string, RateInfo>();
