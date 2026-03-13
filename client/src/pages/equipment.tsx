@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -58,6 +58,9 @@ import {
   ChevronRight,
   Filter,
   MoreVertical,
+  Download,
+  Upload,
+  FileUp,
 } from "lucide-react";
 import {
   Table,
@@ -158,6 +161,80 @@ const createEquipmentSchema = z.object({
 
 type CreateEquipmentInput = z.infer<typeof createEquipmentSchema>;
 
+const CSV_HEADERS = [
+  "Name", "Code", "Type", "Status", "Make", "Model", "Year",
+  "Serial Number", "VIN", "License Plate", "Current Hours",
+  "Purchase Date", "Purchase Price", "Warranty Expiration",
+  "Home Location", "Current Location", "Description", "Notes",
+];
+
+const CSV_FIELD_MAP: Record<string, string> = {
+  "Name": "name", "Code": "equipmentCode", "Type": "type", "Status": "status",
+  "Make": "make", "Model": "model", "Year": "year", "Serial Number": "serialNumber",
+  "VIN": "vinNumber", "License Plate": "licensePlate", "Current Hours": "currentHours",
+  "Purchase Date": "purchaseDate", "Purchase Price": "purchasePrice",
+  "Warranty Expiration": "warrantyExpirationDate", "Home Location": "homeLocation",
+  "Current Location": "currentLocation", "Description": "description", "Notes": "notes",
+};
+
+function escapeCSV(val: string | number | null | undefined): string {
+  if (val === null || val === undefined) return "";
+  const str = String(val);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCSV(text: string): Record<string, string>[] {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = parseCSVLine(lines[0]);
+  const rows: Record<string, string>[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseCSVLine(lines[i]);
+    const row: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      const field = CSV_FIELD_MAP[header.trim()];
+      if (field && values[idx]) {
+        row[field] = values[idx];
+      }
+    });
+    if (Object.keys(row).length > 0) rows.push(row);
+  }
+  return rows;
+}
+
 export default function EquipmentPage() {
   const { user, logout, organizationName } = useAuth();
   const { toast } = useToast();
@@ -170,6 +247,10 @@ export default function EquipmentPage() {
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importPreviewRows, setImportPreviewRows] = useState<Record<string, string>[]>([]);
+  const [importErrors, setImportErrors] = useState<{ row: number; reason: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [equipmentToDelete, setEquipmentToDelete] = useState<Equipment | null>(
     null,
   );
@@ -270,6 +351,82 @@ export default function EquipmentPage() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (equipmentList.length === 0) {
+      toast({ title: "Nothing to export", description: "No equipment records to export.", variant: "destructive" });
+      return;
+    }
+    const headerLine = CSV_HEADERS.join(",");
+    const dataLines = equipmentList.map((eq) =>
+      [
+        escapeCSV(eq.name), escapeCSV(eq.equipmentCode), escapeCSV(eq.type),
+        escapeCSV(eq.status), escapeCSV(eq.make), escapeCSV(eq.model),
+        escapeCSV(eq.year), escapeCSV(eq.serialNumber), escapeCSV(eq.vinNumber),
+        escapeCSV(eq.licensePlate), escapeCSV(eq.currentHours),
+        escapeCSV(eq.purchaseDate ? new Date(eq.purchaseDate).toLocaleDateString() : ""),
+        escapeCSV(eq.purchasePrice),
+        escapeCSV(eq.warrantyExpirationDate || ""),
+        escapeCSV(eq.homeLocation), escapeCSV(eq.currentLocation),
+        escapeCSV(eq.description), escapeCSV(eq.notes),
+      ].join(",")
+    );
+    const csv = [headerLine, ...dataLines].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `equipment_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Export complete", description: `Exported ${equipmentList.length} equipment records.` });
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const rows = parseCSV(text);
+      if (rows.length === 0) {
+        toast({ title: "Invalid file", description: "No data rows found. Ensure the CSV has headers matching the expected format.", variant: "destructive" });
+        return;
+      }
+      setImportPreviewRows(rows);
+      setImportErrors([]);
+      setShowImportDialog(true);
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const importEquipment = useMutation({
+    mutationFn: async (rows: Record<string, string>[]) => {
+      const res = await apiRequest("POST", "/api/equipment/import", { rows });
+      return res.json();
+    },
+    onSuccess: (data: { created: number; skipped: number; errors: { row: number; reason: string }[] }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment"] });
+      if (data.errors.length > 0) {
+        setImportErrors(data.errors);
+        toast({
+          title: "Import completed with issues",
+          description: `Created ${data.created}, skipped ${data.skipped}, ${data.errors.length} error(s).`,
+        });
+      } else {
+        toast({
+          title: "Import complete",
+          description: `Created ${data.created} equipment records${data.skipped > 0 ? ` (${data.skipped} duplicates skipped)` : ""}.`,
+        });
+        setShowImportDialog(false);
+        setImportPreviewRows([]);
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: "Import failed", description: error.message || "Failed to import equipment", variant: "destructive" });
+    },
+  });
+
   const getStatusBadge = (status: string) => {
     const statusOption = STATUS_OPTIONS.find((s) => s.value === status);
     return statusOption ? statusOption.color : "bg-gray-100 text-gray-800";
@@ -316,13 +473,40 @@ export default function EquipmentPage() {
           <div className="flex flex-wrap gap-2">
             <AIAnalysisButton module="EQUIPMENT" />
             {canManageEquipment && (
-              <Button
-                onClick={() => setShowCreateDialog(true)}
-                data-testid="button-add-equipment"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Equipment
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleExportCSV}
+                  disabled={equipmentList.length === 0}
+                  data-testid="button-export-csv"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="button-import-csv"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import CSV
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  data-testid="input-import-file"
+                />
+                <Button
+                  onClick={() => setShowCreateDialog(true)}
+                  data-testid="button-add-equipment"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Equipment
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -939,6 +1123,83 @@ export default function EquipmentPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showImportDialog} onOpenChange={(open) => { if (!open) { setShowImportDialog(false); setImportPreviewRows([]); setImportErrors([]); } }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              <div className="flex items-center gap-2">
+                <FileUp className="h-5 w-5" />
+                Import Equipment from CSV
+              </div>
+            </DialogTitle>
+            <DialogDescription>
+              {importPreviewRows.length} row(s) found. Review the data below, then click Import to create new equipment records. Duplicate equipment codes will be skipped.
+            </DialogDescription>
+          </DialogHeader>
+
+          {importErrors.length > 0 && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 space-y-1">
+              <p className="text-sm font-medium text-destructive">Import errors:</p>
+              {importErrors.slice(0, 5).map((err, i) => (
+                <p key={i} className="text-sm text-destructive/80" data-testid={`text-import-error-${i}`}>
+                  Row {err.row}: {err.reason}
+                </p>
+              ))}
+              {importErrors.length > 5 && (
+                <p className="text-sm text-destructive/80">...and {importErrors.length - 5} more</p>
+              )}
+            </div>
+          )}
+
+          <div className="overflow-x-auto border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">#</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Make</TableHead>
+                  <TableHead>Model</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {importPreviewRows.slice(0, 20).map((row, idx) => (
+                  <TableRow key={idx} data-testid={`row-import-preview-${idx}`}>
+                    <TableCell className="text-muted-foreground">{idx + 1}</TableCell>
+                    <TableCell className="font-medium">{row.name || "-"}</TableCell>
+                    <TableCell>{row.equipmentCode || "(auto)"}</TableCell>
+                    <TableCell>{row.type || "-"}</TableCell>
+                    <TableCell>{row.status || "AVAILABLE"}</TableCell>
+                    <TableCell>{row.make || "-"}</TableCell>
+                    <TableCell>{row.model || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {importPreviewRows.length > 20 && (
+              <p className="text-sm text-muted-foreground p-2 text-center">
+                Showing 20 of {importPreviewRows.length} rows
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowImportDialog(false); setImportPreviewRows([]); setImportErrors([]); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => importEquipment.mutate(importPreviewRows)}
+              disabled={importEquipment.isPending}
+              data-testid="button-submit-import"
+            >
+              {importEquipment.isPending ? "Importing..." : `Import ${importPreviewRows.length} Record(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

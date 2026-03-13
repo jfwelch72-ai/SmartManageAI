@@ -70,6 +70,105 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
     }
   });
 
+  // Import equipment from CSV (batch create)
+  router.post("/api/equipment/import", async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess || !req.user?.organizationId) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const { rows } = req.body;
+      if (!Array.isArray(rows) || rows.length === 0) {
+        return res.status(400).json({ error: "No rows provided" });
+      }
+      if (rows.length > 500) {
+        return res.status(400).json({ error: "Maximum 500 rows per import" });
+      }
+
+      const existingCodes = await db
+        .select({ equipmentCode: equipment.equipmentCode })
+        .from(equipment)
+        .where(eq(equipment.organizationId, req.user.organizationId));
+      const existingCodeSet = new Set(existingCodes.map(e => e.equipmentCode));
+
+      let created = 0;
+      let skipped = 0;
+      const errors: { row: number; reason: string }[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+          if (!row.name || !row.type) {
+            errors.push({ row: i + 1, reason: "Name and Type are required" });
+            continue;
+          }
+
+          let code = row.equipmentCode;
+          if (!code) {
+            const lastEquipment = await db
+              .select({ equipmentCode: equipment.equipmentCode })
+              .from(equipment)
+              .orderBy(desc(equipment.equipmentCode))
+              .limit(1);
+            let nextNumber = 1;
+            if (lastEquipment.length > 0) {
+              const match = lastEquipment[0].equipmentCode.match(/EQ-(\d+)/);
+              if (match) nextNumber = parseInt(match[1], 10) + 1;
+            }
+            code = `EQ-${String(nextNumber + created).padStart(4, '0')}`;
+          }
+
+          if (existingCodeSet.has(code)) {
+            skipped++;
+            continue;
+          }
+
+          const validationResult = validatedEquipmentSchema.safeParse({
+            ...row,
+            equipmentCode: code,
+            status: row.status || "AVAILABLE",
+          });
+
+          if (!validationResult.success) {
+            const msg = validationResult.error.errors.map(e => e.message).join(", ");
+            errors.push({ row: i + 1, reason: msg });
+            continue;
+          }
+
+          await db.insert(equipment).values({
+            ...validationResult.data,
+            organizationId: req.user.organizationId,
+          });
+
+          existingCodeSet.add(code);
+          created++;
+        } catch (err: any) {
+          if (err.constraint === "equipment_equipment_code_unique") {
+            skipped++;
+          } else {
+            errors.push({ row: i + 1, reason: err.message || "Unknown error" });
+          }
+        }
+      }
+
+      if (created > 0) {
+        await db.insert(auditLog).values({
+          userId: req.user!.id,
+          action: "CREATE",
+          entityType: "equipment",
+          entityId: "bulk-import",
+          newValue: `Bulk imported ${created} equipment records (${skipped} skipped, ${errors.length} errors)`,
+        });
+      }
+
+      res.json({ created, skipped, errors });
+    } catch (error) {
+      console.error("Import equipment error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get available projects for equipment assignment (must be before :idOrCode route)
   router.get("/api/equipment/available-projects", async (req: AuthRequest, res) => {
     try {
