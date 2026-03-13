@@ -219,7 +219,7 @@ router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+const bulkApproveHandler = async (req: AuthRequest, res: any) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -297,7 +297,9 @@ router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", 
     console.error("Bulk approve time entries error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+};
+router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
+router.patch("/api/time-entries/batch-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 
 router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
   try {

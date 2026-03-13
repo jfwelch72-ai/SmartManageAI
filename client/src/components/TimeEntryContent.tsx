@@ -263,7 +263,7 @@ export default function TimeEntryContent() {
                   {isManager && selectedEntries.length > 0 && (
                     <Button size="sm" onClick={handleBulkApprove} disabled={bulkApprove.isPending} data-testid="button-bulk-approve">
                       <CheckCircle className="w-4 h-4 mr-1" />
-                      Approve ({selectedEntries.length})
+                      Batch Approve Selected ({selectedEntries.length})
                     </Button>
                   )}
                   {isManager && (

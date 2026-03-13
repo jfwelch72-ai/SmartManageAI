@@ -390,7 +390,7 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
   }
 });
 
-router.put("/api/payroll/pay-runs/:id/status", requireAuth, async (req, res) => {
+const payRunStatusHandler = async (req: any, res: Response) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
@@ -446,7 +446,9 @@ router.put("/api/payroll/pay-runs/:id/status", requireAuth, async (req, res) => 
     console.error("Update pay run status error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+};
+router.put("/api/payroll/pay-runs/:id/status", requireAuth, payRunStatusHandler);
+router.patch("/api/payroll/pay-runs/:id/status", requireAuth, payRunStatusHandler);
 
 router.get("/api/payroll/workers", requireAuth, async (req, res) => {
   try {
