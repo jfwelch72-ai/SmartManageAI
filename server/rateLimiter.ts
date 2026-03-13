@@ -1,19 +1,6 @@
 import rateLimit from "express-rate-limit";
 import type { Request } from "express";
-import jwt from "jsonwebtoken";
-
-const JWT_SECRET = process.env.SESSION_SECRET || "";
-
-function extractUserIdFromCookie(req: Request): string | null {
-  const token = req.cookies?.auth_token;
-  if (!token || !JWT_SECRET) return null;
-  try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId?: string };
-    return payload?.userId || null;
-  } catch {
-    return null;
-  }
-}
+import { getUserIdFromRequest } from "./auth";
 
 function normalizeIp(req: Request): string {
   const ip = req.ip || "unknown";
@@ -22,7 +9,7 @@ function normalizeIp(req: Request): string {
 }
 
 function getUserKeyOrIp(req: Request): string {
-  const userId = extractUserIdFromCookie(req);
+  const userId = getUserIdFromRequest(req);
   if (userId) return `user:${userId}`;
   return normalizeIp(req);
 }

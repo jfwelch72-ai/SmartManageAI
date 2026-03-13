@@ -29,6 +29,13 @@ export interface AuthRequest extends Request {
   user?: SanitizedUser;
 }
 
+export function getUserIdFromRequest(req: Request): string | null {
+  const token = req.cookies?.[COOKIE_NAME];
+  if (!token) return null;
+  const payload = verifyToken(token);
+  return payload?.userId || null;
+}
+
 // Hash password
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
