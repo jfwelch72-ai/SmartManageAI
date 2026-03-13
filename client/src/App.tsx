@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import React, { lazy, Suspense } from "react";
 import { Switch, Route, Redirect, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -131,7 +131,7 @@ function ProtectedRoute({
   featurePerm,
   skipOnboardingCheck = false
 }: { 
-  component: () => JSX.Element | null;
+  component: React.ComponentType;
   permission?: (role?: string) => boolean;
   featurePerm?: FeaturePermissionKey | FeaturePermissionKey[];
   skipOnboardingCheck?: boolean;
