@@ -124,11 +124,27 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
             continue;
           }
 
-          const validationResult = validatedEquipmentSchema.safeParse({
+          const preprocessed: any = {
             ...row,
             equipmentCode: code,
             status: row.status || "AVAILABLE",
-          });
+          };
+          if (preprocessed.purchaseDate && typeof preprocessed.purchaseDate === 'string') {
+            const d = new Date(preprocessed.purchaseDate);
+            preprocessed.purchaseDate = isNaN(d.getTime()) ? null : d;
+          }
+          if (preprocessed.warrantyExpirationDate && typeof preprocessed.warrantyExpirationDate === 'string') {
+            const d = new Date(preprocessed.warrantyExpirationDate);
+            preprocessed.warrantyExpirationDate = isNaN(d.getTime()) ? null : d;
+          }
+          if (preprocessed.year && typeof preprocessed.year === 'string') {
+            const y = parseInt(preprocessed.year, 10);
+            preprocessed.year = isNaN(y) ? null : y;
+          }
+          if (preprocessed.currentHours === '') preprocessed.currentHours = null;
+          if (preprocessed.purchasePrice === '') preprocessed.purchasePrice = null;
+
+          const validationResult = validatedEquipmentSchema.safeParse(preprocessed);
 
           if (!validationResult.success) {
             const msg = validationResult.error.errors.map(e => e.message).join(", ");
