@@ -29,7 +29,6 @@ async function buildRateMap(
   userIds: string[]
 ): Promise<Map<string, RateInfo>> {
   const rateMap = new Map<string, RateInfo>();
-  const defaultRate: RateInfo = { regularRate: DEFAULT_REGULAR_RATE, overtimeRate: DEFAULT_OVERTIME_RATE };
 
   const uniqueProjectIds = [...new Set(projectIds.filter(Boolean))];
   const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
@@ -38,7 +37,7 @@ async function buildRateMap(
     return rateMap;
   }
 
-  const [empRates, projRates] = await Promise.all([
+  const [empRates, projRates, orgSettings] = await Promise.all([
     db.select().from(projectEmployeeRates)
       .where(and(
         inArray(projectEmployeeRates.projectId, uniqueProjectIds),
@@ -46,7 +45,15 @@ async function buildRateMap(
       )),
     db.select().from(projectLaborRates)
       .where(inArray(projectLaborRates.projectId, uniqueProjectIds)),
+    db.select().from(organizationPayrollSettings)
+      .where(eq(organizationPayrollSettings.organizationId, orgId))
+      .limit(1),
   ]);
+
+  const orgFallback: RateInfo = {
+    regularRate: orgSettings[0] ? DEFAULT_REGULAR_RATE : DEFAULT_REGULAR_RATE,
+    overtimeRate: orgSettings[0] ? DEFAULT_OVERTIME_RATE : DEFAULT_OVERTIME_RATE,
+  };
 
   const empRateMap = new Map<string, RateInfo>();
   for (const r of empRates) {
@@ -75,7 +82,7 @@ async function buildRateMap(
         if (projRate) {
           rateMap.set(key, projRate);
         } else {
-          rateMap.set(key, defaultRate);
+          rateMap.set(key, orgFallback);
         }
       }
     }
@@ -1157,45 +1164,41 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
     const lineItemIds = lineItems.map(i => i.lineItem.id);
     const lineItemProjectIds = [...new Set(lineItems.map(i => i.projectId))];
 
-    let classNameMap = new Map<string, string>();
-    let classIdMap = new Map<string, string>();
-    let pwMap = new Map<string, number>();
-    let dedMap = new Map<string, Array<{ amount: string; category: string }>>();
+    const classNameMap = new Map<string, string>();
+    const classIdMap = new Map<string, string>();
+    const pwMap = new Map<string, number>();
+    const dedMap = new Map<string, Array<{ amount: string; category: string }>>();
 
-    try {
-      if (lineItemUserIds.length > 0) {
-        const allEmpClasses = await db.select({
-          userId: employeeClassifications.userId,
-          classificationId: employeeClassifications.classificationId,
-          classificationName: jobClassifications.name,
-        })
-          .from(employeeClassifications)
-          .innerJoin(jobClassifications, eq(employeeClassifications.classificationId, jobClassifications.id))
-          .where(inArray(employeeClassifications.userId, lineItemUserIds));
+    if (lineItemUserIds.length > 0) {
+      const allEmpClasses = await db.select({
+        userId: employeeClassifications.userId,
+        classificationId: employeeClassifications.classificationId,
+        classificationName: jobClassifications.name,
+      })
+        .from(employeeClassifications)
+        .innerJoin(jobClassifications, eq(employeeClassifications.classificationId, jobClassifications.id))
+        .where(inArray(employeeClassifications.userId, lineItemUserIds));
 
-        for (const ec of allEmpClasses) {
-          if (!classNameMap.has(ec.userId)) {
-            classNameMap.set(ec.userId, ec.classificationName);
-            classIdMap.set(ec.userId, ec.classificationId);
-          }
+      for (const ec of allEmpClasses) {
+        if (!classNameMap.has(ec.userId)) {
+          classNameMap.set(ec.userId, ec.classificationName);
+          classIdMap.set(ec.userId, ec.classificationId);
         }
       }
-    } catch (e) {}
+    }
 
-    try {
-      const classIds = [...new Set(Array.from(classIdMap.values()))];
-      if (classIds.length > 0 && lineItemProjectIds.length > 0) {
-        const allPw = await db.select().from(prevailingWageRates)
-          .where(and(
-            eq(prevailingWageRates.organizationId, orgId),
-            inArray(prevailingWageRates.projectId, lineItemProjectIds),
-            inArray(prevailingWageRates.classificationId, classIds),
-          ));
-        for (const pw of allPw) {
-          pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
-        }
+    const classIds = [...new Set(Array.from(classIdMap.values()))];
+    if (classIds.length > 0 && lineItemProjectIds.length > 0) {
+      const allPw = await db.select().from(prevailingWageRates)
+        .where(and(
+          eq(prevailingWageRates.organizationId, orgId),
+          inArray(prevailingWageRates.projectId, lineItemProjectIds),
+          inArray(prevailingWageRates.classificationId, classIds),
+        ));
+      for (const pw of allPw) {
+        pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
       }
-    } catch (e) {}
+    }
 
     if (lineItemIds.length > 0) {
       const allDeds = await db.select({
