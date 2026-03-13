@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -31,9 +31,11 @@ function SSOTab() {
 
   const config = configData?.config;
   const orgSlug = configData?.orgSlug;
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (config) {
+    if (config && !initializedRef.current) {
+      initializedRef.current = true;
       setProvider(config.provider || "OKTA");
       setEntityId(config.entityId || "");
       setSsoLoginUrl(config.ssoLoginUrl || "");
@@ -68,6 +70,7 @@ function SSOTab() {
     },
     onSuccess: () => {
       toast({ title: "SSO Configuration Saved" });
+      initializedRef.current = false;
       queryClient.invalidateQueries({ queryKey: ["/api/sso/config"] });
     },
     onError: (err: Error) => toast({ title: "Save Failed", description: err.message, variant: "destructive" }),
