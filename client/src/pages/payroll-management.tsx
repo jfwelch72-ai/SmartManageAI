@@ -987,12 +987,12 @@ export default function PayrollManagementPage() {
 
               <DialogFooter className="flex-wrap gap-2">
                 <CertifiedPayrollButton payRunId={payRunDetail.id} payRunNumber={payRunDetail.runNumber} />
-                {payRunDetail.status !== "PAID" && payRunDetail.status !== "VOIDED" && (
+                {(payRunDetail.status === "DRAFT" || payRunDetail.status === "PENDING_APPROVAL") && (
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => {
-                      if (confirm("Are you sure you want to void this pay run?")) {
+                      if (confirm("Are you sure you want to void this pay run? This action cannot be undone.")) {
                         updateStatusMutation.mutate({ id: payRunDetail.id, status: "VOIDED" });
                       }
                     }}
