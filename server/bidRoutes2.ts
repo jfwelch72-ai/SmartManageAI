@@ -564,8 +564,9 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
 
-    const OVERHEAD_PERCENT = 10;
-    const PROFIT_MARGIN_PERCENT = 15;
+    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit } = req.body || {};
+    const OVERHEAD_PERCENT = typeof bodyOverhead === "number" && bodyOverhead >= 0 ? bodyOverhead : 10;
+    const PROFIT_MARGIN_PERCENT = typeof bodyProfit === "number" && bodyProfit >= 0 ? bodyProfit : 15;
     
     let directCostBudget = "0";
     let contractAmount = bid.bidAmount || "0";
@@ -604,8 +605,6 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         }
       }
     }
-    
-    const { superintendentId, projectManagerId } = req.body || {};
     
     const [newProject] = await db.insert(projects).values({
       name: bid.name,

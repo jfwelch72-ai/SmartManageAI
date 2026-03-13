@@ -562,6 +562,8 @@ export default function BidDetailPage() {
         code: bid.code,
         superintendentId: selectedSuperintendentId || undefined,
         projectManagerId: selectedProjectManagerId || undefined,
+        overheadPercent,
+        profitPercent,
       });
       toast({
         title: "Success",
