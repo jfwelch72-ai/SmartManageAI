@@ -397,6 +397,12 @@ function AppContent() {
   );
 }
 
+function AuthGatedWidget() {
+  const { user } = useAuth();
+  if (!user) return null;
+  return <Suspense fallback={null}><AIAssistantWidget /></Suspense>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -407,7 +413,7 @@ function App() {
               <Toaster />
               <AppContent />
               <FirstTimeWelcomeModal />
-              <Suspense fallback={null}><AIAssistantWidget /></Suspense>
+              <AuthGatedWidget />
             </TooltipProvider>
           </DashboardCustomizationProvider>
         </TourProvider>
