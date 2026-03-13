@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Switch, Route, Redirect, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -16,101 +17,102 @@ import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
-import ImpersonatePage from "@/pages/impersonate";
-import AcceptHustlerInvitePage from "@/pages/accept-hustler-invite";
-import DashboardPage from "@/pages/dashboard";
-import ProfilePage from "@/pages/profile";
-import UsersPage from "@/pages/users";
-import BidsPage from "@/pages/bids";
-import BidDetailPage from "@/pages/bid-detail";
-import BidEstimate from "@/pages/bid-estimate";
-import ProjectsPage from "@/pages/projects";
-import ProjectDetailPage from "@/pages/project-detail";
-import TimeEntryPage from "@/pages/time-entry";
-import TMDailyPage from "@/pages/tm-daily";
-import TMBillingPage from "@/pages/tm-billing";
-import CalendarPage from "@/pages/calendar";
-import TimeClockPage from "@/pages/time-clock";
-import TimeClockManagerPage from "@/pages/time-clock-manager";
-import AIPMDashboard from "@/pages/ai-pm-dashboard";
-import CFODashboard from "@/pages/cfo-dashboard";
-import AISettingsPage from "@/pages/ai-settings";
-import CrewsPage from "@/pages/crews";
-import CostRatesPage from "@/pages/cost-rates";
-import CompanyCommunicationsPage from "@/pages/company-communications";
-import TasksPage from "@/pages/tasks";
-import ProductionRatesPage from "@/pages/production-rates";
-import CRMPage from "@/pages/crm";
-import ScopeSettingsPage from "@/pages/scope-settings";
-import ScopeLibraryPage from "@/pages/scope-library";
-import UnifiedMessagesPage from "@/pages/unified-messages";
-import EquipmentPage from "@/pages/equipment";
-import EquipmentDetailPage from "@/pages/equipment-detail";
-import OnboardingPage from "@/pages/onboarding";
-import PlatformAdminDashboard from "@/pages/PlatformAdminDashboard";
-import PlatformOrganizations from "@/pages/PlatformOrganizations";
-import PlatformOrganizationDetail from "@/pages/PlatformOrganizationDetail";
-import PlatformAnalytics from "@/pages/PlatformAnalytics";
-import PlatformSupportTools from "@/pages/PlatformSupportTools";
-import PlatformAuditDashboard from "@/pages/PlatformAuditDashboard";
-import PlatformSubscriptions from "@/pages/PlatformSubscriptions";
-import VendorPricingPage from "@/pages/vendor-pricing";
-import MobileSyncPage from "@/pages/mobile-sync";
-import CompanySettingsPage from "@/pages/company-settings";
 import AIAssistantWidget from "@/components/AIAssistantWidget";
 import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import { TourProvider } from "@/components/TourProvider";
-import VendorDashboard from "@/pages/vendor/index";
-import VendorPortalPricing from "@/pages/vendor/pricing";
-import VendorClients from "@/pages/vendor/clients";
-import AIBidAnalysisPage from "@/pages/ai-bid-analysis";
-import AIContractAnalysisPage from "@/pages/ai-contract-analysis";
-import ScheduleOfValuesPage from "@/pages/schedule-of-values";
-import SubcontractsPage from "@/pages/subcontracts";
-import RFIsPage from "@/pages/rfis";
-import TransmittalsPage from "@/pages/transmittals";
-import SubmittalsPage from "@/pages/submittals";
-import WebsiteBuilderPage from "@/pages/website-builder";
-import SocialMediaPage from "@/pages/social-media";
-import BidWizardPage from "@/pages/bid-wizard";
-import EmailAssistantPage from "@/pages/email-assistant";
-import HustlerDashboard from "@/pages/hustler-dashboard";
-import HustlerOrgDetail from "@/pages/hustler-org-detail";
-import HustlerUnifiedInbox from "@/pages/hustler-unified-inbox";
-import HustlerBenchmarking from "@/pages/hustler-benchmarking";
-import BidNetworkPage from "@/pages/bid-network";
-import BidNetworkDetailPage from "@/pages/bid-network-detail";
-import BidInboxPage from "@/pages/bid-inbox";
-import BillingPage from "@/pages/billing";
-import DelayClaimsPage from "@/pages/delay-claims";
-import DailyReportLocksPage from "@/pages/daily-report-locks";
-import PhotoCustodyPage from "@/pages/photo-custody";
-import VoiceLogsPage from "@/pages/voice-logs";
-import IssueCapturesPage from "@/pages/issue-captures";
-import OfflineSyncPage from "@/pages/offline-sync";
-import PublicWebsite from "@/pages/public-website";
-import SharedPreviewPage from "@/pages/shared-preview";
-import VendorScoresPage from "@/pages/vendor-scores";
-import MaterialPriceIndexPage from "@/pages/material-price-index";
-import CrewMarketplacePage from "@/pages/crew-marketplace";
-import PricebookImportPage from "@/pages/pricebook-import";
-import ClientPortalPublic from "@/pages/client-portal-public";
-import SubPortalPage from "@/pages/sub-portal";
-import CompanyHealthPage from "@/pages/company-health";
-import ExecutiveDigestPage from "@/pages/executive-digest";
-import WhatIfSimulatorPage from "@/pages/what-if-simulator";
-import CalculatorPage from "@/pages/calculator";
-import ManageWorkersPage from "@/pages/manage-workers";
-import WorkerDetailPage from "@/pages/worker-detail";
-import PayrollManagementPage from "@/pages/payroll-management";
-import IntegrationsPage from "@/pages/integrations";
-import ApprovalsPage from "@/pages/approvals";
-import AIGovernancePage from "@/pages/ai-governance";
-import AuditLogsPage from "@/pages/audit-logs";
-import EnterpriseSettingsPage from "@/pages/enterprise-settings";
-import ReportsPage from "@/pages/reports";
-import SafetyTrainingPage from "@/pages/safety-training";
 import { VendorRoutePermissions } from "@/lib/rbac";
+
+const ImpersonatePage = lazy(() => import("@/pages/impersonate"));
+const AcceptHustlerInvitePage = lazy(() => import("@/pages/accept-hustler-invite"));
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const ProfilePage = lazy(() => import("@/pages/profile"));
+const UsersPage = lazy(() => import("@/pages/users"));
+const BidsPage = lazy(() => import("@/pages/bids"));
+const BidDetailPage = lazy(() => import("@/pages/bid-detail"));
+const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
+const ProjectsPage = lazy(() => import("@/pages/projects"));
+const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
+const TimeEntryPage = lazy(() => import("@/pages/time-entry"));
+const TMDailyPage = lazy(() => import("@/pages/tm-daily"));
+const TMBillingPage = lazy(() => import("@/pages/tm-billing"));
+const CalendarPage = lazy(() => import("@/pages/calendar"));
+const TimeClockPage = lazy(() => import("@/pages/time-clock"));
+const TimeClockManagerPage = lazy(() => import("@/pages/time-clock-manager"));
+const AIPMDashboard = lazy(() => import("@/pages/ai-pm-dashboard"));
+const CFODashboard = lazy(() => import("@/pages/cfo-dashboard"));
+const AISettingsPage = lazy(() => import("@/pages/ai-settings"));
+const CrewsPage = lazy(() => import("@/pages/crews"));
+const CostRatesPage = lazy(() => import("@/pages/cost-rates"));
+const CompanyCommunicationsPage = lazy(() => import("@/pages/company-communications"));
+const TasksPage = lazy(() => import("@/pages/tasks"));
+const ProductionRatesPage = lazy(() => import("@/pages/production-rates"));
+const CRMPage = lazy(() => import("@/pages/crm"));
+const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
+const ScopeLibraryPage = lazy(() => import("@/pages/scope-library"));
+const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
+const EquipmentPage = lazy(() => import("@/pages/equipment"));
+const EquipmentDetailPage = lazy(() => import("@/pages/equipment-detail"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding"));
+const PlatformAdminDashboard = lazy(() => import("@/pages/PlatformAdminDashboard"));
+const PlatformOrganizations = lazy(() => import("@/pages/PlatformOrganizations"));
+const PlatformOrganizationDetail = lazy(() => import("@/pages/PlatformOrganizationDetail"));
+const PlatformAnalytics = lazy(() => import("@/pages/PlatformAnalytics"));
+const PlatformSupportTools = lazy(() => import("@/pages/PlatformSupportTools"));
+const PlatformAuditDashboard = lazy(() => import("@/pages/PlatformAuditDashboard"));
+const PlatformSubscriptions = lazy(() => import("@/pages/PlatformSubscriptions"));
+const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
+const MobileSyncPage = lazy(() => import("@/pages/mobile-sync"));
+const CompanySettingsPage = lazy(() => import("@/pages/company-settings"));
+const VendorDashboard = lazy(() => import("@/pages/vendor/index"));
+const VendorPortalPricing = lazy(() => import("@/pages/vendor/pricing"));
+const VendorClients = lazy(() => import("@/pages/vendor/clients"));
+const AIBidAnalysisPage = lazy(() => import("@/pages/ai-bid-analysis"));
+const AIContractAnalysisPage = lazy(() => import("@/pages/ai-contract-analysis"));
+const ScheduleOfValuesPage = lazy(() => import("@/pages/schedule-of-values"));
+const SubcontractsPage = lazy(() => import("@/pages/subcontracts"));
+const RFIsPage = lazy(() => import("@/pages/rfis"));
+const TransmittalsPage = lazy(() => import("@/pages/transmittals"));
+const SubmittalsPage = lazy(() => import("@/pages/submittals"));
+const WebsiteBuilderPage = lazy(() => import("@/pages/website-builder"));
+const SocialMediaPage = lazy(() => import("@/pages/social-media"));
+const BidWizardPage = lazy(() => import("@/pages/bid-wizard"));
+const EmailAssistantPage = lazy(() => import("@/pages/email-assistant"));
+const HustlerDashboard = lazy(() => import("@/pages/hustler-dashboard"));
+const HustlerOrgDetail = lazy(() => import("@/pages/hustler-org-detail"));
+const HustlerUnifiedInbox = lazy(() => import("@/pages/hustler-unified-inbox"));
+const HustlerBenchmarking = lazy(() => import("@/pages/hustler-benchmarking"));
+const BidNetworkPage = lazy(() => import("@/pages/bid-network"));
+const BidNetworkDetailPage = lazy(() => import("@/pages/bid-network-detail"));
+const BidInboxPage = lazy(() => import("@/pages/bid-inbox"));
+const BillingPage = lazy(() => import("@/pages/billing"));
+const DelayClaimsPage = lazy(() => import("@/pages/delay-claims"));
+const DailyReportLocksPage = lazy(() => import("@/pages/daily-report-locks"));
+const PhotoCustodyPage = lazy(() => import("@/pages/photo-custody"));
+const VoiceLogsPage = lazy(() => import("@/pages/voice-logs"));
+const IssueCapturesPage = lazy(() => import("@/pages/issue-captures"));
+const OfflineSyncPage = lazy(() => import("@/pages/offline-sync"));
+const PublicWebsite = lazy(() => import("@/pages/public-website"));
+const SharedPreviewPage = lazy(() => import("@/pages/shared-preview"));
+const VendorScoresPage = lazy(() => import("@/pages/vendor-scores"));
+const MaterialPriceIndexPage = lazy(() => import("@/pages/material-price-index"));
+const CrewMarketplacePage = lazy(() => import("@/pages/crew-marketplace"));
+const PricebookImportPage = lazy(() => import("@/pages/pricebook-import"));
+const ClientPortalPublic = lazy(() => import("@/pages/client-portal-public"));
+const SubPortalPage = lazy(() => import("@/pages/sub-portal"));
+const CompanyHealthPage = lazy(() => import("@/pages/company-health"));
+const ExecutiveDigestPage = lazy(() => import("@/pages/executive-digest"));
+const WhatIfSimulatorPage = lazy(() => import("@/pages/what-if-simulator"));
+const CalculatorPage = lazy(() => import("@/pages/calculator"));
+const ManageWorkersPage = lazy(() => import("@/pages/manage-workers"));
+const WorkerDetailPage = lazy(() => import("@/pages/worker-detail"));
+const PayrollManagementPage = lazy(() => import("@/pages/payroll-management"));
+const IntegrationsPage = lazy(() => import("@/pages/integrations"));
+const ApprovalsPage = lazy(() => import("@/pages/approvals"));
+const AIGovernancePage = lazy(() => import("@/pages/ai-governance"));
+const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
+const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"));
+const ReportsPage = lazy(() => import("@/pages/reports"));
+const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -367,17 +369,28 @@ function AppContent() {
     route => location === route || (route !== '/' && location.startsWith(route))
   ) || isStandaloneRoute;
 
+  const suspenseFallback = (
+    <div className="min-h-screen flex items-center justify-center" data-testid="lazy-loading-fallback">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
+
   if (isStandaloneRoute) {
-    return <Router />;
+    return <Suspense fallback={suspenseFallback}><Router /></Suspense>;
   }
   
   if (isPublicRoute && !user) {
-    return <Router />;
+    return <Suspense fallback={suspenseFallback}><Router /></Suspense>;
   }
   
   return (
     <AuthenticatedLayout>
-      <Router />
+      <Suspense fallback={suspenseFallback}>
+        <Router />
+      </Suspense>
     </AuthenticatedLayout>
   );
 }
