@@ -1210,6 +1210,33 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
 
     const projectNames = [...new Set(employeeRows.map(r => r.projectName))];
 
+    const projectIdToName = new Map<string, string>();
+    for (const item of lineItems) {
+      projectIdToName.set(item.projectId, item.projectName);
+    }
+
+    const projectGroupsById = new Map<string, typeof employeeRows>();
+    for (let i = 0; i < employeeRows.length; i++) {
+      const projId = lineItems[i].projectId;
+      if (!projectGroupsById.has(projId)) projectGroupsById.set(projId, []);
+      projectGroupsById.get(projId)!.push(employeeRows[i]);
+    }
+
+    const projectReports = Array.from(projectGroupsById.entries()).map(([projId, employees]) => ({
+      header: {
+        contractorName: org?.name || "",
+        payrollNumber: payRun.runNumber,
+        weekEndingDate: payRun.payPeriodEnd,
+        projectName: projectIdToName.get(projId) || "",
+      },
+      employees,
+      totals: {
+        totalGross: Math.round(employees.reduce((s, e) => s + e.grossEarned, 0) * 100) / 100,
+        totalDeductions: Math.round(employees.reduce((s, e) => s + e.totalDeductions, 0) * 100) / 100,
+        totalNet: Math.round(employees.reduce((s, e) => s + e.netWages, 0) * 100) / 100,
+      },
+    }));
+
     res.json({
       header: {
         contractorName: org?.name || "",
@@ -1228,6 +1255,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         fringeBenefitsPaidInCash: false,
         noFringeBenefitsRequired: false,
       },
+      projectReports,
     });
   } catch (error) {
     console.error("Get certified payroll report error:", error);
