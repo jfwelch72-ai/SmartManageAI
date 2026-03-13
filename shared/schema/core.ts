@@ -309,7 +309,10 @@ export const users = pgTable("users", {
   walkthroughStartedAt: timestamp("walkthrough_started_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  orgIdx: index("users_organization_id_idx").on(table.organizationId),
+  activeRoleIdx: index("users_active_role_idx").on(table.isActive, table.role),
+}));
 
 // Projects table
 export const projects = pgTable("projects", {
@@ -344,6 +347,7 @@ export const projects = pgTable("projects", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   statusIdx: index("projects_status_idx").on(table.status),
+  gcOrgIdx: index("projects_gc_org_id_idx").on(table.gcOrganizationId),
 }));
 
 // Bids table (separate from projects)
@@ -369,7 +373,10 @@ export const bids = pgTable("bids", {
   awardedAt: timestamp("awarded_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  statusIdx: index("bids_status_idx").on(table.status),
+  gcOrgIdx: index("bids_gc_org_id_idx").on(table.gcOrganizationId),
+}));
 
 // Bid Subcontractor Quotes table
 // During conversion: projectId added, bidId set to null when bid deleted

@@ -8,6 +8,9 @@ import { sensitiveLimiter } from "./rateLimiter";
 import { logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyUserOrgAccess } from "./orgFilter";
+import { cacheGet, cacheSet } from "./cache";
+
+const DASHBOARD_CACHE_TTL = 60_000;
 
 const router = Router();
 
@@ -18,10 +21,8 @@ const router = Router();
 // Get dashboard statistics
 router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: AuthRequest, res) => {
   try {
-    // Organization filtering: SUPER_ADMIN sees all, others see only their org's data
     const { shouldFilter, orgId, isSuperAdmin: isSuperAdminUser, mustDenyAccess } = getOrgIdForFilter(req);
     
-    // SECURITY: Users without org can't see any dashboard stats
     if (mustDenyAccess) {
       return res.json({
         activeProjectsCount: 0,
@@ -36,6 +37,11 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
         estimatedBidValue: 0
       });
     }
+
+    const cacheKey = "dashboard:stats";
+    const cacheOrgId = orgId || "__global__";
+    const cached = cacheGet(cacheOrgId, cacheKey);
+    if (cached) return res.json(cached);
     
     // Build organization filter condition for projects
     const orgCondition = shouldFilter && orgId 
@@ -140,14 +146,16 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
       delaysNeedingChangeOrderCount = delaysNeedingCOResult[0]?.count || 0;
     }
 
-    res.json({
+    const result = {
       activeProjectsCount,
       pendingChangeOrdersCount,
       pendingTimeOffCount,
       activeDelaysCount,
       delaysNeedingAckCount,
       delaysNeedingChangeOrderCount,
-    });
+    };
+    cacheSet(cacheOrgId, cacheKey, result, DASHBOARD_CACHE_TTL);
+    res.json(result);
   } catch (error) {
     console.error("Dashboard stats error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -738,6 +746,11 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
       return res.json({ points: [], metric, period, groupBy });
     }
 
+    const trendCacheKey = `dashboard:trend:${metric}:${period}:${groupBy}`;
+    const trendCacheOrgId = orgId || "__global__";
+    const trendCached = cacheGet(trendCacheOrgId, trendCacheKey);
+    if (trendCached) return res.json(trendCached);
+
     const { start, end, bucketFormat } = getPeriodDates(period);
 
     const orgFilter = shouldFilter && orgId
@@ -943,7 +956,9 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
       }
     }
 
-    res.json({ points, metric, period, groupBy });
+    const trendResult = { points, metric, period, groupBy };
+    cacheSet(trendCacheOrgId, trendCacheKey, trendResult, DASHBOARD_CACHE_TTL);
+    res.json(trendResult);
   } catch (error) {
     console.error("Trend data error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1200,6 +1215,10 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
     if (mustDenyAccess) {
       return res.json({ alerts: [], counts: { critical: 0, warning: 0, info: 0 } });
     }
+
+    const alertsCacheOrgId = orgId || "__global__";
+    const alertsCached = cacheGet(alertsCacheOrgId, "dashboard:alerts");
+    if (alertsCached) return res.json(alertsCached);
 
     const alerts: Alert[] = [];
     const now = new Date();
@@ -1526,7 +1545,9 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
       info: alerts.filter(a => a.severity === "info").length,
     };
 
-    res.json({ alerts, counts });
+    const alertsResult = { alerts, counts };
+    cacheSet(alertsCacheOrgId, "dashboard:alerts", alertsResult, DASHBOARD_CACHE_TTL);
+    res.json(alertsResult);
   } catch (error) {
     console.error("Alerts endpoint error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1544,6 +1565,10 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
     if (mustDenyAccess) {
       return res.json({ activeWorkers: 0, totalWorkers: 0, overtimePercent: 0, laborCostToday: 0, absentWorkers: 0 });
     }
+
+    const wfCacheOrgId = orgId || "__global__";
+    const wfCached = cacheGet(wfCacheOrgId, "dashboard:workforce-snapshot");
+    if (wfCached) return res.json(wfCached);
 
     const today = new Date();
     const todayStr = today.toISOString().split("T")[0];
@@ -1601,13 +1626,15 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 
     const absentWorkers = Math.max(0, totalWorkers - activeWorkers);
 
-    res.json({
+    const wfResult = {
       activeWorkers,
       totalWorkers,
       overtimePercent: Math.round(overtimePercent * 10) / 10,
       laborCostToday: Math.round(laborCostToday * 100) / 100,
       absentWorkers,
-    });
+    };
+    cacheSet(wfCacheOrgId, "dashboard:workforce-snapshot", wfResult, DASHBOARD_CACHE_TTL);
+    res.json(wfResult);
   } catch (error) {
     console.error("Workforce snapshot error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1625,6 +1652,10 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
     if (mustDenyAccess) {
       return res.json({ accountsReceivable: 0, accountsPayable: 0, payrollLiability: 0, netCashFlow: 0 });
     }
+
+    const cpCacheOrgId = orgId || "__global__";
+    const cpCached = cacheGet(cpCacheOrgId, "dashboard:cash-position");
+    if (cpCached) return res.json(cpCached);
 
     const orgCond = shouldFilter && orgId ? sql`AND i."organization_id" = ${orgId}` : sql``;
     const projOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
@@ -1684,12 +1715,14 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 
     const netCashFlow = accountsReceivable - accountsPayable - payrollLiability;
 
-    res.json({
+    const cpResult = {
       accountsReceivable: Math.round(accountsReceivable * 100) / 100,
       accountsPayable: Math.round(accountsPayable * 100) / 100,
       payrollLiability: Math.round(payrollLiability * 100) / 100,
       netCashFlow: Math.round(netCashFlow * 100) / 100,
-    });
+    };
+    cacheSet(cpCacheOrgId, "dashboard:cash-position", cpResult, DASHBOARD_CACHE_TTL);
+    res.json(cpResult);
   } catch (error) {
     console.error("Cash position error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1862,6 +1895,10 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       return res.json({ activeBids: 0, pipelineValue: 0, winRate: 0, laborExposure: 0, awardedCount: 0, lostCount: 0 });
     }
 
+    const bpCacheOrgId = orgId || "__global__";
+    const bpCached = cacheGet(bpCacheOrgId, "dashboard:bid-pipeline");
+    if (bpCached) return res.json(bpCached);
+
     const orgCond = shouldFilter && orgId ? sql`AND b."gc_organization_id" = ${orgId}` : sql``;
 
     let activeBids = 0;
@@ -1921,14 +1958,16 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       console.error("Bid pipeline: labor exposure error:", e);
     }
 
-    res.json({
+    const bpResult = {
       activeBids,
       pipelineValue: Math.round(pipelineValue * 100) / 100,
       winRate,
       laborExposure: Math.round(laborExposure * 100) / 100,
       awardedCount,
       lostCount,
-    });
+    };
+    cacheSet(bpCacheOrgId, "dashboard:bid-pipeline", bpResult, DASHBOARD_CACHE_TTL);
+    res.json(bpResult);
   } catch (error) {
     console.error("Bid pipeline error:", error);
     res.status(500).json({ error: "Internal server error" });

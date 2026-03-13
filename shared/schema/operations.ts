@@ -1006,7 +1006,10 @@ export const calendarEvents = pgTable("calendar_events", {
   approvedAt: timestamp("approved_at"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  eventTypeIdx: index("calendar_events_event_type_idx").on(table.eventType),
+  userIdIdx: index("calendar_events_user_id_idx").on(table.userId),
+}));
 
 // Notifications table
 export const notifications = pgTable("notifications", {
