@@ -679,7 +679,7 @@ async function processProfitabilityMonitor() {
     const isOverBudget = result.variance < 0;
     if (!isOverBudget) continue;
 
-    const [proj] = await db.select({ id: projects.id, organizationId: projects.organizationId })
+    const [proj] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
       .where(sql`${projects.code} = ${result.project_code}`)
       .limit(1);
@@ -693,7 +693,7 @@ async function processProfitabilityMonitor() {
       .limit(1);
 
     await db.insert(projectProfitabilitySnapshots).values({
-      organizationId: proj.organizationId,
+      organizationId: proj.gcOrganizationId,
       projectId: proj.id,
       projectCode: result.project_code,
       budget: String(result.budget),

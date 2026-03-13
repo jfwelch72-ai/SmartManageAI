@@ -23,7 +23,7 @@ router.get("/api/projects/:code/profitability/live", requireAuth, async (req: Au
     }
 
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.code, code), eq(projects.organizationId, orgId)))
+      .where(and(eq(projects.code, code), eq(projects.gcOrganizationId, orgId)))
       .limit(1);
 
     if (!project) {
@@ -64,7 +64,7 @@ router.get("/api/projects/:code/profitability/history", requireAuth, async (req:
     }
 
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.code, code), eq(projects.organizationId, orgId)))
+      .where(and(eq(projects.code, code), eq(projects.gcOrganizationId, orgId)))
       .limit(1);
 
     if (!project) {

@@ -212,9 +212,9 @@ router.post("/seed-enterprise", requireAuth, async (req, res) => {
     }
     results.documentRevisions = `Created ${docCount} sample revisions`;
 
-    const orgProjects = await db.select({ id: projects.id, projectCode: projects.projectCode })
+    const orgProjects = await db.select({ id: projects.id, code: projects.code })
       .from(projects)
-      .where(eq(projects.organizationId, orgId))
+      .where(eq(projects.gcOrganizationId, orgId))
       .limit(5);
 
     let healthCount = 0;
