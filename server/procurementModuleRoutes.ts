@@ -37,6 +37,7 @@ const prCreateSchema = z.object({
     quantity: z.string().nullable().optional(),
     unit: z.string().nullable().optional(),
     estimatedUnitCost: z.string().nullable().optional(),
+    costCode: z.string().nullable().optional(),
   })).optional(),
 });
 
@@ -109,6 +110,7 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
             quantity: item.quantity || null,
             unit: item.unit || null,
             estimatedUnitCost: item.estimatedUnitCost || null,
+            costCode: item.costCode || null,
           });
           const q = parseFloat(item.quantity || "0");
           const u = parseFloat(item.estimatedUnitCost || "0");
@@ -161,6 +163,7 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
             quantity: item.quantity || null,
             unit: item.unit || null,
             estimatedUnitCost: item.estimatedUnitCost || null,
+            costCode: item.costCode || null,
           });
           const q = parseFloat(item.quantity || "0");
           const u = parseFloat(item.estimatedUnitCost || "0");
@@ -330,6 +333,7 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
           quantity: item.quantity,
           unit: item.unit,
           unitCost: item.estimatedUnitCost,
+          costCode: item.costCode || null,
         });
       }
 
@@ -436,6 +440,7 @@ const poCreateSchema = z.object({
     quantity: z.string().nullable().optional(),
     unit: z.string().nullable().optional(),
     unitCost: z.string().nullable().optional(),
+    costCode: z.string().nullable().optional(),
   })).optional(),
 });
 
@@ -493,6 +498,7 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
             quantity: item.quantity || null,
             unit: item.unit || null,
             unitCost: item.unitCost || null,
+            costCode: item.costCode || null,
           });
         }
       }

@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
@@ -61,6 +62,7 @@ interface LineItem {
   estimatedUnitCost?: string;
   unitCost?: string;
   category?: string;
+  costCode?: string;
 }
 
 interface VendorRef {
@@ -76,6 +78,7 @@ interface POItem {
   unit: string | null;
   unitCost: string | null;
   quantityReceived: string | null;
+  costCode: string | null;
 }
 
 interface PurchaseRequest {
@@ -162,9 +165,9 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: "", neededByDate: "", notes: "" });
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "" }]);
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
 
-  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "" }]);
+  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
     const updated = [...lineItems];
@@ -188,7 +191,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
       toast({ title: "Purchase request created" });
       setShowCreate(false);
       setForm({ title: "", neededByDate: "", notes: "" });
-      setLineItems([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "" }]);
+      setLineItems([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
     } catch { toast({ title: "Failed to create request", variant: "destructive" }); }
   };
 
@@ -279,27 +282,33 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
               <Button size="sm" variant="outline" onClick={addLineItem} data-testid="button-add-pr-line"><Plus className="h-3.5 w-3.5 mr-1" />Add Item</Button>
             </div>
             {lineItems.map((li, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-4">
-                  <Label className="text-xs">Description</Label>
-                  <Input value={li.description} onChange={e => updateLineItem(i, "description", e.target.value)} placeholder="Material/item..." data-testid={`input-pr-line-desc-${i}`} />
+              <div key={i} className="space-y-2 p-3 border rounded-md">
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <Label className="text-xs">Description</Label>
+                    <Input value={li.description} onChange={e => updateLineItem(i, "description", e.target.value)} placeholder="Material/item..." data-testid={`input-pr-line-desc-${i}`} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Qty</Label>
+                    <Input type="number" step="0.01" value={li.quantity} onChange={e => updateLineItem(i, "quantity", e.target.value)} data-testid={`input-pr-line-qty-${i}`} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Unit</Label>
+                    <Input value={li.unit} onChange={e => updateLineItem(i, "unit", e.target.value)} placeholder="ea, lf..." data-testid={`input-pr-line-unit-${i}`} />
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs">Est. Unit Cost</Label>
+                    <Input type="number" step="0.01" value={li.estimatedUnitCost} onChange={e => updateLineItem(i, "estimatedUnitCost", e.target.value)} data-testid={`input-pr-line-cost-${i}`} />
+                  </div>
+                  <div className="col-span-1">
+                    {lineItems.length > 1 && (
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(i)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    )}
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">Qty</Label>
-                  <Input type="number" step="0.01" value={li.quantity} onChange={e => updateLineItem(i, "quantity", e.target.value)} data-testid={`input-pr-line-qty-${i}`} />
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">Unit</Label>
-                  <Input value={li.unit} onChange={e => updateLineItem(i, "unit", e.target.value)} placeholder="ea, lf..." data-testid={`input-pr-line-unit-${i}`} />
-                </div>
-                <div className="col-span-3">
-                  <Label className="text-xs">Est. Unit Cost</Label>
-                  <Input type="number" step="0.01" value={li.estimatedUnitCost} onChange={e => updateLineItem(i, "estimatedUnitCost", e.target.value)} data-testid={`input-pr-line-cost-${i}`} />
-                </div>
-                <div className="col-span-1">
-                  {lineItems.length > 1 && (
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(i)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                  )}
+                <div>
+                  <Label className="text-xs">Cost Code</Label>
+                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateLineItem(i, "costCode", val)} data-testid={`input-pr-line-costcode-${i}`} />
                 </div>
               </div>
             ))}
@@ -330,9 +339,9 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
   const [form, setForm] = useState({ vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "" }]);
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
 
-  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "" }]);
+  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
     const updated = [...lineItems];
@@ -356,7 +365,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
       toast({ title: "Purchase order created" });
       setShowCreate(false);
       setForm({ vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
-      setLineItems([{ description: "", quantity: "", unit: "", unitCost: "" }]);
+      setLineItems([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
     } catch { toast({ title: "Failed to create PO", variant: "destructive" }); }
   };
 
@@ -461,27 +470,33 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
               <Button size="sm" variant="outline" onClick={addLineItem} data-testid="button-add-po-line"><Plus className="h-3.5 w-3.5 mr-1" />Add Item</Button>
             </div>
             {lineItems.map((li, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-4">
-                  <Label className="text-xs">Description</Label>
-                  <Input value={li.description} onChange={e => updateLineItem(i, "description", e.target.value)} placeholder="Material/item..." data-testid={`input-po-line-desc-${i}`} />
+              <div key={i} className="space-y-2 p-3 border rounded-md">
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <Label className="text-xs">Description</Label>
+                    <Input value={li.description} onChange={e => updateLineItem(i, "description", e.target.value)} placeholder="Material/item..." data-testid={`input-po-line-desc-${i}`} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Qty</Label>
+                    <Input type="number" step="0.01" value={li.quantity} onChange={e => updateLineItem(i, "quantity", e.target.value)} data-testid={`input-po-line-qty-${i}`} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Unit</Label>
+                    <Input value={li.unit} onChange={e => updateLineItem(i, "unit", e.target.value)} placeholder="ea, lf..." data-testid={`input-po-line-unit-${i}`} />
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs">Unit Cost</Label>
+                    <Input type="number" step="0.01" value={li.unitCost} onChange={e => updateLineItem(i, "unitCost", e.target.value)} data-testid={`input-po-line-cost-${i}`} />
+                  </div>
+                  <div className="col-span-1">
+                    {lineItems.length > 1 && (
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(i)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    )}
+                  </div>
                 </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">Qty</Label>
-                  <Input type="number" step="0.01" value={li.quantity} onChange={e => updateLineItem(i, "quantity", e.target.value)} data-testid={`input-po-line-qty-${i}`} />
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-xs">Unit</Label>
-                  <Input value={li.unit} onChange={e => updateLineItem(i, "unit", e.target.value)} placeholder="ea, lf..." data-testid={`input-po-line-unit-${i}`} />
-                </div>
-                <div className="col-span-3">
-                  <Label className="text-xs">Unit Cost</Label>
-                  <Input type="number" step="0.01" value={li.unitCost} onChange={e => updateLineItem(i, "unitCost", e.target.value)} data-testid={`input-po-line-cost-${i}`} />
-                </div>
-                <div className="col-span-1">
-                  {lineItems.length > 1 && (
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeLineItem(i)}><Trash2 className="h-3.5 w-3.5" /></Button>
-                  )}
+                <div>
+                  <Label className="text-xs">Cost Code</Label>
+                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateLineItem(i, "costCode", val)} data-testid={`input-po-line-costcode-${i}`} />
                 </div>
               </div>
             ))}
@@ -593,6 +608,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
                           <div>
                             <p className="font-medium">{item.description}</p>
                             <p className="text-muted-foreground">{item.quantity} {item.unit} @ {fmtCurrency(item.unitCost)}</p>
+                            {item.costCode && <p className="text-xs text-blue-500">Cost Code: {item.costCode}</p>}
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">Received: {received}/{ordered}</p>

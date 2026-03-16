@@ -12,6 +12,7 @@ import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
 import { computePixelDistance } from "@shared/utils/geometry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -295,7 +296,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   <Separator />
                   <div className="space-y-2">
                     <Label className="text-xs">Cost Code</Label>
-                    <Input placeholder="Enter cost code..." defaultValue={(selM as any).costCodeId || ""} onBlur={(e) => { const val = e.target.value.trim(); if (val !== ((selM as any).costCodeId || "")) { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); } }} className="h-8 text-sm" data-testid="input-cost-code" />
+                    <CostCodeCombobox value={(selM as any).costCodeId || ""} onChange={(val) => { if (val !== ((selM as any).costCodeId || "")) { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); } }} data-testid="input-cost-code" />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-xs">Unit Cost ($)</Label>
