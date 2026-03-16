@@ -20,6 +20,11 @@ const router = Router();
 const ROLES = ["ADMIN", "MANAGER", "PROCUREMENT_MANAGER"] as const;
 const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
 
+const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"] as const;
+const PO_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED", "CANCELLED"] as const;
+const RECEIPT_STATUSES = ["PARTIAL", "COMPLETE"] as const;
+const INVOICE_STATUSES = ["PENDING", "MATCHED", "APPROVED", "PAID", "DISPUTED"] as const;
+
 function getOrgId(req: AuthRequest, res: Response): string | null {
   const orgId = req.user?.organizationId || null;
   if (!orgId) return null;
@@ -52,7 +57,11 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
 
     const conditions: SQL[] = [eq(purchaseRequests.orgId, orgId)];
     if (req.query.projectId) conditions.push(eq(purchaseRequests.projectId, String(req.query.projectId)));
-    if (req.query.status) conditions.push(sql`${purchaseRequests.status} = ${String(req.query.status)}`);
+    if (req.query.status) {
+      const s = String(req.query.status);
+      if (!(PR_STATUSES as readonly string[]).includes(s)) { res.status(400).json({ error: `Invalid status. Allowed: ${PR_STATUSES.join(", ")}` }); return; }
+      conditions.push(sql`${purchaseRequests.status} = ${s}`);
+    }
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
       conditions.push(or(
@@ -113,15 +122,17 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
 
     const { items, ...prData } = parsed.data;
 
-    const count = await db.select({ count: sql<number>`count(*)` })
-      .from(purchaseRequests).where(eq(purchaseRequests.orgId, orgId));
-    const prNumber = `PR-${String(Number(count[0]?.count || 0) + 1).padStart(4, "0")}`;
-
     const [projOwner] = await db.select({ id: projects.id }).from(projects)
       .where(and(eq(projects.id, prData.projectId), eq(projects.gcOrganizationId, orgId))).limit(1);
     if (!projOwner) { res.status(400).json({ error: "Project not found in your organization" }); return; }
 
     const pr = await db.transaction(async (tx) => {
+      await tx.select().from(organizations).where(eq(organizations.id, orgId)).for("update");
+      const [maxRow] = await tx.select({
+        nextNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(pr_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) + 1`,
+      }).from(purchaseRequests).where(eq(purchaseRequests.orgId, orgId));
+      const prNumber = `PR-${String(maxRow?.nextNum ?? 1).padStart(4, "0")}`;
+
       const [newPr] = await tx.insert(purchaseRequests).values({
         orgId,
         projectId: prData.projectId,
@@ -336,10 +347,6 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
     const prItems = await db.select().from(purchaseRequestItems)
       .where(eq(purchaseRequestItems.prId, pr.id));
 
-    const poCount = await db.select({ count: sql<number>`count(*)` })
-      .from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
-    const poNumber = `PO-${String(Number(poCount[0]?.count || 0) + 1).padStart(4, "0")}`;
-
     const vendorId = req.body.vendorId || null;
 
     if (vendorId) {
@@ -349,6 +356,12 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
     }
 
     const po = await db.transaction(async (tx) => {
+      await tx.select().from(organizations).where(eq(organizations.id, orgId)).for("update");
+      const [maxPoRow] = await tx.select({
+        nextNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) + 1`,
+      }).from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
+      const poNumber = `PO-${String(maxPoRow?.nextNum ?? 1).padStart(4, "0")}`;
+
       const [newPo] = await tx.insert(purchaseOrders).values({
         orgId,
         projectId: pr.projectId,
@@ -395,7 +408,11 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
 
     const conditions: SQL[] = [eq(purchaseOrders.orgId, orgId)];
     if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
-    if (req.query.status) conditions.push(sql`${purchaseOrders.status} = ${String(req.query.status)}`);
+    if (req.query.status) {
+      const s = String(req.query.status);
+      if (!(PO_STATUSES as readonly string[]).includes(s)) { res.status(400).json({ error: `Invalid status. Allowed: ${PO_STATUSES.join(", ")}` }); return; }
+      conditions.push(sql`${purchaseOrders.status} = ${s}`);
+    }
     const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
     const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor");
 
@@ -466,23 +483,57 @@ router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROL
 
     const receipts = await db.select().from(poReceipts).where(eq(poReceipts.poId, po.id))
       .orderBy(desc(poReceipts.receivedAt));
-    const receiptsWithItems = await Promise.all(receipts.map(async (r) => {
-      const rItems = await db.select().from(poReceiptItems).where(eq(poReceiptItems.receiptId, r.id));
-      const [receiver] = await db.select({ firstName: users.firstName, lastName: users.lastName })
-        .from(users).where(eq(users.id, r.receivedById)).limit(1);
-      return { ...r, items: rItems, receivedBy: receiver || null };
+
+    const receiptIds = receipts.map(r => r.id);
+    let receiptItemsByReceipt: Record<string, any[]> = {};
+    if (receiptIds.length > 0) {
+      const allReceiptItems = await db.select().from(poReceiptItems)
+        .where(sql`${poReceiptItems.receiptId} IN (${sql.join(receiptIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const ri of allReceiptItems) {
+        if (!receiptItemsByReceipt[ri.receiptId]) receiptItemsByReceipt[ri.receiptId] = [];
+        receiptItemsByReceipt[ri.receiptId].push(ri);
+      }
+    }
+
+    const receiverIds = [...new Set(receipts.map(r => r.receivedById))];
+    let receiversMap: Record<string, { firstName: string | null; lastName: string | null }> = {};
+    if (receiverIds.length > 0) {
+      const receivers = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(sql`${users.id} IN (${sql.join(receiverIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const r of receivers) receiversMap[r.id] = { firstName: r.firstName, lastName: r.lastName };
+    }
+
+    const receiptsWithItems = receipts.map(r => ({
+      ...r,
+      items: receiptItemsByReceipt[r.id] || [],
+      receivedBy: receiversMap[r.receivedById] || null,
     }));
 
     const invoices = await db.select().from(vendorInvoices).where(eq(vendorInvoices.poId, po.id))
       .orderBy(desc(vendorInvoices.createdAt));
-    const invoicesWithMatch = await Promise.all(invoices.map(async (inv) => {
-      const [match] = await db.select().from(invoiceMatches)
-        .where(eq(invoiceMatches.invoiceId, inv.id)).limit(1);
-      const payments = await db.select().from(invoicePayments)
-        .where(eq(invoicePayments.invoiceId, inv.id));
-      const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount?.toString() || "0"), 0);
-      return { ...inv, match: match || null, totalPaid: String(totalPaid), payments };
-    }));
+
+    const invIds = invoices.map(inv => inv.id);
+    let matchByInvoice: Record<string, any> = {};
+    let paymentsByInvoice: Record<string, any[]> = {};
+    if (invIds.length > 0) {
+      const allMatches = await db.select().from(invoiceMatches)
+        .where(sql`${invoiceMatches.invoiceId} IN (${sql.join(invIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const m of allMatches) matchByInvoice[m.invoiceId] = m;
+
+      const allPayments = await db.select().from(invoicePayments)
+        .where(sql`${invoicePayments.invoiceId} IN (${sql.join(invIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const p of allPayments) {
+        if (!paymentsByInvoice[p.invoiceId]) paymentsByInvoice[p.invoiceId] = [];
+        paymentsByInvoice[p.invoiceId].push(p);
+      }
+    }
+
+    const invoicesWithMatch = invoices.map(inv => {
+      const payments = paymentsByInvoice[inv.id] || [];
+      const totalPaid = payments.reduce((sum: number, p: any) => sum + parseFloat(p.amount?.toString() || "0"), 0);
+      return { ...inv, match: matchByInvoice[inv.id] || null, totalPaid: String(totalPaid), payments };
+    });
 
     res.json({ ...po, items, project: proj || null, vendor, receipts: receiptsWithItems, invoices: invoicesWithMatch });
   } catch (error) {
@@ -527,10 +578,6 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
       if (!vendorOwner) { res.status(400).json({ error: "Vendor not found in your organization" }); return; }
     }
 
-    const poCount = await db.select({ count: sql<number>`count(*)` })
-      .from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
-    const poNumber = `PO-${String(Number(poCount[0]?.count || 0) + 1).padStart(4, "0")}`;
-
     let totalCost = 0;
     if (items) {
       for (const item of items) {
@@ -541,6 +588,12 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
     }
 
     const po = await db.transaction(async (tx) => {
+      await tx.select().from(organizations).where(eq(organizations.id, orgId)).for("update");
+      const [maxPoRow] = await tx.select({
+        nextNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) + 1`,
+      }).from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
+      const poNumber = `PO-${String(maxPoRow?.nextNum ?? 1).padStart(4, "0")}`;
+
       const [newPo] = await tx.insert(purchaseOrders).values({
         orgId,
         projectId: poData.projectId,
@@ -911,7 +964,11 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
 
     const poIds = orgPOs.map(po => po.id);
     const receiptConditions: any[] = [sql`${poReceipts.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`];
-    if (req.query.status) receiptConditions.push(eq(poReceipts.status, String(req.query.status)));
+    if (req.query.status) {
+      const s = String(req.query.status);
+      if (!(RECEIPT_STATUSES as readonly string[]).includes(s)) { res.status(400).json({ error: `Invalid status. Allowed: ${RECEIPT_STATUSES.join(", ")}` }); return; }
+      receiptConditions.push(eq(poReceipts.status, s));
+    }
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
       receiptConditions.push(or(
@@ -999,7 +1056,11 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const conditions: SQL[] = [eq(vendorInvoices.orgId, orgId)];
-    if (req.query.status) conditions.push(sql`${vendorInvoices.status} = ${String(req.query.status)}`);
+    if (req.query.status) {
+      const s = String(req.query.status);
+      if (!(INVOICE_STATUSES as readonly string[]).includes(s)) { res.status(400).json({ error: `Invalid status. Allowed: ${INVOICE_STATUSES.join(", ")}` }); return; }
+      conditions.push(sql`${vendorInvoices.status} = ${s}`);
+    }
 
     if (req.query.projectId) {
       const projectPOIds = (await db.select({ id: purchaseOrders.id })
@@ -1374,7 +1435,7 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
   }
 });
 
-router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -1407,7 +1468,7 @@ router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, r
 // ─── PAYMENTS ───────────────────────────────────────────────────────────────
 
 const paymentCreateSchema = z.object({
-  amount: z.string().min(1),
+  amount: z.string().min(1).refine(v => { const n = Number(v); return isFinite(n) && n > 0; }, { message: "Amount must be a positive number" }),
   paymentDate: z.string().min(1),
   method: z.string().nullable().optional(),
   referenceNumber: z.string().nullable().optional(),

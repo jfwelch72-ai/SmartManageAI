@@ -1919,7 +1919,9 @@ export const purchaseRequests = pgTable("purchase_requests", {
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("purchase_requests_org_id_idx").on(table.orgId),
+]);
 
 export const purchaseRequestItems = pgTable("purchase_request_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1950,7 +1952,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("purchase_orders_org_id_idx").on(table.orgId),
+]);
 
 export const purchaseOrderItems = pgTable("purchase_order_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1998,7 +2002,9 @@ export const vendorInvoices = pgTable("vendor_invoices", {
   fileUrl: text("file_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("vendor_invoices_org_id_idx").on(table.orgId),
+]);
 
 export const invoiceMatches = pgTable("invoice_matches", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2072,7 +2078,10 @@ export const invoicePayments = pgTable("invoice_payments", {
   notes: text("notes"),
   recordedById: varchar("recorded_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => [
+  index("invoice_payments_org_id_idx").on(table.orgId),
+  index("invoice_payments_invoice_id_idx").on(table.invoiceId),
+]);
 
 export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({ id: true, createdAt: true });
 export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
