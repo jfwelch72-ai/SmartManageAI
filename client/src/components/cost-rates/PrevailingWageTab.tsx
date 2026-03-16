@@ -177,30 +177,30 @@ export function PrevailingWageTab({
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Classification</TableHead>
-                      <TableHead className="text-right">Wage Rate</TableHead>
-                      <TableHead className="text-right">Fringe</TableHead>
-                      <TableHead className="text-right">Total Rate</TableHead>
-                      <TableHead className="text-right">OT Mult</TableHead>
-                      <TableHead>Effective</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="min-w-[130px]">Project</TableHead>
+                      <TableHead className="min-w-[130px]">Classification</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Wage Rate</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[80px]">Fringe</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Total Rate</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[80px]">OT Mult</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[100px]">Effective</TableHead>
+                      {canEdit && <TableHead className="text-right w-[90px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {prevailingWageRates.map((pw) => (
                       <TableRow key={pw.id} data-testid={`row-pw-rate-${pw.id}`}>
-                        <TableCell className="font-medium">{pw.project?.name || "Unknown"}</TableCell>
-                        <TableCell>{pw.classification?.name || "Unknown"}</TableCell>
-                        <TableCell className="text-right font-mono">${parseFloat(pw.wageRate).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono">${parseFloat(pw.fringeRate).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono font-semibold">${parseFloat(pw.totalRate).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono">{pw.overtimeMultiplier}x</TableCell>
-                        <TableCell>{pw.effectiveDate}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">{pw.project?.name || "Unknown"}</TableCell>
+                        <TableCell className="whitespace-nowrap">{pw.classification?.name || "Unknown"}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">${parseFloat(pw.wageRate).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">${parseFloat(pw.fringeRate).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono font-semibold whitespace-nowrap">${parseFloat(pw.totalRate).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">{pw.overtimeMultiplier}x</TableCell>
+                        <TableCell className="whitespace-nowrap">{pw.effectiveDate}</TableCell>
                         {canEdit && (
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">

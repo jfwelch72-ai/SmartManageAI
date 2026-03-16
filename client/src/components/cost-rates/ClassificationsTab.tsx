@@ -167,29 +167,29 @@ export function JobClassificationsContent({
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Code</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Default Regular</TableHead>
-                      <TableHead className="text-right">Default OT</TableHead>
-                      <TableHead>Status</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="whitespace-nowrap min-w-[140px]">Name</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[80px]">Code</TableHead>
+                      <TableHead className="min-w-[160px]">Description</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[120px]">Default Regular</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Default OT</TableHead>
+                      <TableHead className="min-w-[80px]">Status</TableHead>
+                      {canEdit && <TableHead className="text-right w-[90px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {classifications.map((c) => (
                       <TableRow key={c.id} data-testid={`row-classification-${c.id}`}>
-                        <TableCell className="font-medium">{c.name}</TableCell>
-                        <TableCell className="font-mono text-sm">{c.code || "-"}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">{c.name}</TableCell>
+                        <TableCell className="font-mono text-sm whitespace-nowrap">{c.code || "-"}</TableCell>
                         <TableCell className="max-w-[200px] truncate">{c.description || "-"}</TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-right font-mono whitespace-nowrap">
                           {c.defaultRegularRate ? `$${parseFloat(c.defaultRegularRate).toFixed(2)}` : "-"}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-right font-mono whitespace-nowrap">
                           {c.defaultOvertimeRate ? `$${parseFloat(c.defaultOvertimeRate).toFixed(2)}` : "-"}
                         </TableCell>
                         <TableCell>
@@ -431,32 +431,32 @@ export function EmployeeAssignmentsContent({
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[580px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Classification</TableHead>
-                      <TableHead className="text-right">Regular Rate</TableHead>
-                      <TableHead className="text-right">OT Rate</TableHead>
-                      <TableHead>Primary</TableHead>
-                      <TableHead>Effective Date</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="whitespace-nowrap min-w-[140px]">Employee</TableHead>
+                      <TableHead className="min-w-[130px]">Classification</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[110px]">Regular Rate</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">OT Rate</TableHead>
+                      <TableHead className="min-w-[70px]">Primary</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[110px]">Effective Date</TableHead>
+                      {canEdit && <TableHead className="text-right w-[90px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {employeeClassifications.map((ec) => (
                       <TableRow key={ec.id} data-testid={`row-emp-class-${ec.id}`}>
-                        <TableCell className="font-medium">
+                        <TableCell className="font-medium whitespace-nowrap">
                           {ec.user ? `${ec.user.firstName} ${ec.user.lastName}` : "Unknown"}
                         </TableCell>
                         <TableCell>{ec.classification?.name || "Unknown"}</TableCell>
-                        <TableCell className="text-right font-mono">${parseFloat(ec.regularRate).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono">${parseFloat(ec.overtimeRate).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">${parseFloat(ec.regularRate).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">${parseFloat(ec.overtimeRate).toFixed(2)}</TableCell>
                         <TableCell>
                           {ec.isPrimary && <Badge>Primary</Badge>}
                         </TableCell>
-                        <TableCell>{ec.effectiveDate}</TableCell>
+                        <TableCell className="whitespace-nowrap">{ec.effectiveDate}</TableCell>
                         {canEdit && (
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">

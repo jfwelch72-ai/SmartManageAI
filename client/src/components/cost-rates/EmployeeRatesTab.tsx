@@ -90,28 +90,28 @@ export function EmployeeRatesTab({ users, usersLoading, canEdit }: EmployeeRates
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[600px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Role</TableHead>
-                      <TableHead className="text-right">Regular Rate ($/hr)</TableHead>
-                      <TableHead className="text-right">Overtime Rate ($/hr)</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="min-w-[140px]">Name</TableHead>
+                      <TableHead className="min-w-[180px]">Email</TableHead>
+                      <TableHead className="min-w-[130px]">Role</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[130px]">Regular Rate ($/hr)</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[130px]">Overtime Rate ($/hr)</TableHead>
+                      {canEdit && <TableHead className="text-right w-[80px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {users.map((u) => (
                       <TableRow key={u.id} data-testid={`row-employee-${u.id}`}>
-                        <TableCell className="font-medium">{u.firstName} {u.lastName}</TableCell>
-                        <TableCell>{u.email}</TableCell>
-                        <TableCell><Badge variant="secondary">{u.role}</Badge></TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="font-medium whitespace-nowrap">{u.firstName} {u.lastName}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{u.email}</TableCell>
+                        <TableCell><Badge variant="secondary" className="whitespace-nowrap">{u.role}</Badge></TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">
                           {u.costRateRegular ? `$${parseFloat(u.costRateRegular).toFixed(2)}` : <span className="text-muted-foreground">Not set</span>}
                         </TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-right font-mono whitespace-nowrap">
                           {u.costRateOvertime ? `$${parseFloat(u.costRateOvertime).toFixed(2)}` : <span className="text-muted-foreground">Not set</span>}
                         </TableCell>
                         {canEdit && (

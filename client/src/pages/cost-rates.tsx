@@ -411,19 +411,21 @@ export default function CostRatesPage() {
               </SelectContent>
             </Select>
           </div>
-          <TabsList className="hidden md:flex flex-wrap w-full">
-            {tabOptions.map((tab) => (
-              <TabsTrigger
-                key={tab.value}
-                value={tab.value}
-                className="flex items-center gap-2"
-                data-testid={`tab-${tab.value}`}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <div className="hidden md:block w-full overflow-x-auto">
+            <TabsList className="flex w-max min-w-full">
+              {tabOptions.map((tab) => (
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  className="flex items-center gap-2 whitespace-nowrap"
+                  data-testid={`tab-${tab.value}`}
+                >
+                  <tab.icon className="w-4 h-4 shrink-0" />
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
 
           <TabsContent value="employee-rates">
             <EmployeeRatesTab

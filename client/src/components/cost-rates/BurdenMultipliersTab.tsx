@@ -199,29 +199,29 @@ export function SalaryCategoriesContent({
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[540px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-right">Base Salary</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Effective Date</TableHead>
-                      <TableHead>Status</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="min-w-[140px]">Name</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[110px]">Base Salary</TableHead>
+                      <TableHead className="min-w-[90px]">Type</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[110px]">Effective Date</TableHead>
+                      <TableHead className="min-w-[80px]">Status</TableHead>
+                      {canEdit && <TableHead className="text-right w-[90px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {salaryCategories.map((sc) => (
                       <TableRow key={sc.id} data-testid={`row-salary-cat-${sc.id}`}>
-                        <TableCell className="font-medium">{sc.name}</TableCell>
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="font-medium whitespace-nowrap">{sc.name}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap">
                           ${parseFloat(sc.baseAnnualSalary).toLocaleString()}
                         </TableCell>
                         <TableCell>
                           {sc.salaryType ? <Badge variant="secondary">{sc.salaryType}</Badge> : "-"}
                         </TableCell>
-                        <TableCell>{sc.effectiveDate}</TableCell>
+                        <TableCell className="whitespace-nowrap">{sc.effectiveDate}</TableCell>
                         <TableCell>
                           <Badge variant={sc.isActive ? "default" : "secondary"}>
                             {sc.isActive ? "Active" : "Inactive"}
@@ -464,16 +464,16 @@ export function BurdenRatesContent({
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[580px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="text-right">Total Burden %</TableHead>
-                      <TableHead>Component Breakdown</TableHead>
-                      <TableHead className="text-right">Fixed Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="min-w-[130px]">Name</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[120px]">Total Burden %</TableHead>
+                      <TableHead className="min-w-[160px]">Component Breakdown</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[110px]">Fixed Amount</TableHead>
+                      <TableHead className="min-w-[80px]">Status</TableHead>
+                      {canEdit && <TableHead className="text-right w-[90px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -761,19 +761,19 @@ export function CostAssignmentsContent({
             </div>
           ) : (
             <>
-              <div className="hidden md:block">
-                <Table>
+              <div className="hidden md:block overflow-x-auto">
+                <Table className="min-w-[760px]">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Employee</TableHead>
-                      <TableHead>Salary Category</TableHead>
-                      <TableHead>Burden Rate</TableHead>
-                      <TableHead className="text-right">Base Salary</TableHead>
-                      <TableHead className="text-right">Burden %</TableHead>
-                      <TableHead className="text-right">Fully Burdened Cost</TableHead>
-                      <TableHead className="text-right">Hourly Rate</TableHead>
-                      <TableHead>Effective Date</TableHead>
-                      {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                      <TableHead className="whitespace-nowrap min-w-[130px]">Employee</TableHead>
+                      <TableHead className="min-w-[120px]">Salary Category</TableHead>
+                      <TableHead className="min-w-[100px]">Burden Rate</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Base Salary</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">Burden %</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[130px]">Fully Burdened</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[100px]">Hourly Rate</TableHead>
+                      <TableHead className="whitespace-nowrap min-w-[110px]">Effective Date</TableHead>
+                      {canEdit && <TableHead className="text-right w-[90px]">Actions</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
