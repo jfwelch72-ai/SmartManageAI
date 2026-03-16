@@ -528,7 +528,7 @@ export interface ProcurementInvoice {
 
 export function usePurchaseRequests(projectId?: string) {
   const url = projectId
-    ? `/api/procurement-module/requests?projectId=${projectId}`
+    ? `/api/procurement-module/requests?projectId=${encodeURIComponent(projectId)}`
     : "/api/procurement-module/requests";
   return useQuery<ProcurementPR[]>({
     queryKey: ["/api/procurement-module/requests", projectId ?? "all"],
@@ -627,7 +627,7 @@ export function useDeletePurchaseRequest() {
 
 export function usePurchaseOrders(projectId?: string) {
   const url = projectId
-    ? `/api/procurement-module/orders?projectId=${projectId}`
+    ? `/api/procurement-module/orders?projectId=${encodeURIComponent(projectId)}`
     : "/api/procurement-module/orders";
   return useQuery<ProcurementPO[]>({
     queryKey: ["/api/procurement-module/orders", projectId ?? "all"],
@@ -757,7 +757,7 @@ export interface ProcurementReceipt {
 
 export function useProcurementReceipts(projectId?: string) {
   const url = projectId
-    ? `/api/procurement-module/receipts?projectId=${projectId}`
+    ? `/api/procurement-module/receipts?projectId=${encodeURIComponent(projectId)}`
     : "/api/procurement-module/receipts";
   return useQuery<ProcurementReceipt[]>({
     queryKey: ["/api/procurement-module/receipts", projectId ?? "all"],
@@ -787,7 +787,7 @@ export const useCreateReceipt = useCreatePOReceipt;
 
 export function useVendorInvoices(projectId?: string) {
   const url = projectId
-    ? `/api/procurement-module/invoices?projectId=${projectId}`
+    ? `/api/procurement-module/invoices?projectId=${encodeURIComponent(projectId)}`
     : "/api/procurement-module/invoices";
   return useQuery<ProcurementInvoice[]>({
     queryKey: ["/api/procurement-module/invoices", projectId ?? "all"],
