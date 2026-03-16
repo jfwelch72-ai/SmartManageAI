@@ -18,7 +18,7 @@ import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
-import { AlertTriangle, Package, Calendar as CalendarIcon, Clock, LayoutDashboard, ListChecks, FileEdit, Bot, NotebookPen, Camera, Calculator, ShoppingCart, Receipt, Info, Banknote, HardHat, CloudRain, CalendarCheck, Mail, Ruler, Truck, HelpCircle, Send, FileCheck, ExternalLink, Users, TrendingUp } from "lucide-react";
+import { AlertTriangle, Package, Calendar as CalendarIcon, Clock, LayoutDashboard, ListChecks, FileEdit, Bot, NotebookPen, Camera, Calculator, ShoppingCart, Receipt, Info, Banknote, HardHat, CloudRain, CalendarCheck, Mail, Ruler, Truck, HelpCircle, Send, FileCheck, ExternalLink, Users, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -39,6 +39,8 @@ import ProjectEmailTab from "@/components/project-tabs/ProjectEmailTab";
 import ProjectPayrollTab from "@/components/project-tabs/ProjectPayrollTab";
 import ProjectEquipmentTab from "@/components/project-tabs/ProjectEquipmentTab";
 import ProfitabilityTab from "@/components/project-tabs/ProfitabilityTab";
+import BudgetTab from "@/components/project-tabs/BudgetTab";
+import CostLedgerTab from "@/components/project-tabs/CostLedgerTab";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -128,6 +130,8 @@ function buildTabConfigs(userRole: string | undefined, submittedCOCount: number)
     { value: "transmittals", label: "Transmittals", icon: Send, visible: hasManagementAccess(userRole) },
     { value: "submittals", label: "Submittals", icon: FileCheck, visible: hasManagementAccess(userRole) },
     { value: "portal-access", label: "Portal Access", icon: ExternalLink, visible: hasManagementAccess(userRole) },
+    { value: "budget", label: "Budget", icon: DollarSign, visible: FeaturePermissions.VIEW_BUDGET_TAB(userRole) },
+    { value: "cost-ledger", label: "Cost Ledger", icon: BarChart3, visible: hasFinancialAccess(userRole) },
     { value: "financials", label: "Live Financials", icon: TrendingUp, visible: hasFinancialAccess(userRole) },
   ];
 }
@@ -448,6 +452,14 @@ export default function ProjectDetailPage() {
                 <SubcontractorPortalManager projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
               </TabsContent>
             </Tabs>
+          </TabsContent>
+
+          <TabsContent value="budget">
+            <BudgetTab projectCode={projectCode} userRole={user?.role || ""} />
+          </TabsContent>
+
+          <TabsContent value="cost-ledger">
+            <CostLedgerTab projectCode={projectCode} />
           </TabsContent>
 
           <TabsContent value="financials">

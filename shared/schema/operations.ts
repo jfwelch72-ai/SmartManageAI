@@ -2064,3 +2064,25 @@ export const insertOrgCostCodeSchema = createInsertSchema(orgCostCodes).omit({ i
 export type InsertOrgCostCode = z.infer<typeof insertOrgCostCodeSchema>;
 export type OrgCostCode = typeof orgCostCodes.$inferSelect;
 
+export const budgetLineItems = pgTable("budget_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCode: varchar("cost_code", { length: 20 }).notNull(),
+  description: varchar("description", { length: 255 }).notNull(),
+  division: varchar("division", { length: 100 }).notNull(),
+  laborBudget: decimal("labor_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  materialBudget: decimal("material_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  subcontractorBudget: decimal("subcontractor_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  equipmentBudget: decimal("equipment_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  otherBudget: decimal("other_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("budget_line_items_project_idx").on(table.projectId),
+  unique("budget_line_items_project_code_uniq").on(table.projectId, table.costCode),
+]);
+
+export const insertBudgetLineItemSchema = createInsertSchema(budgetLineItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBudgetLineItem = z.infer<typeof insertBudgetLineItemSchema>;
+export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
+
