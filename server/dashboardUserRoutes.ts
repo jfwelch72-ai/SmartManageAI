@@ -1994,7 +1994,10 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
         const budgetResult = await db.execute(sql`
           SELECT
             COALESCE(
-              NULLIF(TRIM(SPLIT_PART(eli."work_type_code", ' - ', 1)), ''),
+              UPPER(NULLIF(TRIM(SPLIT_PART(
+                COALESCE(eli."work_type_code", eli."category"),
+                ' - ', 1
+              )), '')),
               'Unassigned'
             ) as cost_code,
             SUM(eli."labor_cost"::numeric) as budgeted
@@ -2004,7 +2007,10 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
             ${budgetProjectCond}
             ${budgetOrgCond}
           GROUP BY COALESCE(
-              NULLIF(TRIM(SPLIT_PART(eli."work_type_code", ' - ', 1)), ''),
+              UPPER(NULLIF(TRIM(SPLIT_PART(
+                COALESCE(eli."work_type_code", eli."category"),
+                ' - ', 1
+              )), '')),
               'Unassigned'
             )
           ORDER BY SUM(eli."labor_cost"::numeric) DESC
@@ -2020,7 +2026,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
         const actualResult = await db.execute(sql`
           SELECT
             COALESCE(
-              NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), ''),
+              UPPER(NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), '')),
               'Unassigned'
             ) as cost_code,
             SUM(
@@ -2034,7 +2040,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
             ${orgCond}
             ${projectCond}
           GROUP BY COALESCE(
-              NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), ''),
+              UPPER(NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), '')),
               'Unassigned'
             )
           ORDER BY SUM(

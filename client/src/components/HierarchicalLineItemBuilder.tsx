@@ -336,7 +336,8 @@ export default function HierarchicalLineItemBuilder({
   const handleWorkTypeChange = (workTypeId: string) => {
     setSelectedWorkTypeId(workTypeId);
     setSelectedModifierIds([]);
-    setCostCodeOverride("");
+    const wt = availableWorkTypes.find(w => w.id === workTypeId);
+    setCostCodeOverride(wt?.code || "");
     
     // Auto-set unit from work type
     const workType = availableWorkTypes.find(wt => wt.id === workTypeId);
