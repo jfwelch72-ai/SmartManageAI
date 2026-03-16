@@ -237,19 +237,31 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
     const tradeType = org?.tradeType || "OTHER";
     const staticCodes = getCostCodesForTrade(tradeType);
 
-    const customRows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
-    const customCodes = customRows.map(r => ({
+    const orgRows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
+    const orgEntries = orgRows.map(r => ({
       code: r.code,
       description: r.description,
       division: r.division,
-      isCustom: true,
+      isCustom: r.isCustom,
       isActive: r.isActive,
     }));
 
-    const customCodeSet = new Set(customRows.map(r => r.code));
+    const orgCodeSet = new Set(orgRows.map(r => r.code));
+    const customFirst = orgEntries.filter(e => e.isCustom);
+    const overrides = orgEntries.filter(e => !e.isCustom);
+    const overrideMap = new Map(overrides.map(o => [o.code, o]));
+
+    const staticWithOverrides = staticCodes
+      .filter(c => !orgCodeSet.has(c.code) || overrideMap.has(c.code))
+      .map(c => {
+        const override = overrideMap.get(c.code);
+        if (override) return { ...c, isActive: override.isActive };
+        return c;
+      });
+
     const merged = [
-      ...customCodes,
-      ...staticCodes.filter(c => !customCodeSet.has(c.code)),
+      ...customFirst,
+      ...staticWithOverrides,
     ];
 
     res.json(merged);
@@ -259,7 +271,7 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/api/org-cost-codes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     const rows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
@@ -270,10 +282,11 @@ router.get("/api/org-cost-codes", requireAuth, async (req: AuthRequest, res) => 
   }
 });
 
-router.post("/api/org-cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
-    const parsed = insertOrgCostCodeSchema.parse({ ...req.body, organizationId: orgId });
+    const isCustom = req.body.isCustom !== false;
+    const parsed = insertOrgCostCodeSchema.parse({ ...req.body, organizationId: orgId, isCustom });
     const [row] = await db.insert(orgCostCodes).values(parsed).returning();
     res.status(201).json(row);
   } catch (error: any) {
@@ -285,16 +298,17 @@ router.post("/api/org-cost-codes", requireAuth, requireRole("ADMIN"), async (req
   }
 });
 
-router.patch("/api/org-cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     const id = Number(req.params.id);
-    const { code, description, division, isActive } = req.body;
+    const { code, description, division, isActive, isCustom } = req.body;
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (code !== undefined) updates.code = code;
     if (description !== undefined) updates.description = description;
     if (division !== undefined) updates.division = division;
     if (isActive !== undefined) updates.isActive = isActive;
+    if (isCustom !== undefined) updates.isCustom = isCustom;
     const [row] = await db.update(orgCostCodes).set(updates).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
     if (!row) return res.status(404).json({ error: "Cost code not found" });
     res.json(row);
@@ -304,19 +318,6 @@ router.patch("/api/org-cost-codes/:id", requireAuth, requireRole("ADMIN"), async
     }
     console.error("Error updating org cost code:", error);
     res.status(500).json({ error: "Failed to update cost code" });
-  }
-});
-
-router.delete("/api/org-cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
-  try {
-    const orgId = req.user!.organizationId;
-    const id = Number(req.params.id);
-    const [row] = await db.delete(orgCostCodes).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
-    if (!row) return res.status(404).json({ error: "Cost code not found" });
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Error deleting org cost code:", error);
-    res.status(500).json({ error: "Failed to delete cost code" });
   }
 });
 

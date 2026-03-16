@@ -61,7 +61,7 @@ export default function CostCodesPage() {
   });
 
   const { data: orgCodes = [] } = useQuery<OrgCostCode[]>({
-    queryKey: ["/api/org-cost-codes"],
+    queryKey: ["/api/cost-codes/org"],
   });
 
   const orgCodeMap = useMemo(() => {
@@ -102,12 +102,12 @@ export default function CostCodesPage() {
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/org-cost-codes"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/cost-codes/org"] });
   };
 
   const createMutation = useMutation({
     mutationFn: async (data: { code: string; description: string; division: string; isActive: boolean }) => {
-      const res = await apiRequest("POST", "/api/org-cost-codes", data);
+      const res = await apiRequest("POST", "/api/cost-codes", data);
       return res.json();
     },
     onSuccess: () => {
@@ -122,7 +122,7 @@ export default function CostCodesPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: number; code?: string; description?: string; division?: string; isActive?: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/org-cost-codes/${id}`, data);
+      const res = await apiRequest("PATCH", `/api/cost-codes/${id}`, data);
       return res.json();
     },
     onSuccess: () => {
@@ -140,14 +140,15 @@ export default function CostCodesPage() {
       code: string; isActive: boolean; orgEntry?: OrgCostCode; division: string; description: string;
     }) => {
       if (orgEntry) {
-        const res = await apiRequest("PATCH", `/api/org-cost-codes/${orgEntry.id}`, { isActive });
+        const res = await apiRequest("PATCH", `/api/cost-codes/${orgEntry.id}`, { isActive });
         return res.json();
       } else {
-        const res = await apiRequest("POST", "/api/org-cost-codes", {
+        const res = await apiRequest("POST", "/api/cost-codes", {
           code: codeStr,
           description,
           division,
           isActive,
+          isCustom: false,
         });
         return res.json();
       }
