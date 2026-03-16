@@ -18,8 +18,10 @@ import {
   useApprovePurchaseRequest, useRejectPurchaseRequest, useConvertPRToPO, useDeletePurchaseRequest,
   usePurchaseOrders, usePurchaseOrderDetail, useCreatePurchaseOrder,
   useSubmitPurchaseOrder, useApprovePurchaseOrder, useSendPurchaseOrder, useDeletePurchaseOrder,
-  useCreatePOReceipt, useVendorInvoices, useCreateVendorInvoice,
+  useCreatePOReceipt, useProcurementReceipts,
+  useVendorInvoices, useCreateVendorInvoice,
   useCreateInvoiceMatch, useResolveMatchDiscrepancy,
+  type ProcurementReceipt, type ProcurementReceiptItem,
 } from "@/hooks/use-data";
 
 const PR_STATUS_VARIANT: Record<string, "outline" | "secondary" | "default" | "destructive"> = {
@@ -778,6 +780,57 @@ function InvoicesTab() {
   );
 }
 
+function ReceiptsTab() {
+  const { data: receipts = [], isLoading } = useProcurementReceipts();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Truck className="h-5 w-5" /> Delivery Receipts</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground">Loading...</div>
+        ) : receipts.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No delivery receipts yet. Record receipts from a PO detail view.</div>
+        ) : (
+          <div className="space-y-3">
+            {receipts.map((r: ProcurementReceipt) => (
+              <div key={r.id} className="p-4 border rounded-md" data-testid={`receipt-${r.id}`}>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    {r.poNumber && <span className="font-mono text-xs text-muted-foreground">PO: {r.poNumber}</span>}
+                    <Badge variant={r.status === "COMPLETE" ? "default" : "secondary"}>{r.status}</Badge>
+                  </div>
+                  <span className="text-sm text-muted-foreground">{fmtDate(r.receivedAt)}</span>
+                </div>
+                <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                  {r.receivedBy && <span>By: {r.receivedBy.firstName} {r.receivedBy.lastName}</span>}
+                  {r.vendor && <span>Vendor: {r.vendor.name}</span>}
+                  {r.project && <span>Project: {r.project.name}</span>}
+                  {r.deliveryNote && <span>Note: {r.deliveryNote}</span>}
+                </div>
+                {r.items?.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {r.items.map((item: ProcurementReceiptItem) => (
+                      <div key={item.id} className="text-xs flex gap-2 text-muted-foreground">
+                        {item.itemDescription && <span className="font-medium text-foreground">{item.itemDescription}</span>}
+                        <span>Qty: {item.quantityReceived}</span>
+                        <Badge variant={item.condition === "GOOD" ? "outline" : "destructive"} className="text-[10px] px-1 py-0">{item.condition}</Badge>
+                        {item.notes && <span>{item.notes}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ProcurementModulePage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -790,6 +843,7 @@ export default function ProcurementModulePage() {
         <TabsList data-testid="tabs-procurement">
           <TabsTrigger value="requests" data-testid="tab-pr"><ClipboardCheck className="h-4 w-4 mr-1" />Requests</TabsTrigger>
           <TabsTrigger value="orders" data-testid="tab-po"><Package className="h-4 w-4 mr-1" />Orders</TabsTrigger>
+          <TabsTrigger value="receipts" data-testid="tab-receipts"><Truck className="h-4 w-4 mr-1" />Receipts</TabsTrigger>
           <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="h-4 w-4 mr-1" />Invoices</TabsTrigger>
         </TabsList>
 
@@ -798,6 +852,9 @@ export default function ProcurementModulePage() {
         </TabsContent>
         <TabsContent value="orders">
           <PurchaseOrdersTab />
+        </TabsContent>
+        <TabsContent value="receipts">
+          <ReceiptsTab />
         </TabsContent>
         <TabsContent value="invoices">
           <InvoicesTab />

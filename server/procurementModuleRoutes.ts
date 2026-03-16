@@ -11,6 +11,7 @@ import { crmOrganisations } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 const ROLES = ["ADMIN", "MANAGER", "PROCUREMENT_MANAGER"] as const;
@@ -192,6 +193,15 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
     const [updated] = await db.update(purchaseRequests)
       .set({ status: "PENDING_APPROVAL", updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
+
+    notifyApprovers(orgId, req.user!.id, {
+      type: "PROCUREMENT_PR_SUBMITTED",
+      title: "Purchase Request Submitted",
+      message: `Purchase request ${existing.prNumber} "${existing.title}" requires your approval.`,
+      relatedEntityId: existing.id,
+      relatedEntityType: "PURCHASE_REQUEST",
+    }, ["ADMIN", "MANAGER"]).catch(() => {});
+
     res.json(updated);
   } catch (error) {
     console.error("Submit purchase request error:", error);
@@ -212,6 +222,15 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
     const [updated] = await db.update(purchaseRequests)
       .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
+
+    notifySubmitter(existing.requestedById, {
+      type: "PROCUREMENT_PR_APPROVED",
+      title: "Purchase Request Approved",
+      message: `Your purchase request ${existing.prNumber} "${existing.title}" has been approved.`,
+      relatedEntityId: existing.id,
+      relatedEntityType: "PURCHASE_REQUEST",
+    }).catch(() => {});
+
     res.json(updated);
   } catch (error) {
     console.error("Approve purchase request error:", error);
@@ -232,6 +251,15 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
     const [updated] = await db.update(purchaseRequests)
       .set({ status: "REJECTED", updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
+
+    notifySubmitter(existing.requestedById, {
+      type: "PROCUREMENT_PR_REJECTED",
+      title: "Purchase Request Rejected",
+      message: `Your purchase request ${existing.prNumber} "${existing.title}" has been rejected.`,
+      relatedEntityId: existing.id,
+      relatedEntityType: "PURCHASE_REQUEST",
+    }).catch(() => {});
+
     res.json(updated);
   } catch (error) {
     console.error("Reject purchase request error:", error);
@@ -257,6 +285,12 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
     const poNumber = `PO-${String(Number(poCount[0]?.count || 0) + 1).padStart(4, "0")}`;
 
     const vendorId = req.body.vendorId || null;
+
+    if (vendorId) {
+      const [vendorOwner] = await db.select({ id: crmOrganisations.id }).from(crmOrganisations)
+        .where(and(eq(crmOrganisations.id, vendorId), eq(crmOrganisations.organizationId, orgId))).limit(1);
+      if (!vendorOwner) { res.status(400).json({ error: "Vendor not found in your organization" }); return; }
+    }
 
     const [po] = await db.insert(purchaseOrders).values({
       orgId,
@@ -522,6 +556,19 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(purchaseOrders.id, req.params.id)).returning();
+
+    const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
+      .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
+    if (prLink) {
+      notifySubmitter(prLink.requestedById, {
+        type: "PROCUREMENT_PO_APPROVED",
+        title: "Purchase Order Approved",
+        message: `Purchase order ${existing.poNumber} has been approved.`,
+        relatedEntityId: existing.id,
+        relatedEntityType: "PURCHASE_ORDER",
+      }).catch(() => {});
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Approve PO error:", error);
@@ -542,6 +589,19 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(eq(purchaseOrders.id, req.params.id)).returning();
+
+    const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
+      .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
+    if (prLink) {
+      notifySubmitter(prLink.requestedById, {
+        type: "PROCUREMENT_PO_REJECTED",
+        title: "Purchase Order Rejected",
+        message: `Purchase order ${existing.poNumber} has been rejected.`,
+        relatedEntityId: existing.id,
+        relatedEntityType: "PURCHASE_ORDER",
+      }).catch(() => {});
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Reject PO error:", error);
@@ -562,6 +622,15 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "PENDING_APPROVAL", updatedAt: new Date() })
       .where(eq(purchaseOrders.id, req.params.id)).returning();
+
+    notifyApprovers(orgId, req.user!.id, {
+      type: "PROCUREMENT_PO_SUBMITTED",
+      title: "Purchase Order Submitted",
+      message: `Purchase order ${existing.poNumber} requires your approval.`,
+      relatedEntityId: existing.id,
+      relatedEntityType: "PURCHASE_ORDER",
+    }, ["ADMIN", "MANAGER"]).catch(() => {});
+
     res.json(updated);
   } catch (error) {
     console.error("Submit PO error:", error);
@@ -807,9 +876,41 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
       .where(and(eq(vendorInvoices.id, req.params.id), eq(vendorInvoices.orgId, orgId))).limit(1);
     if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
-    const [match] = await db.select().from(invoiceMatches)
+    const [existingMatch] = await db.select().from(invoiceMatches)
       .where(eq(invoiceMatches.invoiceId, invoice.id)).limit(1);
-    res.json(match || null);
+
+    if (existingMatch) {
+      res.json(existingMatch);
+      return;
+    }
+
+    const [po] = await db.select().from(purchaseOrders)
+      .where(eq(purchaseOrders.id, invoice.poId)).limit(1);
+    if (!po) { res.json(null); return; }
+
+    const poItems = await db.select().from(purchaseOrderItems)
+      .where(eq(purchaseOrderItems.poId, po.id));
+
+    const poAmount = parseFloat(po.totalCost?.toString() || "0");
+    const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
+    let totalOrdered = 0;
+    let totalReceived = 0;
+    for (const item of poItems) {
+      totalOrdered += parseFloat(item.quantity?.toString() || "0");
+      totalReceived += parseFloat(item.quantityReceived?.toString() || "0");
+    }
+    const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
+    const amountTolerance = poAmount * 0.05;
+    const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
+    const qtyMatch = receivedQtyMatchPct >= 100;
+
+    res.json({
+      computed: true,
+      matchStatus: amountMatch && qtyMatch ? "MATCHED" : "DISCREPANCY",
+      poAmount: String(poAmount),
+      invoiceAmount: String(invoiceAmount),
+      receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
+    });
   } catch (error) {
     console.error("Get invoice match error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -914,6 +1015,64 @@ router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, r
     res.json(updated);
   } catch (error) {
     console.error("Resolve match discrepancy error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const orgPOs = await db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId, projectId: purchaseOrders.projectId })
+      .from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
+
+    if (orgPOs.length === 0) { res.json([]); return; }
+
+    const poIds = orgPOs.map(po => po.id);
+    const allReceipts = await db.select().from(poReceipts)
+      .where(sql`${poReceipts.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`)
+      .orderBy(desc(poReceipts.receivedAt));
+
+    const result = await Promise.all(allReceipts.map(async (r) => {
+      const rawItems = await db.select().from(poReceiptItems).where(eq(poReceiptItems.receiptId, r.id));
+      const items = await Promise.all(rawItems.map(async (item) => {
+        let itemDescription = null;
+        if (item.poItemId) {
+          const [poItem] = await db.select({ description: purchaseOrderItems.description, unit: purchaseOrderItems.unit })
+            .from(purchaseOrderItems).where(eq(purchaseOrderItems.id, item.poItemId)).limit(1);
+          itemDescription = poItem?.description || null;
+        }
+        return { ...item, itemDescription };
+      }));
+      const po = orgPOs.find(p => p.id === r.poId);
+      const [receiver] = await db.select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users).where(eq(users.id, r.receivedById)).limit(1);
+      let vendor = null;
+      if (po?.vendorId) {
+        const [v] = await db.select({ id: crmOrganisations.id, name: crmOrganisations.name })
+          .from(crmOrganisations).where(eq(crmOrganisations.id, po.vendorId)).limit(1);
+        vendor = v || null;
+      }
+      let project = null;
+      if (po?.projectId) {
+        const [p] = await db.select({ name: projects.name, code: projects.code })
+          .from(projects).where(eq(projects.id, po.projectId)).limit(1);
+        project = p || null;
+      }
+      return {
+        ...r,
+        items,
+        poNumber: po?.poNumber || null,
+        receivedBy: receiver || null,
+        vendor,
+        project,
+      };
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get all receipts error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

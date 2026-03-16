@@ -639,6 +639,37 @@ export function useDeletePurchaseOrder() {
   });
 }
 
+export interface ProcurementReceiptItem {
+  id: string;
+  receiptId: string;
+  poItemId: string | null;
+  quantityReceived: string;
+  condition: string;
+  notes: string | null;
+  itemDescription: string | null;
+}
+
+export interface ProcurementReceipt {
+  id: string;
+  poId: string;
+  receivedById: string;
+  receivedAt: string;
+  status: string;
+  deliveryNote: string | null;
+  notes: string | null;
+  poNumber: string | null;
+  receivedBy: { firstName: string; lastName: string } | null;
+  vendor: { id: string; name: string } | null;
+  project: { name: string; code: string | null } | null;
+  items: ProcurementReceiptItem[];
+}
+
+export function useProcurementReceipts() {
+  return useQuery<ProcurementReceipt[]>({
+    queryKey: ["/api/procurement-module/receipts"],
+  });
+}
+
 export function useCreatePOReceipt() {
   return useMutation({
     mutationFn: async ({ poId, data }: { poId: string; data: any }) => {
