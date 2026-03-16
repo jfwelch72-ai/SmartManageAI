@@ -270,9 +270,14 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     row.actualTotal = row.actualLabor + row.actualMaterial + row.actualSub + row.actualEquipment + row.actualTM + row.actualOther;
     row.remainingBudget = row.budgetedTotal - row.actualTotal;
     row.percentUsed = row.budgetedTotal > 0 ? (row.actualTotal / row.budgetedTotal) * 100 : (row.actualTotal > 0 ? 100 : 0);
-    row.forecast = percentComplete > 0 && percentComplete < 100
-      ? row.actualTotal / (percentComplete / 100)
-      : row.actualTotal;
+    if (percentComplete > 0 && percentComplete < 100) {
+      row.forecast = row.actualTotal / (percentComplete / 100);
+    } else if (row.budgetedTotal > 0 && row.actualTotal > 0) {
+      const budgetRatio = row.actualTotal / row.budgetedTotal;
+      row.forecast = budgetRatio > 0 ? row.budgetedTotal * Math.max(1, budgetRatio) : row.actualTotal;
+    } else {
+      row.forecast = row.actualTotal;
+    }
 
     row.actualLabor = round2(row.actualLabor);
     row.actualMaterial = round2(row.actualMaterial);
@@ -344,9 +349,14 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
   totals.actualTotal = round2(totals.actualTotal);
   totals.remainingBudget = round2(totals.budgetedTotal - totals.actualTotal);
   totals.percentUsed = totals.budgetedTotal > 0 ? round2((totals.actualTotal / totals.budgetedTotal) * 100) : 0;
-  totals.forecast = percentComplete > 0 && percentComplete < 100
-    ? round2(totals.actualTotal / (percentComplete / 100))
-    : round2(totals.actualTotal);
+  if (percentComplete > 0 && percentComplete < 100) {
+    totals.forecast = round2(totals.actualTotal / (percentComplete / 100));
+  } else if (totals.budgetedTotal > 0 && totals.actualTotal > 0) {
+    const budgetRatio = totals.actualTotal / totals.budgetedTotal;
+    totals.forecast = round2(totals.budgetedTotal * Math.max(1, budgetRatio));
+  } else {
+    totals.forecast = round2(totals.actualTotal);
+  }
 
   const budgetLineTotal = round2(totals.budgetedTotal);
 

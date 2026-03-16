@@ -10,9 +10,8 @@ import { calculateCostLedger } from "./costLedgerService";
 const router = Router();
 
 function canAccessCostLedger(role?: string): boolean {
-  return role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" ||
-    role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "OFFICE_MANAGER" ||
-    role === "HUSTLER" || role === "PROJECT_ENGINEER" || role === "PROCUREMENT_MANAGER";
+  return role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" ||
+    role === "ESTIMATOR" || role === "OFFICE_MANAGER" || role === "HUSTLER";
 }
 
 function canEditBudgetLines(role?: string): boolean {
@@ -36,7 +35,14 @@ router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
     const lines = await db.select().from(budgetLineItems)
       .where(eq(budgetLineItems.projectId, project.id));
 
-    res.json(lines);
+    const enriched = lines.map(l => ({
+      ...l,
+      totalBudget: String(
+        Number(l.laborBudget) + Number(l.materialBudget) + Number(l.subcontractorBudget) +
+        Number(l.equipmentBudget) + Number(l.otherBudget)
+      ),
+    }));
+    res.json(enriched);
   } catch (error) {
     console.error("Get budget lines error:", error);
     res.status(500).json({ error: "Internal server error" });
