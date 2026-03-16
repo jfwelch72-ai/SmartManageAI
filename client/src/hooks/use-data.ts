@@ -672,13 +672,14 @@ export function useProcurementReceipts() {
 
 export function useCreatePOReceipt() {
   return useMutation({
-    mutationFn: async ({ poId, data }: { poId: string; data: any }) => {
+    mutationFn: async ({ poId, data }: { poId: string; data: { deliveryNote?: string | null; notes?: string | null; items: { poItemId: string; quantityReceived: string; condition?: string; notes?: string | null }[] } }) => {
       const response = await apiRequest("POST", `/api/procurement-module/orders/${poId}/receipts`, data);
       return response.json();
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders", variables.poId] });
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/receipts"] });
     },
   });
 }

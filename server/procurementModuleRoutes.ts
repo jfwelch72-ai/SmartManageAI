@@ -84,35 +84,38 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
       .where(and(eq(projects.id, prData.projectId), eq(projects.gcOrganizationId, orgId))).limit(1);
     if (!projOwner) { res.status(400).json({ error: "Project not found in your organization" }); return; }
 
-    const [pr] = await db.insert(purchaseRequests).values({
-      orgId,
-      projectId: prData.projectId,
-      requestedById: req.user!.id,
-      prNumber,
-      title: prData.title,
-      neededByDate: prData.neededByDate ? new Date(prData.neededByDate) : null,
-      notes: prData.notes || null,
-    }).returning();
+    const pr = await db.transaction(async (tx) => {
+      const [newPr] = await tx.insert(purchaseRequests).values({
+        orgId,
+        projectId: prData.projectId,
+        requestedById: req.user!.id,
+        prNumber,
+        title: prData.title,
+        neededByDate: prData.neededByDate ? new Date(prData.neededByDate) : null,
+        notes: prData.notes || null,
+      }).returning();
 
-    if (items && items.length > 0) {
-      let totalCost = 0;
-      for (const item of items) {
-        await db.insert(purchaseRequestItems).values({
-          prId: pr.id,
-          description: item.description,
-          category: item.category || null,
-          quantity: item.quantity || null,
-          unit: item.unit || null,
-          estimatedUnitCost: item.estimatedUnitCost || null,
-        });
-        const q = parseFloat(item.quantity || "0");
-        const u = parseFloat(item.estimatedUnitCost || "0");
-        if (!isNaN(q) && !isNaN(u)) totalCost += q * u;
+      if (items && items.length > 0) {
+        let totalCost = 0;
+        for (const item of items) {
+          await tx.insert(purchaseRequestItems).values({
+            prId: newPr.id,
+            description: item.description,
+            category: item.category || null,
+            quantity: item.quantity || null,
+            unit: item.unit || null,
+            estimatedUnitCost: item.estimatedUnitCost || null,
+          });
+          const q = parseFloat(item.quantity || "0");
+          const u = parseFloat(item.estimatedUnitCost || "0");
+          if (!isNaN(q) && !isNaN(u)) totalCost += q * u;
+        }
+        if (totalCost > 0) {
+          await tx.update(purchaseRequests).set({ totalEstimatedCost: String(totalCost) }).where(eq(purchaseRequests.id, newPr.id));
+        }
       }
-      if (totalCost > 0) {
-        await db.update(purchaseRequests).set({ totalEstimatedCost: String(totalCost) }).where(eq(purchaseRequests.id, pr.id));
-      }
-    }
+      return newPr;
+    });
 
     res.status(201).json(pr);
   } catch (error) {
@@ -139,28 +142,32 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
     if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) as unknown as string : null;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
 
-    const [updated] = await db.update(purchaseRequests).set(setData)
-      .where(eq(purchaseRequests.id, req.params.id)).returning();
+    const updated = await db.transaction(async (tx) => {
+      const [updatedPr] = await tx.update(purchaseRequests).set(setData)
+        .where(eq(purchaseRequests.id, req.params.id)).returning();
 
-    if (items && Array.isArray(items)) {
-      await db.delete(purchaseRequestItems).where(eq(purchaseRequestItems.prId, req.params.id));
-      let totalCost = 0;
-      for (const item of items) {
-        await db.insert(purchaseRequestItems).values({
-          prId: req.params.id,
-          description: item.description,
-          category: item.category || null,
-          quantity: item.quantity || null,
-          unit: item.unit || null,
-          estimatedUnitCost: item.estimatedUnitCost || null,
-        });
-        const q = parseFloat(item.quantity || "0");
-        const u = parseFloat(item.estimatedUnitCost || "0");
-        if (!isNaN(q) && !isNaN(u)) totalCost += q * u;
+      if (items && Array.isArray(items)) {
+        await tx.delete(purchaseRequestItems).where(eq(purchaseRequestItems.prId, req.params.id));
+        let totalCost = 0;
+        for (const item of items) {
+          await tx.insert(purchaseRequestItems).values({
+            prId: req.params.id,
+            description: item.description,
+            category: item.category || null,
+            quantity: item.quantity || null,
+            unit: item.unit || null,
+            estimatedUnitCost: item.estimatedUnitCost || null,
+          });
+          const q = parseFloat(item.quantity || "0");
+          const u = parseFloat(item.estimatedUnitCost || "0");
+          if (!isNaN(q) && !isNaN(u)) totalCost += q * u;
+        }
+        await tx.update(purchaseRequests).set({ totalEstimatedCost: String(totalCost) })
+          .where(eq(purchaseRequests.id, req.params.id));
       }
-      await db.update(purchaseRequests).set({ totalEstimatedCost: String(totalCost) })
-        .where(eq(purchaseRequests.id, req.params.id));
-    }
+
+      return updatedPr;
+    });
 
     res.json(updated);
   } catch (error) {
@@ -207,7 +214,7 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
       message: `Purchase request ${existing.prNumber} "${existing.title}" requires your approval.`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
-    }, ["ADMIN", "MANAGER"]).catch(() => {});
+    }, ROLES).catch(() => {});
 
     res.json(updated);
   } catch (error) {
@@ -216,7 +223,7 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
   }
 });
 
-router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -245,7 +252,7 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
   }
 });
 
-router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -299,31 +306,35 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
       if (!vendorOwner) { res.status(400).json({ error: "Vendor not found in your organization" }); return; }
     }
 
-    const [po] = await db.insert(purchaseOrders).values({
-      orgId,
-      projectId: pr.projectId,
-      prId: pr.id,
-      vendorId,
-      poNumber,
-      neededByDate: pr.neededByDate,
-      notes: pr.notes,
-      totalCost: pr.totalEstimatedCost,
-    }).returning();
+    const po = await db.transaction(async (tx) => {
+      const [newPo] = await tx.insert(purchaseOrders).values({
+        orgId,
+        projectId: pr.projectId,
+        prId: pr.id,
+        vendorId,
+        poNumber,
+        neededByDate: pr.neededByDate,
+        notes: pr.notes,
+        totalCost: pr.totalEstimatedCost,
+      }).returning();
 
-    for (const item of prItems) {
-      await db.insert(purchaseOrderItems).values({
-        poId: po.id,
-        prItemId: item.id,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        unitCost: item.estimatedUnitCost,
-      });
-    }
+      for (const item of prItems) {
+        await tx.insert(purchaseOrderItems).values({
+          poId: newPo.id,
+          prItemId: item.id,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitCost: item.estimatedUnitCost,
+        });
+      }
 
-    await db.update(purchaseRequests)
-      .set({ status: "CONVERTED_TO_PO", updatedAt: new Date() })
-      .where(eq(purchaseRequests.id, pr.id));
+      await tx.update(purchaseRequests)
+        .set({ status: "CONVERTED_TO_PO", updatedAt: new Date() })
+        .where(eq(purchaseRequests.id, pr.id));
+
+      return newPo;
+    });
 
     res.status(201).json(po);
   } catch (error) {
@@ -453,29 +464,33 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
       }
     }
 
-    const [po] = await db.insert(purchaseOrders).values({
-      orgId,
-      projectId: poData.projectId,
-      vendorId: poData.vendorId || null,
-      poNumber,
-      terms: poData.terms || null,
-      deliveryAddress: poData.deliveryAddress || null,
-      neededByDate: poData.neededByDate ? new Date(poData.neededByDate) : null,
-      notes: poData.notes || null,
-      totalCost: totalCost > 0 ? String(totalCost) : null,
-    }).returning();
+    const po = await db.transaction(async (tx) => {
+      const [newPo] = await tx.insert(purchaseOrders).values({
+        orgId,
+        projectId: poData.projectId,
+        vendorId: poData.vendorId || null,
+        poNumber,
+        terms: poData.terms || null,
+        deliveryAddress: poData.deliveryAddress || null,
+        neededByDate: poData.neededByDate ? new Date(poData.neededByDate) : null,
+        notes: poData.notes || null,
+        totalCost: totalCost > 0 ? String(totalCost) : null,
+      }).returning();
 
-    if (items && items.length > 0) {
-      for (const item of items) {
-        await db.insert(purchaseOrderItems).values({
-          poId: po.id,
-          description: item.description,
-          quantity: item.quantity || null,
-          unit: item.unit || null,
-          unitCost: item.unitCost || null,
-        });
+      if (items && items.length > 0) {
+        for (const item of items) {
+          await tx.insert(purchaseOrderItems).values({
+            poId: newPo.id,
+            description: item.description,
+            quantity: item.quantity || null,
+            unit: item.unit || null,
+            unitCost: item.unitCost || null,
+          });
+        }
       }
-    }
+
+      return newPo;
+    });
 
     res.status(201).json(po);
   } catch (error) {
@@ -551,7 +566,7 @@ router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...
   }
 });
 
-router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -584,7 +599,7 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
   }
 });
 
-router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -637,7 +652,7 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
       message: `Purchase order ${existing.poNumber} requires your approval.`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_ORDER",
-    }, ["ADMIN", "MANAGER"]).catch(() => {});
+    }, ROLES).catch(() => {});
 
     res.json(updated);
   } catch (error) {
@@ -711,13 +726,6 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
     const parsed = receiptCreateSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
 
-    const [receipt] = await db.insert(poReceipts).values({
-      poId: po.id,
-      receivedById: req.user!.id,
-      deliveryNote: parsed.data.deliveryNote || null,
-      notes: parsed.data.notes || null,
-    }).returning();
-
     const validPoItemIds = (await db.select({ id: purchaseOrderItems.id })
       .from(purchaseOrderItems).where(eq(purchaseOrderItems.poId, po.id))).map(i => i.id);
 
@@ -726,47 +734,60 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
         res.status(400).json({ error: `Invalid PO item ID: ${item.poItemId}` });
         return;
       }
+    }
 
-      await db.insert(poReceiptItems).values({
-        receiptId: receipt.id,
-        poItemId: item.poItemId,
-        quantityReceived: item.quantityReceived,
-        condition: item.condition || "GOOD",
-        notes: item.notes || null,
+    const receipt = await db.transaction(async (tx) => {
+      const [newReceipt] = await tx.insert(poReceipts).values({
+        poId: po.id,
+        receivedById: req.user!.id,
+        deliveryNote: parsed.data.deliveryNote || null,
+        notes: parsed.data.notes || null,
+      }).returning();
+
+      for (const item of parsed.data.items) {
+        await tx.insert(poReceiptItems).values({
+          receiptId: newReceipt.id,
+          poItemId: item.poItemId,
+          quantityReceived: item.quantityReceived,
+          condition: item.condition || "GOOD",
+          notes: item.notes || null,
+        });
+
+        const qtyReceived = parseFloat(item.quantityReceived);
+        if (!isNaN(qtyReceived) && qtyReceived > 0) {
+          await tx.execute(sql`
+            UPDATE purchase_order_items 
+            SET quantity_received = COALESCE(quantity_received, 0) + ${qtyReceived}
+            WHERE id = ${item.poItemId} AND po_id = ${po.id}
+          `);
+        }
+      }
+
+      const poItems = await tx.select().from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.poId, po.id));
+
+      const allFulfilled = poItems.every(item => {
+        const ordered = parseFloat(item.quantity?.toString() || "0");
+        const received = parseFloat(item.quantityReceived?.toString() || "0");
+        return ordered > 0 && received >= ordered;
       });
 
-      const qtyReceived = parseFloat(item.quantityReceived);
-      if (!isNaN(qtyReceived) && qtyReceived > 0) {
-        await db.execute(sql`
-          UPDATE purchase_order_items 
-          SET quantity_received = COALESCE(quantity_received, 0) + ${qtyReceived}
-          WHERE id = ${item.poItemId} AND po_id = ${po.id}
-        `);
+      const anyReceived = poItems.some(item => {
+        const received = parseFloat(item.quantityReceived?.toString() || "0");
+        return received > 0;
+      });
+
+      if (allFulfilled) {
+        await tx.update(purchaseOrders).set({ status: "FULFILLED", updatedAt: new Date() })
+          .where(eq(purchaseOrders.id, po.id));
+        await tx.update(poReceipts).set({ status: "COMPLETE" }).where(eq(poReceipts.id, newReceipt.id));
+      } else if (anyReceived && (po.status === "SENT" || po.status === "ACKNOWLEDGED" || po.status === "APPROVED")) {
+        await tx.update(purchaseOrders).set({ status: "PARTIAL", updatedAt: new Date() })
+          .where(eq(purchaseOrders.id, po.id));
       }
-    }
 
-    const poItems = await db.select().from(purchaseOrderItems)
-      .where(eq(purchaseOrderItems.poId, po.id));
-
-    const allFulfilled = poItems.every(item => {
-      const ordered = parseFloat(item.quantity?.toString() || "0");
-      const received = parseFloat(item.quantityReceived?.toString() || "0");
-      return ordered > 0 && received >= ordered;
+      return newReceipt;
     });
-
-    const anyReceived = poItems.some(item => {
-      const received = parseFloat(item.quantityReceived?.toString() || "0");
-      return received > 0;
-    });
-
-    if (allFulfilled) {
-      await db.update(purchaseOrders).set({ status: "FULFILLED", updatedAt: new Date() })
-        .where(eq(purchaseOrders.id, po.id));
-      await db.update(poReceipts).set({ status: "COMPLETE" }).where(eq(poReceipts.id, receipt.id));
-    } else if (anyReceived && (po.status === "SENT" || po.status === "ACKNOWLEDGED" || po.status === "APPROVED")) {
-      await db.update(purchaseOrders).set({ status: "PARTIAL", updatedAt: new Date() })
-        .where(eq(purchaseOrders.id, po.id));
-    }
 
     res.status(201).json(receipt);
   } catch (error) {
@@ -1004,7 +1025,7 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
   }
 });
 
-router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
