@@ -784,12 +784,16 @@ export interface ProcurementReceipt {
   items: ProcurementReceiptItem[];
 }
 
-export function useProcurementReceipts(projectId?: string) {
-  const url = projectId
-    ? `/api/procurement-module/receipts?projectId=${encodeURIComponent(projectId)}`
-    : "/api/procurement-module/receipts";
+export function useProcurementReceipts(filters?: { projectId?: string; status?: string; search?: string } | string) {
+  const params = typeof filters === "string" ? { projectId: filters } : filters;
+  const qp = new URLSearchParams();
+  if (params?.projectId) qp.set("projectId", params.projectId);
+  if (params?.status) qp.set("status", params.status);
+  if (params?.search) qp.set("search", params.search);
+  const qs = qp.toString();
+  const url = qs ? `/api/procurement-module/receipts?${qs}` : "/api/procurement-module/receipts";
   return useQuery<ProcurementReceipt[]>({
-    queryKey: ["/api/procurement-module/receipts", projectId ?? "all"],
+    queryKey: ["/api/procurement-module/receipts", params?.projectId ?? "all", params?.status ?? "all", params?.search ?? ""],
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch receipts");

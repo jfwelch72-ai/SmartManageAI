@@ -58,6 +58,7 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
       conditions.push(or(
         ilike(purchaseRequests.title, term),
         ilike(purchaseRequests.prNumber, term),
+        sql`EXISTS (SELECT 1 FROM projects p WHERE p.id = ${purchaseRequests.projectId} AND p.name ILIKE ${term})`,
       ));
     }
 
@@ -300,7 +301,8 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending requests can be rejected" }); return; }
 
-    const rejectionNotes = req.body.rejectionNotes || req.body.notes || null;
+    const rejectionNotes = (req.body.rejectionNotes || req.body.notes || "").trim();
+    if (!rejectionNotes) { res.status(400).json({ error: "Rejection notes are required" }); return; }
 
     const [updated] = await db.update(purchaseRequests)
       .set({ status: "REJECTED", rejectionNotes, updatedAt: new Date() })
@@ -394,16 +396,18 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
     const conditions: any[] = [eq(purchaseOrders.orgId, orgId)];
     if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
     if (req.query.status) conditions.push(eq(purchaseOrders.status, String(req.query.status) as any));
+    const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
+    const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor");
+
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
       conditions.push(or(
         ilike(purchaseOrders.poNumber, term),
         ilike(purchaseOrders.notes, term),
+        sql`EXISTS (SELECT 1 FROM projects p WHERE p.id = ${purchaseOrders.projectId} AND p.name ILIKE ${term})`,
+        sql`EXISTS (SELECT 1 FROM crm_organisations v WHERE v.id = ${purchaseOrders.vendorId} AND v.name ILIKE ${term})`,
       ));
     }
-
-    const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
-    const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor");
 
     const pos = await db.select({
       po: purchaseOrders,
@@ -417,33 +421,6 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
       .leftJoin(vendorAlias, eq(purchaseOrders.vendorId, vendorAlias.id))
       .where(and(...conditions))
       .orderBy(desc(purchaseOrders.createdAt));
-
-    if (req.query.search) {
-      const term = String(req.query.search).toLowerCase();
-      const filtered = pos.filter(r =>
-        r.po.poNumber?.toLowerCase().includes(term) ||
-        r.vendorName?.toLowerCase().includes(term) ||
-        r.projectName?.toLowerCase().includes(term) ||
-        r.po.notes?.toLowerCase().includes(term)
-      );
-      const poIds = filtered.map(r => r.po.id);
-      let itemsByPo: Record<string, any[]> = {};
-      if (poIds.length > 0) {
-        const allItems = await db.select().from(purchaseOrderItems)
-          .where(sql`${purchaseOrderItems.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
-        for (const item of allItems) {
-          if (!itemsByPo[item.poId]) itemsByPo[item.poId] = [];
-          itemsByPo[item.poId].push(item);
-        }
-      }
-      res.json(filtered.map(r => ({
-        ...r.po,
-        project: r.projectName ? { name: r.projectName, code: r.projectCode } : null,
-        vendor: r.vendorName ? { id: r.vendorId, name: r.vendorName } : null,
-        items: itemsByPo[r.po.id] || [],
-      })));
-      return;
-    }
 
     const poIds = pos.map(r => r.po.id);
     let itemsByPo: Record<string, any[]> = {};
@@ -752,7 +729,8 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be rejected" }); return; }
 
-    const rejectionNotes = req.body.rejectionNotes || req.body.notes || null;
+    const rejectionNotes = (req.body.rejectionNotes || req.body.notes || "").trim();
+    if (!rejectionNotes) { res.status(400).json({ error: "Rejection notes are required" }); return; }
 
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "CANCELLED", rejectionNotes, updatedAt: new Date() })
@@ -932,8 +910,19 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
     if (orgPOs.length === 0) { res.json([]); return; }
 
     const poIds = orgPOs.map(po => po.id);
+    const receiptConditions: any[] = [sql`${poReceipts.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`];
+    if (req.query.status) receiptConditions.push(eq(poReceipts.status, String(req.query.status)));
+    if (req.query.search) {
+      const term = `%${String(req.query.search)}%`;
+      receiptConditions.push(or(
+        ilike(poReceipts.deliveryNote, term),
+        ilike(poReceipts.notes, term),
+        sql`EXISTS (SELECT 1 FROM purchase_orders po2 WHERE po2.id = ${poReceipts.poId} AND po2.po_number ILIKE ${term})`,
+      ));
+    }
+
     const allReceipts = await db.select().from(poReceipts)
-      .where(sql`${poReceipts.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`)
+      .where(and(...receiptConditions))
       .orderBy(desc(poReceipts.receivedAt));
 
     const allReceiptIds = allReceipts.map(r => r.id);
@@ -1020,7 +1009,10 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
 
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
-      conditions.push(ilike(vendorInvoices.invoiceNumber, term));
+      conditions.push(or(
+        ilike(vendorInvoices.invoiceNumber, term),
+        sql`EXISTS (SELECT 1 FROM crm_organisations v WHERE v.id = COALESCE(${vendorInvoices.vendorId}, (SELECT vendor_id FROM purchase_orders po WHERE po.id = ${vendorInvoices.poId})) AND v.name ILIKE ${term})`,
+      ));
     }
 
     const poAlias = db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId }).from(purchaseOrders).as("po_alias");
@@ -1177,25 +1169,31 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
     if (!po) { res.json(null); return; }
 
     const tolerancePct = await getOrgTolerance(orgId);
+    const qtyThreshold = 100 - tolerancePct;
     const poItems = await db.select().from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.poId, po.id));
 
     const poAmount = parseFloat(po.totalCost?.toString() || "0");
     const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
+    let allItemsMatch = true;
     let totalOrdered = 0;
     let totalReceived = 0;
     for (const item of poItems) {
-      totalOrdered += parseFloat(item.quantity?.toString() || "0");
-      totalReceived += parseFloat(item.quantityReceived?.toString() || "0");
+      const ordered = parseFloat(item.quantity?.toString() || "0");
+      const received = parseFloat(item.quantityReceived?.toString() || "0");
+      totalOrdered += ordered;
+      totalReceived += received;
+      if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
+        allItemsMatch = false;
+      }
     }
     const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
     const amountTolerance = poAmount * (tolerancePct / 100);
     const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
-    const qtyMatch = receivedQtyMatchPct >= 95;
 
     res.json({
       computed: true,
-      matchStatus: amountMatch && qtyMatch ? "MATCHED" : "DISCREPANCY",
+      matchStatus: amountMatch && allItemsMatch ? "MATCHED" : "DISCREPANCY",
       poAmount: String(poAmount),
       invoiceAmount: String(invoiceAmount),
       receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
@@ -1220,23 +1218,30 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
 
     const tolerancePct = await getOrgTolerance(orgId);
+    const qtyThreshold = 100 - tolerancePct;
     const poItems = await db.select().from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.poId, po.id));
 
     const poAmount = parseFloat(po.totalCost?.toString() || "0");
     const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
 
+    let allItemsMatch = true;
     let totalOrdered = 0;
     let totalReceived = 0;
     for (const item of poItems) {
-      totalOrdered += parseFloat(item.quantity?.toString() || "0");
-      totalReceived += parseFloat(item.quantityReceived?.toString() || "0");
+      const ordered = parseFloat(item.quantity?.toString() || "0");
+      const received = parseFloat(item.quantityReceived?.toString() || "0");
+      totalOrdered += ordered;
+      totalReceived += received;
+      if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
+        allItemsMatch = false;
+      }
     }
     const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
 
     const amountTolerance = poAmount * (tolerancePct / 100);
     const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
-    const qtyMatch = receivedQtyMatchPct >= 95;
+    const qtyMatch = allItemsMatch;
 
     const matchStatus = amountMatch && qtyMatch ? "MATCHED" : "DISCREPANCY";
 

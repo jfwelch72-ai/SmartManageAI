@@ -21,7 +21,7 @@ import {
   useSubmitPurchaseOrder, useApprovePurchaseOrder, useRejectPurchaseOrder, useSendPurchaseOrder, useDeletePurchaseOrder,
   useCreatePOReceipt, useProcurementReceipts,
   useVendorInvoices, useCreateVendorInvoice,
-  useCreateInvoiceMatch, useResolveMatchDiscrepancy,
+  useCreateInvoiceMatch, useResolveMatchDiscrepancy, useUpdateVendorInvoice,
   useInvoicePayments, useCreateInvoicePayment,
   type ProcurementReceipt, type ProcurementReceiptItem, type InvoicePayment,
 } from "@/hooks/use-data";
@@ -121,10 +121,11 @@ interface InvoiceRow {
   po?: { poNumber: string } | null; vendor?: VendorRef | null; match?: MatchDetail | null;
 }
 
-function FilterBar({ search, onSearch, status, onStatus, statuses, placeholder }: {
+function FilterBar({ search, onSearch, status, onStatus, statuses, placeholder, projectId, onProjectChange, projects }: {
   search: string; onSearch: (v: string) => void;
   status: string; onStatus: (v: string) => void;
   statuses: string[]; placeholder?: string;
+  projectId?: string; onProjectChange?: (v: string) => void; projects?: ProjectRef[];
 }) {
   return (
     <div className="flex flex-col sm:flex-row gap-2 mb-4">
@@ -141,6 +142,17 @@ function FilterBar({ search, onSearch, status, onStatus, statuses, placeholder }
           {statuses.map(s => <SelectItem key={s} value={s}>{statusLabel(s)}</SelectItem>)}
         </SelectContent>
       </Select>
+      {projects && onProjectChange && (
+        <Select value={projectId || "ALL"} onValueChange={onProjectChange}>
+          <SelectTrigger className="w-[200px]" data-testid="select-filter-project">
+            <SelectValue placeholder="All Projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All Projects</SelectItem>
+            {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
     </div>
   );
 }
@@ -150,20 +162,22 @@ function RejectDialog({ open, onClose, onConfirm, isPending, entityLabel }: {
   isPending: boolean; entityLabel: string;
 }) {
   const [notes, setNotes] = useState("");
+  const notesEmpty = !notes.trim();
   return (
-    <Dialog open={open} onOpenChange={o => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={o => { if (!o) { onClose(); setNotes(""); } }}>
       <DialogContent data-testid="dialog-reject">
         <DialogHeader>
           <DialogTitle>Reject {entityLabel}</DialogTitle>
           <DialogDescription>Provide a reason for rejecting this {entityLabel.toLowerCase()}.</DialogDescription>
         </DialogHeader>
         <div>
-          <Label>Rejection Reason</Label>
+          <Label>Rejection Reason *</Label>
           <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Enter reason for rejection..." data-testid="input-rejection-notes" />
+          {notesEmpty && <p className="text-xs text-destructive mt-1">A rejection reason is required.</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="destructive" onClick={() => { onConfirm(notes); setNotes(""); }} disabled={isPending} data-testid="button-confirm-reject">
+          <Button variant="outline" onClick={() => { onClose(); setNotes(""); }}>Cancel</Button>
+          <Button variant="destructive" onClick={() => { onConfirm(notes.trim()); setNotes(""); }} disabled={isPending || notesEmpty} data-testid="button-confirm-reject">
             {isPending ? "Rejecting..." : "Reject"}
           </Button>
         </DialogFooter>
@@ -176,9 +190,11 @@ function PurchaseRequestsTab() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [projectFilter, setProjectFilter] = useState("ALL");
   const { data: prs = [], isLoading } = usePurchaseRequests({
     status: statusFilter !== "ALL" ? statusFilter : undefined,
     search: search || undefined,
+    projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
   const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
   const projectsList = projectsResponse?.data ?? [];
@@ -323,7 +339,7 @@ function PurchaseRequestsTab() {
         <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-new-pr"><Plus className="w-4 h-4 mr-2" />New Request</Button>
       </CardHeader>
       <CardContent>
-        <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PR_STATUSES} placeholder="Search by title or PR number..." />
+        <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PR_STATUSES} placeholder="Search by title, PR number, or project..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Loading...</div>
         ) : prs.length === 0 ? (
@@ -457,9 +473,11 @@ function PurchaseOrdersTab() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [projectFilter, setProjectFilter] = useState("ALL");
   const { data: pos = [], isLoading } = usePurchaseOrders({
     status: statusFilter !== "ALL" ? statusFilter : undefined,
     search: search || undefined,
+    projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
   const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
   const projectsList = projectsResponse?.data ?? [];
@@ -510,7 +528,7 @@ function PurchaseOrdersTab() {
           <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-new-po"><Plus className="w-4 h-4 mr-2" />New PO</Button>
         </CardHeader>
         <CardContent>
-          <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PO_STATUSES} placeholder="Search by PO number, vendor, or project..." />
+          <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PO_STATUSES} placeholder="Search by PO number, vendor, or project..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : pos.length === 0 ? (
@@ -705,6 +723,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
 
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editForm, setEditForm] = useState({ terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
+  const [editLineItems, setEditLineItems] = useState<LineItem[]>([]);
 
   const openEdit = () => {
     if (!po) return;
@@ -712,16 +731,30 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       terms: po.terms || "", deliveryAddress: po.deliveryAddress || "",
       neededByDate: po.neededByDate?.split("T")[0] || "", notes: po.notes || "",
     });
+    setEditLineItems(po.items?.map((item: POItem) => ({
+      description: item.description, quantity: item.quantity || "", unit: item.unit || "",
+      unitCost: item.unitCost || "", costCode: item.costCode || "",
+    })) || [{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
     setShowEditDialog(true);
   };
 
+  const addEditLineItem = () => setEditLineItems([...editLineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const removeEditLineItem = (i: number) => setEditLineItems(editLineItems.filter((_, idx) => idx !== i));
+  const updateEditLineItem = (i: number, field: string, value: string) => {
+    const updated = [...editLineItems];
+    updated[i] = { ...updated[i], [field]: value };
+    setEditLineItems(updated);
+  };
+
   const handleEdit = async () => {
+    const validItems = editLineItems.filter(li => li.description.trim());
     try {
       await updateMutation.mutateAsync({
         id: poId,
         data: {
           terms: editForm.terms || null, deliveryAddress: editForm.deliveryAddress || null,
           neededByDate: editForm.neededByDate || null, notes: editForm.notes || null,
+          items: validItems,
         },
       });
       toast({ title: "Purchase order updated" });
@@ -962,12 +995,12 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       </Sheet>
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent data-testid="dialog-edit-po">
+        <DialogContent className="max-w-2xl" data-testid="dialog-edit-po">
           <DialogHeader>
             <DialogTitle>Edit Purchase Order</DialogTitle>
-            <DialogDescription>Update PO details.</DialogDescription>
+            <DialogDescription>Update PO details and line items.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Needed By</Label>
@@ -986,6 +1019,42 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
               <Label>Notes</Label>
               <Textarea value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} rows={2} />
             </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-semibold">Line Items</Label>
+              <Button size="sm" variant="outline" onClick={addEditLineItem} data-testid="button-add-edit-po-line"><Plus className="h-3.5 w-3.5 mr-1" />Add Item</Button>
+            </div>
+            {editLineItems.map((li, i) => (
+              <div key={i} className="space-y-2 p-3 border rounded-md">
+                <div className="grid grid-cols-12 gap-2 items-end">
+                  <div className="col-span-4">
+                    <Label className="text-xs">Description</Label>
+                    <Input value={li.description} onChange={e => updateEditLineItem(i, "description", e.target.value)} data-testid={`input-edit-po-line-desc-${i}`} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Qty</Label>
+                    <Input type="number" step="0.01" value={li.quantity} onChange={e => updateEditLineItem(i, "quantity", e.target.value)} data-testid={`input-edit-po-line-qty-${i}`} />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs">Unit</Label>
+                    <Input value={li.unit} onChange={e => updateEditLineItem(i, "unit", e.target.value)} data-testid={`input-edit-po-line-unit-${i}`} />
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs">Unit Cost</Label>
+                    <Input type="number" step="0.01" value={li.unitCost || ""} onChange={e => updateEditLineItem(i, "unitCost", e.target.value)} data-testid={`input-edit-po-line-cost-${i}`} />
+                  </div>
+                  <div className="col-span-1">
+                    {editLineItems.length > 1 && (
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeEditLineItem(i)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs">Cost Code</Label>
+                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateEditLineItem(i, "costCode", val)} data-testid={`input-edit-po-line-costcode-${i}`} />
+                </div>
+              </div>
+            ))}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
@@ -1172,12 +1241,44 @@ function InvoicesTab() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [projectFilter, setProjectFilter] = useState("ALL");
   const { data: invoices = [], isLoading } = useVendorInvoices({
     status: statusFilter !== "ALL" ? statusFilter : undefined,
     search: search || undefined,
+    projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projectsList = projectsResponse?.data ?? [];
   const createMatchMutation = useCreateInvoiceMatch();
+  const updateInvoiceMutation = useUpdateVendorInvoice();
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
+  const [editingInvoice, setEditingInvoice] = useState<InvoiceRow | null>(null);
+  const [editInvForm, setEditInvForm] = useState({ invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
+
+  const openEditInvoice = (inv: InvoiceRow) => {
+    setEditingInvoice(inv);
+    setEditInvForm({
+      invoiceNumber: inv.invoiceNumber, invoiceDate: inv.invoiceDate?.split("T")[0] || "",
+      dueDate: inv.dueDate?.split("T")[0] || "", totalAmount: inv.totalAmount || "",
+      notes: "", fileUrl: inv.fileUrl || "",
+    });
+  };
+
+  const handleEditInvoice = async () => {
+    if (!editingInvoice) return;
+    try {
+      await updateInvoiceMutation.mutateAsync({
+        id: editingInvoice.id,
+        data: {
+          invoiceNumber: editInvForm.invoiceNumber, invoiceDate: editInvForm.invoiceDate,
+          totalAmount: editInvForm.totalAmount, dueDate: editInvForm.dueDate || null,
+          notes: editInvForm.notes || null, fileUrl: editInvForm.fileUrl || null,
+        },
+      });
+      toast({ title: "Invoice updated" });
+      setEditingInvoice(null);
+    } catch { toast({ title: "Failed to update invoice", variant: "destructive" }); }
+  };
 
   return (
     <>
@@ -1186,7 +1287,7 @@ function InvoicesTab() {
           <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> Vendor Invoices</CardTitle>
         </CardHeader>
         <CardContent>
-          <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={INV_STATUSES} placeholder="Search by invoice number..." />
+          <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={INV_STATUSES} placeholder="Search by invoice number or vendor..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
           ) : invoices.length === 0 ? (
@@ -1215,6 +1316,11 @@ function InvoicesTab() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        {inv.status === "PENDING" && (
+                          <Button size="sm" variant="ghost" onClick={() => openEditInvoice(inv)} data-testid={`button-edit-invoice-${inv.id}`}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         {!inv.match && (
                           <Button size="sm" variant="outline" onClick={async () => { try { await createMatchMutation.mutateAsync(inv.id); toast({ title: "3-way match completed" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-match-invoice-${inv.id}`}>
                             Run 3-Way Match
@@ -1229,6 +1335,50 @@ function InvoicesTab() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!editingInvoice} onOpenChange={o => { if (!o) setEditingInvoice(null); }}>
+        <DialogContent data-testid="dialog-edit-invoice">
+          <DialogHeader>
+            <DialogTitle>Edit Invoice — {editingInvoice?.invoiceNumber}</DialogTitle>
+            <DialogDescription>Update invoice details (PENDING invoices only).</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Invoice Number *</Label>
+              <Input value={editInvForm.invoiceNumber} onChange={e => setEditInvForm({ ...editInvForm, invoiceNumber: e.target.value })} data-testid="input-edit-invoice-number" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Invoice Date *</Label>
+                <Input type="date" value={editInvForm.invoiceDate} onChange={e => setEditInvForm({ ...editInvForm, invoiceDate: e.target.value })} data-testid="input-edit-invoice-date" />
+              </div>
+              <div>
+                <Label>Due Date</Label>
+                <Input type="date" value={editInvForm.dueDate} onChange={e => setEditInvForm({ ...editInvForm, dueDate: e.target.value })} data-testid="input-edit-invoice-due" />
+              </div>
+            </div>
+            <div>
+              <Label>Total Amount *</Label>
+              <Input type="number" step="0.01" value={editInvForm.totalAmount} onChange={e => setEditInvForm({ ...editInvForm, totalAmount: e.target.value })} data-testid="input-edit-invoice-amount" />
+            </div>
+            <div>
+              <Label>File URL</Label>
+              <Input value={editInvForm.fileUrl} onChange={e => setEditInvForm({ ...editInvForm, fileUrl: e.target.value })} placeholder="https://..." data-testid="input-edit-invoice-file-url" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={editInvForm.notes} onChange={e => setEditInvForm({ ...editInvForm, notes: e.target.value })} rows={2} data-testid="input-edit-invoice-notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingInvoice(null)}>Cancel</Button>
+            <Button onClick={handleEditInvoice} disabled={updateInvoiceMutation.isPending} data-testid="button-submit-edit-invoice">
+              {updateInvoiceMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <InvoiceDetailDialog invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
     </>
   );
@@ -1421,8 +1571,19 @@ function InvoiceDetailDialog({ invoice, onClose }: { invoice: InvoiceRow | null;
   );
 }
 
+const RECEIPT_STATUSES = ["PENDING", "COMPLETE"];
+
 function ReceiptsTab() {
-  const { data: receipts = [], isLoading } = useProcurementReceipts();
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [projectFilter, setProjectFilter] = useState("ALL");
+  const { data: receipts = [], isLoading } = useProcurementReceipts({
+    status: statusFilter !== "ALL" ? statusFilter : undefined,
+    search: search || undefined,
+    projectId: projectFilter !== "ALL" ? projectFilter : undefined,
+  });
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projectsList = projectsResponse?.data ?? [];
 
   return (
     <Card>
@@ -1430,6 +1591,7 @@ function ReceiptsTab() {
         <CardTitle className="flex items-center gap-2"><Truck className="h-5 w-5" /> Delivery Receipts</CardTitle>
       </CardHeader>
       <CardContent>
+        <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={RECEIPT_STATUSES} placeholder="Search by PO number or notes..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Loading...</div>
         ) : receipts.length === 0 ? (
