@@ -175,8 +175,7 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     .limit(1000);
 
   for (const contract of subContracts) {
-    const cc = normalizeCostCode(contract.scopeOfWork);
-    const row = ensureRow(cc, cc === "UNASSIGNED" ? "Subcontractor (unassigned)" : cc, cc === "UNASSIGNED" ? "Unassigned" : "Subcontractor");
+    const row = ensureRow("UNASSIGNED", "Subcontractors", "Unassigned");
     const amount = Number(contract.contractAmount);
     if (["ACTIVE", "PENDING", "APPROVED"].includes(contract.status)) {
       row.committedSub += amount;
@@ -185,20 +184,19 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
 
   if (subContracts.length > 0) {
     const contractIds = subContracts.map(c => c.id);
-    const contractScopeMap = new Map(subContracts.map(c => [c.id, c.scopeOfWork]));
     const payments = await db
       .select({
         contractId: subcontractorPayments.contractId,
         amount: subcontractorPayments.amount,
+        status: subcontractorPayments.status,
       })
       .from(subcontractorPayments)
       .where(inArray(subcontractorPayments.contractId, contractIds))
       .limit(5000);
 
     for (const payment of payments) {
-      const scope = contractScopeMap.get(payment.contractId) || null;
-      const cc = normalizeCostCode(scope);
-      const row = ensureRow(cc, cc === "UNASSIGNED" ? "Subcontractor (unassigned)" : cc, cc === "UNASSIGNED" ? "Unassigned" : "Subcontractor");
+      if (payment.status !== "APPROVED" && payment.status !== "PAID") continue;
+      const row = ensureRow("UNASSIGNED", "Subcontractors", "Unassigned");
       row.actualSub += Number(payment.amount);
     }
   }
@@ -222,8 +220,6 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     .select({
       grandTotal: tmTickets.grandTotal,
       status: tmTickets.status,
-      workTypeCode: tmTickets.workTypeCode,
-      workTypeName: tmTickets.workTypeName,
     })
     .from(tmTickets)
     .where(eq(tmTickets.projectId, projectId))
@@ -231,9 +227,7 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
 
   for (const ticket of tmTicketRows) {
     if (ticket.status === "APPROVED") {
-      const cc = normalizeCostCode(ticket.workTypeCode);
-      const desc = ticket.workTypeName || (cc === "UNASSIGNED" ? "T&M (unassigned)" : cc);
-      const row = ensureRow(cc, desc, cc === "UNASSIGNED" ? "Unassigned" : "T&M");
+      const row = ensureRow("UNASSIGNED", "T&M Tickets", "Unassigned");
       row.actualTM += Number(ticket.grandTotal || 0);
     }
   }
@@ -248,12 +242,11 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     .limit(5000);
 
   for (const receipt of expenseReceipts) {
-    const cc = normalizeCostCode(receipt.category);
-    const row = ensureRow(cc, cc === "UNASSIGNED" ? "Other Expenses" : cc, cc === "UNASSIGNED" ? "Unassigned" : "Expenses");
+    const row = ensureRow("UNASSIGNED", "Other Expenses", "Unassigned");
     row.actualOther += Number(receipt.amount || 0);
   }
 
-  let percentComplete = 50;
+  let percentComplete = 0;
   if (projectStartDate && projectEndDate) {
     const start = new Date(projectStartDate).getTime();
     const end = new Date(projectEndDate).getTime();

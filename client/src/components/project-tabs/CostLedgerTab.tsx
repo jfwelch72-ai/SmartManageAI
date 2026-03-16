@@ -56,6 +56,12 @@ function getProgressColor(pctUsed: number): string {
   return "[&>div]:bg-green-500";
 }
 
+function getRemainingColor(remaining: number, budget: number): string {
+  if (remaining < 0) return "text-red-600 dark:text-red-400 font-semibold";
+  if (budget > 0 && remaining / budget < 0.2) return "text-amber-600 dark:text-amber-400";
+  return "";
+}
+
 export default function CostLedgerTab({ projectCode }: { projectCode: string }) {
   const [expandedDivisions, setExpandedDivisions] = useState<Set<string>>(new Set());
 
@@ -138,7 +144,10 @@ export default function CostLedgerTab({ projectCode }: { projectCode: string }) 
         </CardHeader>
         <CardContent>
           <div className="text-xs text-muted-foreground mb-2 flex items-center gap-4">
-            <span>Project % Complete (time-based): <strong>{ledger.percentComplete.toFixed(0)}%</strong></span>
+            <span>
+              Project % Complete (time-based): <strong>{ledger.percentComplete > 0 ? `${ledger.percentComplete.toFixed(0)}%` : "N/A"}</strong>
+              {ledger.percentComplete === 0 && " — Set project start/end dates for time-based forecasting"}
+            </span>
           </div>
           <div className="rounded-md border overflow-auto">
             <Table>
@@ -180,7 +189,7 @@ export default function CostLedgerTab({ projectCode }: { projectCode: string }) 
                         <TableCell className="text-right">{fmtCurrency(divBudget)}</TableCell>
                         <TableCell className="text-right">{fmtCurrency(divCommitted)}</TableCell>
                         <TableCell className="text-right">{fmtCurrency(divActual)}</TableCell>
-                        <TableCell className={`text-right ${divRemaining < 0 ? "text-red-600 dark:text-red-400" : ""}`}>{fmtCurrency(divRemaining)}</TableCell>
+                        <TableCell className={`text-right ${getRemainingColor(divRemaining, divBudget)}`}>{fmtCurrency(divRemaining)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Progress value={Math.min(divPct, 100)} className={`h-2 flex-1 ${getProgressColor(divPct)}`} />
@@ -212,7 +221,7 @@ export default function CostLedgerTab({ projectCode }: { projectCode: string }) 
                           <TableCell className="text-right">{fmtCurrency(row.budgetedTotal)}</TableCell>
                           <TableCell className="text-right">{fmtCurrency(row.committedTotal)}</TableCell>
                           <TableCell className="text-right">{fmtCurrency(row.actualTotal)}</TableCell>
-                          <TableCell className={`text-right ${row.remainingBudget < 0 ? "text-red-600 dark:text-red-400" : ""}`}>{fmtCurrency(row.remainingBudget)}</TableCell>
+                          <TableCell className={`text-right ${getRemainingColor(row.remainingBudget, row.budgetedTotal)}`}>{fmtCurrency(row.remainingBudget)}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <Progress value={Math.min(row.percentUsed, 100)} className={`h-2 flex-1 ${getProgressColor(row.percentUsed)}`} />
@@ -234,7 +243,7 @@ export default function CostLedgerTab({ projectCode }: { projectCode: string }) 
                   <TableCell className="text-right">{fmtCurrency(totals.budgetedTotal)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(totals.committedTotal)}</TableCell>
                   <TableCell className="text-right">{fmtCurrency(totals.actualTotal)}</TableCell>
-                  <TableCell className={`text-right ${totals.remainingBudget < 0 ? "text-red-600 dark:text-red-400" : ""}`}>{fmtCurrency(totals.remainingBudget)}</TableCell>
+                  <TableCell className={`text-right ${getRemainingColor(totals.remainingBudget, totals.budgetedTotal)}`}>{fmtCurrency(totals.remainingBudget)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Progress value={Math.min(totals.percentUsed, 100)} className={`h-2 flex-1 ${getProgressColor(totals.percentUsed)}`} />
