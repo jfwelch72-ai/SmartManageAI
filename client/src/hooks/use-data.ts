@@ -772,6 +772,8 @@ export function useCreatePOReceipt() {
   });
 }
 
+export const useCreateReceipt = useCreatePOReceipt;
+
 export function useVendorInvoices() {
   return useQuery<ProcurementInvoice[]>({
     queryKey: ["/api/procurement-module/invoices"],
@@ -780,7 +782,7 @@ export function useVendorInvoices() {
 
 export function useCreateVendorInvoice() {
   return useMutation({
-    mutationFn: async (data: { poId: string; invoiceNumber?: string | null; vendorInvoiceRef?: string | null; totalAmount?: string | null; dueDate?: string | null; notes?: string | null }) => {
+    mutationFn: async (data: { poId: string; invoiceNumber: string; invoiceDate: string; totalAmount: string; vendorId?: string | null; dueDate?: string | null; notes?: string | null; fileUrl?: string | null }) => {
       const response = await apiRequest("POST", "/api/procurement-module/invoices", data);
       return response.json();
     },
@@ -793,7 +795,7 @@ export function useCreateVendorInvoice() {
 
 export function useUpdateVendorInvoice() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<{ invoiceNumber: string; vendorInvoiceRef: string | null; totalAmount: string | null; dueDate: string | null; notes: string | null; fileUrl: string | null }> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ invoiceNumber: string; invoiceDate: string; totalAmount: string; dueDate: string | null; notes: string | null; fileUrl: string | null }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/invoices/${id}`, data);
       return response.json();
     },
@@ -865,7 +867,7 @@ export function useProjectReceipts(code: string) {
   });
 }
 
-export function useCreateReceipt() {
+export function useCreateProjectReceipt() {
   return useMutation({
     mutationFn: async (data: Partial<Receipt> & { projectCode: string; projectId: string }) => {
       const { projectCode, ...receiptData } = data;

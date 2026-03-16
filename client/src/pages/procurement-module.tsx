@@ -88,10 +88,11 @@ interface PurchaseRequest {
   prNumber: string;
   title: string;
   status: string;
-  priority: string | null;
   project?: ProjectRef | null;
   createdAt: string;
-  totalEstimate: string | null;
+  neededByDate: string | null;
+  totalEstimatedCost: string | null;
+  requestedBy?: { firstName: string; lastName: string } | null;
 }
 
 interface PurchaseOrder {
@@ -116,6 +117,14 @@ interface POReceiptSummary {
   items: { id: string; poItemId: string; quantityReceived: string; condition: string; notes: string | null }[];
 }
 
+interface MatchDetail {
+  matchStatus: string;
+  poAmount?: string;
+  invoiceAmount?: string;
+  receivedQtyMatchPct?: string;
+  resolvedAt?: string | null;
+}
+
 interface InvoiceSummary {
   id: string;
   invoiceNumber: string;
@@ -123,7 +132,7 @@ interface InvoiceSummary {
   totalAmount: string;
   invoiceDate: string;
   dueDate: string | null;
-  match?: { matchStatus: string } | null;
+  match?: MatchDetail | null;
 }
 
 interface InvoiceRow {
@@ -135,7 +144,7 @@ interface InvoiceRow {
   dueDate: string | null;
   po?: { poNumber: string } | null;
   vendor?: VendorRef | null;
-  match?: { matchStatus: string } | null;
+  match?: MatchDetail | null;
 }
 
 function PurchaseRequestsTab() {
