@@ -123,7 +123,7 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     const row = ensureRow(cc);
     const lineCost = Number(item.quantity || 0) * Number(item.unitCost || 0);
     const status = item.poStatus as string;
-    if (["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED"].includes(status)) {
+    if (["APPROVED", "SENT", "PARTIAL", "FULFILLED"].includes(status)) {
       row.committedPO += lineCost;
     }
   }
