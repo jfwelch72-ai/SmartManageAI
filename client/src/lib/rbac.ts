@@ -564,6 +564,12 @@ export const NavigationConfig = {
       testId: "nav-photo-custody",
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
     },
+    {
+      href: "/procurement",
+      label: "Procurement",
+      testId: "nav-procurement",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "PROCUREMENT_MANAGER",
+    },
   ],
 
   preconstructionMenu: [

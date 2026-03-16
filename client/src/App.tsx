@@ -124,6 +124,7 @@ const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"));
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
+const ProcurementModulePage = lazy(() => import("@/pages/procurement-module"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -306,6 +307,7 @@ function Router() {
       <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} featurePerm="canManageWebsite" />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
+      <Route path="/procurement" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.VIEW_PROCUREMENT_TAB} />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       
       {/* Vendor Portal routes (VENDOR only) */}

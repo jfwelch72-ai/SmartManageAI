@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, procurementStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, wireMeshTypeEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, crmOrganisations, organizationSowItems, quantityCategories, scopeWorkTypes } from "./features";
 
@@ -1902,4 +1902,144 @@ export type TimeClockEvent = typeof timeClockEvents.$inferSelect;
 export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
 export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
+
+export const purchaseRequests = pgTable("purchase_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  requestedById: varchar("requested_by_id").notNull().references(() => users.id),
+  prNumber: text("pr_number").notNull(),
+  title: text("title").notNull(),
+  status: purchaseRequestStatusEnum("status").notNull().default("DRAFT"),
+  neededByDate: timestamp("needed_by_date"),
+  notes: text("notes"),
+  totalEstimatedCost: decimal("total_estimated_cost", { precision: 12, scale: 2 }),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const purchaseRequestItems = pgTable("purchase_request_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  prId: varchar("pr_id").notNull().references(() => purchaseRequests.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  category: text("category"),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  estimatedUnitCost: decimal("estimated_unit_cost", { precision: 10, scale: 2 }),
+});
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  prId: varchar("pr_id").references(() => purchaseRequests.id),
+  vendorId: varchar("vendor_id").references(() => crmOrganisations.id),
+  poNumber: text("po_number").notNull(),
+  status: purchaseOrderStatusEnum("status").notNull().default("DRAFT"),
+  terms: text("terms"),
+  deliveryAddress: text("delivery_address"),
+  neededByDate: timestamp("needed_by_date"),
+  notes: text("notes"),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  poId: varchar("po_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  prItemId: varchar("pr_item_id").references(() => purchaseRequestItems.id),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }),
+  unit: text("unit"),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  quantityReceived: decimal("quantity_received", { precision: 10, scale: 2 }).default("0"),
+});
+
+export const poReceipts = pgTable("po_receipts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  poId: varchar("po_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  receivedById: varchar("received_by_id").notNull().references(() => users.id),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+  deliveryNote: text("delivery_note"),
+  status: poReceiptStatusEnum("status").notNull().default("PARTIAL"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const poReceiptItems = pgTable("po_receipt_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  receiptId: varchar("receipt_id").notNull().references(() => poReceipts.id, { onDelete: "cascade" }),
+  poItemId: varchar("po_item_id").notNull().references(() => purchaseOrderItems.id),
+  quantityReceived: decimal("quantity_received", { precision: 10, scale: 2 }).notNull(),
+  condition: poReceiptItemConditionEnum("condition").notNull().default("GOOD"),
+  notes: text("notes"),
+});
+
+export const vendorInvoices = pgTable("vendor_invoices", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  poId: varchar("po_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  vendorId: varchar("vendor_id").references(() => crmOrganisations.id),
+  invoiceNumber: text("invoice_number").notNull(),
+  invoiceDate: timestamp("invoice_date").notNull(),
+  dueDate: timestamp("due_date"),
+  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull(),
+  status: vendorInvoiceStatusEnum("status").notNull().default("PENDING"),
+  notes: text("notes"),
+  fileUrl: text("file_url"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const invoiceMatches = pgTable("invoice_matches", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => vendorInvoices.id, { onDelete: "cascade" }),
+  poId: varchar("po_id").notNull().references(() => purchaseOrders.id),
+  receiptId: varchar("receipt_id").references(() => poReceipts.id),
+  matchStatus: invoiceMatchStatusEnum("match_status").notNull().default("PENDING"),
+  poAmount: decimal("po_amount", { precision: 12, scale: 2 }),
+  invoiceAmount: decimal("invoice_amount", { precision: 12, scale: 2 }),
+  receivedQtyMatchPct: decimal("received_qty_match_pct", { precision: 5, scale: 2 }),
+  discrepancyNotes: text("discrepancy_notes"),
+  resolvedById: varchar("resolved_by_id").references(() => users.id),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).omit({ id: true, createdAt: true, updatedAt: true, approvedAt: true });
+export type InsertPurchaseRequest = z.infer<typeof insertPurchaseRequestSchema>;
+export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
+
+export const insertPurchaseRequestItemSchema = createInsertSchema(purchaseRequestItems).omit({ id: true });
+export type InsertPurchaseRequestItem = z.infer<typeof insertPurchaseRequestItemSchema>;
+export type PurchaseRequestItem = typeof purchaseRequestItems.$inferSelect;
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({ id: true, createdAt: true, updatedAt: true, approvedAt: true });
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({ id: true });
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+
+export const insertPoReceiptSchema = createInsertSchema(poReceipts).omit({ id: true, createdAt: true });
+export type InsertPoReceipt = z.infer<typeof insertPoReceiptSchema>;
+export type PoReceipt = typeof poReceipts.$inferSelect;
+
+export const insertPoReceiptItemSchema = createInsertSchema(poReceiptItems).omit({ id: true });
+export type InsertPoReceiptItem = z.infer<typeof insertPoReceiptItemSchema>;
+export type PoReceiptItem = typeof poReceiptItems.$inferSelect;
+
+export const insertVendorInvoiceSchema = createInsertSchema(vendorInvoices).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertVendorInvoice = z.infer<typeof insertVendorInvoiceSchema>;
+export type VendorInvoice = typeof vendorInvoices.$inferSelect;
+
+export const insertInvoiceMatchSchema = createInsertSchema(invoiceMatches).omit({ id: true, createdAt: true });
+export type InsertInvoiceMatch = z.infer<typeof insertInvoiceMatchSchema>;
+export type InvoiceMatch = typeof invoiceMatches.$inferSelect;
 

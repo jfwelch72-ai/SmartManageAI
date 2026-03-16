@@ -350,6 +350,13 @@ export const pricebookStatusEnum = pgEnum("pricebook_status", ["PENDING", "PROCE
 
 export const aiCoDraftStatusEnum = pgEnum("ai_co_draft_status", ["DRAFT", "CONVERTED", "DISCARDED"]);
 
+export const purchaseRequestStatusEnum = pgEnum("purchase_request_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"]);
+export const purchaseOrderStatusEnum = pgEnum("purchase_order_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED", "CANCELLED"]);
+export const poReceiptStatusEnum = pgEnum("po_receipt_status", ["PARTIAL", "COMPLETE"]);
+export const poReceiptItemConditionEnum = pgEnum("po_receipt_item_condition", ["GOOD", "DAMAGED", "REJECTED"]);
+export const vendorInvoiceStatusEnum = pgEnum("vendor_invoice_status", ["PENDING", "MATCHED", "APPROVED", "PAID", "DISPUTED"]);
+export const invoiceMatchStatusEnum = pgEnum("invoice_match_status", ["PENDING", "MATCHED", "DISCREPANCY"]);
+
 export const mobilePlatformEnum = pgEnum("mobile_platform", ["IOS", "ANDROID", "WEB"]);
 export const syncStatusEnum = pgEnum("sync_status", ["IN_PROGRESS", "COMPLETE", "FAILED"]);
 

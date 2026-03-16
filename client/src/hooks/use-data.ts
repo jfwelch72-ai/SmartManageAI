@@ -450,6 +450,265 @@ export function useDeleteProcurementItem() {
   });
 }
 
+// Procurement Module
+export function usePurchaseRequests() {
+  return useQuery<any[]>({
+    queryKey: ["/api/procurement-module/requests"],
+  });
+}
+
+export function useCreatePurchaseRequest() {
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("POST", "/api/procurement-module/requests", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+    },
+  });
+}
+
+export function useUpdatePurchaseRequest() {
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest("PATCH", `/api/procurement-module/requests/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+    },
+  });
+}
+
+export function useSubmitPurchaseRequest() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/requests/${id}/submit`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+    },
+  });
+}
+
+export function useApprovePurchaseRequest() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/requests/${id}/approve`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+    },
+  });
+}
+
+export function useRejectPurchaseRequest() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/requests/${id}/reject`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+    },
+  });
+}
+
+export function useConvertPRToPO() {
+  return useMutation({
+    mutationFn: async ({ id, vendorId }: { id: string; vendorId?: string }) => {
+      const response = await apiRequest("POST", `/api/procurement-module/requests/${id}/convert-to-po`, { vendorId });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useDeletePurchaseRequest() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/procurement-module/requests/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
+    },
+  });
+}
+
+export function usePurchaseOrders() {
+  return useQuery<any[]>({
+    queryKey: ["/api/procurement-module/orders"],
+  });
+}
+
+export function usePurchaseOrderDetail(id: string | null) {
+  return useQuery<any>({
+    queryKey: ["/api/procurement-module/orders", id],
+    enabled: !!id,
+  });
+}
+
+export function useCreatePurchaseOrder() {
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("POST", "/api/procurement-module/orders", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useUpdatePurchaseOrder() {
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest("PATCH", `/api/procurement-module/orders/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useSubmitPurchaseOrder() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/orders/${id}/submit`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useApprovePurchaseOrder() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/orders/${id}/approve`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useRejectPurchaseOrder() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/orders/${id}/reject`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useSendPurchaseOrder() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/orders/${id}/send`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useDeletePurchaseOrder() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/procurement-module/orders/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useCreatePOReceipt() {
+  return useMutation({
+    mutationFn: async ({ poId, data }: { poId: string; data: any }) => {
+      const response = await apiRequest("POST", `/api/procurement-module/orders/${poId}/receipts`, data);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders", variables.poId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useVendorInvoices() {
+  return useQuery<any[]>({
+    queryKey: ["/api/procurement-module/invoices"],
+  });
+}
+
+export function useCreateVendorInvoice() {
+  return useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiRequest("POST", "/api/procurement-module/invoices", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useUpdateVendorInvoice() {
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const response = await apiRequest("PATCH", `/api/procurement-module/invoices/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] });
+    },
+  });
+}
+
+export function useCreateInvoiceMatch() {
+  return useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const response = await apiRequest("POST", `/api/procurement-module/invoices/${invoiceId}/match`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useResolveMatchDiscrepancy() {
+  return useMutation({
+    mutationFn: async ({ invoiceId, notes }: { invoiceId: string; notes: string }) => {
+      const response = await apiRequest("POST", `/api/procurement-module/invoices/${invoiceId}/match/resolve`, { notes });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
 // Documents
 export function useProjectDocuments(code: string) {
   return useQuery<PlanDocument[]>({
