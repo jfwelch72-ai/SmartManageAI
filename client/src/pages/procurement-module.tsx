@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,11 +128,20 @@ function FilterBar({ search, onSearch, status, onStatus, statuses, placeholder, 
   statuses: string[]; placeholder?: string;
   projectId?: string; onProjectChange?: (v: string) => void; projects?: ProjectRef[];
 }) {
+  const [localSearch, setLocalSearch] = useState(search);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearchChange = useCallback((v: string) => {
+    setLocalSearch(v);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => onSearch(v), 300);
+  }, [onSearch]);
+  useEffect(() => { setLocalSearch(search); }, [search]);
+  useEffect(() => { return () => { if (timerRef.current) clearTimeout(timerRef.current); }; }, []);
   return (
     <div className="flex flex-col sm:flex-row gap-2 mb-4">
       <div className="relative flex-1">
         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-        <Input value={search} onChange={e => onSearch(e.target.value)} placeholder={placeholder || "Search..."} className="pl-8" data-testid="input-filter-search" />
+        <Input value={localSearch} onChange={e => handleSearchChange(e.target.value)} placeholder={placeholder || "Search..."} className="pl-8" data-testid="input-filter-search" />
       </div>
       <Select value={status} onValueChange={onStatus}>
         <SelectTrigger className="w-[180px]" data-testid="select-filter-status">
@@ -552,6 +561,11 @@ function PurchaseOrdersTab() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                      {(po.status === "DRAFT" || po.status === "PENDING_APPROVAL") && (
+                        <Button size="sm" variant="ghost" onClick={() => setSelectedPOId(po.id)} data-testid={`button-edit-po-card-${po.id}`}>
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
                       {po.status === "DRAFT" && (
                         <>
                           <Button size="sm" variant="outline" onClick={async () => { try { await submitMutation.mutateAsync(po.id); toast({ title: "Submitted" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-submit-po-${po.id}`}>
