@@ -1914,6 +1914,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   neededByDate: timestamp("needed_by_date"),
   notes: text("notes"),
   totalEstimatedCost: decimal("total_estimated_cost", { precision: 12, scale: 2 }),
+  rejectionNotes: text("rejection_notes"),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -1944,6 +1945,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   neededByDate: timestamp("needed_by_date"),
   notes: text("notes"),
   totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
+  rejectionNotes: text("rejection_notes"),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -2044,6 +2046,23 @@ export type VendorInvoice = typeof vendorInvoices.$inferSelect;
 export const insertInvoiceMatchSchema = createInsertSchema(invoiceMatches).omit({ id: true, createdAt: true });
 export type InsertInvoiceMatch = z.infer<typeof insertInvoiceMatchSchema>;
 export type InvoiceMatch = typeof invoiceMatches.$inferSelect;
+
+export const invoicePayments = pgTable("invoice_payments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  invoiceId: varchar("invoice_id").notNull().references(() => vendorInvoices.id, { onDelete: "cascade" }),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  paymentDate: timestamp("payment_date").notNull(),
+  method: text("method"),
+  referenceNumber: text("reference_number"),
+  notes: text("notes"),
+  recordedById: varchar("recorded_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertInvoicePaymentSchema = createInsertSchema(invoicePayments).omit({ id: true, createdAt: true });
+export type InsertInvoicePayment = z.infer<typeof insertInvoicePaymentSchema>;
+export type InvoicePayment = typeof invoicePayments.$inferSelect;
 
 export const orgCostCodes = pgTable("org_cost_codes", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

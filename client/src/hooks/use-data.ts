@@ -473,6 +473,7 @@ export interface ProcurementPR {
   totalEstimatedCost: string | null;
   neededByDate: string | null;
   notes: string | null;
+  rejectionNotes: string | null;
   createdAt: string;
   updatedAt: string;
   items: ProcurementPRItem[];
@@ -505,6 +506,7 @@ export interface ProcurementPO {
   deliveryAddress: string | null;
   neededByDate: string | null;
   notes: string | null;
+  rejectionNotes: string | null;
   createdAt: string;
   updatedAt: string;
   items: ProcurementPOItem[];
@@ -516,24 +518,46 @@ export interface ProcurementInvoice {
   id: string;
   orgId: string;
   poId: string;
+  vendorId: string | null;
   invoiceNumber: string;
   vendorInvoiceRef: string | null;
+  invoiceDate: string | null;
   totalAmount: string | null;
   status: string;
   dueDate: string | null;
   notes: string | null;
+  fileUrl: string | null;
   createdAt: string;
   updatedAt: string;
   po: { poNumber: string } | null;
+  vendor: { id: string; name: string } | null;
   match: { id: string; matchStatus: string; poAmount: string; invoiceAmount: string; receivedQtyMatchPct: string } | null;
+  totalPaid: string;
 }
 
-export function usePurchaseRequests(projectId?: string) {
-  const url = projectId
-    ? `/api/procurement-module/requests?projectId=${encodeURIComponent(projectId)}`
-    : "/api/procurement-module/requests";
+export interface InvoicePayment {
+  id: string;
+  orgId: string;
+  invoiceId: string;
+  amount: string;
+  paymentDate: string;
+  method: string | null;
+  referenceNumber: string | null;
+  notes: string | null;
+  recordedById: string;
+  recordedBy: { firstName: string; lastName: string } | null;
+  createdAt: string;
+}
+
+export function usePurchaseRequests(filters?: { projectId?: string; status?: string; search?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.projectId) params.set("projectId", filters.projectId);
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.search) params.set("search", filters.search);
+  const qs = params.toString();
+  const url = `/api/procurement-module/requests${qs ? `?${qs}` : ""}`;
   return useQuery<ProcurementPR[]>({
-    queryKey: ["/api/procurement-module/requests", projectId ?? "all"],
+    queryKey: ["/api/procurement-module/requests", filters?.projectId ?? "all", filters?.status ?? "all", filters?.search ?? ""],
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch purchase requests");
@@ -592,8 +616,8 @@ export function useApprovePurchaseRequest() {
 
 export function useRejectPurchaseRequest() {
   return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await apiRequest("POST", `/api/procurement-module/requests/${id}/reject`);
+    mutationFn: async ({ id, rejectionNotes }: { id: string; rejectionNotes?: string }) => {
+      const response = await apiRequest("POST", `/api/procurement-module/requests/${id}/reject`, { rejectionNotes });
       return response.json();
     },
     onSuccess: () => {
@@ -627,12 +651,15 @@ export function useDeletePurchaseRequest() {
   });
 }
 
-export function usePurchaseOrders(projectId?: string) {
-  const url = projectId
-    ? `/api/procurement-module/orders?projectId=${encodeURIComponent(projectId)}`
-    : "/api/procurement-module/orders";
+export function usePurchaseOrders(filters?: { projectId?: string; status?: string; search?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.projectId) params.set("projectId", filters.projectId);
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.search) params.set("search", filters.search);
+  const qs = params.toString();
+  const url = `/api/procurement-module/orders${qs ? `?${qs}` : ""}`;
   return useQuery<ProcurementPO[]>({
-    queryKey: ["/api/procurement-module/orders", projectId ?? "all"],
+    queryKey: ["/api/procurement-module/orders", filters?.projectId ?? "all", filters?.status ?? "all", filters?.search ?? ""],
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch purchase orders");
@@ -698,8 +725,8 @@ export function useApprovePurchaseOrder() {
 
 export function useRejectPurchaseOrder() {
   return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await apiRequest("POST", `/api/procurement-module/orders/${id}/reject`);
+    mutationFn: async ({ id, rejectionNotes }: { id: string; rejectionNotes?: string }) => {
+      const response = await apiRequest("POST", `/api/procurement-module/orders/${id}/reject`, { rejectionNotes });
       return response.json();
     },
     onSuccess: () => {
@@ -787,12 +814,15 @@ export function useCreatePOReceipt() {
 
 export const useCreateReceipt = useCreatePOReceipt;
 
-export function useVendorInvoices(projectId?: string) {
-  const url = projectId
-    ? `/api/procurement-module/invoices?projectId=${encodeURIComponent(projectId)}`
-    : "/api/procurement-module/invoices";
+export function useVendorInvoices(filters?: { projectId?: string; status?: string; search?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.projectId) params.set("projectId", filters.projectId);
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.search) params.set("search", filters.search);
+  const qs = params.toString();
+  const url = `/api/procurement-module/invoices${qs ? `?${qs}` : ""}`;
   return useQuery<ProcurementInvoice[]>({
-    queryKey: ["/api/procurement-module/invoices", projectId ?? "all"],
+    queryKey: ["/api/procurement-module/invoices", filters?.projectId ?? "all", filters?.status ?? "all", filters?.search ?? ""],
     queryFn: async () => {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch invoices");
@@ -855,6 +885,30 @@ export function useResolveMatchDiscrepancy() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useInvoicePayments(invoiceId: string | null) {
+  return useQuery<InvoicePayment[]>({
+    queryKey: ["/api/procurement-module/invoices", invoiceId, "payments"],
+    queryFn: async () => {
+      const res = await fetch(`/api/procurement-module/invoices/${invoiceId}/payments`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch payments");
+      return res.json();
+    },
+    enabled: !!invoiceId,
+  });
+}
+
+export function useCreateInvoicePayment() {
+  return useMutation({
+    mutationFn: async ({ invoiceId, data }: { invoiceId: string; data: { amount: string; paymentDate: string; method?: string | null; referenceNumber?: string | null; notes?: string | null } }) => {
+      const response = await apiRequest("POST", `/api/procurement-module/invoices/${invoiceId}/payments`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] });
     },
   });
 }

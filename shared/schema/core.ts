@@ -29,6 +29,7 @@ export const organizations = pgTable("organizations", {
   terminologyJson: text("terminology_json"),
   themeExtractedAt: timestamp("theme_extracted_at"),
   featureFlags: text("feature_flags"),
+  matchTolerancePct: decimal("match_tolerance_pct", { precision: 5, scale: 2 }).default("5"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

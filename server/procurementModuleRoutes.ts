@@ -5,10 +5,11 @@ import {
   purchaseOrders, purchaseOrderItems,
   poReceipts, poReceiptItems,
   vendorInvoices, invoiceMatches,
+  invoicePayments, organizations,
   projects, users,
 } from "@shared/schema";
 import { crmOrganisations } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
@@ -17,6 +18,7 @@ import type { Response } from "express";
 
 const router = Router();
 const ROLES = ["ADMIN", "MANAGER", "PROCUREMENT_MANAGER"] as const;
+const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
 
 function getOrgId(req: AuthRequest, res: Response): string | null {
   const orgId = req.user?.organizationId || null;
@@ -25,6 +27,8 @@ function getOrgId(req: AuthRequest, res: Response): string | null {
   if (!hasAccess) return null;
   return orgId;
 }
+
+// ─── PURCHASE REQUESTS ─────────────────────────────────────────────────────
 
 const prCreateSchema = z.object({
   projectId: z.string(),
@@ -46,22 +50,49 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const projectIdFilter = req.query.projectId ? String(req.query.projectId) : null;
-    const prConditions = [eq(purchaseRequests.orgId, orgId)];
-    if (projectIdFilter) prConditions.push(eq(purchaseRequests.projectId, projectIdFilter));
+    const conditions: any[] = [eq(purchaseRequests.orgId, orgId)];
+    if (req.query.projectId) conditions.push(eq(purchaseRequests.projectId, String(req.query.projectId)));
+    if (req.query.status) conditions.push(eq(purchaseRequests.status, String(req.query.status) as any));
+    if (req.query.search) {
+      const term = `%${String(req.query.search)}%`;
+      conditions.push(or(
+        ilike(purchaseRequests.title, term),
+        ilike(purchaseRequests.prNumber, term),
+      ));
+    }
 
-    const prs = await db.select().from(purchaseRequests)
-      .where(and(...prConditions))
+    const requesterAlias = db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName }).from(users).as("requester");
+    const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
+
+    const prs = await db.select({
+      pr: purchaseRequests,
+      projectName: projectAlias.name,
+      projectCode: projectAlias.code,
+      requesterFirst: requesterAlias.firstName,
+      requesterLast: requesterAlias.lastName,
+    })
+      .from(purchaseRequests)
+      .leftJoin(projectAlias, eq(purchaseRequests.projectId, projectAlias.id))
+      .leftJoin(requesterAlias, eq(purchaseRequests.requestedById, requesterAlias.id))
+      .where(and(...conditions))
       .orderBy(desc(purchaseRequests.createdAt));
 
-    const result = await Promise.all(prs.map(async (pr) => {
-      const items = await db.select().from(purchaseRequestItems)
-        .where(eq(purchaseRequestItems.prId, pr.id));
-      const [proj] = await db.select({ name: projects.name, code: projects.code })
-        .from(projects).where(eq(projects.id, pr.projectId)).limit(1);
-      const [requester] = await db.select({ firstName: users.firstName, lastName: users.lastName })
-        .from(users).where(eq(users.id, pr.requestedById)).limit(1);
-      return { ...pr, items, project: proj || null, requestedBy: requester || null };
+    const prIds = prs.map(r => r.pr.id);
+    let itemsByPr: Record<string, any[]> = {};
+    if (prIds.length > 0) {
+      const allItems = await db.select().from(purchaseRequestItems)
+        .where(sql`${purchaseRequestItems.prId} IN (${sql.join(prIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const item of allItems) {
+        if (!itemsByPr[item.prId]) itemsByPr[item.prId] = [];
+        itemsByPr[item.prId].push(item);
+      }
+    }
+
+    const result = prs.map(r => ({
+      ...r.pr,
+      project: r.projectName ? { name: r.projectName, code: r.projectCode } : null,
+      requestedBy: r.requesterFirst ? { firstName: r.requesterFirst, lastName: r.requesterLast } : null,
+      items: itemsByPr[r.pr.id] || [],
     }));
 
     res.json(result);
@@ -230,7 +261,7 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
   }
 });
 
-router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -259,7 +290,7 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
   }
 });
 
-router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
@@ -269,14 +300,16 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending requests can be rejected" }); return; }
 
+    const rejectionNotes = req.body.rejectionNotes || req.body.notes || null;
+
     const [updated] = await db.update(purchaseRequests)
-      .set({ status: "REJECTED", updatedAt: new Date() })
+      .set({ status: "REJECTED", rejectionNotes, updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
 
     notifySubmitter(existing.requestedById, {
       type: "PROCUREMENT_PR_REJECTED",
       title: "Purchase Request Rejected",
-      message: `Your purchase request ${existing.prNumber} "${existing.title}" has been rejected.`,
+      message: `Your purchase request ${existing.prNumber} "${existing.title}" has been rejected.${rejectionNotes ? ` Reason: ${rejectionNotes}` : ""}`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
     }).catch(() => {});
@@ -351,34 +384,84 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
   }
 });
 
+// ─── PURCHASE ORDERS ────────────────────────────────────────────────────────
+
 router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const poProjectFilter = req.query.projectId ? String(req.query.projectId) : null;
-    const poConditions = [eq(purchaseOrders.orgId, orgId)];
-    if (poProjectFilter) poConditions.push(eq(purchaseOrders.projectId, poProjectFilter));
+    const conditions: any[] = [eq(purchaseOrders.orgId, orgId)];
+    if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
+    if (req.query.status) conditions.push(eq(purchaseOrders.status, String(req.query.status) as any));
+    if (req.query.search) {
+      const term = `%${String(req.query.search)}%`;
+      conditions.push(or(
+        ilike(purchaseOrders.poNumber, term),
+        ilike(purchaseOrders.notes, term),
+      ));
+    }
 
-    const pos = await db.select().from(purchaseOrders)
-      .where(and(...poConditions))
+    const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
+    const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor");
+
+    const pos = await db.select({
+      po: purchaseOrders,
+      projectName: projectAlias.name,
+      projectCode: projectAlias.code,
+      vendorName: vendorAlias.name,
+      vendorId: vendorAlias.id,
+    })
+      .from(purchaseOrders)
+      .leftJoin(projectAlias, eq(purchaseOrders.projectId, projectAlias.id))
+      .leftJoin(vendorAlias, eq(purchaseOrders.vendorId, vendorAlias.id))
+      .where(and(...conditions))
       .orderBy(desc(purchaseOrders.createdAt));
 
-    const result = await Promise.all(pos.map(async (po) => {
-      const items = await db.select().from(purchaseOrderItems)
-        .where(eq(purchaseOrderItems.poId, po.id));
-      const [proj] = await db.select({ name: projects.name, code: projects.code })
-        .from(projects).where(eq(projects.id, po.projectId)).limit(1);
-      let vendor = null;
-      if (po.vendorId) {
-        const [v] = await db.select({ id: crmOrganisations.id, name: crmOrganisations.name })
-          .from(crmOrganisations).where(eq(crmOrganisations.id, po.vendorId)).limit(1);
-        vendor = v || null;
+    if (req.query.search) {
+      const term = String(req.query.search).toLowerCase();
+      const filtered = pos.filter(r =>
+        r.po.poNumber?.toLowerCase().includes(term) ||
+        r.vendorName?.toLowerCase().includes(term) ||
+        r.projectName?.toLowerCase().includes(term) ||
+        r.po.notes?.toLowerCase().includes(term)
+      );
+      const poIds = filtered.map(r => r.po.id);
+      let itemsByPo: Record<string, any[]> = {};
+      if (poIds.length > 0) {
+        const allItems = await db.select().from(purchaseOrderItems)
+          .where(sql`${purchaseOrderItems.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
+        for (const item of allItems) {
+          if (!itemsByPo[item.poId]) itemsByPo[item.poId] = [];
+          itemsByPo[item.poId].push(item);
+        }
       }
-      return { ...po, items, project: proj || null, vendor };
-    }));
+      res.json(filtered.map(r => ({
+        ...r.po,
+        project: r.projectName ? { name: r.projectName, code: r.projectCode } : null,
+        vendor: r.vendorName ? { id: r.vendorId, name: r.vendorName } : null,
+        items: itemsByPo[r.po.id] || [],
+      })));
+      return;
+    }
 
-    res.json(result);
+    const poIds = pos.map(r => r.po.id);
+    let itemsByPo: Record<string, any[]> = {};
+    if (poIds.length > 0) {
+      const allItems = await db.select().from(purchaseOrderItems)
+        .where(sql`${purchaseOrderItems.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const item of allItems) {
+        if (!itemsByPo[item.poId]) itemsByPo[item.poId] = [];
+        itemsByPo[item.poId].push(item);
+      }
+    }
+
+    res.json(pos.map(r => ({
+      ...r.po,
+      project: r.projectName ? { name: r.projectName, code: r.projectCode } : null,
+      vendor: r.vendorName ? { id: r.vendorId, name: r.vendorName } : null,
+      items: itemsByPo[r.po.id] || [],
+    })));
   } catch (error) {
     console.error("Get purchase orders error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -418,7 +501,10 @@ router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROL
     const invoicesWithMatch = await Promise.all(invoices.map(async (inv) => {
       const [match] = await db.select().from(invoiceMatches)
         .where(eq(invoiceMatches.invoiceId, inv.id)).limit(1);
-      return { ...inv, match: match || null };
+      const payments = await db.select().from(invoicePayments)
+        .where(eq(invoicePayments.invoiceId, inv.id));
+      const totalPaid = payments.reduce((sum, p) => sum + parseFloat(p.amount?.toString() || "0"), 0);
+      return { ...inv, match: match || null, totalPaid: String(totalPaid), payments };
     }));
 
     res.json({ ...po, items, project: proj || null, vendor, receipts: receiptsWithItems, invoices: invoicesWithMatch });
@@ -522,7 +608,9 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
 
-    if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT orders can be edited" }); return; }
+    if (existing.status !== "DRAFT" && existing.status !== "PENDING_APPROVAL") {
+      res.status(400).json({ error: "Only DRAFT or PENDING_APPROVAL orders can be edited" }); return;
+    }
 
     const { items } = req.body;
     const setData: Record<string, unknown> = {};
@@ -540,28 +628,32 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
     if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
 
-    const [updated] = await db.update(purchaseOrders).set(setData)
-      .where(eq(purchaseOrders.id, req.params.id)).returning();
+    const updated = await db.transaction(async (tx) => {
+      const [updatedPo] = await tx.update(purchaseOrders).set(setData)
+        .where(eq(purchaseOrders.id, req.params.id)).returning();
 
-    if (items && Array.isArray(items)) {
-      await db.delete(purchaseOrderItems).where(eq(purchaseOrderItems.poId, req.params.id));
-      let totalCost = 0;
-      for (const item of items) {
-        await db.insert(purchaseOrderItems).values({
-          poId: req.params.id,
-          description: item.description,
-          quantity: item.quantity || null,
-          unit: item.unit || null,
-          unitCost: item.unitCost || null,
-          costCode: item.costCode || null,
-        });
-        const q = parseFloat(item.quantity || "0");
-        const u = parseFloat(item.unitCost || "0");
-        if (!isNaN(q) && !isNaN(u)) totalCost += q * u;
+      if (items && Array.isArray(items)) {
+        await tx.delete(purchaseOrderItems).where(eq(purchaseOrderItems.poId, req.params.id));
+        let totalCost = 0;
+        for (const item of items) {
+          await tx.insert(purchaseOrderItems).values({
+            poId: req.params.id,
+            description: item.description,
+            quantity: item.quantity || null,
+            unit: item.unit || null,
+            unitCost: item.unitCost || null,
+            costCode: item.costCode || null,
+          });
+          const q = parseFloat(item.quantity || "0");
+          const u = parseFloat(item.unitCost || "0");
+          if (!isNaN(q) && !isNaN(u)) totalCost += q * u;
+        }
+        await tx.update(purchaseOrders).set({ totalCost: String(totalCost) })
+          .where(eq(purchaseOrders.id, req.params.id));
       }
-      await db.update(purchaseOrders).set({ totalCost: String(totalCost) })
-        .where(eq(purchaseOrders.id, req.params.id));
-    }
+
+      return updatedPo;
+    });
 
     res.json(updated);
   } catch (error) {
@@ -584,72 +676,6 @@ router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...
     res.json({ success: true });
   } catch (error) {
     console.error("Delete purchase order error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
-  try {
-    const orgId = getOrgId(req, res);
-    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
-
-    const [existing] = await db.select().from(purchaseOrders)
-      .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
-    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be approved" }); return; }
-
-    const [updated] = await db.update(purchaseOrders)
-      .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
-      .where(eq(purchaseOrders.id, req.params.id)).returning();
-
-    const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
-      .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
-    if (prLink) {
-      notifySubmitter(prLink.requestedById, {
-        type: "PROCUREMENT_PO_APPROVED",
-        title: "Purchase Order Approved",
-        message: `Purchase order ${existing.poNumber} has been approved.`,
-        relatedEntityId: existing.id,
-        relatedEntityType: "PURCHASE_ORDER",
-      }).catch(() => {});
-    }
-
-    res.json(updated);
-  } catch (error) {
-    console.error("Approve PO error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
-  try {
-    const orgId = getOrgId(req, res);
-    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
-
-    const [existing] = await db.select().from(purchaseOrders)
-      .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
-    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be rejected" }); return; }
-
-    const [updated] = await db.update(purchaseOrders)
-      .set({ status: "CANCELLED", updatedAt: new Date() })
-      .where(eq(purchaseOrders.id, req.params.id)).returning();
-
-    const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
-      .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
-    if (prLink) {
-      notifySubmitter(prLink.requestedById, {
-        type: "PROCUREMENT_PO_REJECTED",
-        title: "Purchase Order Rejected",
-        message: `Purchase order ${existing.poNumber} has been rejected.`,
-        relatedEntityId: existing.id,
-        relatedEntityType: "PURCHASE_ORDER",
-      }).catch(() => {});
-    }
-
-    res.json(updated);
-  } catch (error) {
-    console.error("Reject PO error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -683,6 +709,74 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
   }
 });
 
+router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const [existing] = await db.select().from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be approved" }); return; }
+
+    const [updated] = await db.update(purchaseOrders)
+      .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, req.params.id)).returning();
+
+    const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
+      .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
+    if (prLink) {
+      notifySubmitter(prLink.requestedById, {
+        type: "PROCUREMENT_PO_APPROVED",
+        title: "Purchase Order Approved",
+        message: `Purchase order ${existing.poNumber} has been approved.`,
+        relatedEntityId: existing.id,
+        relatedEntityType: "PURCHASE_ORDER",
+      }).catch(() => {});
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Approve PO error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const [existing] = await db.select().from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be rejected" }); return; }
+
+    const rejectionNotes = req.body.rejectionNotes || req.body.notes || null;
+
+    const [updated] = await db.update(purchaseOrders)
+      .set({ status: "CANCELLED", rejectionNotes, updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, req.params.id)).returning();
+
+    const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
+      .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
+    if (prLink) {
+      notifySubmitter(prLink.requestedById, {
+        type: "PROCUREMENT_PO_REJECTED",
+        title: "Purchase Order Rejected",
+        message: `Purchase order ${existing.poNumber} has been rejected.${rejectionNotes ? ` Reason: ${rejectionNotes}` : ""}`,
+        relatedEntityId: existing.id,
+        relatedEntityType: "PURCHASE_ORDER",
+      }).catch(() => {});
+    }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Reject PO error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
@@ -702,6 +796,8 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// ─── RECEIPTS ───────────────────────────────────────────────────────────────
 
 router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
@@ -818,41 +914,153 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
   }
 });
 
+router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const poConditions: any[] = [eq(purchaseOrders.orgId, orgId)];
+    if (req.query.projectId) poConditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
+
+    const orgPOs = await db.select({
+      id: purchaseOrders.id,
+      poNumber: purchaseOrders.poNumber,
+      vendorId: purchaseOrders.vendorId,
+      projectId: purchaseOrders.projectId,
+    }).from(purchaseOrders).where(and(...poConditions));
+
+    if (orgPOs.length === 0) { res.json([]); return; }
+
+    const poIds = orgPOs.map(po => po.id);
+    const allReceipts = await db.select().from(poReceipts)
+      .where(sql`${poReceipts.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`)
+      .orderBy(desc(poReceipts.receivedAt));
+
+    const allReceiptIds = allReceipts.map(r => r.id);
+    let itemsByReceipt: Record<string, any[]> = {};
+    if (allReceiptIds.length > 0) {
+      const rawItems = await db.select({
+        ri: poReceiptItems,
+        itemDescription: purchaseOrderItems.description,
+        itemUnit: purchaseOrderItems.unit,
+      })
+        .from(poReceiptItems)
+        .leftJoin(purchaseOrderItems, eq(poReceiptItems.poItemId, purchaseOrderItems.id))
+        .where(sql`${poReceiptItems.receiptId} IN (${sql.join(allReceiptIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const row of rawItems) {
+        const receiptId = row.ri.receiptId;
+        if (!itemsByReceipt[receiptId]) itemsByReceipt[receiptId] = [];
+        itemsByReceipt[receiptId].push({ ...row.ri, itemDescription: row.itemDescription, itemUnit: row.itemUnit });
+      }
+    }
+
+    const receiverIds = [...new Set(allReceipts.map(r => r.receivedById))];
+    let receiversMap: Record<string, { firstName: string; lastName: string }> = {};
+    if (receiverIds.length > 0) {
+      const receivers = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(sql`${users.id} IN (${sql.join(receiverIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const r of receivers) receiversMap[r.id] = { firstName: r.firstName, lastName: r.lastName };
+    }
+
+    const vendorIds = [...new Set(orgPOs.filter(p => p.vendorId).map(p => p.vendorId!))];
+    let vendorMap: Record<string, { id: string; name: string }> = {};
+    if (vendorIds.length > 0) {
+      const vendors = await db.select({ id: crmOrganisations.id, name: crmOrganisations.name })
+        .from(crmOrganisations)
+        .where(sql`${crmOrganisations.id} IN (${sql.join(vendorIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const v of vendors) vendorMap[v.id] = v;
+    }
+
+    const projectIds = [...new Set(orgPOs.map(p => p.projectId))];
+    let projectMap: Record<string, { name: string; code: string | null }> = {};
+    if (projectIds.length > 0) {
+      const projs = await db.select({ id: projects.id, name: projects.name, code: projects.code })
+        .from(projects)
+        .where(sql`${projects.id} IN (${sql.join(projectIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const p of projs) projectMap[p.id] = { name: p.name, code: p.code };
+    }
+
+    const result = allReceipts.map(r => {
+      const po = orgPOs.find(p => p.id === r.poId);
+      return {
+        ...r,
+        items: itemsByReceipt[r.id] || [],
+        poNumber: po?.poNumber || null,
+        receivedBy: receiversMap[r.receivedById] || null,
+        vendor: po?.vendorId ? vendorMap[po.vendorId] || null : null,
+        project: po?.projectId ? projectMap[po.projectId] || null : null,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get all receipts error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── INVOICES ───────────────────────────────────────────────────────────────
+
 router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const invProjectFilter = req.query.projectId ? String(req.query.projectId) : null;
+    const conditions: any[] = [eq(vendorInvoices.orgId, orgId)];
+    if (req.query.status) conditions.push(eq(vendorInvoices.status, String(req.query.status) as any));
 
-    let invoiceQuery;
-    if (invProjectFilter) {
+    if (req.query.projectId) {
       const projectPOIds = (await db.select({ id: purchaseOrders.id })
         .from(purchaseOrders)
-        .where(and(eq(purchaseOrders.orgId, orgId), eq(purchaseOrders.projectId, invProjectFilter)))).map(p => p.id);
+        .where(and(eq(purchaseOrders.orgId, orgId), eq(purchaseOrders.projectId, String(req.query.projectId))))).map(p => p.id);
       if (projectPOIds.length === 0) { res.json([]); return; }
-      invoiceQuery = await db.select().from(vendorInvoices)
-        .where(and(eq(vendorInvoices.orgId, orgId), sql`${vendorInvoices.poId} IN (${sql.join(projectPOIds.map(id => sql`${id}`), sql`, `)})`))
-        .orderBy(desc(vendorInvoices.createdAt));
-    } else {
-      invoiceQuery = await db.select().from(vendorInvoices)
-        .where(eq(vendorInvoices.orgId, orgId))
-        .orderBy(desc(vendorInvoices.createdAt));
+      conditions.push(sql`${vendorInvoices.poId} IN (${sql.join(projectPOIds.map(id => sql`${id}`), sql`, `)})`);
     }
-    const invoices = invoiceQuery;
 
-    const result = await Promise.all(invoices.map(async (inv) => {
-      const [po] = await db.select({ poNumber: purchaseOrders.poNumber })
-        .from(purchaseOrders).where(eq(purchaseOrders.id, inv.poId)).limit(1);
-      let vendor = null;
-      if (inv.vendorId) {
-        const [v] = await db.select({ id: crmOrganisations.id, name: crmOrganisations.name })
-          .from(crmOrganisations).where(eq(crmOrganisations.id, inv.vendorId)).limit(1);
-        vendor = v || null;
+    if (req.query.search) {
+      const term = `%${String(req.query.search)}%`;
+      conditions.push(ilike(vendorInvoices.invoiceNumber, term));
+    }
+
+    const poAlias = db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId }).from(purchaseOrders).as("po_alias");
+    const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor_alias");
+
+    const invoices = await db.select({
+      inv: vendorInvoices,
+      poNumber: poAlias.poNumber,
+      vendorName: vendorAlias.name,
+      vendorId2: vendorAlias.id,
+    })
+      .from(vendorInvoices)
+      .leftJoin(poAlias, eq(vendorInvoices.poId, poAlias.id))
+      .leftJoin(vendorAlias, sql`COALESCE(${vendorInvoices.vendorId}, ${poAlias.vendorId}) = ${vendorAlias.id}`)
+      .where(and(...conditions))
+      .orderBy(desc(vendorInvoices.createdAt));
+
+    const invIds = invoices.map(r => r.inv.id);
+    let matchMap: Record<string, any> = {};
+    if (invIds.length > 0) {
+      const matches = await db.select().from(invoiceMatches)
+        .where(sql`${invoiceMatches.invoiceId} IN (${sql.join(invIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const m of matches) matchMap[m.invoiceId] = m;
+    }
+
+    let paymentsMap: Record<string, number> = {};
+    if (invIds.length > 0) {
+      const payments = await db.select().from(invoicePayments)
+        .where(sql`${invoicePayments.invoiceId} IN (${sql.join(invIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const p of payments) {
+        paymentsMap[p.invoiceId] = (paymentsMap[p.invoiceId] || 0) + parseFloat(p.amount?.toString() || "0");
       }
-      const [match] = await db.select().from(invoiceMatches)
-        .where(eq(invoiceMatches.invoiceId, inv.id)).limit(1);
-      return { ...inv, po: po || null, vendor, match: match || null };
+    }
+
+    const result = invoices.map(r => ({
+      ...r.inv,
+      po: r.poNumber ? { poNumber: r.poNumber } : null,
+      vendor: r.vendorName ? { id: r.vendorId2, name: r.vendorName } : null,
+      match: matchMap[r.inv.id] || null,
+      totalPaid: String(paymentsMap[r.inv.id] || 0),
     }));
 
     res.json(result);
@@ -939,6 +1147,14 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
   }
 });
 
+// ─── 3-WAY MATCH ────────────────────────────────────────────────────────────
+
+async function getOrgTolerance(orgId: string): Promise<number> {
+  const [org] = await db.select({ matchTolerancePct: organizations.matchTolerancePct })
+    .from(organizations).where(eq(organizations.id, orgId)).limit(1);
+  return parseFloat(org?.matchTolerancePct?.toString() || "5");
+}
+
 router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
@@ -960,6 +1176,7 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
       .where(eq(purchaseOrders.id, invoice.poId)).limit(1);
     if (!po) { res.json(null); return; }
 
+    const tolerancePct = await getOrgTolerance(orgId);
     const poItems = await db.select().from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.poId, po.id));
 
@@ -972,9 +1189,9 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
       totalReceived += parseFloat(item.quantityReceived?.toString() || "0");
     }
     const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
-    const amountTolerance = poAmount * 0.05;
+    const amountTolerance = poAmount * (tolerancePct / 100);
     const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
-    const qtyMatch = receivedQtyMatchPct >= 100;
+    const qtyMatch = receivedQtyMatchPct >= 95;
 
     res.json({
       computed: true,
@@ -1002,6 +1219,7 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
       .where(eq(purchaseOrders.id, invoice.poId)).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
 
+    const tolerancePct = await getOrgTolerance(orgId);
     const poItems = await db.select().from(purchaseOrderItems)
       .where(eq(purchaseOrderItems.poId, po.id));
 
@@ -1016,9 +1234,9 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
     }
     const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
 
-    const amountTolerance = poAmount * 0.05;
+    const amountTolerance = poAmount * (tolerancePct / 100);
     const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
-    const qtyMatch = receivedQtyMatchPct >= 100;
+    const qtyMatch = receivedQtyMatchPct >= 95;
 
     const matchStatus = amountMatch && qtyMatch ? "MATCHED" : "DISCREPANCY";
 
@@ -1091,64 +1309,88 @@ router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, r
   }
 });
 
-router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+// ─── PAYMENTS ───────────────────────────────────────────────────────────────
+
+const paymentCreateSchema = z.object({
+  amount: z.string().min(1),
+  paymentDate: z.string().min(1),
+  method: z.string().nullable().optional(),
+  referenceNumber: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+});
+
+router.get("/api/procurement-module/invoices/:id/payments", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const rcptProjectFilter = req.query.projectId ? String(req.query.projectId) : null;
-    const rcptPoConditions = [eq(purchaseOrders.orgId, orgId)];
-    if (rcptProjectFilter) rcptPoConditions.push(eq(purchaseOrders.projectId, rcptProjectFilter));
+    const [invoice] = await db.select().from(vendorInvoices)
+      .where(and(eq(vendorInvoices.id, req.params.id), eq(vendorInvoices.orgId, orgId))).limit(1);
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
-    const orgPOs = await db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId, projectId: purchaseOrders.projectId })
-      .from(purchaseOrders).where(and(...rcptPoConditions));
+    const payments = await db.select({
+      payment: invoicePayments,
+      recorderFirst: users.firstName,
+      recorderLast: users.lastName,
+    })
+      .from(invoicePayments)
+      .leftJoin(users, eq(invoicePayments.recordedById, users.id))
+      .where(eq(invoicePayments.invoiceId, invoice.id))
+      .orderBy(desc(invoicePayments.createdAt));
 
-    if (orgPOs.length === 0) { res.json([]); return; }
-
-    const poIds = orgPOs.map(po => po.id);
-    const allReceipts = await db.select().from(poReceipts)
-      .where(sql`${poReceipts.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`)
-      .orderBy(desc(poReceipts.receivedAt));
-
-    const result = await Promise.all(allReceipts.map(async (r) => {
-      const rawItems = await db.select().from(poReceiptItems).where(eq(poReceiptItems.receiptId, r.id));
-      const items = await Promise.all(rawItems.map(async (item) => {
-        let itemDescription = null;
-        if (item.poItemId) {
-          const [poItem] = await db.select({ description: purchaseOrderItems.description, unit: purchaseOrderItems.unit })
-            .from(purchaseOrderItems).where(eq(purchaseOrderItems.id, item.poItemId)).limit(1);
-          itemDescription = poItem?.description || null;
-        }
-        return { ...item, itemDescription };
-      }));
-      const po = orgPOs.find(p => p.id === r.poId);
-      const [receiver] = await db.select({ firstName: users.firstName, lastName: users.lastName })
-        .from(users).where(eq(users.id, r.receivedById)).limit(1);
-      let vendor = null;
-      if (po?.vendorId) {
-        const [v] = await db.select({ id: crmOrganisations.id, name: crmOrganisations.name })
-          .from(crmOrganisations).where(eq(crmOrganisations.id, po.vendorId)).limit(1);
-        vendor = v || null;
-      }
-      let project = null;
-      if (po?.projectId) {
-        const [p] = await db.select({ name: projects.name, code: projects.code })
-          .from(projects).where(eq(projects.id, po.projectId)).limit(1);
-        project = p || null;
-      }
-      return {
-        ...r,
-        items,
-        poNumber: po?.poNumber || null,
-        receivedBy: receiver || null,
-        vendor,
-        project,
-      };
-    }));
-
-    res.json(result);
+    res.json(payments.map(p => ({
+      ...p.payment,
+      recordedBy: p.recorderFirst ? { firstName: p.recorderFirst, lastName: p.recorderLast } : null,
+    })));
   } catch (error) {
-    console.error("Get all receipts error:", error);
+    console.error("Get invoice payments error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const [invoice] = await db.select().from(vendorInvoices)
+      .where(and(eq(vendorInvoices.id, req.params.id), eq(vendorInvoices.orgId, orgId))).limit(1);
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+    if (!["MATCHED", "APPROVED", "PENDING"].includes(invoice.status)) {
+      res.status(400).json({ error: "Payments can only be recorded on MATCHED, APPROVED, or PENDING invoices" }); return;
+    }
+
+    const parsed = paymentCreateSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
+
+    const [payment] = await db.insert(invoicePayments).values({
+      orgId,
+      invoiceId: invoice.id,
+      amount: parsed.data.amount,
+      paymentDate: new Date(parsed.data.paymentDate),
+      method: parsed.data.method || null,
+      referenceNumber: parsed.data.referenceNumber || null,
+      notes: parsed.data.notes || null,
+      recordedById: req.user!.id,
+    }).returning();
+
+    const existingPayments = await db.select().from(invoicePayments)
+      .where(eq(invoicePayments.invoiceId, invoice.id));
+    const totalPaid = existingPayments.reduce((sum, p) => sum + parseFloat(p.amount?.toString() || "0"), 0);
+    const invoiceTotal = parseFloat(invoice.totalAmount?.toString() || "0");
+
+    if (totalPaid >= invoiceTotal) {
+      await db.update(vendorInvoices).set({ status: "PAID", updatedAt: new Date() })
+        .where(eq(vendorInvoices.id, invoice.id));
+    } else if (invoice.status === "MATCHED") {
+      await db.update(vendorInvoices).set({ status: "APPROVED", updatedAt: new Date() })
+        .where(eq(vendorInvoices.id, invoice.id));
+    }
+
+    res.status(201).json({ payment, totalPaid: String(totalPaid) });
+  } catch (error) {
+    console.error("Create invoice payment error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

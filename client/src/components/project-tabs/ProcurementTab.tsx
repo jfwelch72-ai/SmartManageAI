@@ -167,7 +167,7 @@ interface ProcurementTabProps {
 
 function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
   const { toast } = useToast();
-  const { data: prs = [], isLoading } = usePurchaseRequests(projectId);
+  const { data: prs = [], isLoading } = usePurchaseRequests({ projectId });
   const createMutation = useCreatePurchaseRequest();
   const submitMutation = useSubmitPurchaseRequest();
   const approveMutation = useApprovePurchaseRequest();
@@ -252,7 +252,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
                         <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(pr.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-pr-${pr.id}`}>
                           <Check className="h-3.5 w-3.5 mr-1" />Approve
                         </Button>
-                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectMutation.mutateAsync(pr.id); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-pr-${pr.id}`}>
+                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectMutation.mutateAsync({ id: pr.id }); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-pr-${pr.id}`}>
                           <X className="h-3.5 w-3.5 mr-1" />Reject
                         </Button>
                       </>
@@ -356,7 +356,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
 
 function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   const { toast } = useToast();
-  const { data: pos = [], isLoading } = usePurchaseOrders(projectId);
+  const { data: pos = [], isLoading } = usePurchaseOrders({ projectId });
   const { data: vendors = [] } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/organisations"] });
   const createMutation = useCreatePurchaseOrder();
   const submitMutation = useSubmitPurchaseOrder();
@@ -441,7 +441,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
                         <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(po.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-po-${po.id}`}>
                           <Check className="h-3.5 w-3.5 mr-1" />Approve
                         </Button>
-                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectPOMutation.mutateAsync(po.id); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-po-${po.id}`}>
+                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectPOMutation.mutateAsync({ id: po.id }); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-po-${po.id}`}>
                           <X className="h-3.5 w-3.5 mr-1" />Reject
                         </Button>
                       </>
@@ -900,7 +900,7 @@ function ProjectReceiptsTab({ projectId }: { projectId: string }) {
 
 function ProjectInvoicesTab({ projectId }: { projectId: string }) {
   const { toast } = useToast();
-  const { data: invoices = [], isLoading } = useVendorInvoices(projectId);
+  const { data: invoices = [], isLoading } = useVendorInvoices({ projectId });
   const createMatchMutation = useCreateInvoiceMatch();
 
   return (
