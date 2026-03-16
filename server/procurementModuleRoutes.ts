@@ -918,6 +918,8 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
         ilike(poReceipts.deliveryNote, term),
         ilike(poReceipts.notes, term),
         sql`EXISTS (SELECT 1 FROM purchase_orders po2 WHERE po2.id = ${poReceipts.poId} AND po2.po_number ILIKE ${term})`,
+        sql`EXISTS (SELECT 1 FROM purchase_orders po2 LEFT JOIN crm_organisations v ON v.id = po2.vendor_id WHERE po2.id = ${poReceipts.poId} AND v.name ILIKE ${term})`,
+        sql`EXISTS (SELECT 1 FROM purchase_orders po2 LEFT JOIN projects p ON p.id = po2.project_id WHERE po2.id = ${poReceipts.poId} AND p.name ILIKE ${term})`,
       ));
     }
 
@@ -1012,6 +1014,7 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
       conditions.push(or(
         ilike(vendorInvoices.invoiceNumber, term),
         sql`EXISTS (SELECT 1 FROM crm_organisations v WHERE v.id = COALESCE(${vendorInvoices.vendorId}, (SELECT vendor_id FROM purchase_orders po WHERE po.id = ${vendorInvoices.poId})) AND v.name ILIKE ${term})`,
+        sql`EXISTS (SELECT 1 FROM purchase_orders po2 LEFT JOIN projects p ON p.id = po2.project_id WHERE po2.id = ${vendorInvoices.poId} AND p.name ILIKE ${term})`,
       ));
     }
 
@@ -1362,8 +1365,8 @@ router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requir
       .where(and(eq(vendorInvoices.id, req.params.id), eq(vendorInvoices.orgId, orgId))).limit(1);
     if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
 
-    if (!["MATCHED", "APPROVED", "PENDING"].includes(invoice.status)) {
-      res.status(400).json({ error: "Payments can only be recorded on MATCHED, APPROVED, or PENDING invoices" }); return;
+    if (!["MATCHED", "APPROVED"].includes(invoice.status)) {
+      res.status(400).json({ error: "Payments can only be recorded on MATCHED or APPROVED invoices" }); return;
     }
 
     const parsed = paymentCreateSchema.safeParse(req.body);

@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
-import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit } from "lucide-react";
+import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -972,7 +973,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                                 Resolve Discrepancy
                               </Button>
                             )}
-                            {["MATCHED", "APPROVED", "PENDING"].includes(inv.status) && inv.status !== "PAID" && (
+                            {["MATCHED", "APPROVED"].includes(inv.status) && (
                               <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPaymentInvoiceId(inv.id); setPaymentForm({ amount: "", paymentDate: new Date().toISOString().split("T")[0], method: "", referenceNumber: "", notes: "" }); }} data-testid={`button-pay-${inv.id}`}>
                                 <DollarSign className="h-3 w-3 mr-1" />Record Payment
                               </Button>
@@ -1254,6 +1255,7 @@ function InvoicesTab() {
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<InvoiceRow | null>(null);
   const [editInvForm, setEditInvForm] = useState({ invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
+  const [isUploading, setIsUploading] = useState(false);
 
   const openEditInvoice = (inv: InvoiceRow) => {
     setEditingInvoice(inv);
@@ -1262,6 +1264,24 @@ function InvoicesTab() {
       dueDate: inv.dueDate?.split("T")[0] || "", totalAmount: inv.totalAmount || "",
       notes: "", fileUrl: inv.fileUrl || "",
     });
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploading(true);
+    try {
+      const res = await apiRequest("POST", "/api/objects/upload");
+      const { uploadURL } = await res.json();
+      await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const fileUrl = uploadURL.split("?")[0];
+      setEditInvForm(prev => ({ ...prev, fileUrl }));
+      toast({ title: "File uploaded successfully" });
+    } catch {
+      toast({ title: "File upload failed", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleEditInvoice = async () => {
@@ -1305,6 +1325,7 @@ function InvoicesTab() {
                           <span className="font-mono text-xs">{inv.invoiceNumber}</span>
                           <Badge variant={INVOICE_STATUS_VARIANT[inv.status] || "outline"}>{inv.status}</Badge>
                           {inv.match && <Badge variant={MATCH_STATUS_VARIANT[inv.match.matchStatus] || "outline"} className="text-xs">{inv.match.matchStatus}</Badge>}
+                          {inv.fileUrl && <FileText className="h-3.5 w-3.5 text-blue-500" />}
                         </div>
                         <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
                           {inv.po && <span>PO: {inv.po.poNumber}</span>}
@@ -1362,8 +1383,17 @@ function InvoicesTab() {
               <Input type="number" step="0.01" value={editInvForm.totalAmount} onChange={e => setEditInvForm({ ...editInvForm, totalAmount: e.target.value })} data-testid="input-edit-invoice-amount" />
             </div>
             <div>
-              <Label>File URL</Label>
-              <Input value={editInvForm.fileUrl} onChange={e => setEditInvForm({ ...editInvForm, fileUrl: e.target.value })} placeholder="https://..." data-testid="input-edit-invoice-file-url" />
+              <Label>Invoice File</Label>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border rounded-md text-sm hover:bg-muted transition-colors">
+                  {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {isUploading ? "Uploading..." : "Upload File"}
+                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={handleFileUpload} disabled={isUploading} data-testid="input-edit-invoice-file" />
+                </label>
+                {editInvForm.fileUrl && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[200px]">File attached</span>
+                )}
+              </div>
             </div>
             <div>
               <Label>Notes</Label>
@@ -1489,7 +1519,7 @@ function InvoiceDetailDialog({ invoice, onClose }: { invoice: InvoiceRow | null;
           <div className="border-t pt-4">
             <div className="flex items-center justify-between mb-2">
               <h4 className="font-semibold flex items-center gap-1"><DollarSign className="h-4 w-4" /> Payments</h4>
-              {invoice.status !== "PAID" && (
+              {["MATCHED", "APPROVED"].includes(invoice.status) && (
                 <Button size="sm" variant="outline" onClick={() => { setShowPayment(true); setPaymentForm({ amount: String(remaining), paymentDate: new Date().toISOString().split("T")[0], method: "", referenceNumber: "", notes: "" }); }} data-testid="button-detail-pay">
                   <Plus className="h-3.5 w-3.5 mr-1" />Record Payment
                 </Button>
@@ -1571,7 +1601,7 @@ function InvoiceDetailDialog({ invoice, onClose }: { invoice: InvoiceRow | null;
   );
 }
 
-const RECEIPT_STATUSES = ["PENDING", "COMPLETE"];
+const RECEIPT_STATUSES = ["PARTIAL", "COMPLETE"];
 
 function ReceiptsTab() {
   const [search, setSearch] = useState("");
