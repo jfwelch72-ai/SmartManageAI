@@ -286,6 +286,17 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
   try {
     const orgId = req.user!.organizationId;
     const isCustom = req.body.isCustom !== false;
+
+    if (isCustom) {
+      const { getCostCodesForTrade } = await import("@shared/costCodes");
+      const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+      const tradeType = org?.tradeType || "OTHER";
+      const staticCodes = getCostCodesForTrade(tradeType);
+      if (staticCodes.some(c => c.code === req.body.code)) {
+        return res.status(400).json({ error: "Cannot create a custom code with the same code as a standard code. Deactivate the standard code instead." });
+      }
+    }
+
     const parsed = insertOrgCostCodeSchema.parse({ ...req.body, organizationId: orgId, isCustom });
     const [row] = await db.insert(orgCostCodes).values(parsed).returning();
     res.status(201).json(row);
