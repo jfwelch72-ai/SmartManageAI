@@ -1179,20 +1179,23 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
     const poAmount = parseFloat(po.totalCost?.toString() || "0");
     const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
     let allItemsMatch = true;
-    let totalOrdered = 0;
-    let totalReceived = 0;
+    let totalOrderedValue = 0;
+    let totalReceivedValue = 0;
     for (const item of poItems) {
       const ordered = parseFloat(item.quantity?.toString() || "0");
       const received = parseFloat(item.quantityReceived?.toString() || "0");
-      totalOrdered += ordered;
-      totalReceived += received;
+      const unitCost = parseFloat(item.unitCost?.toString() || "0");
+      const orderedValue = ordered * unitCost;
+      const receivedValue = received * unitCost;
+      totalOrderedValue += orderedValue;
+      totalReceivedValue += receivedValue;
       if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
         allItemsMatch = false;
       }
     }
-    const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
-    const amountTolerance = poAmount * (tolerancePct / 100);
-    const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
+    const receivedQtyMatchPct = totalOrderedValue > 0 ? (totalReceivedValue / totalOrderedValue) * 100 : 0;
+    const amountTolerance = totalReceivedValue * (tolerancePct / 100);
+    const amountMatch = Math.abs(totalReceivedValue - invoiceAmount) <= amountTolerance;
 
     res.json({
       computed: true,
@@ -1229,21 +1232,24 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
     const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
 
     let allItemsMatch = true;
-    let totalOrdered = 0;
-    let totalReceived = 0;
+    let totalOrderedValue = 0;
+    let totalReceivedValue = 0;
     for (const item of poItems) {
       const ordered = parseFloat(item.quantity?.toString() || "0");
       const received = parseFloat(item.quantityReceived?.toString() || "0");
-      totalOrdered += ordered;
-      totalReceived += received;
+      const unitCost = parseFloat(item.unitCost?.toString() || "0");
+      const orderedValue = ordered * unitCost;
+      const receivedValue = received * unitCost;
+      totalOrderedValue += orderedValue;
+      totalReceivedValue += receivedValue;
       if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
         allItemsMatch = false;
       }
     }
-    const receivedQtyMatchPct = totalOrdered > 0 ? (totalReceived / totalOrdered) * 100 : 0;
+    const receivedQtyMatchPct = totalOrderedValue > 0 ? (totalReceivedValue / totalOrderedValue) * 100 : 0;
 
-    const amountTolerance = poAmount * (tolerancePct / 100);
-    const amountMatch = Math.abs(poAmount - invoiceAmount) <= amountTolerance;
+    const amountTolerance = totalReceivedValue * (tolerancePct / 100);
+    const amountMatch = Math.abs(totalReceivedValue - invoiceAmount) <= amountTolerance;
     const qtyMatch = allItemsMatch;
 
     const matchStatus = amountMatch && qtyMatch ? "MATCHED" : "DISCREPANCY";

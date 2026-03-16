@@ -715,6 +715,25 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
 
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({ invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
+  const [isUploadingInvoiceFile, setIsUploadingInvoiceFile] = useState(false);
+
+  const handleInvoiceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingInvoiceFile(true);
+    try {
+      const res = await apiRequest("POST", "/api/objects/upload");
+      const { uploadURL } = await res.json();
+      await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
+      const fileUrl = uploadURL.split("?")[0];
+      setInvoiceForm(prev => ({ ...prev, fileUrl }));
+      toast({ title: "File uploaded successfully" });
+    } catch {
+      toast({ title: "File upload failed", variant: "destructive" });
+    } finally {
+      setIsUploadingInvoiceFile(false);
+    }
+  };
 
   const [resolveInvoiceId, setResolveInvoiceId] = useState<string | null>(null);
   const [resolveNotes, setResolveNotes] = useState("");
@@ -1143,8 +1162,17 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
               <Input type="number" step="0.01" value={invoiceForm.totalAmount} onChange={e => setInvoiceForm({ ...invoiceForm, totalAmount: e.target.value })} data-testid="input-invoice-amount" />
             </div>
             <div>
-              <Label>File URL (optional)</Label>
-              <Input value={invoiceForm.fileUrl} onChange={e => setInvoiceForm({ ...invoiceForm, fileUrl: e.target.value })} placeholder="https://..." data-testid="input-invoice-file-url" />
+              <Label>Invoice File (optional)</Label>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border rounded-md text-sm hover:bg-muted transition-colors">
+                  {isUploadingInvoiceFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {isUploadingInvoiceFile ? "Uploading..." : "Upload File"}
+                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={handleInvoiceFileUpload} disabled={isUploadingInvoiceFile} data-testid="input-invoice-file" />
+                </label>
+                {invoiceForm.fileUrl && (
+                  <span className="text-xs text-green-600 flex items-center gap-1"><Check className="h-3 w-3" />File attached</span>
+                )}
+              </div>
             </div>
             <div>
               <Label>Notes</Label>
@@ -1325,7 +1353,7 @@ function InvoicesTab() {
                           <span className="font-mono text-xs">{inv.invoiceNumber}</span>
                           <Badge variant={INVOICE_STATUS_VARIANT[inv.status] || "outline"}>{inv.status}</Badge>
                           {inv.match && <Badge variant={MATCH_STATUS_VARIANT[inv.match.matchStatus] || "outline"} className="text-xs">{inv.match.matchStatus}</Badge>}
-                          {inv.fileUrl && <FileText className="h-3.5 w-3.5 text-blue-500" />}
+                          {inv.fileUrl && <a href={inv.fileUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-blue-500 hover:text-blue-700" data-testid={`link-invoice-file-${inv.id}`}><FileText className="h-3.5 w-3.5" /></a>}
                         </div>
                         <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
                           {inv.po && <span>PO: {inv.po.poNumber}</span>}
