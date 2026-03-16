@@ -9,7 +9,7 @@ import {
   projects, users,
 } from "@shared/schema";
 import { crmOrganisations } from "@shared/schema";
-import { eq, and, desc, sql, ilike, or } from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
@@ -50,9 +50,9 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const conditions: any[] = [eq(purchaseRequests.orgId, orgId)];
+    const conditions: SQL[] = [eq(purchaseRequests.orgId, orgId)];
     if (req.query.projectId) conditions.push(eq(purchaseRequests.projectId, String(req.query.projectId)));
-    if (req.query.status) conditions.push(eq(purchaseRequests.status, String(req.query.status) as any));
+    if (req.query.status) conditions.push(sql`${purchaseRequests.status} = ${String(req.query.status)}`);
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
       conditions.push(or(
@@ -393,9 +393,9 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const conditions: any[] = [eq(purchaseOrders.orgId, orgId)];
+    const conditions: SQL[] = [eq(purchaseOrders.orgId, orgId)];
     if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
-    if (req.query.status) conditions.push(eq(purchaseOrders.status, String(req.query.status) as any));
+    if (req.query.status) conditions.push(sql`${purchaseOrders.status} = ${String(req.query.status)}`);
     const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
     const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor");
 
@@ -998,8 +998,8 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const conditions: any[] = [eq(vendorInvoices.orgId, orgId)];
-    if (req.query.status) conditions.push(eq(vendorInvoices.status, String(req.query.status) as any));
+    const conditions: SQL[] = [eq(vendorInvoices.orgId, orgId)];
+    if (req.query.status) conditions.push(sql`${vendorInvoices.status} = ${String(req.query.status)}`);
 
     if (req.query.projectId) {
       const projectPOIds = (await db.select({ id: purchaseOrders.id })

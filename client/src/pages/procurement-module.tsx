@@ -12,7 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -1359,6 +1360,15 @@ function InvoicesTab() {
   const [editingInvoice, setEditingInvoice] = useState<InvoiceRow | null>(null);
   const [editInvForm, setEditInvForm] = useState({ invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
   const [isUploading, setIsUploading] = useState(false);
+  const [payInvoice, setPayInvoice] = useState<InvoiceRow | null>(null);
+  const [payForm, setPayForm] = useState({ amount: "", paymentDate: "", method: "", referenceNumber: "", notes: "" });
+  const payMutation = useMutation({
+    mutationFn: async (data: { invoiceId: string; amount: string; paymentDate: string; method?: string; referenceNumber?: string; notes?: string }) => {
+      await apiRequest("POST", `/api/procurement-module/invoices/${data.invoiceId}/payments`, data);
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/invoices"] }); toast({ title: "Payment recorded" }); setPayInvoice(null); },
+    onError: () => { toast({ title: "Failed to record payment", variant: "destructive" }); },
+  });
 
   const openEditInvoice = (inv: InvoiceRow) => {
     setEditingInvoice(inv);
@@ -1451,6 +1461,11 @@ function InvoicesTab() {
                             Run 3-Way Match
                           </Button>
                         )}
+                        {(inv.status === "MATCHED" || inv.status === "APPROVED") && totalAmt > totalPaid && (
+                          <Button size="sm" variant="outline" onClick={() => { setPayInvoice(inv); setPayForm({ amount: String(Math.round((totalAmt - totalPaid) * 100) / 100), paymentDate: new Date().toISOString().split("T")[0], method: "", referenceNumber: "", notes: "" }); }} data-testid={`button-pay-invoice-${inv.id}`}>
+                            <DollarSign className="h-3.5 w-3.5 mr-1" />Record Payment
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1514,6 +1529,43 @@ function InvoicesTab() {
       </Dialog>
 
       <InvoiceDetailDialog invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+
+      <Dialog open={!!payInvoice} onOpenChange={o => { if (!o) setPayInvoice(null); }}>
+        <DialogContent data-testid="dialog-pay-invoice">
+          <DialogHeader>
+            <DialogTitle>Record Payment — {payInvoice?.invoiceNumber}</DialogTitle>
+            <DialogDescription>Record a payment for this invoice.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Amount *</Label>
+              <Input type="number" step="0.01" value={payForm.amount} onChange={e => setPayForm({ ...payForm, amount: e.target.value })} data-testid="input-pay-amount" />
+            </div>
+            <div>
+              <Label>Payment Date *</Label>
+              <Input type="date" value={payForm.paymentDate} onChange={e => setPayForm({ ...payForm, paymentDate: e.target.value })} data-testid="input-pay-date" />
+            </div>
+            <div>
+              <Label>Method</Label>
+              <Input value={payForm.method} onChange={e => setPayForm({ ...payForm, method: e.target.value })} placeholder="Check, ACH, Wire..." data-testid="input-pay-method" />
+            </div>
+            <div>
+              <Label>Reference Number</Label>
+              <Input value={payForm.referenceNumber} onChange={e => setPayForm({ ...payForm, referenceNumber: e.target.value })} data-testid="input-pay-ref" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={payForm.notes} onChange={e => setPayForm({ ...payForm, notes: e.target.value })} rows={2} data-testid="input-pay-notes" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayInvoice(null)}>Cancel</Button>
+            <Button onClick={() => { if (!payInvoice || !payForm.amount || !payForm.paymentDate) { toast({ title: "Amount and date are required", variant: "destructive" }); return; } payMutation.mutate({ invoiceId: payInvoice.id, ...payForm }); }} disabled={payMutation.isPending} data-testid="button-submit-pay">
+              {payMutation.isPending ? "Saving..." : "Record Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
