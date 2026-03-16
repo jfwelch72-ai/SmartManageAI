@@ -21,24 +21,24 @@ import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared
 
 function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
   const [localValue, setLocalValue] = useState(currentValue);
-  const [committed, setCommitted] = useState(currentValue);
+  const lastCommitted = useState({ value: currentValue })[0];
 
   useEffect(() => {
     setLocalValue(currentValue);
-    setCommitted(currentValue);
+    lastCommitted.value = currentValue;
   }, [currentValue, measurementId]);
 
-  const commitIfChanged = () => {
-    if (localValue !== committed) {
-      setCommitted(localValue);
-      onCommit(localValue);
+  const commit = (val: string) => {
+    if (val !== lastCommitted.value) {
+      lastCommitted.value = val;
+      onCommit(val);
     }
   };
 
   return (
-    <div className="space-y-2" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { commitIfChanged(); } }}>
+    <div className="space-y-2" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { commit(localValue); } }}>
       <Label className="text-xs">Cost Code</Label>
-      <CostCodeCombobox value={localValue} onChange={(val) => { setLocalValue(val); if (val.includes(" - ")) { setCommitted(val); onCommit(val); } }} data-testid="input-cost-code" />
+      <CostCodeCombobox value={localValue} onChange={(val) => { setLocalValue(val); if (val.includes(" - ")) { commit(val); } }} data-testid="input-cost-code" />
     </div>
   );
 }
