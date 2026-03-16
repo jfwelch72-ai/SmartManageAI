@@ -20,9 +20,9 @@ const ROLES = ["ADMIN", "MANAGER", "PROCUREMENT_MANAGER"] as const;
 
 function getOrgId(req: AuthRequest, res: Response): string | null {
   const orgId = req.user?.organizationId || null;
-  if (orgId) {
-    verifyOrgAccess(req, res, orgId);
-  }
+  if (!orgId) return null;
+  const hasAccess = verifyOrgAccess(req, res, orgId);
+  if (!hasAccess) return null;
   return orgId;
 }
 
@@ -513,7 +513,14 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
     const { items } = req.body;
     const setData: Record<string, unknown> = {};
     setData.updatedAt = new Date();
-    if (req.body.vendorId !== undefined) setData.vendorId = req.body.vendorId || null;
+    if (req.body.vendorId !== undefined) {
+      if (req.body.vendorId) {
+        const [vendorOwner] = await db.select({ id: crmOrganisations.id }).from(crmOrganisations)
+          .where(and(eq(crmOrganisations.id, req.body.vendorId), eq(crmOrganisations.organizationId, orgId))).limit(1);
+        if (!vendorOwner) { res.status(400).json({ error: "Vendor not found in your organization" }); return; }
+      }
+      setData.vendorId = req.body.vendorId || null;
+    }
     if (req.body.terms !== undefined) setData.terms = req.body.terms;
     if (req.body.deliveryAddress !== undefined) setData.deliveryAddress = req.body.deliveryAddress;
     if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
