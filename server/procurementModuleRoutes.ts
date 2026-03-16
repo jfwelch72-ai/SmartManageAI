@@ -1223,22 +1223,26 @@ async function computeThreeWayMatch(invoice: any, po: any, orgId: string) {
 
     for (const invItem of invoiceItems) {
       const invAmount = parseFloat(invItem.amount?.toString() || "0");
+      const invQty = parseFloat(invItem.quantity?.toString() || "0");
       totalInvoicedValue += invAmount;
 
       if (invItem.poItemId) {
         invoicedPoItemIds.add(invItem.poItemId);
         const poItem = poItemMap.get(invItem.poItemId);
         if (poItem) {
-          const received = parseFloat(poItem.quantityReceived?.toString() || "0");
-          const unitCost = parseFloat(poItem.unitCost?.toString() || "0");
-          const receivedValue = received * unitCost;
+          const receivedQty = parseFloat(poItem.quantityReceived?.toString() || "0");
+          const poUnitCost = parseFloat(poItem.unitCost?.toString() || "0");
+          const receivedValue = receivedQty * poUnitCost;
           totalReceivedValue += receivedValue;
-          const tolerance = receivedValue * (tolerancePct / 100);
-          if (Math.abs(receivedValue - invAmount) > tolerance) {
+          const qtyTolerance = receivedQty * (tolerancePct / 100);
+          if (invQty > receivedQty + qtyTolerance) {
             allItemsMatch = false;
           }
-          const ordered = parseFloat(poItem.quantity?.toString() || "0");
-          if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
+          const valueTolerance = receivedValue * (tolerancePct / 100);
+          if (invAmount > receivedValue + valueTolerance) {
+            allItemsMatch = false;
+          }
+          if (receivedQty <= 0) {
             allItemsMatch = false;
           }
         } else {
