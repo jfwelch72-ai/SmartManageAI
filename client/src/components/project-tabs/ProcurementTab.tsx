@@ -462,6 +462,8 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
     status: statusFilter !== "ALL" ? statusFilter : undefined,
     search: search || undefined,
   });
+  const { pageItems: pagedPOs, rangeStart: poStart, rangeEnd: poEnd, totalItems: poTotal, hasPrev: poHasPrev, hasNext: poHasNext, prevPage: poPrev, nextPage: poNext, resetPage: poResetPage } = usePagination(pos);
+  useEffect(() => { poResetPage(); }, [search, statusFilter, poResetPage]);
   const { data: vendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/vendors"] });
   const createMutation = useCreatePurchaseOrder();
   const submitMutation = useSubmitPurchaseOrder();
@@ -515,8 +517,9 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
           ) : pos.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No purchase orders found</div>
           ) : (
+            <>
             <div className="space-y-3">
-              {pos.map((po: PurchaseOrder) => (
+              {pagedPOs.map((po: PurchaseOrder) => (
                 <div key={po.id} className="p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedPOId(po.id)} data-testid={`po-${po.id}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -572,6 +575,8 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
                 </div>
               ))}
             </div>
+            <PaginationControls rangeStart={poStart} rangeEnd={poEnd} totalItems={poTotal} hasPrev={poHasPrev} hasNext={poHasNext} onPrev={poPrev} onNext={poNext} />
+            </>
           )}
         </CardContent>
       </Card>
@@ -586,10 +591,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Vendor</Label>
-                <Select value={form.vendorId} onValueChange={v => setForm({ ...form, vendorId: v })}>
-                  <SelectTrigger data-testid="select-po-vendor"><SelectValue placeholder="Select vendor..." /></SelectTrigger>
-                  <SelectContent>{(vendors || []).map((v: VendorRef) => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <VendorCombobox value={form.vendorId} onChange={v => setForm({ ...form, vendorId: v })} vendors={vendors || []} />
               </div>
               <div>
                 <Label>Needed By</Label>
@@ -1366,6 +1368,8 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
     status: statusFilter !== "ALL" ? statusFilter : undefined,
     search: search || undefined,
   });
+  const { pageItems: pagedInvoices, rangeStart: invStart, rangeEnd: invEnd, totalItems: invTotal, hasPrev: invHasPrev, hasNext: invHasNext, prevPage: invPrev, nextPage: invNext, resetPage: invResetPage } = usePagination(invoices);
+  useEffect(() => { invResetPage(); }, [search, statusFilter, invResetPage]);
   const createMatchMutation = useCreateInvoiceMatch();
   const updateInvoiceMutation = useUpdateVendorInvoice();
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
@@ -1438,8 +1442,9 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
           ) : invoices.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No vendor invoices for this project. Add invoices from a PO detail view.</div>
           ) : (
+            <>
             <div className="space-y-3">
-              {invoices.map((inv: InvoiceRow) => {
+              {pagedInvoices.map((inv: InvoiceRow) => {
                 const totalPaid = parseFloat(inv.totalPaid || "0");
                 const totalAmt = parseFloat(inv.totalAmount || "0");
                 const remaining = Math.max(0, totalAmt - totalPaid);
@@ -1491,6 +1496,8 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
                 );
               })}
             </div>
+            <PaginationControls rangeStart={invStart} rangeEnd={invEnd} totalItems={invTotal} hasPrev={invHasPrev} hasNext={invHasNext} onPrev={invPrev} onNext={invNext} />
+            </>
           )}
         </CardContent>
       </Card>
