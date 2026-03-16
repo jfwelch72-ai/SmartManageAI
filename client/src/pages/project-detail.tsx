@@ -455,7 +455,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="budget">
-            <BudgetTab projectCode={projectCode} userRole={user?.role || ""} />
+            <BudgetTab projectCode={projectCode} userRole={user?.role || ""} projectBudget={Number(project.budget || project.contractAmount || 0)} />
           </TabsContent>
 
           <TabsContent value="cost-ledger">

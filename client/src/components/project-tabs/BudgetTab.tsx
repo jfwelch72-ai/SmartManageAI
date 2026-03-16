@@ -49,7 +49,7 @@ function fmtCurrency(n: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
 }
 
-export default function BudgetTab({ projectCode, userRole }: { projectCode: string; userRole: string }) {
+export default function BudgetTab({ projectCode, userRole, projectBudget }: { projectCode: string; userRole: string; projectBudget?: number }) {
   const { toast } = useToast();
   const [lines, setLines] = useState<LocalLine[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -205,6 +205,22 @@ export default function BudgetTab({ projectCode, userRole }: { projectCode: stri
           {isDirty && (
             <div className="mb-3 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-4 w-4" /> Unsaved changes
+            </div>
+          )}
+          {projectBudget !== undefined && projectBudget > 0 && grandTotal > 0 && Math.abs(grandTotal - projectBudget) > 0.01 && (
+            <div className={`mb-3 flex items-center gap-2 text-sm rounded-md border px-3 py-2 ${
+              grandTotal > projectBudget
+                ? "bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800"
+                : "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800"
+            }`} data-testid="text-budget-reconciliation-warning">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span>
+                Budget line total ({fmtCurrency(grandTotal)}) does not match the project budget ({fmtCurrency(projectBudget)}).
+                {grandTotal > projectBudget
+                  ? ` Over by ${fmtCurrency(grandTotal - projectBudget)}.`
+                  : ` Under by ${fmtCurrency(projectBudget - grandTotal)}.`
+                }
+              </span>
             </div>
           )}
           <div className="rounded-md border overflow-auto">

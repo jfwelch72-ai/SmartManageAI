@@ -62,8 +62,8 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
 
     const [row] = await db.insert(budgetLineItems).values(parseResult.data).returning();
     res.status(201).json(row);
-  } catch (error: any) {
-    if (error?.code === "23505") {
+  } catch (error: unknown) {
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "23505") {
       return res.status(409).json({ error: "A budget line for that cost code already exists on this project" });
     }
     console.error("Create budget line error:", error);
@@ -114,7 +114,7 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
       return tx.insert(budgetLineItems).values(toInsert).returning();
     });
     res.json(rows);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Bulk upsert budget lines error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -129,15 +129,24 @@ router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req
     if (!project) return res.status(404).json({ error: "Project not found" });
     if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
-    const updates: Record<string, any> = { updatedAt: new Date() };
+    const updates: Partial<{
+      laborBudget: string;
+      materialBudget: string;
+      subcontractorBudget: string;
+      equipmentBudget: string;
+      otherBudget: string;
+      description: string;
+      division: string;
+      updatedAt: Date;
+    }> = { updatedAt: new Date() };
     const { laborBudget, materialBudget, subcontractorBudget, equipmentBudget, otherBudget, description, division } = req.body;
     if (laborBudget !== undefined) updates.laborBudget = String(laborBudget);
     if (materialBudget !== undefined) updates.materialBudget = String(materialBudget);
     if (subcontractorBudget !== undefined) updates.subcontractorBudget = String(subcontractorBudget);
     if (equipmentBudget !== undefined) updates.equipmentBudget = String(equipmentBudget);
     if (otherBudget !== undefined) updates.otherBudget = String(otherBudget);
-    if (description !== undefined) updates.description = description;
-    if (division !== undefined) updates.division = division;
+    if (description !== undefined) updates.description = String(description);
+    if (division !== undefined) updates.division = String(division);
 
     const [row] = await db.update(budgetLineItems).set(updates)
       .where(and(eq(budgetLineItems.id, req.params.lineId), eq(budgetLineItems.projectId, project.id)))
@@ -145,7 +154,7 @@ router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req
 
     if (!row) return res.status(404).json({ error: "Budget line not found" });
     res.json(row);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Update budget line error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

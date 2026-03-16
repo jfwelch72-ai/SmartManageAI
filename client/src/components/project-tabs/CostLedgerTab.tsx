@@ -39,20 +39,20 @@ function fmtCurrency(n: number): string {
 }
 
 function getStatusColor(pctUsed: number): string {
-  if (pctUsed >= 100) return "text-red-600 dark:text-red-400";
-  if (pctUsed >= 90) return "text-amber-600 dark:text-amber-400";
+  if (pctUsed > 100) return "text-red-600 dark:text-red-400";
+  if (pctUsed >= 80) return "text-amber-600 dark:text-amber-400";
   return "text-green-600 dark:text-green-400";
 }
 
 function getStatusIcon(pctUsed: number) {
-  if (pctUsed >= 100) return <AlertTriangle className="h-4 w-4 text-red-500" />;
-  if (pctUsed >= 90) return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+  if (pctUsed > 100) return <AlertTriangle className="h-4 w-4 text-red-500" />;
+  if (pctUsed >= 80) return <AlertTriangle className="h-4 w-4 text-amber-500" />;
   return <CheckCircle className="h-4 w-4 text-green-500" />;
 }
 
 function getProgressColor(pctUsed: number): string {
-  if (pctUsed >= 100) return "[&>div]:bg-red-500";
-  if (pctUsed >= 90) return "[&>div]:bg-amber-500";
+  if (pctUsed > 100) return "[&>div]:bg-red-500";
+  if (pctUsed >= 80) return "[&>div]:bg-amber-500";
   return "[&>div]:bg-green-500";
 }
 
