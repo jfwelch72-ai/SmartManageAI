@@ -459,6 +459,7 @@ export interface ProcurementPRItem {
   quantity: string | null;
   unit: string | null;
   estimatedUnitCost: string | null;
+  costCode: string | null;
 }
 
 export interface ProcurementPR {
@@ -488,6 +489,7 @@ export interface ProcurementPOItem {
   unit: string | null;
   unitCost: string | null;
   quantityReceived: number | null;
+  costCode: string | null;
 }
 
 export interface ProcurementPO {
