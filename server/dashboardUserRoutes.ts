@@ -1994,10 +1994,13 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
         const budgetResult = await db.execute(sql`
           SELECT
             COALESCE(
-              UPPER(NULLIF(TRIM(SPLIT_PART(
-                COALESCE(eli."work_type_code", eli."category"),
+              UPPER(TRIM(SPLIT_PART(
+                COALESCE(
+                  NULLIF(TRIM(eli."work_type_code"), ''),
+                  NULLIF(TRIM(eli."category"), '')
+                ),
                 ' - ', 1
-              )), '')),
+              ))),
               'Unassigned'
             ) as cost_code,
             SUM(eli."labor_cost"::numeric) as budgeted
@@ -2007,10 +2010,13 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
             ${budgetProjectCond}
             ${budgetOrgCond}
           GROUP BY COALESCE(
-              UPPER(NULLIF(TRIM(SPLIT_PART(
-                COALESCE(eli."work_type_code", eli."category"),
+              UPPER(TRIM(SPLIT_PART(
+                COALESCE(
+                  NULLIF(TRIM(eli."work_type_code"), ''),
+                  NULLIF(TRIM(eli."category"), '')
+                ),
                 ' - ', 1
-              )), '')),
+              ))),
               'Unassigned'
             )
           ORDER BY SUM(eli."labor_cost"::numeric) DESC
