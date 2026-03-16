@@ -45,8 +45,12 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
+    const projectIdFilter = req.query.projectId ? String(req.query.projectId) : null;
+    const prConditions = [eq(purchaseRequests.orgId, orgId)];
+    if (projectIdFilter) prConditions.push(eq(purchaseRequests.projectId, projectIdFilter));
+
     const prs = await db.select().from(purchaseRequests)
-      .where(eq(purchaseRequests.orgId, orgId))
+      .where(and(...prConditions))
       .orderBy(desc(purchaseRequests.createdAt));
 
     const result = await Promise.all(prs.map(async (pr) => {
@@ -348,8 +352,12 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
+    const poProjectFilter = req.query.projectId ? String(req.query.projectId) : null;
+    const poConditions = [eq(purchaseOrders.orgId, orgId)];
+    if (poProjectFilter) poConditions.push(eq(purchaseOrders.projectId, poProjectFilter));
+
     const pos = await db.select().from(purchaseOrders)
-      .where(eq(purchaseOrders.orgId, orgId))
+      .where(and(...poConditions))
       .orderBy(desc(purchaseOrders.createdAt));
 
     const result = await Promise.all(pos.map(async (po) => {
@@ -808,9 +816,23 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
-    const invoices = await db.select().from(vendorInvoices)
-      .where(eq(vendorInvoices.orgId, orgId))
-      .orderBy(desc(vendorInvoices.createdAt));
+    const invProjectFilter = req.query.projectId ? String(req.query.projectId) : null;
+
+    let invoiceQuery;
+    if (invProjectFilter) {
+      const projectPOIds = (await db.select({ id: purchaseOrders.id })
+        .from(purchaseOrders)
+        .where(and(eq(purchaseOrders.orgId, orgId), eq(purchaseOrders.projectId, invProjectFilter)))).map(p => p.id);
+      if (projectPOIds.length === 0) { res.json([]); return; }
+      invoiceQuery = await db.select().from(vendorInvoices)
+        .where(and(eq(vendorInvoices.orgId, orgId), sql`${vendorInvoices.poId} IN (${sql.join(projectPOIds.map(id => sql`${id}`), sql`, `)})`))
+        .orderBy(desc(vendorInvoices.createdAt));
+    } else {
+      invoiceQuery = await db.select().from(vendorInvoices)
+        .where(eq(vendorInvoices.orgId, orgId))
+        .orderBy(desc(vendorInvoices.createdAt));
+    }
+    const invoices = invoiceQuery;
 
     const result = await Promise.all(invoices.map(async (inv) => {
       const [po] = await db.select({ poNumber: purchaseOrders.poNumber })
@@ -1067,8 +1089,12 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
+    const rcptProjectFilter = req.query.projectId ? String(req.query.projectId) : null;
+    const rcptPoConditions = [eq(purchaseOrders.orgId, orgId)];
+    if (rcptProjectFilter) rcptPoConditions.push(eq(purchaseOrders.projectId, rcptProjectFilter));
+
     const orgPOs = await db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId, projectId: purchaseOrders.projectId })
-      .from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
+      .from(purchaseOrders).where(and(...rcptPoConditions));
 
     if (orgPOs.length === 0) { res.json([]); return; }
 

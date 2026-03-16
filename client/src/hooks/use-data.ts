@@ -526,9 +526,17 @@ export interface ProcurementInvoice {
   match: { id: string; matchStatus: string; poAmount: string; invoiceAmount: string; receivedQtyMatchPct: string } | null;
 }
 
-export function usePurchaseRequests() {
+export function usePurchaseRequests(projectId?: string) {
+  const url = projectId
+    ? `/api/procurement-module/requests?projectId=${projectId}`
+    : "/api/procurement-module/requests";
   return useQuery<ProcurementPR[]>({
-    queryKey: ["/api/procurement-module/requests"],
+    queryKey: ["/api/procurement-module/requests", projectId ?? "all"],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch purchase requests");
+      return res.json();
+    },
   });
 }
 
@@ -538,7 +546,7 @@ export function useCreatePurchaseRequest() {
       const response = await apiRequest("POST", "/api/procurement-module/requests", data);
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/requests"] });
     },
   });
@@ -617,9 +625,17 @@ export function useDeletePurchaseRequest() {
   });
 }
 
-export function usePurchaseOrders() {
+export function usePurchaseOrders(projectId?: string) {
+  const url = projectId
+    ? `/api/procurement-module/orders?projectId=${projectId}`
+    : "/api/procurement-module/orders";
   return useQuery<ProcurementPO[]>({
-    queryKey: ["/api/procurement-module/orders"],
+    queryKey: ["/api/procurement-module/orders", projectId ?? "all"],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch purchase orders");
+      return res.json();
+    },
   });
 }
 
@@ -739,9 +755,17 @@ export interface ProcurementReceipt {
   items: ProcurementReceiptItem[];
 }
 
-export function useProcurementReceipts() {
+export function useProcurementReceipts(projectId?: string) {
+  const url = projectId
+    ? `/api/procurement-module/receipts?projectId=${projectId}`
+    : "/api/procurement-module/receipts";
   return useQuery<ProcurementReceipt[]>({
-    queryKey: ["/api/procurement-module/receipts"],
+    queryKey: ["/api/procurement-module/receipts", projectId ?? "all"],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch receipts");
+      return res.json();
+    },
   });
 }
 
@@ -761,9 +785,17 @@ export function useCreatePOReceipt() {
 
 export const useCreateReceipt = useCreatePOReceipt;
 
-export function useVendorInvoices() {
+export function useVendorInvoices(projectId?: string) {
+  const url = projectId
+    ? `/api/procurement-module/invoices?projectId=${projectId}`
+    : "/api/procurement-module/invoices";
   return useQuery<ProcurementInvoice[]>({
-    queryKey: ["/api/procurement-module/invoices"],
+    queryKey: ["/api/procurement-module/invoices", projectId ?? "all"],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch invoices");
+      return res.json();
+    },
   });
 }
 
