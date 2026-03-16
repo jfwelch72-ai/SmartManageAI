@@ -837,7 +837,7 @@ export function useVendorInvoices(filters?: { projectId?: string; status?: strin
 
 export function useCreateVendorInvoice() {
   return useMutation({
-    mutationFn: async (data: { poId: string; invoiceNumber: string; invoiceDate: string; totalAmount: string; vendorId?: string | null; dueDate?: string | null; notes?: string | null; fileUrl?: string | null }) => {
+    mutationFn: async (data: { poId: string; invoiceNumber: string; invoiceDate: string; totalAmount: string; vendorId?: string | null; dueDate?: string | null; notes?: string | null; fileUrl?: string | null; items?: { poItemId: string; description: string; quantity: string; unitCost: string; amount: string }[] }) => {
       const response = await apiRequest("POST", "/api/procurement-module/invoices", data);
       return response.json();
     },
