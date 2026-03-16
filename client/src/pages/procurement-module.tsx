@@ -742,6 +742,7 @@ function PurchaseOrdersTab() {
 function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void }) {
   const { toast } = useToast();
   const { data: po, isLoading } = usePurchaseOrderDetail(poId);
+  const { data: editVendors } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/vendors"] });
   const updateMutation = useUpdatePurchaseOrder();
   const createReceiptMutation = useCreatePOReceipt();
   const createInvoiceMutation = useCreateVendorInvoice();
@@ -812,13 +813,13 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
   const [paymentForm, setPaymentForm] = useState({ amount: "", paymentDate: "", method: "", referenceNumber: "", notes: "" });
 
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editForm, setEditForm] = useState({ terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
+  const [editForm, setEditForm] = useState({ vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
   const [editLineItems, setEditLineItems] = useState<LineItem[]>([]);
 
   const openEdit = () => {
     if (!po) return;
     setEditForm({
-      terms: po.terms || "", deliveryAddress: po.deliveryAddress || "",
+      vendorId: po.vendorId || "", terms: po.terms || "", deliveryAddress: po.deliveryAddress || "",
       neededByDate: po.neededByDate?.split("T")[0] || "", notes: po.notes || "",
     });
     setEditLineItems(po.items?.map((item: POItem) => ({
@@ -842,7 +843,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       await updateMutation.mutateAsync({
         id: poId,
         data: {
-          terms: editForm.terms || null, deliveryAddress: editForm.deliveryAddress || null,
+          vendorId: editForm.vendorId || null, terms: editForm.terms || null, deliveryAddress: editForm.deliveryAddress || null,
           neededByDate: editForm.neededByDate || null, notes: editForm.notes || null,
           items: validItems,
         },
@@ -1096,17 +1097,23 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             <div className="grid grid-cols-2 gap-4">
               <div>
+                <Label>Vendor</Label>
+                <VendorCombobox value={editForm.vendorId} onChange={v => setEditForm({ ...editForm, vendorId: v })} vendors={editVendors || []} />
+              </div>
+              <div>
                 <Label>Needed By</Label>
                 <Input type="date" value={editForm.neededByDate} onChange={e => setEditForm({ ...editForm, neededByDate: e.target.value })} />
               </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Terms</Label>
                 <Input value={editForm.terms} onChange={e => setEditForm({ ...editForm, terms: e.target.value })} />
               </div>
-            </div>
-            <div>
-              <Label>Delivery Address</Label>
-              <Input value={editForm.deliveryAddress} onChange={e => setEditForm({ ...editForm, deliveryAddress: e.target.value })} />
+              <div>
+                <Label>Delivery Address</Label>
+                <Input value={editForm.deliveryAddress} onChange={e => setEditForm({ ...editForm, deliveryAddress: e.target.value })} />
+              </div>
             </div>
             <div>
               <Label>Notes</Label>
