@@ -544,7 +544,7 @@ export function usePurchaseRequests(projectId?: string) {
 
 export function useCreatePurchaseRequest() {
   return useMutation({
-    mutationFn: async (data: { projectId: string; title: string; neededByDate?: string | null; notes?: string | null; items?: { description: string; category?: string | null; quantity?: string | null; unit?: string | null; estimatedUnitCost?: string | null }[] }) => {
+    mutationFn: async (data: { projectId: string; title: string; neededByDate?: string | null; notes?: string | null; items?: { description: string; category?: string | null; quantity?: string | null; unit?: string | null; estimatedUnitCost?: string | null; costCode?: string | null }[] }) => {
       const response = await apiRequest("POST", "/api/procurement-module/requests", data);
       return response.json();
     },
@@ -556,7 +556,7 @@ export function useCreatePurchaseRequest() {
 
 export function useUpdatePurchaseRequest() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<{ title: string; neededByDate: string | null; notes: string | null; items: { description: string; category?: string | null; quantity?: string | null; unit?: string | null; estimatedUnitCost?: string | null }[] }> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ title: string; neededByDate: string | null; notes: string | null; items: { description: string; category?: string | null; quantity?: string | null; unit?: string | null; estimatedUnitCost?: string | null; costCode?: string | null }[] }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/requests/${id}`, data);
       return response.json();
     },
@@ -650,7 +650,7 @@ export function usePurchaseOrderDetail(id: string | null) {
 
 export function useCreatePurchaseOrder() {
   return useMutation({
-    mutationFn: async (data: { projectId: string; vendorId?: string | null; terms?: string | null; deliveryAddress?: string | null; neededByDate?: string | null; notes?: string | null; items?: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null }[] }) => {
+    mutationFn: async (data: { projectId: string; vendorId?: string | null; terms?: string | null; deliveryAddress?: string | null; neededByDate?: string | null; notes?: string | null; items?: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null; costCode?: string | null }[] }) => {
       const response = await apiRequest("POST", "/api/procurement-module/orders", data);
       return response.json();
     },
@@ -662,7 +662,7 @@ export function useCreatePurchaseOrder() {
 
 export function useUpdatePurchaseOrder() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<{ vendorId: string | null; terms: string | null; deliveryAddress: string | null; neededByDate: string | null; notes: string | null; items: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null }[] }> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ vendorId: string | null; terms: string | null; deliveryAddress: string | null; neededByDate: string | null; notes: string | null; items: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null; costCode?: string | null }[] }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/orders/${id}`, data);
       return response.json();
     },

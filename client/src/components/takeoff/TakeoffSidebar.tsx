@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,30 @@ import { computePixelDistance } from "@shared/utils/geometry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
+
+function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
+  const [localValue, setLocalValue] = useState(currentValue);
+  const [committed, setCommitted] = useState(currentValue);
+
+  useEffect(() => {
+    setLocalValue(currentValue);
+    setCommitted(currentValue);
+  }, [currentValue, measurementId]);
+
+  const commitIfChanged = () => {
+    if (localValue !== committed) {
+      setCommitted(localValue);
+      onCommit(localValue);
+    }
+  };
+
+  return (
+    <div className="space-y-2" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { commitIfChanged(); } }}>
+      <Label className="text-xs">Cost Code</Label>
+      <CostCodeCombobox value={localValue} onChange={(val) => { setLocalValue(val); if (val.includes(" - ")) { setCommitted(val); onCommit(val); } }} data-testid="input-cost-code" />
+    </div>
+  );
+}
 
 interface TakeoffSidebarProps {
   selectedSheet: string | null;
@@ -294,10 +318,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     {(selM as any).pitchRatio && <div className="flex justify-between"><span className="text-muted-foreground">Pitch:</span><span>{(selM as any).pitchRatio}</span></div>}
                   </div>
                   <Separator />
-                  <div className="space-y-2">
-                    <Label className="text-xs">Cost Code</Label>
-                    <CostCodeCombobox value={(selM as any).costCodeId || ""} onChange={(val) => { if (val !== ((selM as any).costCodeId || "")) { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); } }} data-testid="input-cost-code" />
-                  </div>
+                  <CostCodeField measurementId={selM.id} currentValue={(selM as any).costCodeId || ""} onCommit={(val) => { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); }} />
                   <div className="space-y-2">
                     <Label className="text-xs">Unit Cost ($)</Label>
                     <Input type="number" placeholder="0.00" defaultValue={(selM as any).unitCost || ""} onBlur={(e) => { const val = parseFloat(e.target.value) || undefined; if (val !== (selM as any).unitCost) { updateMeasurementMutation.mutate({ id: selM.id, unitCost: val }); } }} className="h-8 text-sm" data-testid="input-unit-cost" />
