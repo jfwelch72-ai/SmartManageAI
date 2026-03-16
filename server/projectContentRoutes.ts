@@ -884,6 +884,8 @@ router.get("/api/projects/:code/procurement", requireAuth, async (req: AuthReque
       return;
     }
 
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
     const items = await db
       .select()
       .from(procurementItems)
@@ -905,7 +907,16 @@ router.post("/api/procurement", requireAuth, requireRole("ADMIN", "MANAGER"), as
       return;
     }
 
-    const [newItem] = await db.insert(procurementItems).values(validationResult.data).returning();
+    const data = validationResult.data;
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, data.projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const [newItem] = await db.insert(procurementItems).values(data).returning();
     res.status(201).json(newItem);
   } catch (error: any) {
     console.error("Create procurement item error:", error);
@@ -924,6 +935,15 @@ router.patch("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"
       return;
     }
 
+    const [existing] = await db.select().from(procurementItems).where(eq(procurementItems.id, req.params.id)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Procurement item not found" });
+      return;
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, existing.projectId)).limit(1);
+    if (!project || !verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
     const updateData: any = { ...validationResult.data, updatedAt: new Date() };
     
     const [updatedItem] = await db
@@ -932,14 +952,28 @@ router.patch("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"
       .where(eq(procurementItems.id, req.params.id))
       .returning();
 
-    if (!updatedItem) {
+    res.json(updatedItem);
+  } catch (error: any) {
+    console.error("Update procurement item error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const [existing] = await db.select().from(procurementItems).where(eq(procurementItems.id, req.params.id)).limit(1);
+    if (!existing) {
       res.status(404).json({ error: "Procurement item not found" });
       return;
     }
 
-    res.json(updatedItem);
+    const [project] = await db.select().from(projects).where(eq(projects.id, existing.projectId)).limit(1);
+    if (!project || !verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    await db.delete(procurementItems).where(eq(procurementItems.id, req.params.id));
+    res.json({ success: true });
   } catch (error: any) {
-    console.error("Update procurement item error:", error);
+    console.error("Delete procurement item error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

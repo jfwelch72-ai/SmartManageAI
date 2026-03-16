@@ -438,6 +438,18 @@ export function useUpdateProcurementItem() {
   });
 }
 
+export function useDeleteProcurementItem() {
+  return useMutation({
+    mutationFn: async ({ id, projectCode }: { id: string; projectCode: string }) => {
+      const response = await apiRequest("DELETE", `/api/procurement/${id}`);
+      return response.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", variables.projectCode, "procurement"] });
+    },
+  });
+}
+
 // Documents
 export function useProjectDocuments(code: string) {
   return useQuery<PlanDocument[]>({
