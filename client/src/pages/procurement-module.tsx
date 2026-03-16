@@ -715,7 +715,37 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
 
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [invoiceForm, setInvoiceForm] = useState({ invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
+  const [invoiceLineItems, setInvoiceLineItems] = useState<{ poItemId: string; description: string; quantity: string; unitCost: string; amount: string }[]>([]);
   const [isUploadingInvoiceFile, setIsUploadingInvoiceFile] = useState(false);
+
+  const openInvoiceDialog = () => {
+    setInvoiceForm({ invoiceNumber: "", invoiceDate: new Date().toISOString().split("T")[0], dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
+    if (po?.items) {
+      setInvoiceLineItems(po.items.map((item: POItem) => ({
+        poItemId: item.id,
+        description: item.description,
+        quantity: item.quantity || "",
+        unitCost: item.unitCost || "",
+        amount: String(parseFloat(item.quantity || "0") * parseFloat(item.unitCost || "0")),
+      })));
+    } else {
+      setInvoiceLineItems([]);
+    }
+    setShowInvoiceDialog(true);
+  };
+
+  const updateInvoiceLineItem = (i: number, field: string, value: string) => {
+    const updated = [...invoiceLineItems];
+    updated[i] = { ...updated[i], [field]: value };
+    if (field === "quantity" || field === "unitCost") {
+      const q = parseFloat(field === "quantity" ? value : updated[i].quantity) || 0;
+      const u = parseFloat(field === "unitCost" ? value : updated[i].unitCost) || 0;
+      updated[i].amount = String(Math.round(q * u * 100) / 100);
+    }
+    setInvoiceLineItems(updated);
+    const total = updated.reduce((sum, li) => sum + (parseFloat(li.amount) || 0), 0);
+    setInvoiceForm(prev => ({ ...prev, totalAmount: String(Math.round(total * 100) / 100) }));
+  };
 
   const handleInvoiceFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -806,16 +836,19 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
     if (!invoiceForm.invoiceNumber || !invoiceForm.invoiceDate || !invoiceForm.totalAmount) {
       toast({ title: "Invoice number, date, and amount are required", variant: "destructive" }); return;
     }
+    const validItems = invoiceLineItems.filter(li => li.description.trim() && parseFloat(li.amount) > 0);
     try {
       await createInvoiceMutation.mutateAsync({
         poId, vendorId: po?.vendorId || null,
         invoiceNumber: invoiceForm.invoiceNumber, invoiceDate: invoiceForm.invoiceDate,
         totalAmount: invoiceForm.totalAmount, dueDate: invoiceForm.dueDate || null,
         notes: invoiceForm.notes || null, fileUrl: invoiceForm.fileUrl || null,
+        items: validItems,
       });
       toast({ title: "Invoice recorded" });
       setShowInvoiceDialog(false);
       setInvoiceForm({ invoiceNumber: "", invoiceDate: "", dueDate: "", totalAmount: "", notes: "", fileUrl: "" });
+      setInvoiceLineItems([]);
     } catch { toast({ title: "Failed to record invoice", variant: "destructive" }); }
   };
 
@@ -949,7 +982,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="font-semibold flex items-center gap-1"><FileText className="h-4 w-4" /> Invoices ({po.invoices?.length || 0})</h4>
-                  <Button size="sm" variant="outline" onClick={() => setShowInvoiceDialog(true)} data-testid="button-add-invoice">
+                  <Button size="sm" variant="outline" onClick={openInvoiceDialog} data-testid="button-add-invoice">
                     <Plus className="h-3.5 w-3.5 mr-1" />Add Invoice
                   </Button>
                 </div>
@@ -1137,12 +1170,12 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
       </Dialog>
 
       <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
-        <DialogContent data-testid="dialog-add-invoice">
+        <DialogContent className="max-w-2xl" data-testid="dialog-add-invoice">
           <DialogHeader>
             <DialogTitle>Add Vendor Invoice</DialogTitle>
-            <DialogDescription>Record an invoice from the vendor for this PO.</DialogDescription>
+            <DialogDescription>Record an invoice from the vendor for this PO. Line items are auto-populated from PO items for per-item matching.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             <div>
               <Label>Invoice Number *</Label>
               <Input value={invoiceForm.invoiceNumber} onChange={e => setInvoiceForm({ ...invoiceForm, invoiceNumber: e.target.value })} data-testid="input-invoice-number" />
@@ -1158,10 +1191,6 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
               </div>
             </div>
             <div>
-              <Label>Total Amount *</Label>
-              <Input type="number" step="0.01" value={invoiceForm.totalAmount} onChange={e => setInvoiceForm({ ...invoiceForm, totalAmount: e.target.value })} data-testid="input-invoice-amount" />
-            </div>
-            <div>
               <Label>Invoice File (optional)</Label>
               <div className="flex items-center gap-2">
                 <label className="flex items-center gap-2 cursor-pointer px-3 py-2 border rounded-md text-sm hover:bg-muted transition-colors">
@@ -1173,6 +1202,38 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                   <span className="text-xs text-green-600 flex items-center gap-1"><Check className="h-3 w-3" />File attached</span>
                 )}
               </div>
+            </div>
+            {invoiceLineItems.length > 0 && (
+              <>
+                <Separator />
+                <Label className="text-base font-semibold">Line Items</Label>
+                {invoiceLineItems.map((li, i) => (
+                  <div key={i} className="p-3 border rounded-md space-y-2">
+                    <div className="text-sm font-medium text-muted-foreground">{li.description}</div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <Label className="text-xs">Qty</Label>
+                        <Input type="number" step="0.01" value={li.quantity} onChange={e => updateInvoiceLineItem(i, "quantity", e.target.value)} data-testid={`input-inv-line-qty-${i}`} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Unit Cost</Label>
+                        <Input type="number" step="0.01" value={li.unitCost} onChange={e => updateInvoiceLineItem(i, "unitCost", e.target.value)} data-testid={`input-inv-line-cost-${i}`} />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Amount</Label>
+                        <Input type="number" step="0.01" value={li.amount} onChange={e => updateInvoiceLineItem(i, "amount", e.target.value)} data-testid={`input-inv-line-amount-${i}`} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="text-right text-sm font-semibold">
+                  Total: {fmtCurrency(invoiceForm.totalAmount)}
+                </div>
+              </>
+            )}
+            <div>
+              <Label>Total Amount *</Label>
+              <Input type="number" step="0.01" value={invoiceForm.totalAmount} onChange={e => setInvoiceForm({ ...invoiceForm, totalAmount: e.target.value })} data-testid="input-invoice-amount" />
             </div>
             <div>
               <Label>Notes</Label>

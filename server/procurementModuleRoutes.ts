@@ -4,7 +4,7 @@ import {
   purchaseRequests, purchaseRequestItems,
   purchaseOrders, purchaseOrderItems,
   poReceipts, poReceiptItems,
-  vendorInvoices, invoiceMatches,
+  vendorInvoices, vendorInvoiceItems, invoiceMatches,
   invoicePayments, organizations,
   projects, users,
 } from "@shared/schema";
@@ -1095,19 +1095,45 @@ router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLE
       if (!vendor) { res.status(403).json({ error: "Vendor does not belong to your organization" }); return; }
     }
 
-    const [invoice] = await db.insert(vendorInvoices).values({
-      orgId,
-      poId: parsed.data.poId,
-      vendorId: resolvedVendorId,
-      invoiceNumber: parsed.data.invoiceNumber,
-      invoiceDate: new Date(parsed.data.invoiceDate),
-      dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
-      totalAmount: parsed.data.totalAmount,
-      notes: parsed.data.notes || null,
-      fileUrl: parsed.data.fileUrl || null,
-    }).returning();
+    const { items } = req.body;
+    const validPoItemIds = new Set(
+      (await db.select({ id: purchaseOrderItems.id }).from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.poId, parsed.data.poId))).map(r => r.id)
+    );
+    const result = await db.transaction(async (tx) => {
+      const [invoice] = await tx.insert(vendorInvoices).values({
+        orgId,
+        poId: parsed.data.poId,
+        vendorId: resolvedVendorId,
+        invoiceNumber: parsed.data.invoiceNumber,
+        invoiceDate: new Date(parsed.data.invoiceDate),
+        dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
+        totalAmount: parsed.data.totalAmount,
+        notes: parsed.data.notes || null,
+        fileUrl: parsed.data.fileUrl || null,
+      }).returning();
 
-    res.status(201).json(invoice);
+      if (items && Array.isArray(items)) {
+        for (const item of items) {
+          if (!item.description || typeof item.description !== "string") continue;
+          const poItemId = item.poItemId && validPoItemIds.has(item.poItemId) ? item.poItemId : null;
+          const qty = parseFloat(item.quantity) || 0;
+          const cost = parseFloat(item.unitCost) || 0;
+          if (qty < 0 || cost < 0) continue;
+          await tx.insert(vendorInvoiceItems).values({
+            invoiceId: invoice.id,
+            poItemId,
+            description: item.description.trim(),
+            quantity: String(qty),
+            unitCost: String(cost),
+            amount: item.amount || String(Math.round(qty * cost * 100) / 100),
+          });
+        }
+      }
+      return invoice;
+    });
+
+    res.status(201).json(result);
   } catch (error) {
     console.error("Create vendor invoice error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1125,6 +1151,7 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
 
     if (existing.status !== "PENDING") { res.status(400).json({ error: "Only PENDING invoices can be edited" }); return; }
 
+    const { items } = req.body;
     const setData: Record<string, unknown> = { updatedAt: new Date() };
     if (req.body.invoiceNumber !== undefined) setData.invoiceNumber = req.body.invoiceNumber;
     if (req.body.invoiceDate !== undefined) setData.invoiceDate = new Date(req.body.invoiceDate);
@@ -1133,8 +1160,34 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
     if (req.body.fileUrl !== undefined) setData.fileUrl = req.body.fileUrl;
 
-    const [updated] = await db.update(vendorInvoices).set(setData)
-      .where(eq(vendorInvoices.id, req.params.id)).returning();
+    const validPoItemIds = new Set(
+      (await db.select({ id: purchaseOrderItems.id }).from(purchaseOrderItems)
+        .where(eq(purchaseOrderItems.poId, existing.poId))).map(r => r.id)
+    );
+    const updated = await db.transaction(async (tx) => {
+      const [updatedInv] = await tx.update(vendorInvoices).set(setData)
+        .where(eq(vendorInvoices.id, req.params.id)).returning();
+
+      if (items && Array.isArray(items)) {
+        await tx.delete(vendorInvoiceItems).where(eq(vendorInvoiceItems.invoiceId, req.params.id));
+        for (const item of items) {
+          if (!item.description || typeof item.description !== "string") continue;
+          const poItemId = item.poItemId && validPoItemIds.has(item.poItemId) ? item.poItemId : null;
+          const qty = parseFloat(item.quantity) || 0;
+          const cost = parseFloat(item.unitCost) || 0;
+          if (qty < 0 || cost < 0) continue;
+          await tx.insert(vendorInvoiceItems).values({
+            invoiceId: req.params.id,
+            poItemId,
+            description: item.description.trim(),
+            quantity: String(qty),
+            unitCost: String(cost),
+            amount: item.amount || String(Math.round(qty * cost * 100) / 100),
+          });
+        }
+      }
+      return updatedInv;
+    });
     res.json(updated);
   } catch (error) {
     console.error("Update vendor invoice error:", error);
@@ -1148,6 +1201,87 @@ async function getOrgTolerance(orgId: string): Promise<number> {
   const [org] = await db.select({ matchTolerancePct: organizations.matchTolerancePct })
     .from(organizations).where(eq(organizations.id, orgId)).limit(1);
   return parseFloat(org?.matchTolerancePct?.toString() || "5");
+}
+
+async function computeThreeWayMatch(invoice: any, po: any, orgId: string) {
+  const tolerancePct = await getOrgTolerance(orgId);
+  const qtyThreshold = 100 - tolerancePct;
+  const poItems = await db.select().from(purchaseOrderItems)
+    .where(eq(purchaseOrderItems.poId, po.id));
+  const invoiceItems = await db.select().from(vendorInvoiceItems)
+    .where(eq(vendorInvoiceItems.invoiceId, invoice.id));
+
+  const poAmount = parseFloat(po.totalCost?.toString() || "0");
+  const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
+
+  if (invoiceItems.length > 0) {
+    let allItemsMatch = true;
+    let totalInvoicedValue = 0;
+    let totalReceivedValue = 0;
+    const poItemMap = new Map(poItems.map(p => [p.id, p]));
+    const invoicedPoItemIds = new Set<string>();
+
+    for (const invItem of invoiceItems) {
+      const invAmount = parseFloat(invItem.amount?.toString() || "0");
+      totalInvoicedValue += invAmount;
+
+      if (invItem.poItemId) {
+        invoicedPoItemIds.add(invItem.poItemId);
+        const poItem = poItemMap.get(invItem.poItemId);
+        if (poItem) {
+          const received = parseFloat(poItem.quantityReceived?.toString() || "0");
+          const unitCost = parseFloat(poItem.unitCost?.toString() || "0");
+          const receivedValue = received * unitCost;
+          totalReceivedValue += receivedValue;
+          const tolerance = receivedValue * (tolerancePct / 100);
+          if (Math.abs(receivedValue - invAmount) > tolerance) {
+            allItemsMatch = false;
+          }
+          const ordered = parseFloat(poItem.quantity?.toString() || "0");
+          if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
+            allItemsMatch = false;
+          }
+        } else {
+          allItemsMatch = false;
+        }
+      } else {
+        allItemsMatch = false;
+      }
+    }
+
+    const receivedQtyMatchPct = totalInvoicedValue > 0 && totalReceivedValue > 0
+      ? (totalReceivedValue / totalInvoicedValue) * 100 : 0;
+    const amountMatch = allItemsMatch;
+    return {
+      matchStatus: amountMatch ? "MATCHED" as const : "DISCREPANCY" as const,
+      poAmount: String(poAmount),
+      invoiceAmount: String(invoiceAmount),
+      receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
+    };
+  }
+
+  let allItemsMatch = true;
+  let totalOrderedValue = 0;
+  let totalReceivedValue = 0;
+  for (const item of poItems) {
+    const ordered = parseFloat(item.quantity?.toString() || "0");
+    const received = parseFloat(item.quantityReceived?.toString() || "0");
+    const unitCost = parseFloat(item.unitCost?.toString() || "0");
+    totalOrderedValue += ordered * unitCost;
+    totalReceivedValue += received * unitCost;
+    if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
+      allItemsMatch = false;
+    }
+  }
+  const receivedQtyMatchPct = totalOrderedValue > 0 ? (totalReceivedValue / totalOrderedValue) * 100 : 0;
+  const amountTolerance = totalReceivedValue * (tolerancePct / 100);
+  const amountMatch = Math.abs(totalReceivedValue - invoiceAmount) <= amountTolerance;
+  return {
+    matchStatus: amountMatch && allItemsMatch ? "MATCHED" as const : "DISCREPANCY" as const,
+    poAmount: String(poAmount),
+    invoiceAmount: String(invoiceAmount),
+    receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
+  };
 }
 
 router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
@@ -1171,38 +1305,11 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
       .where(eq(purchaseOrders.id, invoice.poId)).limit(1);
     if (!po) { res.json(null); return; }
 
-    const tolerancePct = await getOrgTolerance(orgId);
-    const qtyThreshold = 100 - tolerancePct;
-    const poItems = await db.select().from(purchaseOrderItems)
-      .where(eq(purchaseOrderItems.poId, po.id));
-
-    const poAmount = parseFloat(po.totalCost?.toString() || "0");
-    const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
-    let allItemsMatch = true;
-    let totalOrderedValue = 0;
-    let totalReceivedValue = 0;
-    for (const item of poItems) {
-      const ordered = parseFloat(item.quantity?.toString() || "0");
-      const received = parseFloat(item.quantityReceived?.toString() || "0");
-      const unitCost = parseFloat(item.unitCost?.toString() || "0");
-      const orderedValue = ordered * unitCost;
-      const receivedValue = received * unitCost;
-      totalOrderedValue += orderedValue;
-      totalReceivedValue += receivedValue;
-      if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
-        allItemsMatch = false;
-      }
-    }
-    const receivedQtyMatchPct = totalOrderedValue > 0 ? (totalReceivedValue / totalOrderedValue) * 100 : 0;
-    const amountTolerance = totalReceivedValue * (tolerancePct / 100);
-    const amountMatch = Math.abs(totalReceivedValue - invoiceAmount) <= amountTolerance;
+    const matchResult = await computeThreeWayMatch(invoice, po, orgId);
 
     res.json({
       computed: true,
-      matchStatus: amountMatch && allItemsMatch ? "MATCHED" : "DISCREPANCY",
-      poAmount: String(poAmount),
-      invoiceAmount: String(invoiceAmount),
-      receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
+      ...matchResult,
     });
   } catch (error) {
     console.error("Get invoice match error:", error);
@@ -1223,36 +1330,8 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
       .where(eq(purchaseOrders.id, invoice.poId)).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
 
-    const tolerancePct = await getOrgTolerance(orgId);
-    const qtyThreshold = 100 - tolerancePct;
-    const poItems = await db.select().from(purchaseOrderItems)
-      .where(eq(purchaseOrderItems.poId, po.id));
-
-    const poAmount = parseFloat(po.totalCost?.toString() || "0");
-    const invoiceAmount = parseFloat(invoice.totalAmount?.toString() || "0");
-
-    let allItemsMatch = true;
-    let totalOrderedValue = 0;
-    let totalReceivedValue = 0;
-    for (const item of poItems) {
-      const ordered = parseFloat(item.quantity?.toString() || "0");
-      const received = parseFloat(item.quantityReceived?.toString() || "0");
-      const unitCost = parseFloat(item.unitCost?.toString() || "0");
-      const orderedValue = ordered * unitCost;
-      const receivedValue = received * unitCost;
-      totalOrderedValue += orderedValue;
-      totalReceivedValue += receivedValue;
-      if (ordered > 0 && (received / ordered) * 100 < qtyThreshold) {
-        allItemsMatch = false;
-      }
-    }
-    const receivedQtyMatchPct = totalOrderedValue > 0 ? (totalReceivedValue / totalOrderedValue) * 100 : 0;
-
-    const amountTolerance = totalReceivedValue * (tolerancePct / 100);
-    const amountMatch = Math.abs(totalReceivedValue - invoiceAmount) <= amountTolerance;
-    const qtyMatch = allItemsMatch;
-
-    const matchStatus = amountMatch && qtyMatch ? "MATCHED" : "DISCREPANCY";
+    const matchResult = await computeThreeWayMatch(invoice, po, orgId);
+    const matchStatus = matchResult.matchStatus;
 
     const receipts = await db.select().from(poReceipts).where(eq(poReceipts.poId, po.id)).limit(1);
     const receiptId = receipts[0]?.id || null;
@@ -1261,23 +1340,21 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
       .where(eq(invoiceMatches.invoiceId, invoice.id)).limit(1);
 
     let result;
+    const matchData = {
+      matchStatus,
+      poAmount: matchResult.poAmount,
+      invoiceAmount: matchResult.invoiceAmount,
+      receivedQtyMatchPct: matchResult.receivedQtyMatchPct,
+      receiptId,
+    };
     if (existingMatch) {
-      [result] = await db.update(invoiceMatches).set({
-        matchStatus,
-        poAmount: String(poAmount),
-        invoiceAmount: String(invoiceAmount),
-        receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
-        receiptId,
-      }).where(eq(invoiceMatches.id, existingMatch.id)).returning();
+      [result] = await db.update(invoiceMatches).set(matchData)
+        .where(eq(invoiceMatches.id, existingMatch.id)).returning();
     } else {
       [result] = await db.insert(invoiceMatches).values({
         invoiceId: invoice.id,
         poId: po.id,
-        receiptId,
-        matchStatus,
-        poAmount: String(poAmount),
-        invoiceAmount: String(invoiceAmount),
-        receivedQtyMatchPct: String(Math.round(receivedQtyMatchPct * 100) / 100),
+        ...matchData,
       }).returning();
     }
 

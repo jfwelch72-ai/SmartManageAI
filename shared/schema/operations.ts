@@ -2039,9 +2039,23 @@ export const insertPoReceiptItemSchema = createInsertSchema(poReceiptItems).omit
 export type InsertPoReceiptItem = z.infer<typeof insertPoReceiptItemSchema>;
 export type PoReceiptItem = typeof poReceiptItems.$inferSelect;
 
+export const vendorInvoiceItems = pgTable("vendor_invoice_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => vendorInvoices.id, { onDelete: "cascade" }),
+  poItemId: varchar("po_item_id").references(() => purchaseOrderItems.id),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 2 }),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+});
+
 export const insertVendorInvoiceSchema = createInsertSchema(vendorInvoices).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertVendorInvoice = z.infer<typeof insertVendorInvoiceSchema>;
 export type VendorInvoice = typeof vendorInvoices.$inferSelect;
+
+export const insertVendorInvoiceItemSchema = createInsertSchema(vendorInvoiceItems).omit({ id: true });
+export type InsertVendorInvoiceItem = z.infer<typeof insertVendorInvoiceItemSchema>;
+export type VendorInvoiceItem = typeof vendorInvoiceItems.$inferSelect;
 
 export const insertInvoiceMatchSchema = createInsertSchema(invoiceMatches).omit({ id: true, createdAt: true });
 export type InsertInvoiceMatch = z.infer<typeof insertInvoiceMatchSchema>;
