@@ -179,6 +179,8 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
   const [expandedPRId, setExpandedPRId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", neededByDate: "", notes: "" });
   const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
+  const [rejectingPRId, setRejectingPRId] = useState<string | null>(null);
+  const [rejectNotes, setRejectNotes] = useState("");
 
   const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
@@ -252,7 +254,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
                         <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(pr.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-pr-${pr.id}`}>
                           <Check className="h-3.5 w-3.5 mr-1" />Approve
                         </Button>
-                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectMutation.mutateAsync({ id: pr.id }); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-pr-${pr.id}`}>
+                        <Button size="sm" variant="destructive" onClick={() => { setRejectingPRId(pr.id); setRejectNotes(""); }} data-testid={`button-reject-pr-${pr.id}`}>
                           <X className="h-3.5 w-3.5 mr-1" />Reject
                         </Button>
                       </>
@@ -350,6 +352,25 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!rejectingPRId} onOpenChange={o => { if (!o) setRejectingPRId(null); }}>
+        <DialogContent data-testid="dialog-reject-pr">
+          <DialogHeader>
+            <DialogTitle>Reject Purchase Request</DialogTitle>
+            <DialogDescription>Provide a reason for rejecting this request.</DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>Rejection Reason *</Label>
+            <Textarea value={rejectNotes} onChange={e => setRejectNotes(e.target.value)} rows={3} placeholder="Explain why this request is being rejected..." data-testid="input-reject-pr-notes" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectingPRId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={!rejectNotes.trim() || rejectMutation.isPending} onClick={async () => { if (!rejectingPRId || !rejectNotes.trim()) return; try { await rejectMutation.mutateAsync({ id: rejectingPRId, rejectionNotes: rejectNotes.trim() }); toast({ title: "Rejected" }); setRejectingPRId(null); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid="button-confirm-reject-pr">
+              {rejectMutation.isPending ? "Rejecting..." : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -369,6 +390,8 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
   const [form, setForm] = useState({ vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
   const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const [rejectingPOId, setRejectingPOId] = useState<string | null>(null);
+  const [rejectPONotes, setRejectPONotes] = useState("");
 
   const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
@@ -441,7 +464,7 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
                         <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(po.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-po-${po.id}`}>
                           <Check className="h-3.5 w-3.5 mr-1" />Approve
                         </Button>
-                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectPOMutation.mutateAsync({ id: po.id }); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-po-${po.id}`}>
+                        <Button size="sm" variant="destructive" onClick={() => { setRejectingPOId(po.id); setRejectPONotes(""); }} data-testid={`button-reject-po-${po.id}`}>
                           <X className="h-3.5 w-3.5 mr-1" />Reject
                         </Button>
                       </>
@@ -540,6 +563,25 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
       </Dialog>
 
       {selectedPOId && <ProjectPODetailSheet poId={selectedPOId} onClose={() => setSelectedPOId(null)} />}
+
+      <Dialog open={!!rejectingPOId} onOpenChange={o => { if (!o) setRejectingPOId(null); }}>
+        <DialogContent data-testid="dialog-reject-po">
+          <DialogHeader>
+            <DialogTitle>Reject Purchase Order</DialogTitle>
+            <DialogDescription>Provide a reason for rejecting this purchase order.</DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label>Rejection Reason *</Label>
+            <Textarea value={rejectPONotes} onChange={e => setRejectPONotes(e.target.value)} rows={3} placeholder="Explain why this PO is being rejected..." data-testid="input-reject-po-notes" />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectingPOId(null)}>Cancel</Button>
+            <Button variant="destructive" disabled={!rejectPONotes.trim() || rejectPOMutation.isPending} onClick={async () => { if (!rejectingPOId || !rejectPONotes.trim()) return; try { await rejectPOMutation.mutateAsync({ id: rejectingPOId, rejectionNotes: rejectPONotes.trim() }); toast({ title: "Rejected" }); setRejectingPOId(null); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid="button-confirm-reject-po">
+              {rejectPOMutation.isPending ? "Rejecting..." : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
