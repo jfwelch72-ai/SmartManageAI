@@ -127,11 +127,10 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
     if (!projOwner) { res.status(400).json({ error: "Project not found in your organization" }); return; }
 
     const pr = await db.transaction(async (tx) => {
-      await tx.select().from(organizations).where(eq(organizations.id, orgId)).for("update");
-      const [maxRow] = await tx.select({
-        nextNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(pr_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) + 1`,
-      }).from(purchaseRequests).where(eq(purchaseRequests.orgId, orgId));
-      const prNumber = `PR-${String(maxRow?.nextNum ?? 1).padStart(4, "0")}`;
+      const [{ nextNum }] = await tx.select({
+        nextNum: sql<number>`nextval('pr_number_seq')`,
+      }).from(sql`(SELECT 1) AS _`);
+      const prNumber = `PR-${String(nextNum).padStart(4, "0")}`;
 
       const [newPr] = await tx.insert(purchaseRequests).values({
         orgId,
@@ -356,11 +355,10 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
     }
 
     const po = await db.transaction(async (tx) => {
-      await tx.select().from(organizations).where(eq(organizations.id, orgId)).for("update");
-      const [maxPoRow] = await tx.select({
-        nextNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) + 1`,
-      }).from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
-      const poNumber = `PO-${String(maxPoRow?.nextNum ?? 1).padStart(4, "0")}`;
+      const [{ nextNum: poSeqNum }] = await tx.select({
+        nextNum: sql<number>`nextval('po_number_seq')`,
+      }).from(sql`(SELECT 1) AS _`);
+      const poNumber = `PO-${String(poSeqNum).padStart(4, "0")}`;
 
       const [newPo] = await tx.insert(purchaseOrders).values({
         orgId,
@@ -588,11 +586,10 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
     }
 
     const po = await db.transaction(async (tx) => {
-      await tx.select().from(organizations).where(eq(organizations.id, orgId)).for("update");
-      const [maxPoRow] = await tx.select({
-        nextNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) + 1`,
-      }).from(purchaseOrders).where(eq(purchaseOrders.orgId, orgId));
-      const poNumber = `PO-${String(maxPoRow?.nextNum ?? 1).padStart(4, "0")}`;
+      const [{ nextNum: poSeqNum2 }] = await tx.select({
+        nextNum: sql<number>`nextval('po_number_seq')`,
+      }).from(sql`(SELECT 1) AS _`);
+      const poNumber = `PO-${String(poSeqNum2).padStart(4, "0")}`;
 
       const [newPo] = await tx.insert(purchaseOrders).values({
         orgId,
