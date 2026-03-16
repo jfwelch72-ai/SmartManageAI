@@ -2045,3 +2045,21 @@ export const insertInvoiceMatchSchema = createInsertSchema(invoiceMatches).omit(
 export type InsertInvoiceMatch = z.infer<typeof insertInvoiceMatchSchema>;
 export type InvoiceMatch = typeof invoiceMatches.$inferSelect;
 
+export const orgCostCodes = pgTable("org_cost_codes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  organizationId: varchar("organization_id").notNull(),
+  code: varchar("code", { length: 20 }).notNull(),
+  description: varchar("description", { length: 255 }).notNull(),
+  division: varchar("division", { length: 100 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+  index("org_cost_codes_org_idx").on(table.organizationId),
+  unique("org_cost_codes_org_code_uniq").on(table.organizationId, table.code),
+]);
+
+export const insertOrgCostCodeSchema = createInsertSchema(orgCostCodes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrgCostCode = z.infer<typeof insertOrgCostCodeSchema>;
+export type OrgCostCode = typeof orgCostCodes.$inferSelect;
+

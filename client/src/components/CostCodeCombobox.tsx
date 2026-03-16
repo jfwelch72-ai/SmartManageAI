@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from "react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
@@ -25,13 +25,31 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
     queryKey: ["/api/cost-codes"],
   });
 
+  const activeCodes = useMemo(() => costCodes.filter(c => c.isActive !== false), [costCodes]);
+
   const filtered = useMemo(() => {
-    if (!search) return costCodes;
+    if (!search) return activeCodes;
     const s = search.toLowerCase();
-    return costCodes.filter(
-      (c) => c.code.toLowerCase().includes(s) || c.description.toLowerCase().includes(s)
+    return activeCodes.filter(
+      (c) => c.code.toLowerCase().includes(s) || c.description.toLowerCase().includes(s) || c.division?.toLowerCase().includes(s)
     );
-  }, [costCodes, search]);
+  }, [activeCodes, search]);
+
+  const grouped = useMemo(() => {
+    const groups: { division: string; items: CostCode[] }[] = [];
+    const map = new Map<string, CostCode[]>();
+    for (const code of filtered) {
+      const div = code.division || "Other";
+      if (!map.has(div)) {
+        map.set(div, []);
+        groups.push({ division: div, items: map.get(div)! });
+      }
+      map.get(div)!.push(code);
+    }
+    return groups;
+  }, [filtered]);
+
+  const flatItems = useMemo(() => filtered, [filtered]);
 
   useEffect(() => {
     setActiveIndex(-1);
@@ -94,16 +112,16 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setActiveIndex((prev) => (prev < filtered.length - 1 ? prev + 1 : 0));
+        setActiveIndex((prev) => (prev < flatItems.length - 1 ? prev + 1 : 0));
         break;
       case "ArrowUp":
         e.preventDefault();
-        setActiveIndex((prev) => (prev > 0 ? prev - 1 : filtered.length - 1));
+        setActiveIndex((prev) => (prev > 0 ? prev - 1 : flatItems.length - 1));
         break;
       case "Enter":
         e.preventDefault();
-        if (activeIndex >= 0 && activeIndex < filtered.length) {
-          handleSelect(filtered[activeIndex]);
+        if (activeIndex >= 0 && activeIndex < flatItems.length) {
+          handleSelect(flatItems[activeIndex]);
         }
         break;
       case "Escape":
@@ -115,6 +133,8 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
   };
 
   const displayValue = open ? (search || value) : value;
+
+  let globalIndex = -1;
 
   return (
     <div ref={containerRef} className="relative">
@@ -159,23 +179,35 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
           ref={listRef}
           id={listId}
           role="listbox"
-          className="absolute z-50 w-full mt-1 max-h-[240px] overflow-y-auto rounded-md border bg-popover shadow-md"
+          className="absolute z-50 w-full mt-1 max-h-[280px] overflow-y-auto rounded-md border bg-popover shadow-md"
         >
-          {filtered.map((code, index) => (
-            <div
-              key={code.code}
-              id={`${listId}-option-${index}`}
-              role="option"
-              aria-selected={index === activeIndex}
-              className={`flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer hover-elevate ${
-                index === activeIndex ? "bg-accent" : ""
-              }`}
-              onClick={() => handleSelect(code)}
-              data-testid={testId ? `${testId}-option-${code.code}` : undefined}
-            >
-              <Badge variant="outline" className="shrink-0 text-xs font-mono">{code.code}</Badge>
-              <span className="truncate">{code.description}</span>
-            </div>
+          {grouped.map((group) => (
+            <Fragment key={group.division}>
+              <div className="sticky top-0 bg-muted/80 backdrop-blur-sm px-3 py-1.5 text-xs font-semibold text-muted-foreground border-b" data-testid={testId ? `${testId}-division-${group.division}` : undefined}>
+                {group.division}
+              </div>
+              {group.items.map((code) => {
+                globalIndex++;
+                const idx = globalIndex;
+                return (
+                  <div
+                    key={code.code}
+                    id={`${listId}-option-${idx}`}
+                    role="option"
+                    aria-selected={idx === activeIndex}
+                    className={`flex items-center gap-2 w-full px-3 py-2 text-left text-sm cursor-pointer hover-elevate ${
+                      idx === activeIndex ? "bg-accent" : ""
+                    }`}
+                    onClick={() => handleSelect(code)}
+                    data-testid={testId ? `${testId}-option-${code.code}` : undefined}
+                  >
+                    <Badge variant="outline" className="shrink-0 text-xs font-mono">{code.code}</Badge>
+                    <span className="truncate">{code.description}</span>
+                    {code.isCustom && <Badge variant="secondary" className="shrink-0 text-[10px] ml-auto">Custom</Badge>}
+                  </div>
+                );
+              })}
+            </Fragment>
           ))}
         </div>
       )}

@@ -125,6 +125,7 @@ const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"))
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
 const ProcurementModulePage = lazy(() => import("@/pages/procurement-module"));
+const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -239,6 +240,7 @@ function Router() {
       <Route path="/ai-governance" component={() => <ProtectedRoute component={AIGovernancePage} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/enterprise-settings" component={() => <ProtectedRoute component={EnterpriseSettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/cost-codes" component={() => <ProtectedRoute component={CostCodesPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />

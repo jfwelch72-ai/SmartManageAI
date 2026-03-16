@@ -9,6 +9,7 @@ import {
   subcontractors, subcontractorContracts,
   bidSubcontractorQuotes, bidMaterialQuotes,
   organizations,
+  orgCostCodes, insertOrgCostCodeSchema,
 } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -234,11 +235,88 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
     const orgId = req.user!.organizationId;
     const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
     const tradeType = org?.tradeType || "OTHER";
-    const codes = getCostCodesForTrade(tradeType);
-    res.json(codes);
+    const staticCodes = getCostCodesForTrade(tradeType);
+
+    const customRows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
+    const customCodes = customRows.map(r => ({
+      code: r.code,
+      description: r.description,
+      division: r.division,
+      isCustom: true,
+      isActive: r.isActive,
+    }));
+
+    const customCodeSet = new Set(customRows.map(r => r.code));
+    const merged = [
+      ...staticCodes.filter(c => !customCodeSet.has(c.code)),
+      ...customCodes,
+    ];
+
+    res.json(merged);
   } catch (error) {
     console.error("Error fetching cost codes:", error);
     res.status(500).json({ error: "Failed to fetch cost codes" });
+  }
+});
+
+router.get("/api/org-cost-codes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const rows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching org cost codes:", error);
+    res.status(500).json({ error: "Failed to fetch custom cost codes" });
+  }
+});
+
+router.post("/api/org-cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const parsed = insertOrgCostCodeSchema.parse({ ...req.body, organizationId: orgId });
+    const [row] = await db.insert(orgCostCodes).values(parsed).returning();
+    res.status(201).json(row);
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "A cost code with that code already exists" });
+    }
+    console.error("Error creating org cost code:", error);
+    res.status(500).json({ error: "Failed to create cost code" });
+  }
+});
+
+router.patch("/api/org-cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const id = Number(req.params.id);
+    const { code, description, division, isActive } = req.body;
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (code !== undefined) updates.code = code;
+    if (description !== undefined) updates.description = description;
+    if (division !== undefined) updates.division = division;
+    if (isActive !== undefined) updates.isActive = isActive;
+    const [row] = await db.update(orgCostCodes).set(updates).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
+    if (!row) return res.status(404).json({ error: "Cost code not found" });
+    res.json(row);
+  } catch (error: any) {
+    if (error?.code === "23505") {
+      return res.status(409).json({ error: "A cost code with that code already exists" });
+    }
+    console.error("Error updating org cost code:", error);
+    res.status(500).json({ error: "Failed to update cost code" });
+  }
+});
+
+router.delete("/api/org-cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const id = Number(req.params.id);
+    const [row] = await db.delete(orgCostCodes).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
+    if (!row) return res.status(404).json({ error: "Cost code not found" });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting org cost code:", error);
+    res.status(500).json({ error: "Failed to delete cost code" });
   }
 });
 

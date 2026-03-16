@@ -6,16 +6,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useQuery } from "@tanstack/react-query";
 
 export interface CostCodeBreakdownConfig {
   mode?: string;
   projectId?: string;
+  groupByDivision?: boolean;
 }
 
 export const DEFAULT_COST_CODE_CONFIG: CostCodeBreakdownConfig = {
   mode: "labor",
   projectId: "",
+  groupByDivision: false,
 };
 
 interface Project {
@@ -71,6 +74,16 @@ export function CostCodeBreakdownSettings({ config, onChange }: CostCodeBreakdow
             ))}
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Label htmlFor="group-by-division" data-testid="label-group-by-division">Group by Division</Label>
+        <Switch
+          id="group-by-division"
+          checked={merged.groupByDivision ?? false}
+          onCheckedChange={(checked) => onChange({ ...merged, groupByDivision: checked })}
+          data-testid="switch-group-by-division"
+        />
       </div>
     </div>
   );

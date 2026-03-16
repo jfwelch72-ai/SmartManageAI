@@ -700,6 +700,12 @@ export const NavigationConfig = {
       visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
     },
     {
+      href: "/cost-codes",
+      label: "Cost Codes",
+      testId: "nav-cost-codes",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
       href: "/scope-settings",
       label: "Scope Settings",
       testId: "nav-scope-settings",

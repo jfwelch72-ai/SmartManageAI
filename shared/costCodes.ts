@@ -1,9 +1,49 @@
 export interface CostCode {
   code: string;
   description: string;
+  division: string;
+  isCustom?: boolean;
+  isActive?: boolean;
 }
 
-const GENERAL_CODES: CostCode[] = [
+const CSI_DIVISIONS: Record<string, string> = {
+  "01": "Division 01 — General Requirements",
+  "02": "Division 02 — Existing Conditions",
+  "03": "Division 03 — Concrete",
+  "04": "Division 04 — Masonry",
+  "05": "Division 05 — Metals",
+  "06": "Division 06 — Wood, Plastics & Composites",
+  "07": "Division 07 — Thermal & Moisture Protection",
+  "08": "Division 08 — Openings",
+  "09": "Division 09 — Finishes",
+  "10": "Division 10 — Specialties",
+  "11": "Division 11 — Equipment",
+  "12": "Division 12 — Furnishings",
+  "13": "Division 13 — Special Construction",
+  "14": "Division 14 — Conveying Equipment",
+  "15": "Division 15 — Mechanical",
+  "16": "Division 16 — Electrical",
+  "22": "Division 22 — Plumbing",
+  "23": "Division 23 — HVAC",
+  "26": "Division 26 — Electrical",
+  "27": "Division 27 — Communications",
+  "28": "Division 28 — Electronic Safety & Security",
+  "31": "Division 31 — Earthwork",
+  "32": "Division 32 — Exterior Improvements",
+  "33": "Division 33 — Utilities",
+  "48": "Division 48 — Electrical Power Generation",
+};
+
+function getDivision(code: string): string {
+  const prefix = code.split("-")[0];
+  return CSI_DIVISIONS[prefix] || `Division ${prefix}`;
+}
+
+function withDivision(codes: Array<{ code: string; description: string }>): CostCode[] {
+  return codes.map(c => ({ ...c, division: getDivision(c.code) }));
+}
+
+const GENERAL_CODES: Array<{ code: string; description: string }> = [
   { code: "01-100", description: "General Requirements" },
   { code: "01-200", description: "Project Meetings" },
   { code: "01-300", description: "Submittals & Permits" },
@@ -15,7 +55,7 @@ const GENERAL_CODES: CostCode[] = [
   { code: "01-900", description: "Mobilization / Demobilization" },
 ];
 
-const TRADE_COST_CODES: Record<string, CostCode[]> = {
+const TRADE_COST_CODES: Record<string, Array<{ code: string; description: string }>> = {
   GENERAL_CONTRACTOR: [
     ...GENERAL_CODES,
     { code: "02-100", description: "Site Preparation" },
@@ -468,5 +508,8 @@ const TRADE_COST_CODES: Record<string, CostCode[]> = {
 };
 
 export function getCostCodesForTrade(tradeType: string): CostCode[] {
-  return TRADE_COST_CODES[tradeType] || TRADE_COST_CODES["OTHER"];
+  const raw = TRADE_COST_CODES[tradeType] || TRADE_COST_CODES["OTHER"];
+  return withDivision(raw);
 }
+
+export { CSI_DIVISIONS, getDivision };
