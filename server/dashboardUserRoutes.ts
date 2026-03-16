@@ -1993,14 +1993,20 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
 
         const budgetResult = await db.execute(sql`
           SELECT
-            COALESCE(eli."work_type_code", 'Unassigned') as cost_code,
+            COALESCE(
+              NULLIF(TRIM(SPLIT_PART(eli."work_type_code", ' - ', 1)), ''),
+              'Unassigned'
+            ) as cost_code,
             SUM(eli."labor_cost"::numeric) as budgeted
           FROM "estimate_line_items" eli
           JOIN "estimates" e ON eli."estimate_id" = e."id"
           WHERE eli."labor_cost"::numeric > 0
             ${budgetProjectCond}
             ${budgetOrgCond}
-          GROUP BY COALESCE(eli."work_type_code", 'Unassigned')
+          GROUP BY COALESCE(
+              NULLIF(TRIM(SPLIT_PART(eli."work_type_code", ' - ', 1)), ''),
+              'Unassigned'
+            )
           ORDER BY SUM(eli."labor_cost"::numeric) DESC
           LIMIT 10
         `);
@@ -2013,7 +2019,10 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
 
         const actualResult = await db.execute(sql`
           SELECT
-            COALESCE(te."cost_code", 'Unassigned') as cost_code,
+            COALESCE(
+              NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), ''),
+              'Unassigned'
+            ) as cost_code,
             SUM(
               (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
               COALESCE(u."cost_rate_regular"::numeric, 50)
@@ -2024,7 +2033,10 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
           WHERE 1=1
             ${orgCond}
             ${projectCond}
-          GROUP BY COALESCE(te."cost_code", 'Unassigned')
+          GROUP BY COALESCE(
+              NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), ''),
+              'Unassigned'
+            )
           ORDER BY SUM(
             (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
             COALESCE(u."cost_rate_regular"::numeric, 50)

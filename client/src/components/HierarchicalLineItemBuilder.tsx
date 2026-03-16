@@ -11,8 +11,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronDown, Layers, Tags, Calculator, DollarSign, FileText, ChevronRight, Building2, Sparkles, Loader2, Plus } from "lucide-react";
+import { ChevronDown, Layers, Tags, Calculator, DollarSign, FileText, ChevronRight, Building2, Sparkles, Loader2, Plus, Info } from "lucide-react";
 import MaterialCalculator, { MaterialCalculatorData } from "@/components/MaterialCalculator";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -144,6 +145,7 @@ export default function HierarchicalLineItemBuilder({
   const [selectedWorkTypeId, setSelectedWorkTypeId] = useState<string>("");
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
   const [expandedModifierCategories, setExpandedModifierCategories] = useState<string[]>([]);
+  const [costCodeOverride, setCostCodeOverride] = useState<string>("");
   
   // AI Assist dialog state
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
@@ -296,7 +298,7 @@ export default function HierarchicalLineItemBuilder({
         subcategoryName: selectedSubcategory,
         workTypeId: selectedWorkType.id,
         workTypeName: selectedWorkType.name,
-        workTypeCode: selectedWorkType.code,
+        workTypeCode: costCodeOverride || selectedWorkType.code,
         unit: unit || selectedWorkType.unit || "SF",
         modifierIds: selectedModifierIds,
         modifierNames: selectedModifiers.map(m => m.name),
@@ -306,7 +308,7 @@ export default function HierarchicalLineItemBuilder({
     } else {
       onSelectionChange(null);
     }
-  }, [selectedWorkType, selectedTradeObj, selectedTrade, selectedSubcategory, selectedModifierIds, canonicalName, unit]);
+  }, [selectedWorkType, selectedTradeObj, selectedTrade, selectedSubcategory, selectedModifierIds, canonicalName, unit, costCodeOverride]);
 
   // Auto-set unit when work type changes
   useEffect(() => {
@@ -334,6 +336,7 @@ export default function HierarchicalLineItemBuilder({
   const handleWorkTypeChange = (workTypeId: string) => {
     setSelectedWorkTypeId(workTypeId);
     setSelectedModifierIds([]);
+    setCostCodeOverride("");
     
     // Auto-set unit from work type
     const workType = availableWorkTypes.find(wt => wt.id === workTypeId);
@@ -511,6 +514,29 @@ export default function HierarchicalLineItemBuilder({
           )}
         </CardContent>
       </Card>
+
+      {/* Cost Code Override */}
+      {selectedWorkType && (
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-primary" />
+              Cost Code
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <CostCodeCombobox
+              value={costCodeOverride}
+              onChange={setCostCodeOverride}
+              data-testid="input-estimate-cost-code"
+            />
+            <p className="text-xs text-muted-foreground flex items-start gap-1">
+              <Info className="h-3 w-3 mt-0.5 shrink-0" />
+              This code appears in the Cost Code Breakdown dashboard widget. Pick a standardized code to align budget and actual tracking.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Step 4: Modifiers */}
       {selectedWorkType && modifierCategories.length > 0 && (
