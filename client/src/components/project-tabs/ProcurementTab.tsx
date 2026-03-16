@@ -1437,11 +1437,15 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
                           {inv.dueDate && <span>Due: {fmtDate(inv.dueDate)}</span>}
                           <span className="font-medium text-foreground">{fmtCurrency(inv.totalAmount)}</span>
                         </div>
-                        {totalPaid > 0 && (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Paid: {fmtCurrency(totalPaid)} | Remaining: {fmtCurrency(remaining)}
-                          </div>
-                        )}
+                        <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+                          <span>Paid: {fmtCurrency(totalPaid) === "-" ? "$0.00" : fmtCurrency(totalPaid)}</span>
+                          <span>Remaining: {fmtCurrency(remaining)}</span>
+                          {inv.fileUrl && (
+                            <a href={inv.fileUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                              <FileText className="h-3 w-3" /> File
+                            </a>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                         {inv.status === "PENDING" && (
