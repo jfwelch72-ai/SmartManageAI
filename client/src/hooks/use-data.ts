@@ -510,19 +510,6 @@ export interface ProcurementPO {
   vendor: { id: string; name: string } | null;
 }
 
-export interface ProcurementReceipt {
-  id: string;
-  poId: string;
-  receivedById: string;
-  status: string;
-  deliveryNote: string | null;
-  notes: string | null;
-  receivedAt: string;
-  items: { id: string; receiptId: string; poItemId: string; quantityReceived: string; condition: string; notes: string | null }[];
-  po: { poNumber: string } | null;
-  receivedBy: { firstName: string; lastName: string } | null;
-}
-
 export interface ProcurementInvoice {
   id: string;
   orgId: string;
