@@ -42,7 +42,7 @@ async function ensureProcurementSequences() {
     await db.execute(sql`SELECT setval('po_number_seq', ${poMax}, true)`);
   }
 }
-ensureProcurementSequences().catch(err => console.error("Failed to init procurement sequences:", err));
+const sequencesReady = ensureProcurementSequences().catch(err => console.error("Failed to init procurement sequences:", err));
 
 const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"] as const;
 const PO_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED", "CANCELLED"] as const;
@@ -138,6 +138,7 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
 
 router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
+    await sequencesReady;
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
@@ -359,6 +360,7 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
 
 router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
+    await sequencesReady;
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
@@ -582,6 +584,7 @@ const poCreateSchema = z.object({
 
 router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
+    await sequencesReady;
     const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
