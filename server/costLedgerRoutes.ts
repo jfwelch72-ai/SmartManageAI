@@ -1,19 +1,30 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes } from "@shared/schema";
+import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes, organizations } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { calculateCostLedger } from "./costLedgerService";
+import { getCostCodesForTrade } from "@shared/costCodes";
+
+async function getValidCostCodes(orgId: string): Promise<Set<string>> {
+  const [org] = await db.select({ tradeType: organizations.tradeType })
+    .from(organizations).where(eq(organizations.id, orgId));
+  const staticCodes = org?.tradeType ? getCostCodesForTrade(org.tradeType) : [];
+  const customCodes = await db.select({ code: orgCostCodes.code })
+    .from(orgCostCodes)
+    .where(eq(orgCostCodes.organizationId, orgId));
+  const validSet = new Set<string>();
+  for (const c of staticCodes) validSet.add(c.code);
+  for (const c of customCodes) validSet.add(c.code);
+  return validSet;
+}
 
 async function validateCostCodes(orgId: string, codes: string[]): Promise<string[]> {
   if (codes.length === 0) return [];
-  const existing = await db.select({ code: orgCostCodes.code })
-    .from(orgCostCodes)
-    .where(and(eq(orgCostCodes.organizationId, orgId), inArray(orgCostCodes.code, codes)));
-  const existingSet = new Set(existing.map(e => e.code));
-  return codes.filter(c => !existingSet.has(c));
+  const validSet = await getValidCostCodes(orgId);
+  return codes.filter(c => !validSet.has(c));
 }
 
 const router = Router();

@@ -90,7 +90,7 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
   });
 
   const { data: orgCostCodes } = useQuery<OrgCostCode[]>({
-    queryKey: ["/api/org-cost-codes"],
+    queryKey: ["/api/cost-codes"],
   });
 
   useEffect(() => {
