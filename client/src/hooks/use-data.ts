@@ -489,7 +489,7 @@ export interface ProcurementPOItem {
   quantity: string | null;
   unit: string | null;
   unitCost: string | null;
-  quantityReceived: number | null;
+  quantityReceived: string | number | null;
   costCode: string | null;
 }
 
@@ -512,6 +512,32 @@ export interface ProcurementPO {
   items: ProcurementPOItem[];
   project: { name: string; code: string } | null;
   vendor: { id: string; name: string } | null;
+  receipts?: ProcurementPOReceipt[];
+  invoices?: ProcurementPOInvoice[];
+}
+
+export interface ProcurementPOReceipt {
+  id: string;
+  status: string;
+  receivedAt: string;
+  deliveryNote: string | null;
+  notes: string | null;
+  receivedBy: { firstName: string | null; lastName: string | null } | null;
+  items: { id: string; poItemId: string | null; quantityReceived: string; condition: string; notes: string | null; itemDescription?: string | null }[];
+}
+
+export interface ProcurementPOInvoice {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  totalAmount: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  notes: string | null;
+  fileUrl: string | null;
+  match: { matchStatus: string; poAmount?: string; invoiceAmount?: string; receivedQtyMatchPct?: string; resolvedAt?: string | null } | null;
+  totalPaid: string;
+  payments: InvoicePayment[];
 }
 
 export interface ProcurementInvoice {
@@ -531,7 +557,7 @@ export interface ProcurementInvoice {
   updatedAt: string;
   po: { poNumber: string } | null;
   vendor: { id: string; name: string } | null;
-  match: { id: string; matchStatus: string; poAmount: string; invoiceAmount: string; receivedQtyMatchPct: string } | null;
+  match: { id: string; matchStatus: string; poAmount: string; invoiceAmount: string; receivedQtyMatchPct: string; resolvedAt?: string | null } | null;
   totalPaid: string;
 }
 

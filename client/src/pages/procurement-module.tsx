@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
-import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2 } from "lucide-react";
+import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { usePagination } from "@/hooks/use-pagination";
 import {
   usePurchaseRequests, useCreatePurchaseRequest, useUpdatePurchaseRequest, useSubmitPurchaseRequest,
   useApprovePurchaseRequest, useRejectPurchaseRequest, useConvertPRToPO, useDeletePurchaseRequest,
@@ -25,6 +28,9 @@ import {
   useVendorInvoices, useCreateVendorInvoice,
   useCreateInvoiceMatch, useResolveMatchDiscrepancy, useUpdateVendorInvoice,
   useInvoicePayments, useCreateInvoicePayment,
+  type ProcurementPR, type ProcurementPRItem,
+  type ProcurementPO, type ProcurementPOItem, type ProcurementPOReceipt, type ProcurementPOInvoice,
+  type ProcurementInvoice,
   type ProcurementReceipt, type ProcurementReceiptItem, type InvoicePayment,
 } from "@/hooks/use-data";
 
@@ -74,54 +80,13 @@ interface LineItem {
 interface ProjectRef { id: string; name: string; code?: string | null; }
 interface VendorRef { id: string; name: string; }
 
-interface POItem {
-  id: string; poId: string; description: string; quantity: string | null;
-  unit: string | null; unitCost: string | null; quantityReceived: string | null; costCode: string | null;
-}
-
-interface PRItem {
-  id: string; prId: string; description: string; category: string | null;
-  quantity: string | null; unit: string | null; estimatedUnitCost: string | null; costCode: string | null;
-}
-
-interface PurchaseRequest {
-  id: string; prNumber: string; title: string; status: string;
-  project?: ProjectRef | null; createdAt: string; neededByDate: string | null;
-  totalEstimatedCost: string | null; notes: string | null; rejectionNotes?: string | null;
-  requestedBy?: { firstName: string; lastName: string } | null; items?: PRItem[];
-}
-
-interface PurchaseOrder {
-  id: string; poNumber: string; status: string; totalCost: string | null;
-  neededByDate: string | null; notes: string | null; terms: string | null;
-  deliveryAddress: string | null; vendorId: string | null; projectId: string;
-  rejectionNotes?: string | null;
-  vendor?: VendorRef | null; project?: ProjectRef | null;
-  items: POItem[]; receipts: POReceiptSummary[]; invoices: InvoiceSummary[];
-}
-
-interface POReceiptSummary {
-  id: string; status: string; receivedAt: string; deliveryNote: string | null;
-  receivedBy?: { firstName: string; lastName: string } | null;
-  items: { id: string; poItemId: string; quantityReceived: string; condition: string; notes: string | null }[];
-}
-
-interface MatchDetail {
-  matchStatus: string; poAmount?: string; invoiceAmount?: string;
-  receivedQtyMatchPct?: string; resolvedAt?: string | null;
-}
-
-interface InvoiceSummary {
-  id: string; invoiceNumber: string; status: string; totalAmount: string;
-  invoiceDate: string; dueDate: string | null; match?: MatchDetail | null;
-  totalPaid?: string; payments?: InvoicePayment[];
-}
-
-interface InvoiceRow {
-  id: string; invoiceNumber: string; status: string; totalAmount: string;
-  invoiceDate: string; dueDate: string | null; fileUrl?: string | null; totalPaid?: string;
-  po?: { poNumber: string } | null; vendor?: VendorRef | null; match?: MatchDetail | null;
-}
+type POItem = ProcurementPOItem;
+type PRItem = ProcurementPRItem;
+type PurchaseRequest = ProcurementPR;
+type PurchaseOrder = ProcurementPO;
+type POReceiptSummary = ProcurementPOReceipt;
+type InvoiceSummary = ProcurementPOInvoice;
+type InvoiceRow = ProcurementInvoice;
 
 function FilterBar({ search, onSearch, status, onStatus, statuses, placeholder, projectId, onProjectChange, projects }: {
   search: string; onSearch: (v: string) => void;
@@ -197,6 +162,59 @@ function RejectDialog({ open, onClose, onConfirm, isPending, entityLabel }: {
   );
 }
 
+function PaginationControls({ rangeStart, rangeEnd, totalItems, hasPrev, hasNext, onPrev, onNext }: {
+  rangeStart: number; rangeEnd: number; totalItems: number;
+  hasPrev: boolean; hasNext: boolean; onPrev: () => void; onNext: () => void;
+}) {
+  if (totalItems <= 25) return null;
+  return (
+    <div className="flex items-center justify-between mt-4 pt-3 border-t">
+      <span className="text-sm text-muted-foreground" data-testid="text-pagination-info">
+        Showing {rangeStart}–{rangeEnd} of {totalItems}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={onPrev} disabled={!hasPrev} data-testid="button-pagination-prev">
+          <ChevronsLeft className="h-4 w-4 mr-1" />Previous
+        </Button>
+        <Button size="sm" variant="outline" onClick={onNext} disabled={!hasNext} data-testid="button-pagination-next">
+          Next<ChevronsRight className="h-4 w-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function VendorCombobox({ value, onChange, vendors }: { value: string; onChange: (v: string) => void; vendors: VendorRef[] }) {
+  const [open, setOpen] = useState(false);
+  const selected = vendors.find(v => v.id === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal" data-testid="combobox-po-vendor">
+          {selected ? selected.name : "Select vendor..."}
+          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search vendors..." data-testid="input-vendor-search" />
+          <CommandList>
+            <CommandEmpty>No vendors found.</CommandEmpty>
+            <CommandGroup>
+              {vendors.map(v => (
+                <CommandItem key={v.id} value={v.name} onSelect={() => { onChange(v.id); setOpen(false); }} data-testid={`vendor-option-${v.id}`}>
+                  <Check className={`mr-2 h-4 w-4 ${value === v.id ? "opacity-100" : "opacity-0"}`} />
+                  {v.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function PurchaseRequestsTab() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -207,6 +225,8 @@ function PurchaseRequestsTab() {
     search: search || undefined,
     projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
+  const { pageItems: pagedPRs, rangeStart: prStart, rangeEnd: prEnd, totalItems: prTotal, hasPrev: prHasPrev, hasNext: prHasNext, prevPage: prPrev, nextPage: prNext, resetPage: prResetPage } = usePagination(prs);
+  useEffect(() => { prResetPage(); }, [search, statusFilter, projectFilter, prResetPage]);
   const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
   const projectsList = projectsResponse?.data ?? [];
   const createMutation = useCreatePurchaseRequest();
@@ -356,77 +376,80 @@ function PurchaseRequestsTab() {
         ) : prs.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">No purchase requests found</div>
         ) : (
-          <div className="space-y-3">
-            {prs.map((pr: PurchaseRequest) => (
-              <div key={pr.id} className="border rounded-md" data-testid={`pr-${pr.id}`}>
-                <div className="flex items-start justify-between p-4 gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setExpandedPRId(expandedPRId === pr.id ? null : pr.id)}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-mono text-xs text-muted-foreground">{pr.prNumber}</span>
-                      <Badge variant={PR_STATUS_VARIANT[pr.status] || "outline"}>{statusLabel(pr.status)}</Badge>
-                    </div>
-                    <p className="font-medium">{pr.title}</p>
-                    <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                      {pr.project && <span>{pr.project.name}</span>}
-                      {pr.requestedBy && <span>By: {pr.requestedBy.firstName} {pr.requestedBy.lastName}</span>}
-                      <span>Needed: {fmtDate(pr.neededByDate)}</span>
-                      <span>Est: {fmtCurrency(pr.totalEstimatedCost)}</span>
-                    </div>
-                    {pr.status === "REJECTED" && pr.rejectionNotes && (
-                      <div className="flex items-start gap-1.5 mt-1 text-sm text-destructive">
-                        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                        <span>{pr.rejectionNotes}</span>
+          <>
+            <div className="space-y-3">
+              {pagedPRs.map((pr: PurchaseRequest) => (
+                <div key={pr.id} className="border rounded-md" data-testid={`pr-${pr.id}`}>
+                  <div className="flex items-start justify-between p-4 gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setExpandedPRId(expandedPRId === pr.id ? null : pr.id)}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-xs text-muted-foreground">{pr.prNumber}</span>
+                        <Badge variant={PR_STATUS_VARIANT[pr.status] || "outline"}>{statusLabel(pr.status)}</Badge>
                       </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                    {pr.status === "DRAFT" && (
-                      <>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(pr)} data-testid={`button-edit-pr-${pr.id}`}>
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button size="sm" variant="outline" onClick={async () => { try { await submitMutation.mutateAsync(pr.id); toast({ title: "Submitted for approval" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-submit-pr-${pr.id}`}>
-                          <Send className="h-3.5 w-3.5 mr-1" />Submit
-                        </Button>
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={async () => { try { await deleteMutation.mutateAsync(pr.id); toast({ title: "Deleted" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-delete-pr-${pr.id}`}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </>
-                    )}
-                    {pr.status === "PENDING_APPROVAL" && (
-                      <>
-                        <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(pr.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-pr-${pr.id}`}>
-                          <Check className="h-3.5 w-3.5 mr-1" />Approve
-                        </Button>
-                        <Button size="sm" variant="destructive" onClick={() => setRejectingId(pr.id)} data-testid={`button-reject-pr-${pr.id}`}>
-                          <X className="h-3.5 w-3.5 mr-1" />Reject
-                        </Button>
-                      </>
-                    )}
-                    {pr.status === "APPROVED" && (
-                      <Button size="sm" variant="default" onClick={async () => { try { await convertMutation.mutateAsync({ id: pr.id }); toast({ title: "Converted to PO" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-convert-pr-${pr.id}`}>
-                        <ArrowRight className="h-3.5 w-3.5 mr-1" />Convert to PO
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                {expandedPRId === pr.id && pr.items && pr.items.length > 0 && (
-                  <div className="px-4 pb-4 pt-0 border-t">
-                    <h4 className="font-semibold text-sm mt-3 mb-2">Line Items</h4>
-                    <div className="space-y-2">
-                      {pr.items.map((item: PRItem) => (
-                        <div key={item.id} className="text-sm p-2 border rounded">
-                          <p className="font-medium">{item.description}</p>
-                          <p className="text-muted-foreground">{item.quantity} {item.unit} @ {fmtCurrency(item.estimatedUnitCost)}</p>
-                          {item.costCode && <p className="text-xs text-blue-500">Cost Code: {item.costCode}</p>}
+                      <p className="font-medium">{pr.title}</p>
+                      <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                        {pr.project && <span>{pr.project.name}</span>}
+                        {pr.requestedBy && <span>By: {pr.requestedBy.firstName} {pr.requestedBy.lastName}</span>}
+                        <span>Needed: {fmtDate(pr.neededByDate)}</span>
+                        <span>Est: {fmtCurrency(pr.totalEstimatedCost)}</span>
+                      </div>
+                      {pr.status === "REJECTED" && pr.rejectionNotes && (
+                        <div className="flex items-start gap-1.5 mt-1 text-sm text-destructive">
+                          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          <span>{pr.rejectionNotes}</span>
                         </div>
-                      ))}
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                      {pr.status === "DRAFT" && (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => openEdit(pr)} data-testid={`button-edit-pr-${pr.id}`}>
+                            <Edit className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={async () => { try { await submitMutation.mutateAsync(pr.id); toast({ title: "Submitted for approval" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-submit-pr-${pr.id}`}>
+                            <Send className="h-3.5 w-3.5 mr-1" />Submit
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={async () => { try { await deleteMutation.mutateAsync(pr.id); toast({ title: "Deleted" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-delete-pr-${pr.id}`}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </>
+                      )}
+                      {pr.status === "PENDING_APPROVAL" && (
+                        <>
+                          <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(pr.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-pr-${pr.id}`}>
+                            <Check className="h-3.5 w-3.5 mr-1" />Approve
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => setRejectingId(pr.id)} data-testid={`button-reject-pr-${pr.id}`}>
+                            <X className="h-3.5 w-3.5 mr-1" />Reject
+                          </Button>
+                        </>
+                      )}
+                      {pr.status === "APPROVED" && (
+                        <Button size="sm" variant="default" onClick={async () => { try { await convertMutation.mutateAsync({ id: pr.id }); toast({ title: "Converted to PO" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-convert-pr-${pr.id}`}>
+                          <ArrowRight className="h-3.5 w-3.5 mr-1" />Convert to PO
+                        </Button>
+                      )}
                     </div>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
+                  {expandedPRId === pr.id && pr.items && pr.items.length > 0 && (
+                    <div className="px-4 pb-4 pt-0 border-t">
+                      <h4 className="font-semibold text-sm mt-3 mb-2">Line Items</h4>
+                      <div className="space-y-2">
+                        {pr.items.map((item: PRItem) => (
+                          <div key={item.id} className="text-sm p-2 border rounded">
+                            <p className="font-medium">{item.description}</p>
+                            <p className="text-muted-foreground">{item.quantity} {item.unit} @ {fmtCurrency(item.estimatedUnitCost)}</p>
+                            {item.costCode && <p className="text-xs text-blue-500">Cost Code: {item.costCode}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <PaginationControls rangeStart={prStart} rangeEnd={prEnd} totalItems={prTotal} hasPrev={prHasPrev} hasNext={prHasNext} onPrev={prPrev} onNext={prNext} />
+          </>
         )}
       </CardContent>
 
@@ -490,6 +513,8 @@ function PurchaseOrdersTab() {
     search: search || undefined,
     projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
+  const { pageItems: pagedPOs, rangeStart: poStart, rangeEnd: poEnd, totalItems: poTotal, hasPrev: poHasPrev, hasNext: poHasNext, prevPage: poPrev, nextPage: poNext, resetPage: poResetPage } = usePagination(pos);
+  useEffect(() => { poResetPage(); }, [search, statusFilter, projectFilter, poResetPage]);
   const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
   const projectsList = projectsResponse?.data ?? [];
   const { data: vendors = [] } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/organisations"] });
@@ -545,8 +570,9 @@ function PurchaseOrdersTab() {
           ) : pos.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No purchase orders found</div>
           ) : (
+            <>
             <div className="space-y-3">
-              {pos.map((po: PurchaseOrder) => (
+              {pagedPOs.map((po: PurchaseOrder) => (
                 <div key={po.id} className="p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedPOId(po.id)} data-testid={`po-${po.id}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -603,6 +629,8 @@ function PurchaseOrdersTab() {
                 </div>
               ))}
             </div>
+            <PaginationControls rangeStart={poStart} rangeEnd={poEnd} totalItems={poTotal} hasPrev={poHasPrev} hasNext={poHasNext} onPrev={poPrev} onNext={poNext} />
+            </>
           )}
         </CardContent>
       </Card>
@@ -624,10 +652,7 @@ function PurchaseOrdersTab() {
               </div>
               <div>
                 <Label>Vendor</Label>
-                <Select value={form.vendorId} onValueChange={v => setForm({ ...form, vendorId: v })}>
-                  <SelectTrigger data-testid="select-po-vendor"><SelectValue placeholder="Select vendor..." /></SelectTrigger>
-                  <SelectContent>{(vendors || []).map((v: VendorRef) => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent>
-                </Select>
+                <VendorCombobox value={form.vendorId} onChange={v => setForm({ ...form, vendorId: v })} vendors={vendors || []} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -930,7 +955,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                   <div className="space-y-2">
                     {po.items.map((item: POItem) => {
                       const ordered = parseFloat(item.quantity || "0");
-                      const received = parseFloat(item.quantityReceived || "0");
+                      const received = parseFloat(String(item.quantityReceived ?? "0"));
                       return (
                         <div key={item.id} className="flex justify-between text-sm p-2 border rounded">
                           <div>
@@ -963,9 +988,9 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                     </Button>
                   )}
                 </div>
-                {po.receipts?.length > 0 ? (
+                {(po.receipts?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
-                    {po.receipts.map((r: POReceiptSummary) => (
+                    {po.receipts!.map((r: POReceiptSummary) => (
                       <div key={r.id} className="text-sm p-2 border rounded">
                         <div className="flex justify-between">
                           <span>{fmtDate(r.receivedAt)} - {r.receivedBy?.firstName} {r.receivedBy?.lastName}</span>
@@ -1001,9 +1026,9 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                     <Plus className="h-3.5 w-3.5 mr-1" />Add Invoice
                   </Button>
                 </div>
-                {po.invoices?.length > 0 ? (
+                {(po.invoices?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
-                    {po.invoices.map((inv: InvoiceSummary) => {
+                    {po.invoices!.map((inv: InvoiceSummary) => {
                       const totalPaid = parseFloat(inv.totalPaid || "0");
                       const totalAmt = parseFloat(inv.totalAmount || "0");
                       return (
@@ -1352,6 +1377,8 @@ function InvoicesTab() {
     search: search || undefined,
     projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
+  const { pageItems: pagedInvoices, rangeStart: invStart, rangeEnd: invEnd, totalItems: invTotal, hasPrev: invHasPrev, hasNext: invHasNext, prevPage: invPrev, nextPage: invNext, resetPage: invResetPage } = usePagination(invoices);
+  useEffect(() => { invResetPage(); }, [search, statusFilter, projectFilter, invResetPage]);
   const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
   const projectsList = projectsResponse?.data ?? [];
   const createMatchMutation = useCreateInvoiceMatch();
@@ -1426,8 +1453,9 @@ function InvoicesTab() {
           ) : invoices.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No vendor invoices found. Add invoices from a PO detail view.</div>
           ) : (
+            <>
             <div className="space-y-3">
-              {invoices.map((inv: InvoiceRow) => {
+              {pagedInvoices.map((inv: InvoiceRow) => {
                 const totalPaid = parseFloat(inv.totalPaid || "0");
                 const totalAmt = parseFloat(inv.totalAmount || "0");
                 return (
@@ -1472,6 +1500,8 @@ function InvoicesTab() {
                 );
               })}
             </div>
+            <PaginationControls rangeStart={invStart} rangeEnd={invEnd} totalItems={invTotal} hasPrev={invHasPrev} hasNext={invHasNext} onPrev={invPrev} onNext={invNext} />
+            </>
           )}
         </CardContent>
       </Card>
@@ -1768,6 +1798,8 @@ function ReceiptsTab() {
     search: search || undefined,
     projectId: projectFilter !== "ALL" ? projectFilter : undefined,
   });
+  const { pageItems: pagedReceipts, rangeStart: rcStart, rangeEnd: rcEnd, totalItems: rcTotal, hasPrev: rcHasPrev, hasNext: rcHasNext, prevPage: rcPrev, nextPage: rcNext, resetPage: rcResetPage } = usePagination(receipts);
+  useEffect(() => { rcResetPage(); }, [search, statusFilter, projectFilter, rcResetPage]);
   const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
   const projectsList = projectsResponse?.data ?? [];
 
@@ -1783,8 +1815,9 @@ function ReceiptsTab() {
         ) : receipts.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">No delivery receipts yet. Record receipts from a PO detail view.</div>
         ) : (
+          <>
           <div className="space-y-3">
-            {receipts.map((r: ProcurementReceipt) => (
+            {pagedReceipts.map((r: ProcurementReceipt) => (
               <div key={r.id} className="p-4 border rounded-md" data-testid={`receipt-${r.id}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -1814,6 +1847,8 @@ function ReceiptsTab() {
               </div>
             ))}
           </div>
+          <PaginationControls rangeStart={rcStart} rangeEnd={rcEnd} totalItems={rcTotal} hasPrev={rcHasPrev} hasNext={rcHasNext} onPrev={rcPrev} onNext={rcNext} />
+          </>
         )}
       </CardContent>
     </Card>

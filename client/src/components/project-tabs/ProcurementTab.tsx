@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
-import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2 } from "lucide-react";
+import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { usePagination } from "@/hooks/use-pagination";
 import {
   usePurchaseRequests, useCreatePurchaseRequest, useUpdatePurchaseRequest, useSubmitPurchaseRequest,
   useApprovePurchaseRequest, useRejectPurchaseRequest, useConvertPRToPO, useDeletePurchaseRequest,
@@ -25,6 +28,9 @@ import {
   useVendorInvoices, useCreateVendorInvoice, useUpdateVendorInvoice,
   useCreateInvoiceMatch, useResolveMatchDiscrepancy,
   useInvoicePayments, useCreateInvoicePayment,
+  type ProcurementPR, type ProcurementPRItem,
+  type ProcurementPO, type ProcurementPOItem, type ProcurementPOReceipt, type ProcurementPOInvoice,
+  type ProcurementInvoice,
   type ProcurementReceipt, type ProcurementReceiptItem, type InvoicePayment,
 } from "@/hooks/use-data";
 import type { Project } from "@shared/schema";
@@ -74,55 +80,13 @@ interface LineItem {
 
 interface VendorRef { id: string; name: string; }
 
-interface POItem {
-  id: string; poId: string; description: string; quantity: string | null;
-  unit: string | null; unitCost: string | null; quantityReceived: string | null; costCode: string | null;
-}
-
-interface PRItem {
-  id: string; prId: string; description: string; category: string | null;
-  quantity: string | null; unit: string | null; estimatedUnitCost: string | null; costCode: string | null;
-}
-
-interface PurchaseRequest {
-  id: string; prNumber: string; title: string; status: string;
-  project?: { name: string; code: string } | null; createdAt: string; neededByDate: string | null;
-  totalEstimatedCost: string | null; notes: string | null; rejectionNotes?: string | null;
-  requestedBy?: { firstName: string; lastName: string } | null; items?: PRItem[];
-}
-
-interface PurchaseOrder {
-  id: string; poNumber: string; status: string; totalCost: string | null;
-  neededByDate: string | null; notes: string | null; terms: string | null;
-  deliveryAddress: string | null; vendorId: string | null; projectId: string;
-  rejectionNotes?: string | null;
-  vendor?: VendorRef | null; project?: { name: string; code?: string | null } | null;
-  items: POItem[]; receipts: POReceiptSummary[]; invoices: InvoiceSummary[];
-}
-
-interface POReceiptSummary {
-  id: string; status: string; receivedAt: string; deliveryNote: string | null;
-  receivedBy?: { firstName: string; lastName: string } | null;
-  items: { id: string; poItemId: string; quantityReceived: string; condition: string; notes: string | null }[];
-}
-
-interface MatchDetail {
-  matchStatus: string; poAmount?: string; invoiceAmount?: string;
-  receivedQtyMatchPct?: string; resolvedAt?: string | null;
-}
-
-interface InvoiceSummary {
-  id: string; invoiceNumber: string; status: string; totalAmount: string;
-  invoiceDate: string; dueDate: string | null; match?: MatchDetail | null;
-  totalPaid?: string; payments?: InvoicePayment[];
-}
-
-interface InvoiceRow {
-  id: string; invoiceNumber: string; status: string; totalAmount: string;
-  invoiceDate: string; dueDate: string | null; fileUrl?: string | null; totalPaid?: string;
-  notes?: string | null;
-  po?: { poNumber: string } | null; vendor?: VendorRef | null; match?: MatchDetail | null;
-}
+type POItem = ProcurementPOItem;
+type PRItem = ProcurementPRItem;
+type PurchaseRequest = ProcurementPR;
+type PurchaseOrder = ProcurementPO;
+type POReceiptSummary = ProcurementPOReceipt;
+type InvoiceSummary = ProcurementPOInvoice;
+type InvoiceRow = ProcurementInvoice;
 
 interface ProcurementTabProps {
   projectCode: string;
@@ -162,6 +126,59 @@ function FilterBar({ search, onSearch, status, onStatus, statuses, placeholder }
   );
 }
 
+function PaginationControls({ rangeStart, rangeEnd, totalItems, hasPrev, hasNext, onPrev, onNext }: {
+  rangeStart: number; rangeEnd: number; totalItems: number;
+  hasPrev: boolean; hasNext: boolean; onPrev: () => void; onNext: () => void;
+}) {
+  if (totalItems <= 25) return null;
+  return (
+    <div className="flex items-center justify-between mt-4 pt-3 border-t">
+      <span className="text-sm text-muted-foreground" data-testid="text-pagination-info">
+        Showing {rangeStart}–{rangeEnd} of {totalItems}
+      </span>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={onPrev} disabled={!hasPrev} data-testid="button-pagination-prev">
+          <ChevronsLeft className="h-4 w-4 mr-1" />Previous
+        </Button>
+        <Button size="sm" variant="outline" onClick={onNext} disabled={!hasNext} data-testid="button-pagination-next">
+          Next<ChevronsRight className="h-4 w-4 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function VendorCombobox({ value, onChange, vendors }: { value: string; onChange: (v: string) => void; vendors: VendorRef[] }) {
+  const [open, setOpen] = useState(false);
+  const selected = vendors.find(v => v.id === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between font-normal" data-testid="combobox-po-vendor">
+          {selected ? selected.name : "Select vendor..."}
+          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[300px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search vendors..." data-testid="input-vendor-search" />
+          <CommandList>
+            <CommandEmpty>No vendors found.</CommandEmpty>
+            <CommandGroup>
+              {vendors.map(v => (
+                <CommandItem key={v.id} value={v.name} onSelect={() => { onChange(v.id); setOpen(false); }} data-testid={`vendor-option-${v.id}`}>
+                  <Check className={`mr-2 h-4 w-4 ${value === v.id ? "opacity-100" : "opacity-0"}`} />
+                  {v.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -171,6 +188,8 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
     status: statusFilter !== "ALL" ? statusFilter : undefined,
     search: search || undefined,
   });
+  const { pageItems: pagedPRs, rangeStart: prStart, rangeEnd: prEnd, totalItems: prTotal, hasPrev: prHasPrev, hasNext: prHasNext, prevPage: prPrev, nextPage: prNext, resetPage: prResetPage } = usePagination(prs);
+  useEffect(() => { prResetPage(); }, [search, statusFilter, prResetPage]);
   const createMutation = useCreatePurchaseRequest();
   const updateMutation = useUpdatePurchaseRequest();
   const submitMutation = useSubmitPurchaseRequest();
@@ -303,8 +322,9 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
           ) : prs.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No purchase requests found</div>
           ) : (
+            <>
             <div className="space-y-3">
-              {prs.map((pr: PurchaseRequest) => (
+              {pagedPRs.map((pr: PurchaseRequest) => (
                 <div key={pr.id} className="border rounded-md" data-testid={`pr-${pr.id}`}>
                   <div className="flex items-start justify-between p-4 gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setExpandedPRId(expandedPRId === pr.id ? null : pr.id)}>
                     <div className="flex-1 min-w-0">
@@ -373,6 +393,8 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
                 </div>
               ))}
             </div>
+            <PaginationControls rangeStart={prStart} rangeEnd={prEnd} totalItems={prTotal} hasPrev={prHasPrev} hasNext={prHasNext} onPrev={prPrev} onNext={prNext} />
+            </>
           )}
         </CardContent>
       </Card>
@@ -873,7 +895,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
                   <div className="space-y-2">
                     {po.items.map((item: POItem) => {
                       const ordered = parseFloat(item.quantity || "0");
-                      const received = parseFloat(item.quantityReceived || "0");
+                      const received = parseFloat(String(item.quantityReceived ?? "0"));
                       return (
                         <div key={item.id} className="flex justify-between text-sm p-2 border rounded">
                           <div>
@@ -906,9 +928,9 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
                     </Button>
                   )}
                 </div>
-                {po.receipts?.length > 0 ? (
+                {(po.receipts?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
-                    {po.receipts.map((r: POReceiptSummary) => (
+                    {po.receipts!.map((r: POReceiptSummary) => (
                       <div key={r.id} className="text-sm p-2 border rounded">
                         <div className="flex justify-between">
                           <span>{fmtDate(r.receivedAt)} - {r.receivedBy?.firstName} {r.receivedBy?.lastName}</span>
@@ -944,9 +966,9 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
                     <Plus className="h-3.5 w-3.5 mr-1" />Add Invoice
                   </Button>
                 </div>
-                {po.invoices?.length > 0 ? (
+                {(po.invoices?.length ?? 0) > 0 ? (
                   <div className="space-y-2">
-                    {po.invoices.map((inv: InvoiceSummary) => {
+                    {po.invoices!.map((inv: InvoiceSummary) => {
                       const totalPaid = parseFloat(inv.totalPaid || "0");
                       const totalAmt = parseFloat(inv.totalAmount || "0");
                       return (

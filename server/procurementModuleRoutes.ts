@@ -1450,6 +1450,9 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
     if (matchStatus === "MATCHED") {
       await db.update(vendorInvoices).set({ status: "MATCHED", updatedAt: new Date() })
         .where(eq(vendorInvoices.id, invoice.id));
+    } else if (matchStatus === "DISCREPANCY") {
+      await db.update(vendorInvoices).set({ status: "DISPUTED", updatedAt: new Date() })
+        .where(eq(vendorInvoices.id, invoice.id));
     }
 
     res.json(result);
