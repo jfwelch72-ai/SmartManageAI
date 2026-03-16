@@ -1,11 +1,20 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, budgetLineItems, insertBudgetLineItemSchema } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes } from "@shared/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { calculateCostLedger } from "./costLedgerService";
+
+async function validateCostCodes(orgId: string, codes: string[]): Promise<string[]> {
+  if (codes.length === 0) return [];
+  const existing = await db.select({ code: orgCostCodes.code })
+    .from(orgCostCodes)
+    .where(and(eq(orgCostCodes.organizationId, orgId), inArray(orgCostCodes.code, codes)));
+  const existingSet = new Set(existing.map(e => e.code));
+  return codes.filter(c => !existingSet.has(c));
+}
 
 const router = Router();
 
@@ -60,6 +69,10 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
     }
 
     const data = parseResult.data;
+    const invalid = await validateCostCodes(project.gcOrganizationId, [data.costCode]);
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: `Invalid cost code '${data.costCode}' for this organization` });
+    }
     const total = Number(data.laborBudget || 0) + Number(data.materialBudget || 0) +
       Number(data.subcontractorBudget || 0) + Number(data.equipmentBudget || 0) + Number(data.otherBudget || 0);
     const [row] = await db.insert(budgetLineItems).values({ ...data, totalBudget: String(total) }).returning();
@@ -98,6 +111,14 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
       return res.status(400).json({ error: "Validation error", details: parseResult.error.flatten() });
     }
     const parsed = parseResult.data;
+
+    if (parsed.length > 0) {
+      const costCodes = parsed.map(l => l.costCode);
+      const invalid = await validateCostCodes(project.gcOrganizationId, costCodes);
+      if (invalid.length > 0) {
+        return res.status(400).json({ error: `Invalid cost codes for this organization: ${invalid.join(", ")}` });
+      }
+    }
 
     const rows = await db.transaction(async (tx) => {
       await tx.delete(budgetLineItems).where(eq(budgetLineItems.projectId, project.id));

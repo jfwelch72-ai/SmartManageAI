@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS budget_line_items (
   subcontractor_budget NUMERIC(12,2) NOT NULL DEFAULT 0,
   equipment_budget NUMERIC(12,2) NOT NULL DEFAULT 0,
   other_budget NUMERIC(12,2) NOT NULL DEFAULT 0,
+  total_budget NUMERIC(12,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
