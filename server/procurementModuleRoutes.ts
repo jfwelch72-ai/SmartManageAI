@@ -553,6 +553,7 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
           quantity: item.quantity || null,
           unit: item.unit || null,
           unitCost: item.unitCost || null,
+          costCode: item.costCode || null,
         });
         const q = parseFloat(item.quantity || "0");
         const u = parseFloat(item.unitCost || "0");

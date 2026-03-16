@@ -81,6 +81,17 @@ interface POItem {
   costCode: string | null;
 }
 
+interface PRItem {
+  id: string;
+  prId: string;
+  description: string;
+  category: string | null;
+  quantity: string | null;
+  unit: string | null;
+  estimatedUnitCost: string | null;
+  costCode: string | null;
+}
+
 interface PurchaseRequest {
   id: string;
   prNumber: string;
@@ -91,6 +102,7 @@ interface PurchaseRequest {
   neededByDate: string | null;
   totalEstimatedCost: string | null;
   requestedBy?: { firstName: string; lastName: string } | null;
+  items?: PRItem[];
 }
 
 interface PurchaseOrder {
@@ -164,6 +176,7 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
   const deleteMutation = useDeletePurchaseRequest();
 
   const [showCreate, setShowCreate] = useState(false);
+  const [expandedPRId, setExpandedPRId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", neededByDate: "", notes: "" });
   const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", estimatedUnitCost: "", category: "", costCode: "" }]);
 
@@ -209,46 +222,62 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
         ) : (
           <div className="space-y-3">
             {prs.map((pr: PurchaseRequest) => (
-              <div key={pr.id} className="flex items-start justify-between p-4 border rounded-md gap-3" data-testid={`pr-${pr.id}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-xs text-muted-foreground">{pr.prNumber}</span>
-                    <Badge variant={PR_STATUS_VARIANT[pr.status] || "outline"}>{statusLabel(pr.status)}</Badge>
+              <div key={pr.id} className="border rounded-md" data-testid={`pr-${pr.id}`}>
+                <div className="flex items-start justify-between p-4 gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setExpandedPRId(expandedPRId === pr.id ? null : pr.id)}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-xs text-muted-foreground">{pr.prNumber}</span>
+                      <Badge variant={PR_STATUS_VARIANT[pr.status] || "outline"}>{statusLabel(pr.status)}</Badge>
+                    </div>
+                    <p className="font-medium">{pr.title}</p>
+                    <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                      {pr.requestedBy && <span>By: {pr.requestedBy.firstName} {pr.requestedBy.lastName}</span>}
+                      <span>Needed: {fmtDate(pr.neededByDate)}</span>
+                      <span>Est: {fmtCurrency(pr.totalEstimatedCost)}</span>
+                    </div>
                   </div>
-                  <p className="font-medium">{pr.title}</p>
-                  <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                    {pr.requestedBy && <span>By: {pr.requestedBy.firstName} {pr.requestedBy.lastName}</span>}
-                    <span>Needed: {fmtDate(pr.neededByDate)}</span>
-                    <span>Est: {fmtCurrency(pr.totalEstimatedCost)}</span>
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    {pr.status === "DRAFT" && (
+                      <>
+                        <Button size="sm" variant="outline" onClick={async () => { try { await submitMutation.mutateAsync(pr.id); toast({ title: "Submitted for approval" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-submit-pr-${pr.id}`}>
+                          <Send className="h-3.5 w-3.5 mr-1" />Submit
+                        </Button>
+                        <Button size="sm" variant="ghost" className="text-destructive" onClick={async () => { try { await deleteMutation.mutateAsync(pr.id); toast({ title: "Deleted" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-delete-pr-${pr.id}`}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
+                    {pr.status === "PENDING_APPROVAL" && (
+                      <>
+                        <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(pr.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-pr-${pr.id}`}>
+                          <Check className="h-3.5 w-3.5 mr-1" />Approve
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectMutation.mutateAsync(pr.id); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-pr-${pr.id}`}>
+                          <X className="h-3.5 w-3.5 mr-1" />Reject
+                        </Button>
+                      </>
+                    )}
+                    {pr.status === "APPROVED" && (
+                      <Button size="sm" variant="default" onClick={async () => { try { await convertMutation.mutateAsync({ id: pr.id }); toast({ title: "Converted to PO" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-convert-pr-${pr.id}`}>
+                        <ArrowRight className="h-3.5 w-3.5 mr-1" />Convert to PO
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {pr.status === "DRAFT" && (
-                    <>
-                      <Button size="sm" variant="outline" onClick={async () => { try { await submitMutation.mutateAsync(pr.id); toast({ title: "Submitted for approval" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-submit-pr-${pr.id}`}>
-                        <Send className="h-3.5 w-3.5 mr-1" />Submit
-                      </Button>
-                      <Button size="sm" variant="ghost" className="text-destructive" onClick={async () => { try { await deleteMutation.mutateAsync(pr.id); toast({ title: "Deleted" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-delete-pr-${pr.id}`}>
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </>
-                  )}
-                  {pr.status === "PENDING_APPROVAL" && (
-                    <>
-                      <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(pr.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-pr-${pr.id}`}>
-                        <Check className="h-3.5 w-3.5 mr-1" />Approve
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={async () => { try { await rejectMutation.mutateAsync(pr.id); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-pr-${pr.id}`}>
-                        <X className="h-3.5 w-3.5 mr-1" />Reject
-                      </Button>
-                    </>
-                  )}
-                  {pr.status === "APPROVED" && (
-                    <Button size="sm" variant="default" onClick={async () => { try { await convertMutation.mutateAsync({ id: pr.id }); toast({ title: "Converted to PO" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-convert-pr-${pr.id}`}>
-                      <ArrowRight className="h-3.5 w-3.5 mr-1" />Convert to PO
-                    </Button>
-                  )}
-                </div>
+                {expandedPRId === pr.id && pr.items && pr.items.length > 0 && (
+                  <div className="px-4 pb-4 pt-0 border-t">
+                    <h4 className="font-semibold text-sm mt-3 mb-2">Line Items</h4>
+                    <div className="space-y-2">
+                      {pr.items.map((item: PRItem) => (
+                        <div key={item.id} className="text-sm p-2 border rounded">
+                          <p className="font-medium">{item.description}</p>
+                          <p className="text-muted-foreground">{item.quantity} {item.unit} @ {fmtCurrency(item.estimatedUnitCost)}</p>
+                          {item.costCode && <p className="text-xs text-blue-500">Cost Code: {item.costCode}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
