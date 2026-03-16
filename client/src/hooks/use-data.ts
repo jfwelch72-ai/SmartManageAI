@@ -559,7 +559,7 @@ export function useCreatePurchaseRequest() {
 
 export function useUpdatePurchaseRequest() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ title: string; neededByDate: string | null; notes: string | null; items: { description: string; category?: string | null; quantity?: string | null; unit?: string | null; estimatedUnitCost?: string | null }[] }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/requests/${id}`, data);
       return response.json();
     },
@@ -657,7 +657,7 @@ export function useCreatePurchaseOrder() {
 
 export function useUpdatePurchaseOrder() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ vendorId: string | null; terms: string | null; deliveryAddress: string | null; neededByDate: string | null; notes: string | null; items: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null }[] }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/orders/${id}`, data);
       return response.json();
     },
@@ -793,7 +793,7 @@ export function useCreateVendorInvoice() {
 
 export function useUpdateVendorInvoice() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ invoiceNumber: string; vendorInvoiceRef: string | null; totalAmount: string | null; dueDate: string | null; notes: string | null; fileUrl: string | null }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/invoices/${id}`, data);
       return response.json();
     },

@@ -136,10 +136,10 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT requests can be edited" }); return; }
 
     const { items } = req.body;
-    const setData: Record<string, string | Date | null> = {};
-    setData.updatedAt = new Date() as unknown as string;
+    const setData: Record<string, unknown> = {};
+    setData.updatedAt = new Date();
     if (req.body.title !== undefined) setData.title = req.body.title;
-    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) as unknown as string : null;
+    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
 
     const updated = await db.transaction(async (tx) => {
@@ -511,12 +511,12 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT orders can be edited" }); return; }
 
     const { items } = req.body;
-    const setData: Record<string, string | Date | null> = {};
-    setData.updatedAt = new Date() as unknown as string;
+    const setData: Record<string, unknown> = {};
+    setData.updatedAt = new Date();
     if (req.body.vendorId !== undefined) setData.vendorId = req.body.vendorId || null;
     if (req.body.terms !== undefined) setData.terms = req.body.terms;
     if (req.body.deliveryAddress !== undefined) setData.deliveryAddress = req.body.deliveryAddress;
-    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) as unknown as string : null;
+    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
 
     const [updated] = await db.update(purchaseOrders).set(setData)
@@ -886,10 +886,10 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
 
     if (existing.status !== "PENDING") { res.status(400).json({ error: "Only PENDING invoices can be edited" }); return; }
 
-    const setData: Record<string, string | Date | null> = { updatedAt: new Date() as unknown as string };
+    const setData: Record<string, unknown> = { updatedAt: new Date() };
     if (req.body.invoiceNumber !== undefined) setData.invoiceNumber = req.body.invoiceNumber;
-    if (req.body.invoiceDate !== undefined) setData.invoiceDate = new Date(req.body.invoiceDate) as unknown as string;
-    if (req.body.dueDate !== undefined) setData.dueDate = req.body.dueDate ? new Date(req.body.dueDate) as unknown as string : null;
+    if (req.body.invoiceDate !== undefined) setData.invoiceDate = new Date(req.body.invoiceDate);
+    if (req.body.dueDate !== undefined) setData.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
     if (req.body.totalAmount !== undefined) setData.totalAmount = req.body.totalAmount;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
     if (req.body.fileUrl !== undefined) setData.fileUrl = req.body.fileUrl;
