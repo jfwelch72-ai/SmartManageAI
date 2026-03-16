@@ -1365,7 +1365,7 @@ function InvoicesTab() {
     setEditInvForm({
       invoiceNumber: inv.invoiceNumber, invoiceDate: inv.invoiceDate?.split("T")[0] || "",
       dueDate: inv.dueDate?.split("T")[0] || "", totalAmount: inv.totalAmount || "",
-      notes: "", fileUrl: inv.fileUrl || "",
+      notes: inv.notes || "", fileUrl: inv.fileUrl || "",
     });
   };
 
@@ -1437,6 +1437,7 @@ function InvoicesTab() {
                           {inv.dueDate && <span>Due: {fmtDate(inv.dueDate)}</span>}
                           <span className="font-medium text-foreground">{fmtCurrency(inv.totalAmount)}</span>
                           {totalPaid > 0 && <span className="text-green-600">Paid: {fmtCurrency(totalPaid)}</span>}
+                          {totalAmt > totalPaid && <span className="text-orange-600">Due: {fmtCurrency(totalAmt - totalPaid)}</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
