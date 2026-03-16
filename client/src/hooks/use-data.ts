@@ -451,15 +451,103 @@ export function useDeleteProcurementItem() {
 }
 
 // Procurement Module
+export interface ProcurementPRItem {
+  id: string;
+  prId: string;
+  description: string;
+  category: string | null;
+  quantity: string | null;
+  unit: string | null;
+  estimatedUnitCost: string | null;
+}
+
+export interface ProcurementPR {
+  id: string;
+  orgId: string;
+  projectId: string;
+  requestedById: string;
+  prNumber: string;
+  title: string;
+  status: string;
+  totalEstimatedCost: string | null;
+  neededByDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: ProcurementPRItem[];
+  project: { name: string; code: string } | null;
+  requestedBy: { firstName: string; lastName: string } | null;
+}
+
+export interface ProcurementPOItem {
+  id: string;
+  poId: string;
+  prItemId: string | null;
+  description: string;
+  quantity: string | null;
+  unit: string | null;
+  unitCost: string | null;
+  quantityReceived: number | null;
+}
+
+export interface ProcurementPO {
+  id: string;
+  orgId: string;
+  projectId: string;
+  prId: string | null;
+  vendorId: string | null;
+  poNumber: string;
+  status: string;
+  totalCost: string | null;
+  terms: string | null;
+  deliveryAddress: string | null;
+  neededByDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items: ProcurementPOItem[];
+  project: { name: string; code: string } | null;
+  vendor: { id: string; name: string } | null;
+}
+
+export interface ProcurementReceipt {
+  id: string;
+  poId: string;
+  receivedById: string;
+  status: string;
+  deliveryNote: string | null;
+  notes: string | null;
+  receivedAt: string;
+  items: { id: string; receiptId: string; poItemId: string; quantityReceived: string; condition: string; notes: string | null }[];
+  po: { poNumber: string } | null;
+  receivedBy: { firstName: string; lastName: string } | null;
+}
+
+export interface ProcurementInvoice {
+  id: string;
+  orgId: string;
+  poId: string;
+  invoiceNumber: string;
+  vendorInvoiceRef: string | null;
+  totalAmount: string | null;
+  status: string;
+  dueDate: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  po: { poNumber: string } | null;
+  match: { id: string; matchStatus: string; poAmount: string; invoiceAmount: string; receivedQtyMatchPct: string } | null;
+}
+
 export function usePurchaseRequests() {
-  return useQuery<any[]>({
+  return useQuery<ProcurementPR[]>({
     queryKey: ["/api/procurement-module/requests"],
   });
 }
 
 export function useCreatePurchaseRequest() {
   return useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: { projectId: string; title: string; neededByDate?: string | null; notes?: string | null; items?: { description: string; category?: string | null; quantity?: string | null; unit?: string | null; estimatedUnitCost?: string | null }[] }) => {
       const response = await apiRequest("POST", "/api/procurement-module/requests", data);
       return response.json();
     },
@@ -543,13 +631,13 @@ export function useDeletePurchaseRequest() {
 }
 
 export function usePurchaseOrders() {
-  return useQuery<any[]>({
+  return useQuery<ProcurementPO[]>({
     queryKey: ["/api/procurement-module/orders"],
   });
 }
 
 export function usePurchaseOrderDetail(id: string | null) {
-  return useQuery<any>({
+  return useQuery<ProcurementPO>({
     queryKey: ["/api/procurement-module/orders", id],
     enabled: !!id,
   });
@@ -557,7 +645,7 @@ export function usePurchaseOrderDetail(id: string | null) {
 
 export function useCreatePurchaseOrder() {
   return useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: { projectId: string; vendorId?: string | null; terms?: string | null; deliveryAddress?: string | null; neededByDate?: string | null; notes?: string | null; items?: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null }[] }) => {
       const response = await apiRequest("POST", "/api/procurement-module/orders", data);
       return response.json();
     },
@@ -685,14 +773,14 @@ export function useCreatePOReceipt() {
 }
 
 export function useVendorInvoices() {
-  return useQuery<any[]>({
+  return useQuery<ProcurementInvoice[]>({
     queryKey: ["/api/procurement-module/invoices"],
   });
 }
 
 export function useCreateVendorInvoice() {
   return useMutation({
-    mutationFn: async (data: any) => {
+    mutationFn: async (data: { poId: string; invoiceNumber?: string | null; vendorInvoiceRef?: string | null; totalAmount?: string | null; dueDate?: string | null; notes?: string | null }) => {
       const response = await apiRequest("POST", "/api/procurement-module/invoices", data);
       return response.json();
     },
