@@ -123,20 +123,20 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     const row = ensureRow(cc);
     const lineCost = Number(item.quantity || 0) * Number(item.unitCost || 0);
     const status = item.poStatus as string;
-    if (["APPROVED", "SENT", "PARTIALLY_RECEIVED", "RECEIVED"].includes(status)) {
+    if (["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED"].includes(status)) {
       row.committedPO += lineCost;
     }
-    if (["RECEIVED"].includes(status)) {
+    if (status === "FULFILLED") {
       row.actualMaterial += lineCost;
     }
   }
 
-  const receivedPoIds = poItems
-    .filter(i => ["PARTIALLY_RECEIVED"].includes(i.poStatus as string))
+  const partialPoIds = poItems
+    .filter(i => (i.poStatus as string) === "PARTIAL")
     .map(i => i.poId);
 
-  if (receivedPoIds.length > 0) {
-    const uniquePoIds = [...new Set(receivedPoIds)];
+  if (partialPoIds.length > 0) {
+    const uniquePoIds = [...new Set(partialPoIds)];
     const receiptRows = await db
       .select({
         poItemId: poReceiptItems.poItemId,
@@ -153,7 +153,7 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     }
 
     for (const item of poItems) {
-      if (!["PARTIALLY_RECEIVED"].includes(item.poStatus as string)) continue;
+      if ((item.poStatus as string) !== "PARTIAL") continue;
       const cc = normalizeCostCode(item.costCode);
       const row = ensureRow(cc);
       const receivedQty = receivedQtyMap.get(item.poItemId) || 0;
