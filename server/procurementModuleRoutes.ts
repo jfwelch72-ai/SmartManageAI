@@ -20,6 +20,14 @@ const router = Router();
 const ROLES = ["ADMIN", "MANAGER", "PROCUREMENT_MANAGER"] as const;
 const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
 
+async function ensureProcurementSequences() {
+  await db.execute(sql`CREATE SEQUENCE IF NOT EXISTS pr_number_seq`);
+  await db.execute(sql`CREATE SEQUENCE IF NOT EXISTS po_number_seq`);
+  await db.execute(sql`SELECT setval('pr_number_seq', GREATEST((SELECT COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(pr_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) FROM purchase_requests), 1), true)`);
+  await db.execute(sql`SELECT setval('po_number_seq', GREATEST((SELECT COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) FROM purchase_orders), 1), true)`);
+}
+ensureProcurementSequences().catch(err => console.error("Failed to init procurement sequences:", err));
+
 const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"] as const;
 const PO_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED", "CANCELLED"] as const;
 const RECEIPT_STATUSES = ["PARTIAL", "COMPLETE"] as const;
