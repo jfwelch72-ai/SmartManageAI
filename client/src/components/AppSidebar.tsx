@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
-import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess, type FeaturePerms } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess, hasProcurementAccess, type FeaturePerms } from "@/lib/rbac";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { useTour } from "@/components/TourProvider";
 import {
@@ -51,6 +51,7 @@ import {
   Zap,
   HardHat,
   FileSearch,
+  ShoppingCart,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -277,6 +278,17 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+
+              {hasProcurementAccess(userRole) && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/procurement-module")} tooltip="Procurement">
+                    <Link href="/procurement-module" data-testid="nav-procurement">
+                      <ShoppingCart className="w-4 h-4" />
+                      <span>Procurement</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

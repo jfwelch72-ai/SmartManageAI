@@ -714,6 +714,13 @@ export function useUpdateVendorInvoice() {
   });
 }
 
+export function useInvoiceMatch(invoiceId: string | null) {
+  return useQuery<{ matchStatus: string; amountMatchPct: string; receivedQtyMatchPct: string; invoiceAmount: string; poAmount: string; notes: string | null } | null>({
+    queryKey: ["/api/procurement-module/invoices", invoiceId, "match"],
+    enabled: !!invoiceId,
+  });
+}
+
 export function useCreateInvoiceMatch() {
   return useMutation({
     mutationFn: async (invoiceId: string) => {

@@ -480,6 +480,12 @@ export const NavigationConfig = {
       testId: "nav-bulletins",
       visible: (role?: string) => hasContractorAccess(role),
     },
+    {
+      href: "/procurement-module",
+      label: "Procurement",
+      testId: "nav-procurement",
+      visible: (role?: string) => hasProcurementAccess(role),
+    },
   ],
 
   projectsMenu: [
@@ -566,12 +572,6 @@ export const NavigationConfig = {
       label: "Photo Custody",
       testId: "nav-photo-custody",
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
-    },
-    {
-      href: "/procurement",
-      label: "Procurement",
-      testId: "nav-procurement",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "PROCUREMENT_MANAGER",
     },
   ],
 

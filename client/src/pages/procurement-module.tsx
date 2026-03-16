@@ -813,52 +813,126 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
   );
 }
 
+function InvoiceDetailDialog({ invoice, onClose }: { invoice: InvoiceRow | null; onClose: () => void }) {
+  const { toast } = useToast();
+  const createMatchMutation = useCreateInvoiceMatch();
+  const resolveMutation = useResolveMatchDiscrepancy();
+  const [resolveNotes, setResolveNotes] = useState("");
+
+  if (!invoice) return null;
+
+  return (
+    <Sheet open={!!invoice} onOpenChange={() => onClose()}>
+      <SheetContent className="sm:max-w-lg overflow-y-auto" data-testid="sheet-invoice-detail">
+        <SheetHeader>
+          <SheetTitle>Invoice {invoice.invoiceNumber}</SheetTitle>
+        </SheetHeader>
+        <div className="space-y-4 mt-4">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-muted-foreground">Status:</span> <Badge variant={INVOICE_STATUS_VARIANT[invoice.status] || "outline"}>{invoice.status}</Badge></div>
+            <div><span className="text-muted-foreground">Amount:</span> <span className="font-medium">{fmtCurrency(invoice.totalAmount)}</span></div>
+            <div><span className="text-muted-foreground">Date:</span> {fmtDate(invoice.invoiceDate)}</div>
+            {invoice.dueDate && <div><span className="text-muted-foreground">Due:</span> {fmtDate(invoice.dueDate)}</div>}
+            {invoice.po && <div><span className="text-muted-foreground">PO:</span> {invoice.po.poNumber}</div>}
+            {invoice.vendor && <div><span className="text-muted-foreground">Vendor:</span> {invoice.vendor.name}</div>}
+          </div>
+
+          <div className="border-t pt-4">
+            <h4 className="font-semibold mb-2">3-Way Match Result</h4>
+            {invoice.match ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant={MATCH_STATUS_VARIANT[invoice.match.matchStatus] || "outline"}>{invoice.match.matchStatus}</Badge>
+                </div>
+                <div className="text-sm space-y-1 text-muted-foreground">
+                  <div>Invoice Amount: {fmtCurrency(invoice.totalAmount)}</div>
+                </div>
+                {invoice.match.matchStatus === "DISCREPANCY" && (
+                  <div className="mt-3 space-y-2">
+                    <Label>Resolution Notes</Label>
+                    <Textarea value={resolveNotes} onChange={e => setResolveNotes(e.target.value)} rows={2} data-testid="input-invoice-resolve-notes" />
+                    <Button size="sm" onClick={async () => {
+                      try {
+                        await resolveMutation.mutateAsync({ invoiceId: invoice.id, notes: resolveNotes });
+                        toast({ title: "Discrepancy resolved" });
+                        onClose();
+                      } catch { toast({ title: "Failed", variant: "destructive" }); }
+                    }} disabled={resolveMutation.isPending} data-testid="button-invoice-resolve">
+                      {resolveMutation.isPending ? "Resolving..." : "Resolve Discrepancy"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">No match result yet.</p>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  try {
+                    await createMatchMutation.mutateAsync(invoice.id);
+                    toast({ title: "3-way match completed" });
+                  } catch { toast({ title: "Failed", variant: "destructive" }); }
+                }} disabled={createMatchMutation.isPending} data-testid="button-detail-run-match">
+                  {createMatchMutation.isPending ? "Running..." : "Run 3-Way Match"}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 function InvoicesTab() {
   const { toast } = useToast();
   const { data: invoices = [], isLoading } = useVendorInvoices();
   const createMatchMutation = useCreateInvoiceMatch();
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> Vendor Invoices</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">Loading...</div>
-        ) : invoices.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">No vendor invoices yet. Add invoices from a PO detail view.</div>
-        ) : (
-          <div className="space-y-3">
-            {invoices.map((inv: InvoiceRow) => (
-              <div key={inv.id} className="flex items-center justify-between p-4 border rounded-md gap-3" data-testid={`invoice-${inv.id}`}>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-xs">{inv.invoiceNumber}</span>
-                    <Badge variant={INVOICE_STATUS_VARIANT[inv.status] || "outline"}>{inv.status}</Badge>
-                    {inv.match && <Badge variant={MATCH_STATUS_VARIANT[inv.match.matchStatus] || "outline"} className="text-xs">{inv.match.matchStatus}</Badge>}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5" /> Vendor Invoices</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+          ) : invoices.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">No vendor invoices yet. Add invoices from a PO detail view.</div>
+          ) : (
+            <div className="space-y-3">
+              {invoices.map((inv: InvoiceRow) => (
+                <div key={inv.id} className="flex items-center justify-between p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedInvoice(inv)} data-testid={`invoice-${inv.id}`}>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-xs">{inv.invoiceNumber}</span>
+                      <Badge variant={INVOICE_STATUS_VARIANT[inv.status] || "outline"}>{inv.status}</Badge>
+                      {inv.match && <Badge variant={MATCH_STATUS_VARIANT[inv.match.matchStatus] || "outline"} className="text-xs">{inv.match.matchStatus}</Badge>}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                      {inv.po && <span>PO: {inv.po.poNumber}</span>}
+                      {inv.vendor && <span>{inv.vendor.name}</span>}
+                      <span>Date: {fmtDate(inv.invoiceDate)}</span>
+                      {inv.dueDate && <span>Due: {fmtDate(inv.dueDate)}</span>}
+                      <span className="font-medium text-foreground">{fmtCurrency(inv.totalAmount)}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                    {inv.po && <span>PO: {inv.po.poNumber}</span>}
-                    {inv.vendor && <span>{inv.vendor.name}</span>}
-                    <span>Date: {fmtDate(inv.invoiceDate)}</span>
-                    {inv.dueDate && <span>Due: {fmtDate(inv.dueDate)}</span>}
-                    <span className="font-medium text-foreground">{fmtCurrency(inv.totalAmount)}</span>
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    {!inv.match && (
+                      <Button size="sm" variant="outline" onClick={async () => { try { await createMatchMutation.mutateAsync(inv.id); toast({ title: "3-way match completed" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-match-invoice-${inv.id}`}>
+                        Run 3-Way Match
+                      </Button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!inv.match && (
-                    <Button size="sm" variant="outline" onClick={async () => { try { await createMatchMutation.mutateAsync(inv.id); toast({ title: "3-way match completed" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-match-invoice-${inv.id}`}>
-                      Run 3-Way Match
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      <InvoiceDetailDialog invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+    </>
   );
 }
 

@@ -12,12 +12,18 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
+import { verifyOrgAccess } from "./orgFilter";
+import type { Response } from "express";
 
 const router = Router();
 const ROLES = ["ADMIN", "MANAGER", "PROCUREMENT_MANAGER"] as const;
 
-function getOrgId(req: AuthRequest): string | null {
-  return req.user?.organizationId || null;
+function getOrgId(req: AuthRequest, res: Response): string | null {
+  const orgId = req.user?.organizationId || null;
+  if (orgId) {
+    verifyOrgAccess(req, res, orgId);
+  }
+  return orgId;
 }
 
 const prCreateSchema = z.object({
@@ -36,7 +42,7 @@ const prCreateSchema = z.object({
 
 router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const prs = await db.select().from(purchaseRequests)
@@ -62,7 +68,7 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
 
 router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const parsed = prCreateSchema.safeParse(req.body);
@@ -117,7 +123,7 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
 
 router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseRequests)
@@ -165,7 +171,7 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
 
 router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseRequests)
@@ -183,7 +189,7 @@ router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(.
 
 router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseRequests)
@@ -212,7 +218,7 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
 
 router.post("/api/procurement-module/requests/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseRequests)
@@ -241,7 +247,7 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
 
 router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseRequests)
@@ -270,7 +276,7 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
 
 router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [pr] = await db.select().from(purchaseRequests)
@@ -328,7 +334,7 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
 
 router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const pos = await db.select().from(purchaseOrders)
@@ -358,7 +364,7 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
 
 router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [po] = await db.select().from(purchaseOrders)
@@ -416,7 +422,7 @@ const poCreateSchema = z.object({
 
 router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const parsed = poCreateSchema.safeParse(req.body);
@@ -480,7 +486,7 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
 
 router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseOrders)
@@ -529,7 +535,7 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
 
 router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseOrders)
@@ -547,7 +553,7 @@ router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...
 
 router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseOrders)
@@ -580,7 +586,7 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
 
 router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseOrders)
@@ -613,7 +619,7 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
 
 router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseOrders)
@@ -642,7 +648,7 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
 
 router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(purchaseOrders)
@@ -662,7 +668,7 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
 
 router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [po] = await db.select().from(purchaseOrders)
@@ -695,7 +701,7 @@ const receiptCreateSchema = z.object({
 
 router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [po] = await db.select().from(purchaseOrders)
@@ -771,7 +777,7 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
 
 router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const invoices = await db.select().from(vendorInvoices)
@@ -812,7 +818,7 @@ const invoiceCreateSchema = z.object({
 
 router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const parsed = invoiceCreateSchema.safeParse(req.body);
@@ -850,7 +856,7 @@ router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLE
 
 router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [existing] = await db.select().from(vendorInvoices)
@@ -878,7 +884,7 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
 
 router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [invoice] = await db.select().from(vendorInvoices)
@@ -928,7 +934,7 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
 
 router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [invoice] = await db.select().from(vendorInvoices)
@@ -1000,7 +1006,7 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
 
 router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const [invoice] = await db.select().from(vendorInvoices)
@@ -1030,7 +1036,7 @@ router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, r
 
 router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
-    const orgId = getOrgId(req);
+    const orgId = getOrgId(req, res);
     if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
 
     const orgPOs = await db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId, projectId: purchaseOrders.projectId })
