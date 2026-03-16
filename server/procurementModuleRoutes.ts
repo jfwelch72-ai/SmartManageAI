@@ -23,8 +23,24 @@ const APPROVE_ROLES = ["ADMIN", "MANAGER"] as const;
 async function ensureProcurementSequences() {
   await db.execute(sql`CREATE SEQUENCE IF NOT EXISTS pr_number_seq`);
   await db.execute(sql`CREATE SEQUENCE IF NOT EXISTS po_number_seq`);
-  await db.execute(sql`SELECT setval('pr_number_seq', GREATEST((SELECT COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(pr_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) FROM purchase_requests), 1), true)`);
-  await db.execute(sql`SELECT setval('po_number_seq', GREATEST((SELECT COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0) FROM purchase_orders), 1), true)`);
+  const [{ prMax }] = await db.select({
+    prMax: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(pr_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0)`,
+  }).from(purchaseRequests);
+  const [{ prCur }] = await db.select({
+    prCur: sql<number>`last_value`,
+  }).from(sql`pr_number_seq`);
+  if (prMax > prCur) {
+    await db.execute(sql`SELECT setval('pr_number_seq', ${prMax}, true)`);
+  }
+  const [{ poMax }] = await db.select({
+    poMax: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(po_number, '[^0-9]', '', 'g'), '') AS INTEGER)), 0)`,
+  }).from(purchaseOrders);
+  const [{ poCur }] = await db.select({
+    poCur: sql<number>`last_value`,
+  }).from(sql`po_number_seq`);
+  if (poMax > poCur) {
+    await db.execute(sql`SELECT setval('po_number_seq', ${poMax}, true)`);
+  }
 }
 ensureProcurementSequences().catch(err => console.error("Failed to init procurement sequences:", err));
 

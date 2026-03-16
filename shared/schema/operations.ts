@@ -1921,6 +1921,7 @@ export const purchaseRequests = pgTable("purchase_requests", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
   index("purchase_requests_org_id_idx").on(table.orgId),
+  unique("purchase_requests_pr_number_unique").on(table.prNumber),
 ]);
 
 export const purchaseRequestItems = pgTable("purchase_request_items", {
@@ -1954,6 +1955,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => [
   index("purchase_orders_org_id_idx").on(table.orgId),
+  unique("purchase_orders_po_number_unique").on(table.poNumber),
 ]);
 
 export const purchaseOrderItems = pgTable("purchase_order_items", {
