@@ -35,14 +35,7 @@ router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
     const lines = await db.select().from(budgetLineItems)
       .where(eq(budgetLineItems.projectId, project.id));
 
-    const enriched = lines.map(l => ({
-      ...l,
-      totalBudget: String(
-        Number(l.laborBudget) + Number(l.materialBudget) + Number(l.subcontractorBudget) +
-        Number(l.equipmentBudget) + Number(l.otherBudget)
-      ),
-    }));
-    res.json(enriched);
+    res.json(lines);
   } catch (error) {
     console.error("Get budget lines error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -66,7 +59,10 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
       return res.status(400).json({ error: "Validation error", details: parseResult.error.flatten() });
     }
 
-    const [row] = await db.insert(budgetLineItems).values(parseResult.data).returning();
+    const data = parseResult.data;
+    const total = Number(data.laborBudget || 0) + Number(data.materialBudget || 0) +
+      Number(data.subcontractorBudget || 0) + Number(data.equipmentBudget || 0) + Number(data.otherBudget || 0);
+    const [row] = await db.insert(budgetLineItems).values({ ...data, totalBudget: String(total) }).returning();
     res.status(201).json(row);
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "23505") {
@@ -106,17 +102,22 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
     const rows = await db.transaction(async (tx) => {
       await tx.delete(budgetLineItems).where(eq(budgetLineItems.projectId, project.id));
       if (parsed.length === 0) return [];
-      const toInsert = parsed.map(line => ({
-        projectId: project.id,
-        costCode: line.costCode,
-        description: line.description,
-        division: line.division,
-        laborBudget: line.laborBudget,
-        materialBudget: line.materialBudget,
-        subcontractorBudget: line.subcontractorBudget,
-        equipmentBudget: line.equipmentBudget,
-        otherBudget: line.otherBudget,
-      }));
+      const toInsert = parsed.map(line => {
+        const total = Number(line.laborBudget) + Number(line.materialBudget) +
+          Number(line.subcontractorBudget) + Number(line.equipmentBudget) + Number(line.otherBudget);
+        return {
+          projectId: project.id,
+          costCode: line.costCode,
+          description: line.description,
+          division: line.division,
+          laborBudget: line.laborBudget,
+          materialBudget: line.materialBudget,
+          subcontractorBudget: line.subcontractorBudget,
+          equipmentBudget: line.equipmentBudget,
+          otherBudget: line.otherBudget,
+          totalBudget: String(total),
+        };
+      });
       return tx.insert(budgetLineItems).values(toInsert).returning();
     });
     res.json(rows);
@@ -154,11 +155,26 @@ router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req
     if (description !== undefined) updates.description = String(description);
     if (division !== undefined) updates.division = String(division);
 
-    const [row] = await db.update(budgetLineItems).set(updates)
+    const [existing] = await db.select().from(budgetLineItems)
+      .where(and(eq(budgetLineItems.id, req.params.lineId), eq(budgetLineItems.projectId, project.id)));
+    if (!existing) return res.status(404).json({ error: "Budget line not found" });
+
+    const merged = {
+      laborBudget: updates.laborBudget ?? existing.laborBudget,
+      materialBudget: updates.materialBudget ?? existing.materialBudget,
+      subcontractorBudget: updates.subcontractorBudget ?? existing.subcontractorBudget,
+      equipmentBudget: updates.equipmentBudget ?? existing.equipmentBudget,
+      otherBudget: updates.otherBudget ?? existing.otherBudget,
+    };
+    const totalBudget = String(
+      Number(merged.laborBudget) + Number(merged.materialBudget) +
+      Number(merged.subcontractorBudget) + Number(merged.equipmentBudget) + Number(merged.otherBudget)
+    );
+
+    const [row] = await db.update(budgetLineItems).set({ ...updates, totalBudget })
       .where(and(eq(budgetLineItems.id, req.params.lineId), eq(budgetLineItems.projectId, project.id)))
       .returning();
 
-    if (!row) return res.status(404).json({ error: "Budget line not found" });
     res.json(row);
   } catch (error: unknown) {
     console.error("Update budget line error:", error);

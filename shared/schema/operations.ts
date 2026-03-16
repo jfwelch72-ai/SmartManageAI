@@ -2075,6 +2075,7 @@ export const budgetLineItems = pgTable("budget_line_items", {
   subcontractorBudget: decimal("subcontractor_budget", { precision: 12, scale: 2 }).notNull().default("0"),
   equipmentBudget: decimal("equipment_budget", { precision: 12, scale: 2 }).notNull().default("0"),
   otherBudget: decimal("other_budget", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalBudget: decimal("total_budget", { precision: 12, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
