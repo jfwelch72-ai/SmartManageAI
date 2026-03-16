@@ -248,8 +248,8 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
 
     const customCodeSet = new Set(customRows.map(r => r.code));
     const merged = [
-      ...staticCodes.filter(c => !customCodeSet.has(c.code)),
       ...customCodes,
+      ...staticCodes.filter(c => !customCodeSet.has(c.code)),
     ];
 
     res.json(merged);

@@ -75,6 +75,7 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
 
   const params = new URLSearchParams({ mode: merged.mode || "labor" });
   if (merged.projectId) params.set("projectId", merged.projectId);
+  if (merged.groupByDivision) params.set("groupByDivision", "true");
 
   const { data, isLoading } = useQuery<CostCodeResponse>({
     queryKey: [`/api/dashboard/cost-code-breakdown?${params.toString()}`],

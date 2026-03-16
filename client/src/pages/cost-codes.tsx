@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -30,13 +30,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Search, Pencil, Trash2, FolderOpen } from "lucide-react";
+import { Plus, Search, Pencil, FolderOpen } from "lucide-react";
 import type { CostCode } from "@shared/costCodes";
 import { CSI_DIVISIONS } from "@shared/costCodes";
 
 interface OrgCostCode {
   id: number;
-  organizationId: number;
+  organizationId: string;
   code: string;
   description: string;
   division: string;
@@ -55,7 +55,6 @@ export default function CostCodesPage() {
   const [formDescription, setFormDescription] = useState("");
   const [formDivision, setFormDivision] = useState("");
   const [formActive, setFormActive] = useState(true);
-  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const { data: allCodes = [], isLoading } = useQuery<CostCode[]>({
     queryKey: ["/api/cost-codes"],
@@ -65,7 +64,11 @@ export default function CostCodesPage() {
     queryKey: ["/api/org-cost-codes"],
   });
 
-  const orgCodeIds = useMemo(() => new Set(orgCodes.map(c => c.code)), [orgCodes]);
+  const orgCodeMap = useMemo(() => {
+    const map = new Map<string, OrgCostCode>();
+    orgCodes.forEach(c => map.set(c.code, c));
+    return map;
+  }, [orgCodes]);
 
   const filtered = useMemo(() => {
     let list = allCodes;
@@ -97,14 +100,18 @@ export default function CostCodesPage() {
     return groups;
   }, [filtered]);
 
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/org-cost-codes"] });
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: { code: string; description: string; division: string; isActive: boolean }) => {
       const res = await apiRequest("POST", "/api/org-cost-codes", data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/org-cost-codes"] });
+      invalidateAll();
       toast({ title: "Cost code created" });
       closeDialog();
     },
@@ -114,13 +121,12 @@ export default function CostCodesPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: number; code: string; description: string; division: string; isActive: boolean }) => {
+    mutationFn: async ({ id, ...data }: { id: number; code?: string; description?: string; division?: string; isActive?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/org-cost-codes/${id}`, data);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/org-cost-codes"] });
+      invalidateAll();
       toast({ title: "Cost code updated" });
       closeDialog();
     },
@@ -129,29 +135,28 @@ export default function CostCodesPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/org-cost-codes/${id}`);
+  const toggleActiveMutation = useMutation({
+    mutationFn: async ({ code: codeStr, isActive, orgEntry, division, description }: {
+      code: string; isActive: boolean; orgEntry?: OrgCostCode; division: string; description: string;
+    }) => {
+      if (orgEntry) {
+        const res = await apiRequest("PATCH", `/api/org-cost-codes/${orgEntry.id}`, { isActive });
+        return res.json();
+      } else {
+        const res = await apiRequest("POST", "/api/org-cost-codes", {
+          code: codeStr,
+          description,
+          division,
+          isActive,
+        });
+        return res.json();
+      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/org-cost-codes"] });
-      toast({ title: "Cost code deleted" });
-      setDeleteId(null);
+      invalidateAll();
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message || "Failed to delete cost code", variant: "destructive" });
-    },
-  });
-
-  const toggleActiveMutation = useMutation({
-    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/org-cost-codes/${id}`, { isActive });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cost-codes"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/org-cost-codes"] });
+      toast({ title: "Error", description: err.message || "Failed to toggle cost code", variant: "destructive" });
     },
   });
 
@@ -165,7 +170,7 @@ export default function CostCodesPage() {
   }
 
   function openEdit(code: CostCode) {
-    const org = orgCodes.find(c => c.code === code.code);
+    const org = orgCodeMap.get(code.code);
     if (!org) return;
     setEditing(org);
     setFormCode(org.code);
@@ -186,7 +191,7 @@ export default function CostCodesPage() {
       return;
     }
     if (editing) {
-      updateMutation.mutate({ id: editing.id, code: formCode, description: formDescription, division: formDivision, isActive: formActive });
+      updateMutation.mutate({ id: editing.id, description: formDescription, division: formDivision, isActive: formActive });
     } else {
       createMutation.mutate({ code: formCode, description: formDescription, division: formDivision, isActive: formActive });
     }
@@ -200,7 +205,7 @@ export default function CostCodesPage() {
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Cost Codes</h1>
           <p className="text-muted-foreground text-sm mt-1" data-testid="text-page-subtitle">
-            Manage your organization's cost codes. Standard codes are provided based on your trade; you can add custom codes or override existing ones.
+            Manage your organization's cost codes. Standard codes are provided based on your trade; you can add custom codes or deactivate any code.
           </p>
         </div>
         <Button onClick={openCreate} data-testid="button-add-cost-code">
@@ -247,9 +252,9 @@ export default function CostCodesPage() {
                   <TableRow>
                     <TableHead className="w-[120px]">Code</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead className="w-[100px] text-center">Status</TableHead>
+                    <TableHead className="w-[100px] text-center">Active</TableHead>
                     <TableHead className="w-[80px] text-center">Type</TableHead>
-                    <TableHead className="w-[100px] text-right">Actions</TableHead>
+                    <TableHead className="w-[80px] text-right">Edit</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -266,23 +271,26 @@ export default function CostCodesPage() {
                       </TableRow>
                       {group.items.map((code) => {
                         const isCustom = !!code.isCustom;
-                        const orgEntry = isCustom ? orgCodes.find(c => c.code === code.code) : null;
+                        const orgEntry = orgCodeMap.get(code.code);
+                        const isActive = code.isActive !== false;
                         return (
-                          <TableRow key={code.code} className={code.isActive === false ? "opacity-50" : ""} data-testid={`row-cost-code-${code.code}`}>
+                          <TableRow key={code.code} className={!isActive ? "opacity-50" : ""} data-testid={`row-cost-code-${code.code}`}>
                             <TableCell>
                               <code className="text-sm font-mono" data-testid={`text-code-${code.code}`}>{code.code}</code>
                             </TableCell>
                             <TableCell data-testid={`text-desc-${code.code}`}>{code.description}</TableCell>
                             <TableCell className="text-center">
-                              {isCustom && orgEntry ? (
-                                <Switch
-                                  checked={code.isActive !== false}
-                                  onCheckedChange={(checked) => toggleActiveMutation.mutate({ id: orgEntry.id, isActive: checked })}
-                                  data-testid={`switch-active-${code.code}`}
-                                />
-                              ) : (
-                                <Badge variant="outline" className="text-[10px]" data-testid={`badge-status-${code.code}`}>Active</Badge>
-                              )}
+                              <Switch
+                                checked={isActive}
+                                onCheckedChange={(checked) => toggleActiveMutation.mutate({
+                                  code: code.code,
+                                  isActive: checked,
+                                  orgEntry: orgEntry || undefined,
+                                  division: code.division || "",
+                                  description: code.description,
+                                })}
+                                data-testid={`switch-active-${code.code}`}
+                              />
                             </TableCell>
                             <TableCell className="text-center">
                               {isCustom ? (
@@ -293,26 +301,15 @@ export default function CostCodesPage() {
                             </TableCell>
                             <TableCell className="text-right">
                               {isCustom && orgEntry && (
-                                <div className="flex justify-end gap-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => openEdit(code)}
-                                    data-testid={`button-edit-${code.code}`}
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-8 w-8 text-destructive"
-                                    onClick={() => setDeleteId(orgEntry.id)}
-                                    data-testid={`button-delete-${code.code}`}
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </Button>
-                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => openEdit(code)}
+                                  data-testid={`button-edit-${code.code}`}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
                               )}
                             </TableCell>
                           </TableRow>
@@ -380,28 +377,6 @@ export default function CostCodesPage() {
               data-testid="button-save-cost-code"
             >
               {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={deleteId !== null} onOpenChange={(open) => !open && setDeleteId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle data-testid="text-delete-title">Delete Cost Code</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground" data-testid="text-delete-confirm">
-            Are you sure you want to delete this custom cost code? This action cannot be undone.
-          </p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteId(null)} data-testid="button-cancel-delete">Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
-              disabled={deleteMutation.isPending}
-              data-testid="button-confirm-delete"
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
           </DialogFooter>
         </DialogContent>

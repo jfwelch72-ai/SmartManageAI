@@ -1969,6 +1969,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
 
     const mode = (req.query.mode as string) || "labor";
     const projectId = req.query.projectId as string | undefined;
+    const groupByDivision = req.query.groupByDivision === "true";
 
     const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
     const projectCond = projectId ? sql`AND te."project_id" = ${projectId}` : sql``;
@@ -1991,34 +1992,20 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
             )`
           : sql``;
 
+        const budgetGroupExpr = groupByDivision
+          ? sql`COALESCE('Division ' || SPLIT_PART(SPLIT_PART(COALESCE(NULLIF(TRIM(eli."work_type_code"), ''), NULLIF(TRIM(eli."category"), ''), ''), ' - ', 1), '-', 1), 'Unassigned')`
+          : sql`COALESCE(UPPER(TRIM(SPLIT_PART(COALESCE(NULLIF(TRIM(eli."work_type_code"), ''), NULLIF(TRIM(eli."category"), '')), ' - ', 1))), 'Unassigned')`;
+
         const budgetResult = await db.execute(sql`
           SELECT
-            COALESCE(
-              UPPER(TRIM(SPLIT_PART(
-                COALESCE(
-                  NULLIF(TRIM(eli."work_type_code"), ''),
-                  NULLIF(TRIM(eli."category"), '')
-                ),
-                ' - ', 1
-              ))),
-              'Unassigned'
-            ) as cost_code,
+            ${budgetGroupExpr} as cost_code,
             SUM(eli."labor_cost"::numeric) as budgeted
           FROM "estimate_line_items" eli
           JOIN "estimates" e ON eli."estimate_id" = e."id"
           WHERE eli."labor_cost"::numeric > 0
             ${budgetProjectCond}
             ${budgetOrgCond}
-          GROUP BY COALESCE(
-              UPPER(TRIM(SPLIT_PART(
-                COALESCE(
-                  NULLIF(TRIM(eli."work_type_code"), ''),
-                  NULLIF(TRIM(eli."category"), '')
-                ),
-                ' - ', 1
-              ))),
-              'Unassigned'
-            )
+          GROUP BY ${budgetGroupExpr}
           ORDER BY SUM(eli."labor_cost"::numeric) DESC
           LIMIT 10
         `);
@@ -2029,12 +2016,13 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
           totalBudgeted += parseFloat(row.budgeted) || 0;
         }
 
+        const actualGroupExpr = groupByDivision
+          ? sql`COALESCE('Division ' || SPLIT_PART(SPLIT_PART(COALESCE(te."cost_code", ''), ' - ', 1), '-', 1), 'Unassigned')`
+          : sql`COALESCE(UPPER(NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), '')), 'Unassigned')`;
+
         const actualResult = await db.execute(sql`
           SELECT
-            COALESCE(
-              UPPER(NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), '')),
-              'Unassigned'
-            ) as cost_code,
+            ${actualGroupExpr} as cost_code,
             SUM(
               (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
               COALESCE(u."cost_rate_regular"::numeric, 50)
@@ -2045,10 +2033,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
           WHERE 1=1
             ${orgCond}
             ${projectCond}
-          GROUP BY COALESCE(
-              UPPER(NULLIF(TRIM(SPLIT_PART(te."cost_code", ' - ', 1)), '')),
-              'Unassigned'
-            )
+          GROUP BY ${actualGroupExpr}
           ORDER BY SUM(
             (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
             COALESCE(u."cost_rate_regular"::numeric, 50)
@@ -2089,9 +2074,13 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
     let totalLaborCost = 0;
 
     try {
+      const groupExpr = groupByDivision
+        ? sql`COALESCE('Division ' || SPLIT_PART(SPLIT_PART(COALESCE(te."cost_code", ''), ' - ', 1), '-', 1), 'Unassigned')`
+        : sql`COALESCE(te."cost_code", 'Unassigned')`;
+
       const result = await db.execute(sql`
         SELECT
-          COALESCE(te."cost_code", 'Unassigned') as cost_code,
+          ${groupExpr} as cost_code,
           SUM(
             (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
             COALESCE(u."cost_rate_regular"::numeric, 50)
@@ -2103,7 +2092,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
         WHERE 1=1
           ${orgCond}
           ${projectCond}
-        GROUP BY COALESCE(te."cost_code", 'Unassigned')
+        GROUP BY ${groupExpr}
         ORDER BY SUM(
           (te."hours_regular"::numeric + te."hours_overtime"::numeric * 1.5) *
           COALESCE(u."cost_rate_regular"::numeric, 50)
