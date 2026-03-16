@@ -17,7 +17,7 @@ import {
   usePurchaseRequests, useCreatePurchaseRequest, useSubmitPurchaseRequest,
   useApprovePurchaseRequest, useRejectPurchaseRequest, useConvertPRToPO, useDeletePurchaseRequest,
   usePurchaseOrders, usePurchaseOrderDetail, useCreatePurchaseOrder,
-  useSubmitPurchaseOrder, useApprovePurchaseOrder, useSendPurchaseOrder, useDeletePurchaseOrder,
+  useSubmitPurchaseOrder, useApprovePurchaseOrder, useRejectPurchaseOrder, useSendPurchaseOrder, useDeletePurchaseOrder,
   useCreatePOReceipt, useProcurementReceipts,
   useVendorInvoices, useCreateVendorInvoice,
   useCreateInvoiceMatch, useResolveMatchDiscrepancy,
@@ -62,10 +62,87 @@ interface LineItem {
   category?: string;
 }
 
+interface ProjectRef {
+  id: string;
+  name: string;
+  code?: string | null;
+}
+
+interface VendorRef {
+  id: string;
+  name: string;
+}
+
+interface POItem {
+  id: string;
+  poId: string;
+  description: string;
+  quantity: string | null;
+  unit: string | null;
+  unitCost: string | null;
+  quantityReceived: string | null;
+}
+
+interface PurchaseRequest {
+  id: string;
+  prNumber: string;
+  title: string;
+  status: string;
+  priority: string | null;
+  project?: ProjectRef | null;
+  createdAt: string;
+  totalEstimate: string | null;
+}
+
+interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  status: string;
+  totalCost: string | null;
+  neededByDate: string | null;
+  vendor?: VendorRef | null;
+  project?: ProjectRef | null;
+  items: POItem[];
+  receipts: POReceiptSummary[];
+  invoices: InvoiceSummary[];
+}
+
+interface POReceiptSummary {
+  id: string;
+  status: string;
+  receivedAt: string;
+  deliveryNote: string | null;
+  receivedBy?: { firstName: string; lastName: string } | null;
+  items: { id: string; poItemId: string; quantityReceived: string; condition: string; notes: string | null }[];
+}
+
+interface InvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  totalAmount: string;
+  invoiceDate: string;
+  dueDate: string | null;
+  match?: { matchStatus: string } | null;
+}
+
+interface InvoiceRow {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  totalAmount: string;
+  invoiceDate: string;
+  dueDate: string | null;
+  po?: { poNumber: string } | null;
+  vendor?: VendorRef | null;
+  match?: { matchStatus: string } | null;
+}
+
 function PurchaseRequestsTab() {
   const { toast } = useToast();
   const { data: prs = [], isLoading } = usePurchaseRequests();
-  const { data: projectsList = [] } = useQuery<any[]>({ queryKey: ["/api/projects"] });
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projectsList = projectsResponse?.data ?? [];
   const createMutation = useCreatePurchaseRequest();
   const submitMutation = useSubmitPurchaseRequest();
   const approveMutation = useApprovePurchaseRequest();
@@ -81,7 +158,7 @@ function PurchaseRequestsTab() {
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
     const updated = [...lineItems];
-    (updated[i] as any)[field] = value;
+    updated[i] = { ...updated[i], [field]: value };
     setLineItems(updated);
   };
 
@@ -118,7 +195,7 @@ function PurchaseRequestsTab() {
           <div className="text-center py-8 text-muted-foreground">No purchase requests yet</div>
         ) : (
           <div className="space-y-3">
-            {prs.map((pr: any) => (
+            {prs.map((pr: PurchaseRequest) => (
               <div key={pr.id} className="flex items-start justify-between p-4 border rounded-md gap-3" data-testid={`pr-${pr.id}`}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
@@ -178,7 +255,7 @@ function PurchaseRequestsTab() {
                 <Label>Project *</Label>
                 <Select value={form.projectId} onValueChange={v => setForm({ ...form, projectId: v })}>
                   <SelectTrigger data-testid="select-pr-project"><SelectValue placeholder="Select project..." /></SelectTrigger>
-                  <SelectContent>{projectsList.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{projectsList.map((p: ProjectRef) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
@@ -240,11 +317,13 @@ function PurchaseRequestsTab() {
 function PurchaseOrdersTab() {
   const { toast } = useToast();
   const { data: pos = [], isLoading } = usePurchaseOrders();
-  const { data: projectsList = [] } = useQuery<any[]>({ queryKey: ["/api/projects"] });
-  const { data: vendors = [] } = useQuery<any[]>({ queryKey: ["/api/crm/organisations"] });
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projectsList = projectsResponse?.data ?? [];
+  const { data: vendors = [] } = useQuery<VendorRef[]>({ queryKey: ["/api/crm/organisations"] });
   const createMutation = useCreatePurchaseOrder();
   const submitMutation = useSubmitPurchaseOrder();
   const approveMutation = useApprovePurchaseOrder();
+  const rejectPOMutation = useRejectPurchaseOrder();
   const sendMutation = useSendPurchaseOrder();
   const deleteMutation = useDeletePurchaseOrder();
 
@@ -257,7 +336,7 @@ function PurchaseOrdersTab() {
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
     const updated = [...lineItems];
-    (updated[i] as any)[field] = value;
+    updated[i] = { ...updated[i], [field]: value };
     setLineItems(updated);
   };
 
@@ -296,7 +375,7 @@ function PurchaseOrdersTab() {
             <div className="text-center py-8 text-muted-foreground">No purchase orders yet</div>
           ) : (
             <div className="space-y-3">
-              {pos.map((po: any) => (
+              {pos.map((po: PurchaseOrder) => (
                 <div key={po.id} className="flex items-start justify-between p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedPOId(po.id)} data-testid={`po-${po.id}`}>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
@@ -323,8 +402,11 @@ function PurchaseOrdersTab() {
                     )}
                     {po.status === "PENDING_APPROVAL" && (
                       <>
-                        <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(po.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }}>
+                        <Button size="sm" variant="default" onClick={async () => { try { await approveMutation.mutateAsync(po.id); toast({ title: "Approved" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-approve-po-${po.id}`}>
                           <Check className="h-3.5 w-3.5 mr-1" />Approve
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={async () => { try { await rejectPOMutation.mutateAsync(po.id); toast({ title: "Rejected" }); } catch { toast({ title: "Failed", variant: "destructive" }); } }} data-testid={`button-reject-po-${po.id}`}>
+                          <X className="h-3.5 w-3.5 mr-1" />Reject
                         </Button>
                       </>
                     )}
@@ -353,14 +435,14 @@ function PurchaseOrdersTab() {
                 <Label>Project *</Label>
                 <Select value={form.projectId} onValueChange={v => setForm({ ...form, projectId: v })}>
                   <SelectTrigger data-testid="select-po-project"><SelectValue placeholder="Select project..." /></SelectTrigger>
-                  <SelectContent>{projectsList.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{projectsList.map((p: ProjectRef) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
                 <Label>Vendor</Label>
                 <Select value={form.vendorId} onValueChange={v => setForm({ ...form, vendorId: v })}>
                   <SelectTrigger data-testid="select-po-vendor"><SelectValue placeholder="Select vendor..." /></SelectTrigger>
-                  <SelectContent>{(vendors || []).map((v: any) => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent>
+                  <SelectContent>{(vendors || []).map((v: VendorRef) => <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
             </div>
@@ -447,7 +529,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
 
   const openReceiptDialog = () => {
     if (po?.items) {
-      setReceiptItems(po.items.map((item: any) => ({
+      setReceiptItems(po.items.map((item: POItem) => ({
         poItemId: item.id,
         quantityReceived: "",
         condition: "GOOD",
@@ -513,7 +595,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                 <h4 className="font-semibold mb-2">Line Items</h4>
                 {po.items?.length > 0 ? (
                   <div className="space-y-2">
-                    {po.items.map((item: any) => {
+                    {po.items.map((item: POItem) => {
                       const ordered = parseFloat(item.quantity || "0");
                       const received = parseFloat(item.quantityReceived || "0");
                       return (
@@ -549,7 +631,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                 </div>
                 {po.receipts?.length > 0 ? (
                   <div className="space-y-2">
-                    {po.receipts.map((r: any) => (
+                    {po.receipts.map((r: POReceiptSummary) => (
                       <div key={r.id} className="text-sm p-2 border rounded">
                         <div className="flex justify-between">
                           <span>{fmtDate(r.receivedAt)} - {r.receivedBy?.firstName} {r.receivedBy?.lastName}</span>
@@ -572,7 +654,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                 </div>
                 {po.invoices?.length > 0 ? (
                   <div className="space-y-2">
-                    {po.invoices.map((inv: any) => (
+                    {po.invoices.map((inv: InvoiceSummary) => (
                       <div key={inv.id} className="text-sm p-2 border rounded">
                         <div className="flex justify-between items-center">
                           <div>
@@ -620,7 +702,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
           </DialogHeader>
           <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
             {receiptItems.map((ri, i) => {
-              const poItem = po?.items?.find((it: any) => it.id === ri.poItemId);
+              const poItem = po?.items?.find((it: POItem) => it.id === ri.poItemId);
               return (
                 <div key={ri.poItemId} className="p-3 border rounded space-y-2">
                   <p className="text-sm font-medium">{poItem?.description}</p>
@@ -748,7 +830,7 @@ function InvoicesTab() {
           <div className="text-center py-8 text-muted-foreground">No vendor invoices yet. Add invoices from a PO detail view.</div>
         ) : (
           <div className="space-y-3">
-            {invoices.map((inv: any) => (
+            {invoices.map((inv: InvoiceRow) => (
               <div key={inv.id} className="flex items-center justify-between p-4 border rounded-md gap-3" data-testid={`invoice-${inv.id}`}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">

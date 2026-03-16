@@ -127,9 +127,10 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT requests can be edited" }); return; }
 
     const { items } = req.body;
-    const setData: any = { updatedAt: new Date() };
+    const setData: Record<string, string | Date | null> = {};
+    setData.updatedAt = new Date() as unknown as string;
     if (req.body.title !== undefined) setData.title = req.body.title;
-    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
+    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) as unknown as string : null;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
 
     const [updated] = await db.update(purchaseRequests).set(setData)
@@ -489,11 +490,12 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
     if (existing.status !== "DRAFT") { res.status(400).json({ error: "Only DRAFT orders can be edited" }); return; }
 
     const { items } = req.body;
-    const setData: any = { updatedAt: new Date() };
+    const setData: Record<string, string | Date | null> = {};
+    setData.updatedAt = new Date() as unknown as string;
     if (req.body.vendorId !== undefined) setData.vendorId = req.body.vendorId || null;
     if (req.body.terms !== undefined) setData.terms = req.body.terms;
     if (req.body.deliveryAddress !== undefined) setData.deliveryAddress = req.body.deliveryAddress;
-    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) : null;
+    if (req.body.neededByDate !== undefined) setData.neededByDate = req.body.neededByDate ? new Date(req.body.neededByDate) as unknown as string : null;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
 
     const [updated] = await db.update(purchaseOrders).set(setData)
@@ -820,10 +822,17 @@ router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLE
       .where(and(eq(purchaseOrders.id, parsed.data.poId), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
 
+    const resolvedVendorId = parsed.data.vendorId || po.vendorId || null;
+    if (resolvedVendorId) {
+      const [vendor] = await db.select({ id: crmOrganisations.id }).from(crmOrganisations)
+        .where(and(eq(crmOrganisations.id, resolvedVendorId), eq(crmOrganisations.organizationId, orgId))).limit(1);
+      if (!vendor) { res.status(403).json({ error: "Vendor does not belong to your organization" }); return; }
+    }
+
     const [invoice] = await db.insert(vendorInvoices).values({
       orgId,
       poId: parsed.data.poId,
-      vendorId: parsed.data.vendorId || po.vendorId || null,
+      vendorId: resolvedVendorId,
       invoiceNumber: parsed.data.invoiceNumber,
       invoiceDate: new Date(parsed.data.invoiceDate),
       dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : null,
@@ -850,10 +859,10 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
 
     if (existing.status !== "PENDING") { res.status(400).json({ error: "Only PENDING invoices can be edited" }); return; }
 
-    const setData: any = { updatedAt: new Date() };
+    const setData: Record<string, string | Date | null> = { updatedAt: new Date() as unknown as string };
     if (req.body.invoiceNumber !== undefined) setData.invoiceNumber = req.body.invoiceNumber;
-    if (req.body.invoiceDate !== undefined) setData.invoiceDate = new Date(req.body.invoiceDate);
-    if (req.body.dueDate !== undefined) setData.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
+    if (req.body.invoiceDate !== undefined) setData.invoiceDate = new Date(req.body.invoiceDate) as unknown as string;
+    if (req.body.dueDate !== undefined) setData.dueDate = req.body.dueDate ? new Date(req.body.dueDate) as unknown as string : null;
     if (req.body.totalAmount !== undefined) setData.totalAmount = req.body.totalAmount;
     if (req.body.notes !== undefined) setData.notes = req.body.notes;
     if (req.body.fileUrl !== undefined) setData.fileUrl = req.body.fileUrl;

@@ -367,6 +367,9 @@ export const RoutePermissions = {
 
   // Reports (ADMIN, MANAGER, ESTIMATOR, SUPERINTENDENT)
   REPORTS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
+
+  // Procurement Module
+  PROCUREMENT: (role?: string) => hasProcurementAccess(role),
 };
 
 /**
