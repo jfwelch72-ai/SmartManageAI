@@ -20,7 +20,7 @@ export const DEFAULT_SAFETY_ALERTS_CONFIG: SafetyAlertsConfig = {
   filterByProject: "",
 };
 
-interface Project {
+interface ProjectRef {
   id: string;
   name: string;
 }
@@ -33,10 +33,8 @@ interface SafetyAlertsSettingsProps {
 export function SafetyAlertsSettings({ config, onChange }: SafetyAlertsSettingsProps) {
   const cfg = { ...DEFAULT_SAFETY_ALERTS_CONFIG, ...config };
 
-  const { data: projects = [] } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-    select: (data: any[]) => data.map((p) => ({ id: p.id, name: p.name })),
-  });
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projects = projectsResponse?.data ?? [];
 
   return (
     <div className="space-y-5">
