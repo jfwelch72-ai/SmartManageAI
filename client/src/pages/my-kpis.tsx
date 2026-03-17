@@ -336,7 +336,7 @@ function KpiHistoryChart({ assignmentId }: { assignmentId: string }) {
   );
 }
 
-function KpiCard({ kpi }: { kpi: KpiSummaryItem }) {
+export function KpiCard({ kpi }: { kpi: KpiSummaryItem }) {
   const [showHistory, setShowHistory] = useState(false);
   const progressValue = Math.min(kpi.achievement, 100);
 

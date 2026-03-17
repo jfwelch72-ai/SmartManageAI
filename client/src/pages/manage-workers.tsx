@@ -28,7 +28,7 @@ import { Progress } from "@/components/ui/progress";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Link } from "wouter";
 import KpiManagementPage from "@/pages/kpi-management";
-import MyKpisPage from "@/pages/my-kpis";
+import { KpiCard } from "@/pages/my-kpis";
 import {
   Search,
   Eye,
@@ -136,6 +136,7 @@ interface RewardType { id: string; name: string; description: string; category: 
 interface Reward { id: string; employeeId: string; rewardTypeId: string; assignedById: string; ratingId?: string; amount?: string; justification?: string; expiresAt?: string; createdAt: string; rewardTypeName: string; employeeName: string; assignedByName: string; }
 interface LeaderboardEntry { employeeId: string; firstName: string; lastName: string; role: string; avgScore: string; ratingCount: number; }
 interface RewardAnalytics { totalRewards: number; totalAmount: string; byType: { category: string; count: number; totalAmount: string }[]; byMonth: { month: string; count: number; totalAmount: string }[]; }
+interface KpiSummaryItem { assignmentId: string; templateName: string; category: string; unit: string; direction: string; targetValue: number; actualValue: number; achievement: number; trend: "improving" | "declining" | "stable"; periodType: string; latestPeriodEnd: string | null; entryCount: number; }
 
 const criteriaSchema = z.object({ name: z.string().min(1), description: z.string().optional(), weight: z.coerce.number().min(0).max(100), maxScore: z.coerce.number().min(1).max(100) });
 const rewardTypeSchema = z.object({ name: z.string().min(1), description: z.string().optional(), category: z.string().min(1), value: z.coerce.number().min(0) });
@@ -884,7 +885,7 @@ function PerformanceTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER";
-  const [perfSubTab, setPerfSubTab] = useState<"rate" | "kpi-library" | "history">("rate");
+  const [perfSubTab, setPerfSubTab] = useState<"rate" | "kpi-library" | "history" | "analytics">("rate");
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [scores, setScores] = useState<Record<string, number>>({});
   const [period, setPeriod] = useState("");
@@ -950,6 +951,9 @@ function PerformanceTab() {
         )}
         <Button variant={perfSubTab === "history" ? "default" : "outline"} size="sm" onClick={() => setPerfSubTab("history")} data-testid="button-perf-history">
           <Award className="w-4 h-4 mr-1.5" />Rating History
+        </Button>
+        <Button variant={perfSubTab === "analytics" ? "default" : "outline"} size="sm" onClick={() => setPerfSubTab("analytics")} data-testid="button-perf-analytics">
+          <BarChart3 className="w-4 h-4 mr-1.5" />Analytics
         </Button>
       </div>
 
@@ -1145,6 +1149,222 @@ function PerformanceTab() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {perfSubTab === "analytics" && <PerformanceAnalyticsSection />}
+    </div>
+  );
+}
+
+function PerformanceAnalyticsSection() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+  const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
+  const canSeeLeaderboard = isAdmin || isManager;
+
+  const { data: leaderboard = [], isLoading: loadingLb } = useQuery<LeaderboardEntry[]>({ queryKey: ["/api/performance/leaderboard"], enabled: canSeeLeaderboard });
+  const { data: analytics } = useQuery<RewardAnalytics>({ queryKey: ["/api/performance/rewards/analytics"], enabled: isAdmin });
+  const { data: kpiSummary, isLoading: loadingKpi } = useQuery<KpiSummaryItem[]>({ queryKey: ["/api/kpis/summary"], enabled: !!user });
+
+  const totalRatings = leaderboard.reduce((s, e) => s + e.ratingCount, 0);
+  const avgScore = leaderboard.length > 0 ? leaderboard.reduce((s, e) => s + parseFloat(String(e.avgScore)), 0) / leaderboard.length : 0;
+  const activeKpis = kpiSummary?.length || 0;
+  const overallKpiAchievement = kpiSummary && kpiSummary.length > 0
+    ? Math.round(kpiSummary.reduce((acc, k) => acc + k.achievement, 0) / kpiSummary.length)
+    : 0;
+
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const filteredKpis = kpiSummary?.filter((kpi) => categoryFilter === "all" || kpi.category === categoryFilter) || [];
+  const categories = kpiSummary ? Array.from(new Set(kpiSummary.map((k) => k.category))) : [];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="hover-elevate" data-testid="stat-total-ratings">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-2xl font-bold">{totalRatings}</p>
+                <p className="text-sm text-muted-foreground">Total Ratings</p>
+              </div>
+              <Star className="w-8 h-8 text-muted-foreground/50" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="hover-elevate" data-testid="stat-avg-score">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-2xl font-bold">{avgScore.toFixed(1)}</p>
+                <p className="text-sm text-muted-foreground">Average Score</p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-muted-foreground/50" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="hover-elevate" data-testid="stat-active-kpis">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-2xl font-bold">{activeKpis}</p>
+                <p className="text-sm text-muted-foreground">Active KPIs</p>
+              </div>
+              <Target className="w-8 h-8 text-muted-foreground/50" />
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="hover-elevate" data-testid="stat-kpi-achievement">
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-2xl font-bold">{overallKpiAchievement}%</p>
+                <p className="text-sm text-muted-foreground">KPI Achievement</p>
+              </div>
+              <Activity className="w-8 h-8 text-muted-foreground/50" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {canSeeLeaderboard && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Crown className="w-5 h-5" />Performance Leaderboard</CardTitle>
+            <CardDescription>Top performing employees</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingLb ? (
+              <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+            ) : leaderboard.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No performance data available yet</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">Rank</TableHead>
+                    <TableHead>Employee</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Avg Score</TableHead>
+                    <TableHead>Ratings</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {leaderboard.map((e, i) => (
+                    <TableRow key={e.employeeId} data-testid={`leaderboard-row-${e.employeeId}`}>
+                      <TableCell>
+                        {i === 0 && <Crown className="w-4 h-4 text-yellow-500" />}
+                        {i === 1 && <Medal className="w-4 h-4 text-gray-400" />}
+                        {i === 2 && <Medal className="w-4 h-4 text-amber-600" />}
+                        {i > 2 && <span className="text-sm text-muted-foreground pl-1">{i + 1}</span>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{e.firstName[0]}{e.lastName[0]}</AvatarFallback></Avatar>
+                          <span className="font-medium text-sm">{e.firstName} {e.lastName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{e.role}</Badge></TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress value={(parseFloat(String(e.avgScore)) / 10) * 100} className="h-1.5 w-16" />
+                          <span className="text-sm font-medium">{parseFloat(String(e.avgScore)).toFixed(1)}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">{e.ratingCount}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <div>
+        <h3 className="text-base font-semibold mb-3 flex items-center gap-2"><Target className="w-4 h-4" />My KPI Performance</h3>
+        {loadingKpi ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Skeleton className="h-64" />
+            <Skeleton className="h-64" />
+          </div>
+        ) : (
+          <>
+            {categories.length > 1 && (
+              <div className="flex items-center gap-2 flex-wrap mb-4">
+                <span className="text-sm text-muted-foreground mr-1">Filter:</span>
+                <Button variant={categoryFilter === "all" ? "default" : "outline"} size="sm" onClick={() => setCategoryFilter("all")} data-testid="button-filter-all">All</Button>
+                {categories.map((cat) => (
+                  <Button key={cat} variant={categoryFilter === cat ? "default" : "outline"} size="sm" onClick={() => setCategoryFilter(cat)} data-testid={`button-filter-${cat.toLowerCase()}`}>{cat}</Button>
+                ))}
+              </div>
+            )}
+            {filteredKpis.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <Target className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2" data-testid="text-no-kpis-title">No KPIs Assigned</h3>
+                  <p className="text-muted-foreground text-sm" data-testid="text-no-kpis-description">
+                    You don't have any KPIs assigned yet. Your manager will assign KPIs with target values for you to track.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {filteredKpis.map((kpi) => (
+                  <KpiCard key={kpi.assignmentId} kpi={kpi} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {isAdmin && analytics && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="w-5 h-5" />Rewards by Category</CardTitle></CardHeader>
+            <CardContent>
+              {analytics.byType.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">No data available</p>
+              ) : (
+                <div className="space-y-3">
+                  {analytics.byType.map((item) => (
+                    <div key={item.category} className="space-y-1" data-testid={`analytics-category-${item.category}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium">{item.category}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs text-muted-foreground">{item.count} rewards</span>
+                          <span className="text-sm font-medium">${parseFloat(String(item.totalAmount)).toLocaleString()}</span>
+                        </div>
+                      </div>
+                      <Progress value={parseFloat(String(analytics.totalAmount)) > 0 ? (parseFloat(String(item.totalAmount)) / parseFloat(String(analytics.totalAmount))) * 100 : 0} className="h-2" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" />Rewards by Month</CardTitle></CardHeader>
+            <CardContent>
+              {analytics.byMonth.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6">No data available</p>
+              ) : (
+                <div className="space-y-3">
+                  {analytics.byMonth.map((item) => (
+                    <div key={item.month} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0" data-testid={`analytics-month-${item.month}`}>
+                      <span className="text-sm">{item.month}</span>
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="text-xs">{item.count} rewards</Badge>
+                        <span className="text-sm font-medium">${parseFloat(String(item.totalAmount)).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
@@ -1356,122 +1576,12 @@ function RewardsTab() {
   );
 }
 
-function AnalyticsTab() {
-  const { user } = useAuth();
-  const isAdmin = user?.role === "ADMIN";
-  const { data: leaderboard = [], isLoading: loadingLb } = useQuery<LeaderboardEntry[]>({ queryKey: ["/api/performance/leaderboard"] });
-  const { data: analytics, isLoading: loadingAn } = useQuery<RewardAnalytics>({ queryKey: ["/api/performance/rewards/analytics"], enabled: isAdmin });
-
-  const totalRatings = leaderboard.reduce((s, e) => s + e.ratingCount, 0);
-  const avgScore = leaderboard.length > 0 ? leaderboard.reduce((s, e) => s + parseFloat(String(e.avgScore)), 0) / leaderboard.length : 0;
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="hover-elevate" data-testid="stat-total-ratings"><CardContent className="pt-6"><div className="flex items-center justify-between gap-2"><div><p className="text-2xl font-bold">{totalRatings}</p><p className="text-sm text-muted-foreground">Total Ratings</p></div><Star className="w-8 h-8 text-muted-foreground/50" /></div></CardContent></Card>
-        <Card className="hover-elevate" data-testid="stat-avg-score"><CardContent className="pt-6"><div className="flex items-center justify-between gap-2"><div><p className="text-2xl font-bold">{avgScore.toFixed(1)}</p><p className="text-sm text-muted-foreground">Avg Score</p></div><TrendingUp className="w-8 h-8 text-muted-foreground/50" /></div></CardContent></Card>
-        {isAdmin && analytics && (<>
-          <Card className="hover-elevate" data-testid="stat-total-rewards"><CardContent className="pt-6"><div className="flex items-center justify-between gap-2"><div><p className="text-2xl font-bold">{analytics.totalRewards}</p><p className="text-sm text-muted-foreground">Total Rewards</p></div><Trophy className="w-8 h-8 text-muted-foreground/50" /></div></CardContent></Card>
-          <Card className="hover-elevate" data-testid="stat-total-amount"><CardContent className="pt-6"><div className="flex items-center justify-between gap-2"><div><p className="text-2xl font-bold">${parseFloat(String(analytics.totalAmount || 0)).toLocaleString()}</p><p className="text-sm text-muted-foreground">Total Amount</p></div><Gift className="w-8 h-8 text-muted-foreground/50" /></div></CardContent></Card>
-        </>)}
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Crown className="w-5 h-5" />Leaderboard</CardTitle>
-          <CardDescription>Top performing employees</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {loadingLb ? <div className="space-y-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div> : leaderboard.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No performance data available yet</p>
-          ) : (
-            <Table>
-              <TableHeader><TableRow><TableHead className="w-12">Rank</TableHead><TableHead>Employee</TableHead><TableHead>Role</TableHead><TableHead>Avg Score</TableHead><TableHead>Ratings</TableHead></TableRow></TableHeader>
-              <TableBody>
-                {leaderboard.map((e, i) => (
-                  <TableRow key={e.employeeId} data-testid={`leaderboard-row-${e.employeeId}`}>
-                    <TableCell>
-                      {i === 0 && <Crown className="w-4 h-4 text-yellow-500" />}
-                      {i === 1 && <Medal className="w-4 h-4 text-gray-400" />}
-                      {i === 2 && <Medal className="w-4 h-4 text-amber-600" />}
-                      {i > 2 && <span className="text-sm text-muted-foreground pl-1">{i + 1}</span>}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{e.firstName[0]}{e.lastName[0]}</AvatarFallback></Avatar>
-                        <span className="font-medium text-sm">{e.firstName} {e.lastName}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell><Badge variant="outline" className="text-xs">{e.role}</Badge></TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Progress value={(parseFloat(String(e.avgScore)) / 10) * 100} className="h-1.5 w-16" />
-                        <span className="text-sm font-medium">{parseFloat(String(e.avgScore)).toFixed(1)}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-sm">{e.ratingCount}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {isAdmin && analytics && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="w-5 h-5" />Rewards by Category</CardTitle></CardHeader>
-            <CardContent>
-              {analytics.byType.length === 0 ? <p className="text-sm text-muted-foreground text-center py-6">No data available</p> : (
-                <div className="space-y-3">
-                  {analytics.byType.map((item) => (
-                    <div key={item.category} className="space-y-1" data-testid={`analytics-category-${item.category}`}>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{item.category}</span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-muted-foreground">{item.count} rewards</span>
-                          <span className="text-sm font-medium">${parseFloat(String(item.totalAmount)).toLocaleString()}</span>
-                        </div>
-                      </div>
-                      <Progress value={parseFloat(String(analytics.totalAmount)) > 0 ? (parseFloat(String(item.totalAmount)) / parseFloat(String(analytics.totalAmount))) * 100 : 0} className="h-2" />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="w-5 h-5" />Rewards by Month</CardTitle></CardHeader>
-            <CardContent>
-              {analytics.byMonth.length === 0 ? <p className="text-sm text-muted-foreground text-center py-6">No data available</p> : (
-                <div className="space-y-3">
-                  {analytics.byMonth.map((item) => (
-                    <div key={item.month} className="flex items-center justify-between gap-2 border-b pb-2 last:border-0" data-testid={`analytics-month-${item.month}`}>
-                      <span className="text-sm">{item.month}</span>
-                      <div className="flex items-center gap-3">
-                        <Badge variant="outline" className="text-xs">{item.count} rewards</Badge>
-                        <span className="text-sm font-medium">${parseFloat(String(item.totalAmount)).toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function ManageWorkersPage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const isAdmin = user?.role === "ADMIN";
   const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
   const canManageWorkers = isAdmin || isManager;
-  const canViewAnalytics = isAdmin || isManager;
   const defaultTab = canManageWorkers ? "workers" : "performance";
   const [activeTab, setActiveTab] = useState(defaultTab);
 
@@ -1480,10 +1590,8 @@ export default function ManageWorkersPage() {
     if (canManageWorkers) opts.push({ value: "workers", label: "Workers" });
     opts.push({ value: "performance", label: "Performance" });
     opts.push({ value: "rewards", label: "Rewards" });
-    if (canViewAnalytics) opts.push({ value: "analytics", label: "Analytics" });
-    opts.push({ value: "my-kpis", label: "My KPIs" });
     return opts;
-  }, [canManageWorkers, canViewAnalytics]);
+  }, [canManageWorkers]);
 
   if (!user) return <div className="p-6 space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /></div>;
 
@@ -1518,15 +1626,11 @@ export default function ManageWorkersPage() {
               {canManageWorkers && <TabsTrigger value="workers" data-testid="tab-workers"><Users className="w-4 h-4 mr-1.5" />Workers</TabsTrigger>}
               <TabsTrigger value="performance" data-testid="tab-performance"><Gauge className="w-4 h-4 mr-1.5" />Performance</TabsTrigger>
               <TabsTrigger value="rewards" data-testid="tab-rewards"><Gift className="w-4 h-4 mr-1.5" />Rewards</TabsTrigger>
-              {canViewAnalytics && <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>}
-              <TabsTrigger value="my-kpis" data-testid="tab-my-kpis"><Target className="w-4 h-4 mr-1.5" />My KPIs</TabsTrigger>
             </TabsList>
           )}
           {canManageWorkers && <TabsContent value="workers"><WorkersTab /></TabsContent>}
           <TabsContent value="performance"><PerformanceTab /></TabsContent>
           <TabsContent value="rewards"><RewardsTab /></TabsContent>
-          {canViewAnalytics && <TabsContent value="analytics"><AnalyticsTab /></TabsContent>}
-          <TabsContent value="my-kpis"><MyKpisPage /></TabsContent>
         </Tabs>
       </div>
     </div>
