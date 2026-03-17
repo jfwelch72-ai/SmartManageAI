@@ -65,4 +65,4 @@ INTEGRATION_ENCRYPTION_KEY = "7ed1000dcaa8e6ed852e59cf951538463e9a3b1b6918b4a4bb
 
 [postMerge]
 path = "scripts/post-merge.sh"
-timeoutMs = 20000
+timeoutMs = 120000
