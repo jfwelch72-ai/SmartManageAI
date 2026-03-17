@@ -42,6 +42,16 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       ],
     },
     {
+      id: 'section-financial-kpis',
+      title: 'Financial KPIs',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'exec-revenue-month', type: 'KPI_SUMMARY', x: 0, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'REVENUE_THIS_MONTH', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+        { id: 'exec-gross-margin', type: 'KPI_SUMMARY', x: 6, y: 0, w: 6, h: 3, visible: true, minW: 3, minH: 2, maxW: 12, maxH: 5, config: { metric: 'GROSS_MARGIN', dateRange: 'THIS_MONTH', comparison: 'LAST_MONTH' } },
+      ],
+    },
+    {
       id: 'section-financial-workforce',
       title: 'Financial & Workforce',
       columns: 2,

@@ -111,6 +111,7 @@ export async function getOrgHealthOverview(orgId: string) {
     FROM project_health_snapshots ph
     JOIN projects p ON p.id = ph.project_id
     WHERE ph.organization_id = ${orgId}
+      AND p.status = 'ACTIVE'
     ORDER BY ph.project_id, ph.snapshot_date DESC
   `);
   return result.rows || [];
