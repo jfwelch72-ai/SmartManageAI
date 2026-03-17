@@ -401,7 +401,11 @@ export function CrmOrgDetail({
   interface CommunicationsPagination { page: number; pageSize: number; total: number; hasMore: boolean; }
   interface CommunicationsData { emails: CommEmail[]; upcomingEvents: CommEvent[]; pagination: CommunicationsPagination; }
   const [commsPage, setCommsPage] = useState(1);
-  useEffect(() => { setCommsPage(1); }, [selectedOrg?.id]);
+  const [accumulatedEmails, setAccumulatedEmails] = useState<CommEmail[]>([]);
+  useEffect(() => {
+    setCommsPage(1);
+    setAccumulatedEmails([]);
+  }, [selectedOrg?.id]);
   const { data: commsData, isLoading: commsLoading } = useQuery<CommunicationsData>({
     queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`, { page: commsPage }],
     queryFn: async () => {
@@ -412,6 +416,19 @@ export function CrmOrgDetail({
     },
     enabled: !!selectedOrg?.id && detailOrgOpen && hasEmailIntegration,
   });
+  useEffect(() => {
+    if (commsData?.emails) {
+      if (commsPage === 1) {
+        setAccumulatedEmails(commsData.emails);
+      } else {
+        setAccumulatedEmails((prev) => {
+          const existingIds = new Set(prev.map((e) => e.threadId));
+          const newEmails = commsData.emails.filter((e) => !existingIds.has(e.threadId));
+          return [...prev, ...newEmails];
+        });
+      }
+    }
+  }, [commsData, commsPage]);
 
   return (
     <>
@@ -1322,9 +1339,9 @@ export function CrmOrgDetail({
                     <div className="flex items-center gap-2 mb-3">
                       <Mail className="w-4 h-4 text-muted-foreground" />
                       <h3 className="text-sm font-medium">Email Threads</h3>
-                      <Badge variant="secondary" className="text-xs">{commsData?.emails?.length ?? 0}</Badge>
+                      <Badge variant="secondary" className="text-xs">{commsData?.pagination?.total ?? accumulatedEmails.length}</Badge>
                     </div>
-                    {!commsData?.emails?.length ? (
+                    {!accumulatedEmails.length && !commsLoading ? (
                       <div className="text-center py-6 text-muted-foreground">
                         <Mail className="w-10 h-10 mx-auto mb-2 opacity-40" />
                         <p className="text-sm">No email threads linked to this organization</p>
@@ -1332,7 +1349,7 @@ export function CrmOrgDetail({
                       </div>
                     ) : (
                       <div className="space-y-2">
-                        {commsData.emails.map((email) => (
+                        {accumulatedEmails.map((email) => (
                           <Card key={email.threadId} className="hover-elevate" data-testid={`card-email-${email.threadId}`}>
                             <CardContent className="p-3">
                               <div className="flex items-start justify-between gap-2">
@@ -1346,8 +1363,10 @@ export function CrmOrgDetail({
                                       From: {email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress}
                                     </p>
                                   )}
-                                  {email.snippet && (
-                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{email.snippet}</p>
+                                  {(email.aiSummary || email.snippet) && (
+                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                      {email.aiSummary ?? email.snippet}
+                                    </p>
                                   )}
                                   <p className="text-xs text-muted-foreground mt-1">
                                     {email.receivedAt
@@ -1364,7 +1383,7 @@ export function CrmOrgDetail({
                             </CardContent>
                           </Card>
                         ))}
-                        {commsData.pagination?.hasMore && (
+                        {commsData?.pagination?.hasMore && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -1372,7 +1391,7 @@ export function CrmOrgDetail({
                             onClick={() => setCommsPage((p) => p + 1)}
                             data-testid="button-load-more-emails"
                           >
-                            Load more ({commsData.pagination.total - (commsPage * commsData.pagination.pageSize)} remaining)
+                            Load more ({commsData.pagination.total - accumulatedEmails.length} remaining)
                           </Button>
                         )}
                       </div>

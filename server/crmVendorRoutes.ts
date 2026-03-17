@@ -3,7 +3,7 @@ import { db } from "./db";
 import {
   crmOrganisations, crmContacts, crmOrganisationNotes,
   insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema,
-  auditLog, users, emailThreads, emailMessages, calendarEvents,
+  auditLog, users, emailThreads, emailMessages, calendarEvents, projects,
 } from "@shared/schema";
 import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -646,26 +646,53 @@ const router = Router();
       const now = new Date();
       const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-      const projectIds = (crmOrg.activeProjectIds ?? []).filter(Boolean);
+      // Step 1: Collect CRM org's contact emails to find matching internal users
+      const contacts = await db
+        .select({ email: crmContacts.email })
+        .from(crmContacts)
+        .where(and(eq(crmContacts.organisationId, crmOrg.id), isNotNull(crmContacts.email)));
+      const contactEmails = contacts.map((c) => c.email).filter(Boolean) as string[];
 
-      let upcomingEvents: Array<{
-        id: string;
-        title: string;
-        description: string | null;
-        startDate: Date;
-        endDate: Date | null;
-        allDay: boolean;
-        eventType: string;
-        projectId: string | null;
-        crmOrganisationId: string | null;
-      }> = [];
-
-      const linkageConditions: SQL[] = [eq(calendarEvents.crmOrganisationId, crmOrg.id)];
-      if (projectIds.length > 0) {
-        linkageConditions.push(inArray(calendarEvents.projectId, projectIds));
+      // Step 2: Find internal users whose email matches a CRM contact
+      let contactUserIds: string[] = [];
+      if (contactEmails.length > 0) {
+        const matchedUsers = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(inArray(users.email, contactEmails));
+        contactUserIds = matchedUsers.map((u) => u.id);
       }
 
-      upcomingEvents = await db
+      // Step 3: Validate activeProjectIds belong to the requester's org (security isolation)
+      const rawProjectIds = (crmOrg.activeProjectIds ?? []).filter(Boolean);
+      let validatedProjectIds: string[] = [];
+      if (rawProjectIds.length > 0 && userOrgId) {
+        const validProjects = await db
+          .select({ id: projects.id })
+          .from(projects)
+          .where(and(
+            inArray(projects.id, rawProjectIds),
+            eq(projects.gcOrganizationId, userOrgId)
+          ));
+        validatedProjectIds = validProjects.map((p) => p.id);
+      } else if (rawProjectIds.length > 0 && !shouldFilter) {
+        // Super admin: trust the project IDs without org check
+        validatedProjectIds = rawProjectIds;
+      }
+
+      // Step 4: Build OR linkage conditions for calendar events
+      // - Direct org link (crmOrganisationId)
+      // - Contact-participant link (userId matches a contact's internal user)
+      // - Project-based fallback (project validated to requester's org)
+      const linkageConditions: SQL[] = [eq(calendarEvents.crmOrganisationId, crmOrg.id)];
+      if (contactUserIds.length > 0) {
+        linkageConditions.push(inArray(calendarEvents.userId, contactUserIds));
+      }
+      if (validatedProjectIds.length > 0) {
+        linkageConditions.push(inArray(calendarEvents.projectId, validatedProjectIds));
+      }
+
+      const upcomingEvents = await db
         .select({
           id: calendarEvents.id,
           title: calendarEvents.title,
