@@ -13,6 +13,16 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { PRESET_PALETTES } from "./dashboardDefaults";
 
+interface PaletteResponse {
+  success: boolean;
+  palette: UserColorPalette | OrgColorPalette;
+  contrastWarnings?: {
+    message: string;
+    light: PaletteValidationResult;
+    dark: PaletteValidationResult;
+  };
+}
+
 const router = Router();
 
 function parseHSL(hsl: string): { h: number; s: number; l: number } | null {
@@ -306,7 +316,7 @@ router.post('/palette', requireAuth, async (req: AuthRequest, res: Response) => 
       darkBorder: data.darkBorder,
     }).returning();
 
-    const response: any = { success: true, palette: newPalette };
+    const response: PaletteResponse = { success: true, palette: newPalette };
     if (hasContrastWarnings) {
       response.contrastWarnings = {
         message: 'Some color pairs may have low contrast for accessibility',
@@ -492,7 +502,7 @@ router.post('/org-palette', requireAuth, async (req: AuthRequest, res: Response)
       darkBorder: data.darkBorder,
     }).returning();
 
-    const response: any = { success: true, palette: newPalette };
+    const response: PaletteResponse = { success: true, palette: newPalette };
     if (hasContrastWarnings) {
       response.contrastWarnings = {
         message: 'Some color pairs may have low contrast for accessibility',

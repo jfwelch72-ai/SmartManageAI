@@ -100,6 +100,61 @@ function ColorInput({ label, value, onChange, description }: ColorInputProps) {
   );
 }
 
+interface PresetColors {
+  primary: string;
+  primaryForeground: string;
+  secondary: string;
+  secondaryForeground: string;
+  accent: string;
+  accentForeground: string;
+  background: string;
+  foreground: string;
+  muted: string;
+  mutedForeground: string;
+  card: string;
+  cardForeground: string;
+  border: string;
+}
+
+interface PresetPalette {
+  name: string;
+  light: PresetColors;
+  dark: PresetColors;
+}
+
+interface OrgDefaultPaletteInput {
+  paletteName?: string;
+  name?: string;
+  light?: Partial<PresetColors>;
+  dark?: Partial<PresetColors>;
+  lightPrimary?: string;
+  lightPrimaryForeground?: string;
+  lightSecondary?: string;
+  lightSecondaryForeground?: string;
+  lightAccent?: string;
+  lightAccentForeground?: string;
+  lightBackground?: string;
+  lightForeground?: string;
+  lightMuted?: string;
+  lightMutedForeground?: string;
+  lightCard?: string;
+  lightCardForeground?: string;
+  lightBorder?: string;
+  darkPrimary?: string;
+  darkPrimaryForeground?: string;
+  darkSecondary?: string;
+  darkSecondaryForeground?: string;
+  darkAccent?: string;
+  darkAccentForeground?: string;
+  darkBackground?: string;
+  darkForeground?: string;
+  darkMuted?: string;
+  darkMutedForeground?: string;
+  darkCard?: string;
+  darkCardForeground?: string;
+  darkBorder?: string;
+}
+
 interface PresetPaletteCardProps {
   name: string;
   colors: { light: Record<string, string>; dark: Record<string, string> };
@@ -247,7 +302,7 @@ export function ThemePicker() {
     }
   };
 
-  const handleSetOrgDefault = async (palette: any) => {
+  const handleSetOrgDefault = async (palette: OrgDefaultPaletteInput) => {
     await saveOrgPalette({
       paletteName: palette.paletteName || palette.name || "Organization Default",
       lightPrimary: palette.lightPrimary || palette.light?.primary,
@@ -351,7 +406,7 @@ export function ThemePicker() {
 
             <TabsContent value="presets" className="mt-4">
               <div className="grid grid-cols-2 gap-3">
-                {Object.entries(presetPalettes).map(([key, preset]: [string, any]) => (
+                {(Object.entries(presetPalettes) as [string, PresetPalette][]).map(([key, preset]) => (
                   <PresetPaletteCard
                     key={key}
                     name={preset.name}
@@ -366,7 +421,7 @@ export function ThemePicker() {
                   <Separator className="my-4" />
                   <p className="text-xs text-muted-foreground mb-2">Select a preset above, then set it as the org default:</p>
                   <div className="grid grid-cols-2 gap-2">
-                    {Object.entries(presetPalettes).map(([key, preset]: [string, any]) => (
+                    {(Object.entries(presetPalettes) as [string, PresetPalette][]).map(([key, preset]) => (
                       <Button
                         key={key}
                         size="sm"
