@@ -39,15 +39,19 @@ import { CrewOverviewWidget } from "./CrewOverviewWidget";
 import { ProjectAssignmentsWidget } from "./ProjectAssignmentsWidget";
 import { WeatherForecastWidget } from "@/components/WeatherForecastWidget";
 import { AIInsightsWidget } from "@/components/AIInsightsWidget";
-import { KPISummaryWidget } from "./KPISummaryWidget";
+import { KPISummaryWidget, type KPIConfig } from "./KPISummaryWidget";
 import { TrendChartWidget } from "./TrendChartWidget";
+import { type TrendChartConfig } from "./TrendChartSettings";
 import { ListWidget } from "./ListWidget";
+import { type ListWidgetConfig } from "./ListWidgetSettings";
 import { AlertsWidget } from "./AlertsWidget";
 import { WorkforceSnapshotWidget } from "./WorkforceSnapshotWidget";
 import { CashPositionWidget } from "./CashPositionWidget";
 import { SOVProgressWidget } from "./SOVProgressWidget";
 import { BidPipelineWidget } from "./BidPipelineWidget";
 import { CostCodeBreakdownWidget } from "./CostCodeBreakdownWidget";
+import { type CostCodeBreakdownConfig } from "./CostCodeBreakdownSettings";
+import { type QuickStatsConfig } from "./QuickStatsSettings";
 import { ScheduleImpactWidget } from "./ScheduleImpactWidget";
 import { QuickActionsWidget } from "./QuickActionsWidget";
 import { LaborUtilizationWidget } from "./LaborUtilizationWidget";
@@ -56,12 +60,18 @@ import { RFIStatusWidget } from "./RFIStatusWidget";
 import { ChangeOrdersPendingWidget } from "./ChangeOrdersPendingWidget";
 import { SafetyAlertsWidget } from "./SafetyAlertsWidget";
 
+export interface WidgetComponentProps {
+  config?: Record<string, unknown>;
+}
+
+export type WidgetComponent = (props: WidgetComponentProps) => JSX.Element;
+
 export interface WidgetDefinition {
   type: string;
   label: string;
   description: string;
   icon: LucideIcon;
-  component: ((props?: { config?: Record<string, any> }) => JSX.Element) | (() => JSX.Element);
+  component: WidgetComponent;
   defaultW: number;
   defaultH: number;
   minW: number;
@@ -74,12 +84,32 @@ export interface WidgetDefinition {
   hasSettings?: boolean;
 }
 
-function WrappedWeatherWidget() {
+function WrappedWeatherWidget(_props: WidgetComponentProps) {
   return <WeatherForecastWidget />;
 }
 
-function WrappedAIInsightsWidget() {
+function WrappedAIInsightsWidget(_props: WidgetComponentProps) {
   return <AIInsightsWidget compact />;
+}
+
+function KPISummaryWidgetWrapper({ config }: WidgetComponentProps) {
+  return <KPISummaryWidget config={config as KPIConfig} />;
+}
+
+function TrendChartWidgetWrapper({ config }: WidgetComponentProps) {
+  return <TrendChartWidget config={config as TrendChartConfig} />;
+}
+
+function ListWidgetWrapper({ config }: WidgetComponentProps) {
+  return <ListWidget config={config as ListWidgetConfig} />;
+}
+
+function CostCodeBreakdownWidgetWrapper({ config }: WidgetComponentProps) {
+  return <CostCodeBreakdownWidget config={config as CostCodeBreakdownConfig} />;
+}
+
+function QuickStatsWidgetWrapper({ config }: WidgetComponentProps) {
+  return <QuickStatsWidget config={config as QuickStatsConfig} />;
 }
 
 export const WIDGET_REGISTRY: WidgetDefinition[] = [
@@ -88,7 +118,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     label: "Quick Stats",
     description: "Key metrics at a glance - projects, bids, messages, events",
     icon: BarChart3,
-    component: QuickStatsWidget,
+    component: QuickStatsWidgetWrapper,
     defaultW: 12,
     defaultH: 3,
     minW: 2,
@@ -103,7 +133,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     label: "KPI Summary Card",
     description: "Configurable KPI metric with trend comparison - labor cost, revenue, margin, and more",
     icon: TrendingUp,
-    component: KPISummaryWidget as any,
+    component: KPISummaryWidgetWrapper,
     defaultW: 6,
     defaultH: 4,
     minW: 2,
@@ -118,7 +148,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     label: "Trend Chart",
     description: "Line or bar chart showing metrics over time — labor cost, revenue, bid win rate, overtime, cash flow",
     icon: LineChart,
-    component: TrendChartWidget as any,
+    component: TrendChartWidgetWrapper,
     defaultW: 12,
     defaultH: 6,
     minW: 4,
@@ -133,7 +163,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     label: "Data List",
     description: "Filtered, sorted list of projects, organizations, time entries, pay runs, subcontracts, or change orders",
     icon: List,
-    component: ListWidget as any,
+    component: ListWidgetWrapper,
     defaultW: 6,
     defaultH: 6,
     minW: 4,
@@ -226,7 +256,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     label: "Cost Code Breakdown",
     description: "Labor by cost code (pie chart) or budget vs actual comparison (bar chart)",
     icon: PieChart,
-    component: CostCodeBreakdownWidget,
+    component: CostCodeBreakdownWidgetWrapper,
     defaultW: 6,
     defaultH: 5,
     minW: 4,
@@ -513,6 +543,6 @@ export function getWidgetDefinition(type: string): WidgetDefinition | undefined 
   return WIDGET_REGISTRY.find((w) => w.type === type);
 }
 
-export function getWidgetComponent(type: string): (() => JSX.Element) | undefined {
+export function getWidgetComponent(type: string): WidgetComponent | undefined {
   return getWidgetDefinition(type)?.component;
 }
