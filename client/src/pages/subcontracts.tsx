@@ -1098,7 +1098,8 @@ export default function SubcontractsPage() {
                   completionDate: createForm.completionDate || undefined,
                   paymentTerms: createForm.paymentTerms || undefined,
                   retentionPercent: createForm.retentionPercent || undefined,
-                  notes: createForm.notes || undefined
+                  notes: createForm.notes || undefined,
+                  costCode: createForm.costCode || null
                 }
               })}
               disabled={updateContractMutation.isPending}
