@@ -4,7 +4,7 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, users, projects, projectProfitabilitySnapshots } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -846,28 +846,39 @@ async function processIdleOpportunities() {
     return;
   }
 
-  const existingIdleNotifs = await db
+  const uniqueOrgIds = [...new Set([...assigneeMap.values()].map(e => e.orgId))];
+  const orgSettings = await db
+    .select({ organizationId: organizationNetworkSettings.organizationId, notifyInApp: organizationNetworkSettings.notifyInApp })
+    .from(organizationNetworkSettings)
+    .where(inArray(organizationNetworkSettings.organizationId, uniqueOrgIds));
+
+  const orgNotifyMap = new Map<string, boolean>();
+  for (const s of orgSettings) {
+    orgNotifyMap.set(s.organizationId, s.notifyInApp);
+  }
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const sentTodayRows = await db
     .select({ userId: notifications.userId })
     .from(notifications)
     .where(
       and(
         sql`${notifications.type} = 'CRM_IDLE_OPPORTUNITY'`,
-        eq(notifications.isRead, false)
+        sql`${notifications.createdAt} >= ${todayStart}`
       )
     );
 
-  const alreadyNotified = new Set(existingIdleNotifs.map(n => n.userId));
+  const sentTodayUsers = new Set(sentTodayRows.map(n => n.userId));
 
-  const toInsert: Array<{
-    userId: string;
-    type: "CRM_IDLE_OPPORTUNITY";
-    title: string;
-    message: string;
-    relatedEntityType: string;
-  }> = [];
+  const toInsert: InsertNotification[] = [];
 
   for (const [, entry] of assigneeMap) {
-    if (alreadyNotified.has(entry.userId)) continue;
+    const inAppEnabled = orgNotifyMap.get(entry.orgId) ?? true;
+    if (!inAppEnabled) continue;
+    if (sentTodayUsers.has(entry.userId)) continue;
+
     const count = entry.names.length;
     const preview = entry.names.slice(0, 3).join(", ");
     const extra = count > 3 ? ` and ${count - 3} more` : "";
@@ -881,9 +892,9 @@ async function processIdleOpportunities() {
   }
 
   if (toInsert.length > 0) {
-    await db.insert(notifications).values(toInsert as any);
+    await db.insert(notifications).values(toInsert);
     logInfo("Idle opportunity notifications sent", { count: toInsert.length });
   } else {
-    logInfo("Idle opportunity check: all assignees already have unread idle notifications");
+    logInfo("Idle opportunity check: all assignees already notified today or in-app disabled");
   }
 }

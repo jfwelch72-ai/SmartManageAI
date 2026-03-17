@@ -11,6 +11,7 @@ import {
   users,
   projects,
   notifications,
+  organizationNetworkSettings,
 } from "@shared/schema";
 import { eq, and, desc, sql, ilike, or, type SQL, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -277,15 +278,23 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
       });
 
       const assigneeId = updated.assignedToId;
-      if (assigneeId && assigneeId !== req.user!.id) {
-        await db.insert(notifications).values({
-          userId: assigneeId,
-          type: "CRM_STAGE_CHANGE",
-          title: "Pipeline stage updated",
-          message: `"${updated.name}" moved to ${STAGE_LABELS[updated.stage] ?? updated.stage}`,
-          relatedEntityId: updated.id,
-          relatedEntityType: "CRM_OPPORTUNITY",
-        });
+      if (assigneeId) {
+        const [orgSetting] = await db
+          .select({ notifyInApp: organizationNetworkSettings.notifyInApp })
+          .from(organizationNetworkSettings)
+          .where(eq(organizationNetworkSettings.organizationId, updated.organizationId))
+          .limit(1);
+        const inAppEnabled = orgSetting?.notifyInApp ?? true;
+        if (inAppEnabled) {
+          await db.insert(notifications).values({
+            userId: assigneeId,
+            type: "CRM_STAGE_CHANGE",
+            title: "Pipeline stage updated",
+            message: `"${updated.name}" moved to ${STAGE_LABELS[updated.stage] ?? updated.stage}`,
+            relatedEntityId: updated.id,
+            relatedEntityType: "CRM_OPPORTUNITY",
+          });
+        }
       }
     }
 
