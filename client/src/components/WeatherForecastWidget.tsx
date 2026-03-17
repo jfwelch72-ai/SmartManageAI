@@ -231,7 +231,7 @@ export function WeatherForecastWidget({
         <CardContent>
           <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground" data-testid="weather-error-state">
             <Cloud className="w-12 h-12 mb-3 opacity-30" />
-            <p className="text-sm font-medium">Weather data unavailable</p>
+            <p className="text-sm font-medium">Weather unavailable</p>
             <p className="text-xs mt-1 opacity-75">Unable to load forecast. Check your connection or try again.</p>
             <Button
               variant="outline"
@@ -256,7 +256,7 @@ export function WeatherForecastWidget({
       <Card data-testid="weather-widget-no-data">
         <CardContent className="flex flex-col items-center justify-center py-8 text-center">
           <Cloud className="w-8 h-8 text-muted-foreground mb-2 opacity-40" />
-          <p className="text-sm text-muted-foreground">Weather data unavailable</p>
+          <p className="text-sm text-muted-foreground">Weather unavailable</p>
           <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()} disabled={isFetching}
             data-testid="button-retry-weather-nodata">
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
