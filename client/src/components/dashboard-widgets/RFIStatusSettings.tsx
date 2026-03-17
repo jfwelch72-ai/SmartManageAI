@@ -1,19 +1,25 @@
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { useQuery } from "@tanstack/react-query";
 
 export interface RFIStatusConfig {
   showLimit: number;
   highlightDaysThreshold: number;
-  projectCode: string;
+  projectId: string;
 }
 
 export const DEFAULT_RFI_STATUS_CONFIG: RFIStatusConfig = {
   showLimit: 5,
   highlightDaysThreshold: 7,
-  projectCode: "",
+  projectId: "",
 };
+
+interface ProjectRef {
+  id: string;
+  name: string;
+  code?: string;
+}
 
 interface RFIStatusSettingsProps {
   config: RFIStatusConfig;
@@ -22,18 +28,29 @@ interface RFIStatusSettingsProps {
 
 export function RFIStatusSettings({ config, onChange }: RFIStatusSettingsProps) {
   const cfg = { ...DEFAULT_RFI_STATUS_CONFIG, ...config };
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projects = projectsResponse?.data ?? [];
 
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="rfi-project-filter">Filter by Project Code</Label>
-        <Input
-          id="rfi-project-filter"
-          placeholder="e.g. PROJ-001 (leave blank for all)"
-          value={cfg.projectCode}
-          onChange={(e) => onChange({ ...cfg, projectCode: e.target.value })}
-          data-testid="input-rfi-project-filter"
-        />
+        <Label htmlFor="rfi-project-filter">Filter by Project</Label>
+        <Select
+          value={cfg.projectId || "ALL"}
+          onValueChange={(v) => onChange({ ...cfg, projectId: v === "ALL" ? "" : v })}
+        >
+          <SelectTrigger id="rfi-project-filter" data-testid="select-rfi-project-filter">
+            <SelectValue placeholder="All projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All projects</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}{p.code ? ` (${p.code})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="text-xs text-muted-foreground">Show RFIs only for this project. Leave blank to show all projects.</p>
       </div>
 

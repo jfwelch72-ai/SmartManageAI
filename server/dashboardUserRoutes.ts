@@ -2612,9 +2612,13 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       return res.json({ count: 0, totalValue: 0, items: [] });
     }
 
-    const coResult = await orgScopedCache(orgId, "dashboard:change-orders-pending", DASHBOARD_CACHE_TTL, async () => {
+    const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : null;
+    const cacheKey = projectId ? `dashboard:change-orders-pending:${projectId}` : "dashboard:change-orders-pending";
+
+    const coResult = await orgScopedCache(orgId, cacheKey, DASHBOARD_CACHE_TTL, async () => {
     const now = new Date();
     const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+    const projectCond = projectId ? sql`AND co."project_id" = ${projectId}` : sql``;
 
     const summaryResult = await db.execute(sql`
       SELECT
@@ -2624,6 +2628,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       JOIN "projects" p ON co."project_id" = p."id"
       WHERE co."status"::text = 'SUBMITTED'
         ${orgCond}
+        ${projectCond}
     `);
     const count = (summaryResult.rows[0] as any)?.count || 0;
     const totalValue = parseFloat((summaryResult.rows[0] as any)?.total_value || "0");
@@ -2635,14 +2640,16 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
         co."description",
         co."amount",
         co."created_at",
+        p."id" as project_id,
         p."name" as project_name,
         ${now.toISOString()}::timestamp - co."created_at" as age_interval
       FROM "change_orders" co
       JOIN "projects" p ON co."project_id" = p."id"
       WHERE co."status"::text = 'SUBMITTED'
         ${orgCond}
+        ${projectCond}
       ORDER BY co."created_at" DESC
-      LIMIT 5
+      LIMIT 20
     `);
 
     const items = (itemsResult.rows as any[]).map(r => ({
@@ -2651,6 +2658,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       description: (r.description || "").substring(0, 60),
       amount: parseFloat(r.amount || "0"),
       projectName: r.project_name,
+      projectId: r.project_id,
       daysPending: Math.floor((now.getTime() - new Date(r.created_at).getTime()) / (1000 * 60 * 60 * 24)),
     }));
 

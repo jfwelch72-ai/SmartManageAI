@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Cloud, 
@@ -18,7 +19,8 @@ import {
   Thermometer,
   MapPin,
   RefreshCw,
-  Search
+  Search,
+  AlertCircle
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -102,6 +104,8 @@ function DayCard({ day, isToday }: { day: WeatherDay; isToday: boolean }) {
   );
 }
 
+type GeoState = "idle" | "requesting" | "denied" | "unavailable" | "granted";
+
 export function WeatherForecastWidget({ 
   compact = false,
   defaultLat,
@@ -120,6 +124,31 @@ export function WeatherForecastWidget({
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [geoState, setGeoState] = useState<GeoState>("idle");
+  const [renderError, setRenderError] = useState(false);
+
+  useEffect(() => {
+    if (defaultLat != null || defaultLng != null) return;
+    if (!navigator?.geolocation) {
+      setGeoState("unavailable");
+      return;
+    }
+    setGeoState("requesting");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          name: "Current Location",
+        });
+        setGeoState("granted");
+      },
+      () => {
+        setGeoState("denied");
+      },
+      { timeout: 10000 }
+    );
+  }, [defaultLat, defaultLng]);
 
   const { data: weather, isLoading, isError, refetch, isFetching } = useQuery<WeatherResponse>({
     queryKey: ['/api/weather/forecast', location.lat, location.lng, 7],
@@ -157,11 +186,23 @@ export function WeatherForecastWidget({
     setIsSearching(false);
   };
 
-  const todayConditions = weather?.dailyData?.[0];
+  if (renderError) {
+    return (
+      <Card data-testid="weather-widget-render-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-8 h-8 text-destructive mb-2 opacity-70" />
+          <p className="text-sm text-muted-foreground">Weather unavailable</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => setRenderError(false)}>
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (isLoading && !weather) {
     return (
-      <Card data-testid="weather-widget">
+      <Card data-testid="weather-widget-loading">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Cloud className="h-5 w-5 text-primary" />
@@ -169,11 +210,11 @@ export function WeatherForecastWidget({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="animate-pulse space-y-3">
-            <div className="h-20 bg-muted rounded-lg" />
+          <div className="space-y-3">
+            <Skeleton className="h-20 w-full rounded-lg" />
             <div className="flex gap-2 overflow-hidden">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="w-24 h-32 bg-muted rounded-lg flex-shrink-0" />
+                <Skeleton key={i} className="w-24 h-32 rounded-lg flex-shrink-0" />
               ))}
             </div>
           </div>
@@ -224,119 +265,132 @@ export function WeatherForecastWidget({
     );
   }
 
-  return (
-    <Card data-testid="weather-widget">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Cloud className="h-5 w-5 text-primary" />
-              Weather Forecast
-            </CardTitle>
-            <CardDescription className="flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
-              {location.name || `${location.lat.toFixed(2)}, ${location.lng.toFixed(2)}`}
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button 
-              size="sm" 
-              variant="ghost"
-              onClick={() => setIsSearching(!isSearching)}
-              data-testid="button-search-location"
-            >
-              <Search className="h-4 w-4" />
-            </Button>
-            <Button 
-              size="sm" 
-              variant="ghost"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              data-testid="button-refresh-weather"
-            >
-              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
+  try {
+    const todayConditions = weather?.dailyData?.[0];
 
-        {isSearching && (
-          <div className="relative mt-2 space-y-2">
-            <Input
-              placeholder="Search location..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-8"
-              data-testid="input-search-location"
-            />
-            {searchResults?.results && searchResults.results.length > 0 && (
-              <div className="absolute z-10 left-0 right-0 bg-background border rounded-md shadow-lg mt-1">
-                {searchResults.results.map((result, i) => (
-                  <button
-                    key={i}
-                    className="w-full text-left px-3 py-2 hover-elevate text-sm"
-                    onClick={() => handleLocationSelect(result)}
-                    data-testid={`location-result-${i}`}
-                  >
-                    {result.name}{result.admin1 ? `, ${result.admin1}` : ""}, {result.country}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </CardHeader>
-
-      <CardContent>
-        {todayConditions && !compact && (
-          <div className={`p-4 rounded-lg mb-4 bg-gradient-to-br ${getWeatherGradient(todayConditions.weatherCode)}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Today</p>
-                <p className="text-2xl sm:text-3xl font-bold">{Math.round(todayConditions.tempHigh)}°F</p>
-                <p className="text-sm text-muted-foreground">{todayConditions.conditions}</p>
-              </div>
-              <div className="text-center">
-                {(() => {
-                  const TodayIcon = getWeatherIcon(todayConditions.weatherCode);
-                  return <TodayIcon className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />;
-                })()}
-              </div>
+    return (
+      <Card data-testid="weather-widget">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Cloud className="h-5 w-5 text-primary" />
+                Weather Forecast
+              </CardTitle>
+              <CardDescription className="flex items-center gap-1">
+                <MapPin className="h-3 w-3" />
+                {location.name || `${location.lat.toFixed(2)}, ${location.lng.toFixed(2)}`}
+                {(geoState === "denied" || geoState === "unavailable") && !defaultLat && (
+                  <span className="ml-1 text-muted-foreground/60">(location unavailable — using default)</span>
+                )}
+              </CardDescription>
             </div>
-            <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-3 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <Thermometer className="w-4 h-4" />
-                <span>L: {Math.round(todayConditions.tempLow)}°</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Wind className="w-4 h-4" />
-                <span>{Math.round(todayConditions.windSpeed)} mph</span>
-              </div>
-              {todayConditions.precipitation > 0 && (
-                <div className="flex items-center gap-1">
-                  <Droplets className="w-4 h-4" />
-                  <span>{todayConditions.precipitation.toFixed(1)}"</span>
+            <div className="flex items-center gap-2">
+              {geoState === "requesting" && (
+                <Badge variant="outline" className="text-xs">Detecting location...</Badge>
+              )}
+              <Button 
+                size="sm" 
+                variant="ghost"
+                onClick={() => setIsSearching(!isSearching)}
+                data-testid="button-search-location"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+              <Button 
+                size="sm" 
+                variant="ghost"
+                onClick={() => refetch()}
+                disabled={isFetching}
+                data-testid="button-refresh-weather"
+              >
+                <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </div>
+
+          {isSearching && (
+            <div className="relative mt-2 space-y-2">
+              <Input
+                placeholder="Search location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8"
+                data-testid="input-search-location"
+              />
+              {searchResults?.results && searchResults.results.length > 0 && (
+                <div className="absolute z-10 left-0 right-0 bg-background border rounded-md shadow-lg mt-1">
+                  {searchResults.results.map((result, i) => (
+                    <button
+                      key={i}
+                      className="w-full text-left px-3 py-2 hover-elevate text-sm"
+                      onClick={() => handleLocationSelect(result)}
+                      data-testid={`location-result-${i}`}
+                    >
+                      {result.name}{result.admin1 ? `, ${result.admin1}` : ""}, {result.country}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
+        </CardHeader>
 
-        <ScrollArea className="w-full">
-          <div className="flex gap-2 pb-2">
-            {weather?.dailyData?.map((day, index) => (
-              <DayCard key={day.date} day={day} isToday={index === 0} />
-            ))}
-          </div>
-        </ScrollArea>
+        <CardContent>
+          {todayConditions && !compact && (
+            <div className={`p-4 rounded-lg mb-4 bg-gradient-to-br ${getWeatherGradient(todayConditions.weatherCode)}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Today</p>
+                  <p className="text-2xl sm:text-3xl font-bold">{Math.round(todayConditions.tempHigh)}°F</p>
+                  <p className="text-sm text-muted-foreground">{todayConditions.conditions}</p>
+                </div>
+                <div className="text-center">
+                  {(() => {
+                    const TodayIcon = getWeatherIcon(todayConditions.weatherCode);
+                    return <TodayIcon className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />;
+                  })()}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 sm:gap-4 mt-3 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1">
+                  <Thermometer className="w-4 h-4" />
+                  <span>L: {Math.round(todayConditions.tempLow)}°</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Wind className="w-4 h-4" />
+                  <span>{Math.round(todayConditions.windSpeed)} mph</span>
+                </div>
+                {todayConditions.precipitation > 0 && (
+                  <div className="flex items-center gap-1">
+                    <Droplets className="w-4 h-4" />
+                    <span>{todayConditions.precipitation.toFixed(1)}"</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
-        {weather?.fetchedAt && (
-          <p className="text-xs text-muted-foreground mt-2 text-right">
-            Updated {format(new Date(weather.fetchedAt), "h:mm a")}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
+          <ScrollArea className="w-full">
+            <div className="flex gap-2 pb-2">
+              {weather?.dailyData?.map((day, index) => (
+                <DayCard key={day.date} day={day} isToday={index === 0} />
+              ))}
+            </div>
+          </ScrollArea>
+
+          {weather?.fetchedAt && (
+            <p className="text-xs text-muted-foreground mt-2 text-right">
+              Updated {format(new Date(weather.fetchedAt), "h:mm a")}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  } catch {
+    setRenderError(true);
+    return null;
+  }
 }
 
 export default WeatherForecastWidget;

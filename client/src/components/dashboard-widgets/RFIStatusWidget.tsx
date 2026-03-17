@@ -26,15 +26,22 @@ function getDaysOpen(createdAt: string): number {
 export function RFIStatusWidget({ config }: WidgetComponentProps) {
   const cfg: RFIStatusConfig = { ...DEFAULT_RFI_STATUS_CONFIG, ...(config as Partial<RFIStatusConfig>) };
 
+  const submittedUrl = cfg.projectId
+    ? `/api/rfi?status=SUBMITTED&projectId=${encodeURIComponent(cfg.projectId)}`
+    : "/api/rfi?status=SUBMITTED";
+  const underReviewUrl = cfg.projectId
+    ? `/api/rfi?status=UNDER_REVIEW&projectId=${encodeURIComponent(cfg.projectId)}`
+    : "/api/rfi?status=UNDER_REVIEW";
+
   const { data: submittedRfis, isLoading: submittedLoading, isError: submittedError } = useQuery<RFIItem[]>({
-    queryKey: ["/api/rfi", { status: "SUBMITTED" }],
-    queryFn: () => fetch("/api/rfi?status=SUBMITTED").then(r => r.json()),
+    queryKey: ["/api/rfi", { status: "SUBMITTED", projectId: cfg.projectId }],
+    queryFn: () => fetch(submittedUrl, { credentials: "include" }).then(r => r.json()),
     refetchInterval: 300000,
   });
 
   const { data: underReviewRfis, isLoading: underReviewLoading, isError: underReviewError } = useQuery<RFIItem[]>({
-    queryKey: ["/api/rfi", { status: "UNDER_REVIEW" }],
-    queryFn: () => fetch("/api/rfi?status=UNDER_REVIEW").then(r => r.json()),
+    queryKey: ["/api/rfi", { status: "UNDER_REVIEW", projectId: cfg.projectId }],
+    queryFn: () => fetch(underReviewUrl, { credentials: "include" }).then(r => r.json()),
     refetchInterval: 300000,
   });
 
@@ -79,10 +86,12 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
     ...(Array.isArray(submittedRfis) ? submittedRfis : []),
     ...(Array.isArray(underReviewRfis) ? underReviewRfis : []),
   ]
-    .filter(item => !cfg.projectCode || item.project?.code === cfg.projectCode)
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const openCount = allOpen.length;
+  const projectLabel = cfg.projectId
+    ? (allOpen[0]?.project?.name || `Project ${cfg.projectId.slice(0, 8)}...`)
+    : null;
 
   return (
     <Card data-testid="rfi-status-widget">
@@ -105,7 +114,7 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
             <CheckCircle2 className="w-8 h-8 text-green-500 opacity-70 mb-2" />
             <p className="text-sm text-muted-foreground">No RFIs awaiting response</p>
             <p className="text-xs text-muted-foreground/70 mt-1">
-              {cfg.projectCode ? `No open RFIs for project "${cfg.projectCode}"` : "All submitted RFIs have been answered"}
+              {projectLabel ? `No open RFIs for ${projectLabel}` : "All submitted RFIs have been answered"}
             </p>
           </div>
         ) : (
@@ -113,7 +122,7 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
             <div className="rounded-lg bg-orange-500/10 border border-orange-200 dark:border-orange-800/50 px-3 py-2.5 mb-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">
-                  {cfg.projectCode ? `Open RFIs — ${cfg.projectCode}` : "Open RFIs"}
+                  {projectLabel ? `Open RFIs — ${projectLabel}` : "Open RFIs"}
                 </span>
                 <span className="text-2xl font-bold tabular-nums text-orange-600 dark:text-orange-400" data-testid="rfi-count">{openCount}</span>
               </div>

@@ -6,12 +6,14 @@ import { Switch } from "@/components/ui/switch";
 export interface SafetyAlertsConfig {
   showLimit: number;
   showDueThisWeek: boolean;
+  filterByEmployee: string;
   filterByCategory: string;
 }
 
 export const DEFAULT_SAFETY_ALERTS_CONFIG: SafetyAlertsConfig = {
   showLimit: 5,
   showDueThisWeek: true,
+  filterByEmployee: "",
   filterByCategory: "",
 };
 
@@ -26,7 +28,19 @@ export function SafetyAlertsSettings({ config, onChange }: SafetyAlertsSettingsP
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="safety-category-filter">Filter by Category</Label>
+        <Label htmlFor="safety-employee-filter">Filter by Employee Name</Label>
+        <Input
+          id="safety-employee-filter"
+          placeholder="e.g. John Smith (leave blank for all)"
+          value={cfg.filterByEmployee}
+          onChange={(e) => onChange({ ...cfg, filterByEmployee: e.target.value })}
+          data-testid="input-safety-employee-filter"
+        />
+        <p className="text-xs text-muted-foreground">Show overdue items for this employee only. Leave blank to show all employees.</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="safety-category-filter">Filter by Training Category</Label>
         <Input
           id="safety-category-filter"
           placeholder="e.g. OSHA, Fall Protection (leave blank for all)"

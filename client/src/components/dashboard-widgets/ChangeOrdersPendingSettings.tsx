@@ -1,19 +1,25 @@
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { useQuery } from "@tanstack/react-query";
 
 export interface ChangeOrdersPendingConfig {
   showLimit: number;
   highlightDaysThreshold: number;
-  projectCode: string;
+  projectId: string;
 }
 
 export const DEFAULT_CO_PENDING_CONFIG: ChangeOrdersPendingConfig = {
   showLimit: 5,
   highlightDaysThreshold: 7,
-  projectCode: "",
+  projectId: "",
 };
+
+interface ProjectRef {
+  id: string;
+  name: string;
+  code?: string;
+}
 
 interface ChangeOrdersPendingSettingsProps {
   config: ChangeOrdersPendingConfig;
@@ -22,18 +28,29 @@ interface ChangeOrdersPendingSettingsProps {
 
 export function ChangeOrdersPendingSettings({ config, onChange }: ChangeOrdersPendingSettingsProps) {
   const cfg = { ...DEFAULT_CO_PENDING_CONFIG, ...config };
+  const { data: projectsResponse } = useQuery<{ data: ProjectRef[] }>({ queryKey: ["/api/projects"] });
+  const projects = projectsResponse?.data ?? [];
 
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="co-project-filter">Filter by Project Code</Label>
-        <Input
-          id="co-project-filter"
-          placeholder="e.g. PROJ-001 (leave blank for all)"
-          value={cfg.projectCode}
-          onChange={(e) => onChange({ ...cfg, projectCode: e.target.value })}
-          data-testid="input-co-project-filter"
-        />
+        <Label htmlFor="co-project-filter">Filter by Project</Label>
+        <Select
+          value={cfg.projectId || "ALL"}
+          onValueChange={(v) => onChange({ ...cfg, projectId: v === "ALL" ? "" : v })}
+        >
+          <SelectTrigger id="co-project-filter" data-testid="select-co-project-filter">
+            <SelectValue placeholder="All projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All projects</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.name}{p.code ? ` (${p.code})` : ""}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <p className="text-xs text-muted-foreground">Show change orders only for this project. Leave blank for all projects.</p>
       </div>
 

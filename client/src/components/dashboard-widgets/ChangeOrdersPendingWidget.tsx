@@ -15,7 +15,7 @@ interface ChangeOrderItem {
   description: string;
   amount: number;
   projectName: string;
-  projectCode?: string;
+  projectId?: string;
   daysPending: number;
 }
 
@@ -36,8 +36,13 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
   const hasPermission = useFeaturePermission("canAccessFinancials");
   const cfg: ChangeOrdersPendingConfig = { ...DEFAULT_CO_PENDING_CONFIG, ...(config as Partial<ChangeOrdersPendingConfig>) };
 
+  const apiUrl = cfg.projectId
+    ? `/api/dashboard/change-orders-pending?projectId=${encodeURIComponent(cfg.projectId)}`
+    : "/api/dashboard/change-orders-pending";
+
   const { data, isLoading, isError } = useQuery<ChangeOrdersPendingData>({
-    queryKey: ["/api/dashboard/change-orders-pending"],
+    queryKey: ["/api/dashboard/change-orders-pending", { projectId: cfg.projectId }],
+    queryFn: () => fetch(apiUrl, { credentials: "include" }).then(r => r.json()),
     refetchInterval: 120000,
     enabled: hasPermission,
   });
@@ -97,14 +102,7 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
     );
   }
 
-  const allItems = (data?.items || []).filter(item =>
-    !cfg.projectCode ||
-    (item.projectCode && item.projectCode === cfg.projectCode) ||
-    item.projectName.toLowerCase().includes(cfg.projectCode.toLowerCase())
-  );
-  const filteredCount = allItems.length;
-  const filteredValue = allItems.reduce((sum, item) => sum + item.amount, 0);
-  const d = { count: filteredCount, totalValue: filteredValue, items: allItems };
+  const d = data || { count: 0, totalValue: 0, items: [] };
 
   return (
     <Card data-testid="change-orders-pending-widget">
@@ -127,7 +125,7 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
             <CheckCircle2 className="w-8 h-8 text-green-500 opacity-70 mb-2" />
             <p className="text-sm text-muted-foreground">No pending change orders</p>
             <p className="text-xs text-muted-foreground/70 mt-1">
-              {cfg.projectCode ? `No pending COs for project "${cfg.projectCode}"` : "All submitted change orders have been reviewed"}
+              {cfg.projectId ? "No pending COs for this project" : "All submitted change orders have been reviewed"}
             </p>
           </div>
         ) : (

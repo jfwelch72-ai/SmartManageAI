@@ -79,9 +79,11 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
 
   const d = data || { overdueCount: 0, dueThisWeekCount: 0, completionRate: 0, total: 0, completed: 0, overdueItems: [] };
 
-  const filteredOverdueItems = d.overdueItems.filter(item =>
-    !cfg.filterByCategory || item.category === cfg.filterByCategory
-  );
+  const filteredOverdueItems = d.overdueItems.filter(item => {
+    if (cfg.filterByEmployee && !item.employeeName.toLowerCase().includes(cfg.filterByEmployee.toLowerCase())) return false;
+    if (cfg.filterByCategory && (!item.category || !item.category.toLowerCase().includes(cfg.filterByCategory.toLowerCase()))) return false;
+    return true;
+  });
 
   return (
     <Card data-testid="safety-alerts-widget">
@@ -141,7 +143,7 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
             {filteredOverdueItems.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Overdue{cfg.filterByCategory ? ` — ${cfg.filterByCategory}` : ""}
+                  Overdue{cfg.filterByEmployee ? ` — ${cfg.filterByEmployee}` : cfg.filterByCategory ? ` — ${cfg.filterByCategory}` : ""}
                 </p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
                   {filteredOverdueItems.slice(0, cfg.showLimit).map((item) => (
