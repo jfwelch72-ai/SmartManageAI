@@ -220,7 +220,10 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
               <div key={receipt.id} className="flex items-center justify-between p-4 border rounded-md" data-testid={`receipt-${receipt.id}`}>
                 <div className="flex-1">
                   <p className="font-medium mb-1">{receipt.vendor || "Unknown vendor"}</p>
-                  <p className="text-sm text-muted-foreground">{receipt.category}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {receipt.category}
+                    {receipt.costCode && <span> · {receipt.costCode}</span>}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {format(new Date(receipt.date), "MMM d, yyyy")}
                   </p>

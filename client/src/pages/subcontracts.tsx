@@ -72,6 +72,7 @@ interface SubcontractorContract {
   paymentTerms: string | null;
   retentionPercent: string | null;
   notes: string | null;
+  costCode: string | null;
   createdAt: string;
   updatedAt: string | null;
   createdByName: string | null;
@@ -858,6 +859,13 @@ export default function SubcontractsPage() {
                   </div>
                 )}
               </div>
+
+              {selectedContract.costCode && (
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Cost Code:</span>{" "}
+                  <span className="font-medium">{selectedContract.costCode}</span>
+                </div>
+              )}
 
               {selectedContract.paymentTerms && (
                 <div className="text-sm">

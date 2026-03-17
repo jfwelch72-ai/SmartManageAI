@@ -47,6 +47,13 @@ export default function TMTicketDetail({
           </div>
         </div>
 
+        {(ticket as any).costCode && (
+          <div className="text-sm">
+            <span className="text-muted-foreground">Cost Code:</span>{" "}
+            <span className="font-medium">{(ticket as any).costCode}</span>
+          </div>
+        )}
+
         <div>
           <span className="text-sm text-muted-foreground">Description:</span>
           <p className="text-sm mt-1">{ticket.scopeDescription}</p>
