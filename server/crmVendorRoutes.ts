@@ -653,13 +653,17 @@ const router = Router();
         .where(and(eq(crmContacts.organisationId, crmOrg.id), isNotNull(crmContacts.email)));
       const contactEmails = contacts.map((c) => c.email).filter(Boolean) as string[];
 
-      // Step 2: Find internal users whose email matches a CRM contact
+      // Step 2: Find internal users whose email matches a CRM contact, scoped to requester's org
       let contactUserIds: string[] = [];
       if (contactEmails.length > 0) {
+        const userConditions: SQL[] = [inArray(users.email, contactEmails)];
+        if (shouldFilter && userOrgId) {
+          userConditions.push(eq(users.organizationId, userOrgId));
+        }
         const matchedUsers = await db
           .select({ id: users.id })
           .from(users)
-          .where(inArray(users.email, contactEmails));
+          .where(and(...userConditions));
         contactUserIds = matchedUsers.map((u) => u.id);
       }
 
