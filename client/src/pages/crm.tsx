@@ -1,4 +1,7 @@
 import { useState, useMemo } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
+} from "recharts";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
@@ -40,6 +43,9 @@ import {
   ChevronsUpDown,
   Copy,
   Filter,
+  BarChart2,
+  Download,
+  ChevronRight,
 } from "lucide-react";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import type {
@@ -155,12 +161,338 @@ interface DupPair {
   matchReason: string;
 }
 
+// ============================================================
+// CRM Pipeline Reports Component
+// ============================================================
+
+function fmt(n: number) {
+  return n >= 1000000
+    ? `$${(n / 1000000).toFixed(1)}M`
+    : n >= 1000
+    ? `$${(n / 1000).toFixed(0)}K`
+    : `$${n.toFixed(0)}`;
+}
+
+function exportCsv(filename: string, headers: string[], rows: (string | number)[]) {
+  const csvRows = [headers.join(","), ...rows.map(String)];
+  const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function WinLossSection({ days }: { days: number }) {
+  const { data, isLoading } = useQuery<{
+    days: number; wonCount: number; lostCount: number; totalClosed: number;
+    wonValue: number; lostValue: number; winRate: number; avgWonDeal: number; avgLostDeal: number;
+  }>({
+    queryKey: ["/api/crm/reports/win-loss", days],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/reports/win-loss?days=${days}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: true,
+  });
+
+  const chartData = data ? [
+    { label: "Won", value: data.wonCount, fill: "#22c55e" },
+    { label: "Lost", value: data.lostCount, fill: "#ef4444" },
+  ] : [];
+
+  const handleExport = () => {
+    if (!data) return;
+    exportCsv(
+      `win-loss-${days}d.csv`,
+      ["Metric", "Value"],
+      [
+        `Won Deals,${data.wonCount}`,
+        `Lost Deals,${data.lostCount}`,
+        `Win Rate,${data.winRate}%`,
+        `Total Won Value,${data.wonValue.toFixed(2)}`,
+        `Total Lost Value,${data.lostValue.toFixed(2)}`,
+        `Avg Won Deal Size,${data.avgWonDeal.toFixed(2)}`,
+        `Avg Lost Deal Size,${data.avgLostDeal.toFixed(2)}`,
+      ]
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-base">Win / Loss Summary</h3>
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={!data} data-testid="button-export-winloss">
+          <Download className="w-3.5 h-3.5 mr-1.5" />Export CSV
+        </Button>
+      </div>
+      {isLoading ? (
+        <div className="space-y-3"><Skeleton className="h-24 w-full" /><Skeleton className="h-48 w-full" /></div>
+      ) : !data || data.totalClosed === 0 ? (
+        <p className="text-muted-foreground text-sm text-center py-8">No closed deals in this period.</p>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Won", value: data.wonCount, sub: fmt(data.wonValue), color: "text-green-600 dark:text-green-400" },
+                { label: "Lost", value: data.lostCount, sub: fmt(data.lostValue), color: "text-red-500 dark:text-red-400" },
+                { label: "Win Rate", value: `${data.winRate}%`, sub: `of ${data.totalClosed} closed`, color: "text-primary" },
+                { label: "Avg Won Deal", value: fmt(data.avgWonDeal), sub: "per deal", color: "text-foreground" },
+              ].map(({ label, value, sub, color }) => (
+                <div key={label} className="border rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground">{label}</p>
+                  <p className={`text-xl font-bold ${color}`} data-testid={`metric-${label.toLowerCase().replace(/ /g, "-")}`}>{value}</p>
+                  <p className="text-xs text-muted-foreground">{sub}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(v: number) => [`${v} deals`, "Count"]} />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {chartData.map((entry) => (
+                    <Cell key={entry.label} fill={entry.fill} />
+                  ))}
+                  <LabelList dataKey="value" position="top" style={{ fontSize: 12 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TimeInStageSection({ days }: { days: number }) {
+  const { data, isLoading } = useQuery<{
+    days: number;
+    stages: { stage: string; label: string; avgDays: number; count: number }[];
+  }>({
+    queryKey: ["/api/crm/reports/time-in-stage", days],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/reports/time-in-stage?days=${days}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const chartData = (data?.stages ?? []).filter(s => s.avgDays > 0);
+
+  const handleExport = () => {
+    if (!data) return;
+    exportCsv(
+      `time-in-stage-${days}d.csv`,
+      ["Stage", "Avg Days", "Transitions"],
+      data.stages.map(s => `${s.label},${s.avgDays},${s.count}`)
+    );
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-base">Time in Stage</h3>
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={!data} data-testid="button-export-time-in-stage">
+          <Download className="w-3.5 h-3.5 mr-1.5" />Export CSV
+        </Button>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : chartData.length === 0 ? (
+        <p className="text-muted-foreground text-sm text-center py-8">Not enough stage transition data in this period.</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 40, left: 80, bottom: 4 }}>
+            <XAxis type="number" tick={{ fontSize: 12 }} unit="d" />
+            <YAxis type="category" dataKey="label" tick={{ fontSize: 12 }} width={80} />
+            <Tooltip formatter={(v: number) => [`${v} days avg`, "Avg Time"]} />
+            <Bar dataKey="avgDays" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]}>
+              <LabelList dataKey="avgDays" position="right" style={{ fontSize: 11 }} formatter={(v: number) => `${v}d`} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  );
+}
+
+function RepPerformanceSection({ days }: { days: number }) {
+  type Rep = {
+    repId: string; repName: string; openCount: number; pipelineValue: number;
+    wonCount: number; lostCount: number; winRate: number;
+  };
+  const { data, isLoading } = useQuery<{ days: number; reps: Rep[] }>({
+    queryKey: ["/api/crm/reports/rep-performance", days],
+    queryFn: async () => {
+      const res = await fetch(`/api/crm/reports/rep-performance?days=${days}`);
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  type SortKey = "repName" | "openCount" | "pipelineValue" | "wonCount" | "lostCount" | "winRate";
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "pipelineValue", dir: "desc" });
+
+  const handleSort = (key: SortKey) => {
+    setSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "repName" ? "asc" : "desc" });
+  };
+
+  const sorted = [...(data?.reps ?? [])].sort((a, b) => {
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const av = a[sort.key], bv = b[sort.key];
+    return typeof av === "string" && typeof bv === "string"
+      ? av.localeCompare(bv) * dir
+      : ((av as number) - (bv as number)) * dir;
+  });
+
+  const handleExport = () => {
+    if (!data) return;
+    exportCsv(
+      `rep-performance-${days}d.csv`,
+      ["Rep", "Open Deals", "Pipeline Value", "Won", "Lost", "Win Rate"],
+      data.reps.map(r => `${r.repName},${r.openCount},${r.pipelineValue.toFixed(2)},${r.wonCount},${r.lostCount},${r.winRate}%`)
+    );
+  };
+
+  const cols: { key: SortKey; label: string }[] = [
+    { key: "repName", label: "Rep" },
+    { key: "openCount", label: "Open Deals" },
+    { key: "pipelineValue", label: "Pipeline Value" },
+    { key: "wonCount", label: "Won" },
+    { key: "lostCount", label: "Lost" },
+    { key: "winRate", label: "Win Rate" },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-base">Rep Performance</h3>
+        <Button variant="outline" size="sm" onClick={handleExport} disabled={!data} data-testid="button-export-rep-perf">
+          <Download className="w-3.5 h-3.5 mr-1.5" />Export CSV
+        </Button>
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-10 w-full" />)}</div>
+      ) : !data || data.reps.length === 0 ? (
+        <p className="text-muted-foreground text-sm text-center py-8">No opportunities found in this period.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm" data-testid="table-rep-performance">
+            <thead>
+              <tr className="border-b bg-muted/40">
+                {cols.map(({ key, label }) => (
+                  <th
+                    key={key}
+                    className="px-4 py-3 text-left font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors whitespace-nowrap"
+                    onClick={() => handleSort(key)}
+                    data-testid={`th-rep-${key}`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {label}
+                      {sort.key === key ? (
+                        sort.dir === "asc" ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />
+                      ) : <ChevronsUpDown className="w-3.5 h-3.5 opacity-40" />}
+                    </span>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {sorted.map((rep) => (
+                <tr key={rep.repId} className="hover:bg-muted/30 transition-colors" data-testid={`row-rep-${rep.repId}`}>
+                  <td className="px-4 py-3 font-medium">{rep.repName}</td>
+                  <td className="px-4 py-3 text-center">{rep.openCount}</td>
+                  <td className="px-4 py-3">{fmt(rep.pipelineValue)}</td>
+                  <td className="px-4 py-3 text-center text-green-600 dark:text-green-400 font-medium">{rep.wonCount}</td>
+                  <td className="px-4 py-3 text-center text-red-500 dark:text-red-400 font-medium">{rep.lostCount}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-muted rounded-full h-1.5 min-w-[60px]">
+                        <div className="bg-primary h-1.5 rounded-full" style={{ width: `${rep.winRate}%` }} />
+                      </div>
+                      <span className="text-xs font-medium tabular-nums">{rep.winRate}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CrmPipelineReports() {
+  const [days, setDays] = useState<30 | 90 | 365>(30);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    winLoss: true, timeInStage: true, repPerf: true,
+  });
+
+  const toggleSection = (key: string) =>
+    setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const sections = [
+    { key: "winLoss", title: "Win / Loss Summary", content: <WinLossSection days={days} /> },
+    { key: "timeInStage", title: "Time in Stage", content: <TimeInStageSection days={days} /> },
+    { key: "repPerf", title: "Rep Performance", content: <RepPerformanceSection days={days} /> },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Pipeline Reports</h2>
+          <p className="text-sm text-muted-foreground">Win/loss analysis, stage timing, and rep breakdown</p>
+        </div>
+        <Select value={String(days)} onValueChange={(v) => setDays(Number(v) as 30 | 90 | 365)}>
+          <SelectTrigger className="w-[140px]" data-testid="select-report-days">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="30">Last 30 days</SelectItem>
+            <SelectItem value="90">Last 90 days</SelectItem>
+            <SelectItem value="365">Last 365 days</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {sections.map(({ key, title, content }) => (
+        <Card key={key}>
+          <CardHeader
+            className="pb-2 cursor-pointer select-none"
+            onClick={() => toggleSection(key)}
+            data-testid={`section-header-${key}`}
+          >
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+              {openSections[key] ? (
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+          </CardHeader>
+          {openSections[key] && (
+            <CardContent>{content}</CardContent>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function CRMPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline">("orgs");
+  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "reports">("orgs");
   const [contactSearch, setContactSearch] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
@@ -522,9 +854,19 @@ export default function CRMPage() {
               <TrendingUp className="w-4 h-4 inline mr-1.5 -mt-0.5" />
               Sales Pipeline
             </button>
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "reports" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("reports")}
+              data-testid="tab-pipeline-reports"
+            >
+              <BarChart2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              Reports
+            </button>
           </div>
 
           {crmTab === "pipeline" && <CrmPipelineView />}
+
+          {crmTab === "reports" && <CrmPipelineReports />}
 
           {crmTab === "contacts" && (
             <Card>

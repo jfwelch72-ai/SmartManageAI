@@ -504,4 +504,220 @@ router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requir
   }
 });
 
+// ============================================================
+// CRM PIPELINE REPORTS
+// ============================================================
+
+const ORDERED_STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"];
+
+function parseDays(query: Record<string, string>): number {
+  const d = parseInt(query.days ?? "30");
+  return [30, 90, 365].includes(d) ? d : 30;
+}
+
+// Win/Loss Summary — counts, values, and win rate for closed deals in a date range
+router.get("/api/crm/reports/win-loss", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const days = parseDays(req.query as Record<string, string>);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const conditions: SQL[] = [
+      sql`${crmOpportunities.stage} IN ('WON','LOST')`,
+      sql`${crmOpportunities.updatedAt} >= ${since}`,
+    ];
+    if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    const opps = await db
+      .select({
+        stage: crmOpportunities.stage,
+        dealValue: crmOpportunities.dealValue,
+      })
+      .from(crmOpportunities)
+      .where(and(...conditions));
+
+    let wonCount = 0; let lostCount = 0;
+    let wonValue = 0; let lostValue = 0;
+
+    for (const opp of opps) {
+      const val = parseFloat(opp.dealValue ?? "0") || 0;
+      if (opp.stage === "WON") { wonCount++; wonValue += val; }
+      else { lostCount++; lostValue += val; }
+    }
+
+    const totalClosed = wonCount + lostCount;
+    const winRate = totalClosed > 0 ? Math.round(wonCount / totalClosed * 100) : 0;
+    const avgWonDeal = wonCount > 0 ? wonValue / wonCount : 0;
+    const avgLostDeal = lostCount > 0 ? lostValue / lostCount : 0;
+
+    res.json({
+      days,
+      wonCount,
+      lostCount,
+      totalClosed,
+      wonValue,
+      lostValue,
+      winRate,
+      avgWonDeal,
+      avgLostDeal,
+    });
+  } catch (error) {
+    console.error("Win-loss report error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Time in Stage — average days each opp spent in each stage, derived from stage-change activity logs
+router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const days = parseDays(req.query as Record<string, string>);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const oppConditions: SQL[] = [sql`${crmOpportunities.createdAt} >= ${since}`];
+    if (shouldFilter && orgId) oppConditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    // Fetch all opps with their stage-change activities
+    const opps = await db
+      .select({ id: crmOpportunities.id, stage: crmOpportunities.stage, createdAt: crmOpportunities.createdAt, updatedAt: crmOpportunities.updatedAt })
+      .from(crmOpportunities)
+      .where(and(...oppConditions));
+
+    if (opps.length === 0) {
+      return res.json({ stages: ORDERED_STAGES.map(s => ({ stage: s, label: STAGE_LABELS[s], avgDays: 0, count: 0 })) });
+    }
+
+    const oppIds = opps.map(o => o.id);
+
+    // Get all stage-change activities for these opps
+    const activities = await db
+      .select({
+        opportunityId: crmOpportunityActivities.opportunityId,
+        description: crmOpportunityActivities.description,
+        createdAt: crmOpportunityActivities.createdAt,
+      })
+      .from(crmOpportunityActivities)
+      .where(and(
+        sql`${crmOpportunityActivities.opportunityId} = ANY(ARRAY[${sql.join(oppIds.map(id => sql`${id}`), sql`, `)}]::text[])`,
+        sql`${crmOpportunityActivities.description} LIKE '[Stage Change]%'`
+      ))
+      .orderBy(asc(crmOpportunityActivities.createdAt));
+
+    // Build a per-opp timeline of stage transitions
+    const stageDurations: Record<string, number[]> = {};
+    for (const stage of ORDERED_STAGES) stageDurations[stage] = [];
+
+    const oppMap = new Map(opps.map(o => [o.id, o]));
+    const actsByOpp: Record<string, typeof activities> = {};
+    for (const act of activities) {
+      if (!actsByOpp[act.opportunityId]) actsByOpp[act.opportunityId] = [];
+      actsByOpp[act.opportunityId].push(act);
+    }
+
+    for (const opp of opps) {
+      const acts = actsByOpp[opp.id] ?? [];
+      // Build timeline: [LEAD entry = createdAt, ...stage-change timestamps]
+      type Transition = { stage: string; at: Date };
+      const timeline: Transition[] = [{ stage: "LEAD", at: new Date(opp.createdAt) }];
+
+      for (const act of acts) {
+        // description format: "[Stage Change] From → To"
+        const match = act.description.match(/\[Stage Change\]\s+(.+?)\s+→\s+(.+)/);
+        if (match) {
+          const toStageLabel = match[2].trim();
+          const toStage = Object.entries(STAGE_LABELS).find(([, lbl]) => lbl === toStageLabel)?.[0] ?? toStageLabel;
+          timeline.push({ stage: toStage, at: new Date(act.createdAt) });
+        }
+      }
+
+      // Calculate duration per stage (time until next transition)
+      for (let i = 0; i < timeline.length - 1; i++) {
+        const fromStage = timeline[i].stage;
+        const durationMs = timeline[i + 1].at.getTime() - timeline[i].at.getTime();
+        const durationDays = durationMs / (1000 * 60 * 60 * 24);
+        if (stageDurations[fromStage]) stageDurations[fromStage].push(durationDays);
+      }
+      // Last stage: opp.updatedAt - last transition
+      const last = timeline[timeline.length - 1];
+      const finalDays = (new Date(opp.updatedAt).getTime() - last.at.getTime()) / (1000 * 60 * 60 * 24);
+      if (stageDurations[last.stage]) stageDurations[last.stage].push(finalDays);
+    }
+
+    const stages = ORDERED_STAGES.map(stage => {
+      const durations = stageDurations[stage];
+      const avgDays = durations.length > 0 ? durations.reduce((a, b) => a + b, 0) / durations.length : 0;
+      return { stage, label: STAGE_LABELS[stage], avgDays: Math.round(avgDays * 10) / 10, count: durations.length };
+    });
+
+    res.json({ days, stages });
+  } catch (error) {
+    console.error("Time-in-stage report error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Rep Performance — per-assignee breakdown of open deals, pipeline value, wins, losses, win rate
+router.get("/api/crm/reports/rep-performance", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const days = parseDays(req.query as Record<string, string>);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const conditions: SQL[] = [sql`${crmOpportunities.createdAt} >= ${since}`];
+    if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    const opps = await db
+      .select({
+        assignedToId: crmOpportunities.assignedToId,
+        stage: crmOpportunities.stage,
+        dealValue: crmOpportunities.dealValue,
+        assignedFirstName: users.firstName,
+        assignedLastName: users.lastName,
+      })
+      .from(crmOpportunities)
+      .leftJoin(users, eq(users.id, crmOpportunities.assignedToId))
+      .where(and(...conditions));
+
+    const repMap = new Map<string, {
+      repId: string; repName: string;
+      openCount: number; pipelineValue: number;
+      wonCount: number; lostCount: number;
+    }>();
+
+    for (const opp of opps) {
+      const repId = opp.assignedToId ?? "__unassigned__";
+      const repName = opp.assignedToId
+        ? `${opp.assignedFirstName ?? ""} ${opp.assignedLastName ?? ""}`.trim()
+        : "Unassigned";
+      const val = parseFloat(opp.dealValue ?? "0") || 0;
+
+      if (!repMap.has(repId)) {
+        repMap.set(repId, { repId, repName, openCount: 0, pipelineValue: 0, wonCount: 0, lostCount: 0 });
+      }
+      const r = repMap.get(repId)!;
+      if (opp.stage === "WON") r.wonCount++;
+      else if (opp.stage === "LOST") r.lostCount++;
+      else { r.openCount++; r.pipelineValue += val; }
+    }
+
+    const reps = Array.from(repMap.values()).map(r => ({
+      ...r,
+      winRate: (r.wonCount + r.lostCount) > 0
+        ? Math.round(r.wonCount / (r.wonCount + r.lostCount) * 100)
+        : 0,
+    })).sort((a, b) => b.pipelineValue - a.pipelineValue);
+
+    res.json({ days, reps });
+  } catch (error) {
+    console.error("Rep performance report error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;
