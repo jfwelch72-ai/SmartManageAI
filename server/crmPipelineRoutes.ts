@@ -9,8 +9,9 @@ import {
   insertCrmOpportunityActivitySchema,
   auditLog,
   users,
+  projects,
 } from "@shared/schema";
-import { eq, and, desc, sql, ilike, or } from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or, type SQL, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -20,12 +21,44 @@ const PIPELINE_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "SALES", "OFFICE_MANAGE
 const EDIT_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "SALES"] as const;
 const DELETE_ROLES = ["ADMIN", "MANAGER"] as const;
 
+const STAGE_LABELS: Record<string, string> = {
+  LEAD: "Lead",
+  QUALIFIED: "Qualified",
+  ESTIMATING: "Estimating",
+  BID_SUBMITTED: "Bid Submitted",
+  NEGOTIATION: "Negotiation",
+  WON: "Won",
+  LOST: "Lost",
+};
+
+router.get("/api/crm/pipeline/users", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const conditions: SQL[] = [];
+    if (shouldFilter && orgId) conditions.push(eq(users.organizationId, orgId));
+    conditions.push(eq(users.isActive, true));
+
+    const orgUsers = await db
+      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+      .from(users)
+      .where(and(...conditions))
+      .orderBy(asc(users.firstName));
+
+    res.json(orgUsers);
+  } catch (error) {
+    console.error("Get pipeline users error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/api/crm/pipeline/stats", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
 
     const opps = await db
@@ -77,6 +110,41 @@ router.get("/api/crm/pipeline/stats", requireAuth, requireRole(...PIPELINE_ROLES
   }
 });
 
+const oppSelectFields = {
+  id: crmOpportunities.id,
+  organizationId: crmOpportunities.organizationId,
+  name: crmOpportunities.name,
+  stage: crmOpportunities.stage,
+  dealValue: crmOpportunities.dealValue,
+  probability: crmOpportunities.probability,
+  crmOrganisationId: crmOpportunities.crmOrganisationId,
+  contactId: crmOpportunities.contactId,
+  assignedToId: crmOpportunities.assignedToId,
+  projectType: crmOpportunities.projectType,
+  projectLocation: crmOpportunities.projectLocation,
+  expectedCloseDate: crmOpportunities.expectedCloseDate,
+  source: crmOpportunities.source,
+  notes: crmOpportunities.notes,
+  lostReason: crmOpportunities.lostReason,
+  createdById: crmOpportunities.createdById,
+  createdAt: crmOpportunities.createdAt,
+  updatedAt: crmOpportunities.updatedAt,
+  crmOrgName: crmOrganisations.name,
+  contactFirstName: crmContacts.firstName,
+  contactLastName: crmContacts.lastName,
+  assignedFirstName: users.firstName,
+  assignedLastName: users.lastName,
+};
+
+function buildOppBaseQuery() {
+  return db
+    .select(oppSelectFields)
+    .from(crmOpportunities)
+    .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmOpportunities.crmOrganisationId))
+    .leftJoin(crmContacts, eq(crmContacts.id, crmOpportunities.contactId))
+    .leftJoin(users, eq(users.id, crmOpportunities.assignedToId));
+}
+
 router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -87,55 +155,27 @@ router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES)
     const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
     const offset = (pageNum - 1) * limitNum;
 
-    const conditions: any[] = [];
+    const conditions: SQL[] = [];
     if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
-    if (stage) conditions.push(eq(crmOpportunities.stage, stage as any));
-    if (assignedToId) conditions.push(eq(crmOpportunities.assignedToId, assignedToId));
+    if (stage && stage !== "all") {
+      conditions.push(sql`${crmOpportunities.stage} = ${stage}`);
+    }
+    if (assignedToId && assignedToId !== "all") {
+      conditions.push(eq(crmOpportunities.assignedToId, assignedToId));
+    }
     if (search) {
+      const term = `%${search}%`;
       conditions.push(
         or(
-          ilike(crmOpportunities.name, `%${search}%`),
-          ilike(crmOpportunities.projectType, `%${search}%`),
-          ilike(crmOpportunities.projectLocation, `%${search}%`),
-        )
+          ilike(crmOpportunities.name, term),
+          ilike(crmOpportunities.projectType, term),
+          ilike(crmOpportunities.projectLocation, term),
+        ) as SQL
       );
     }
 
-    const baseQuery = db
-      .select({
-        id: crmOpportunities.id,
-        organizationId: crmOpportunities.organizationId,
-        name: crmOpportunities.name,
-        stage: crmOpportunities.stage,
-        dealValue: crmOpportunities.dealValue,
-        probability: crmOpportunities.probability,
-        crmOrganisationId: crmOpportunities.crmOrganisationId,
-        contactId: crmOpportunities.contactId,
-        assignedToId: crmOpportunities.assignedToId,
-        projectType: crmOpportunities.projectType,
-        projectLocation: crmOpportunities.projectLocation,
-        expectedCloseDate: crmOpportunities.expectedCloseDate,
-        source: crmOpportunities.source,
-        notes: crmOpportunities.notes,
-        lostReason: crmOpportunities.lostReason,
-        createdById: crmOpportunities.createdById,
-        createdAt: crmOpportunities.createdAt,
-        updatedAt: crmOpportunities.updatedAt,
-        crmOrgName: crmOrganisations.name,
-        contactFirstName: crmContacts.firstName,
-        contactLastName: crmContacts.lastName,
-        assignedFirstName: users.firstName,
-        assignedLastName: users.lastName,
-      })
-      .from(crmOpportunities)
-      .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmOpportunities.crmOrganisationId))
-      .leftJoin(crmContacts, eq(crmContacts.id, crmOpportunities.contactId))
-      .leftJoin(users, eq(users.id, crmOpportunities.assignedToId));
-
-    const results = await (conditions.length > 0
-      ? baseQuery.where(and(...conditions))
-      : baseQuery
-    )
+    const results = await buildOppBaseQuery()
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(crmOpportunities.updatedAt))
       .limit(limitNum)
       .offset(offset);
@@ -152,39 +192,10 @@ router.get("/api/crm/opportunities/:id", requireAuth, requireRole(...PIPELINE_RO
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const conditions: any[] = [eq(crmOpportunities.id, req.params.id)];
+    const conditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
     if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
 
-    const [opp] = await db
-      .select({
-        id: crmOpportunities.id,
-        organizationId: crmOpportunities.organizationId,
-        name: crmOpportunities.name,
-        stage: crmOpportunities.stage,
-        dealValue: crmOpportunities.dealValue,
-        probability: crmOpportunities.probability,
-        crmOrganisationId: crmOpportunities.crmOrganisationId,
-        contactId: crmOpportunities.contactId,
-        assignedToId: crmOpportunities.assignedToId,
-        projectType: crmOpportunities.projectType,
-        projectLocation: crmOpportunities.projectLocation,
-        expectedCloseDate: crmOpportunities.expectedCloseDate,
-        source: crmOpportunities.source,
-        notes: crmOpportunities.notes,
-        lostReason: crmOpportunities.lostReason,
-        createdById: crmOpportunities.createdById,
-        createdAt: crmOpportunities.createdAt,
-        updatedAt: crmOpportunities.updatedAt,
-        crmOrgName: crmOrganisations.name,
-        contactFirstName: crmContacts.firstName,
-        contactLastName: crmContacts.lastName,
-        assignedFirstName: users.firstName,
-        assignedLastName: users.lastName,
-      })
-      .from(crmOpportunities)
-      .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmOpportunities.crmOrganisationId))
-      .leftJoin(crmContacts, eq(crmContacts.id, crmOpportunities.contactId))
-      .leftJoin(users, eq(users.id, crmOpportunities.assignedToId))
+    const [opp] = await buildOppBaseQuery()
       .where(and(...conditions))
       .limit(1);
 
@@ -212,6 +223,13 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
 
     const [created] = await db.insert(crmOpportunities).values(parsed.data).returning();
 
+    await db.insert(crmOpportunityActivities).values({
+      opportunityId: created.id,
+      activityType: "NOTE",
+      description: `Opportunity created at stage: ${STAGE_LABELS[created.stage] ?? created.stage}`,
+      createdById: req.user!.id,
+    });
+
     await db.insert(auditLog).values({
       userId: req.user!.id,
       action: "CREATE",
@@ -232,7 +250,7 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const conditions: any[] = [eq(crmOpportunities.id, req.params.id)];
+    const conditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
     if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
 
     const [existing] = await db.select().from(crmOpportunities).where(and(...conditions)).limit(1);
@@ -241,13 +259,22 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
     const parsed = insertCrmOpportunitySchema.partial().safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
 
-    const { organizationId: _, ...safeData } = parsed.data;
+    const { organizationId: _orgId, ...safeData } = parsed.data;
 
     const [updated] = await db
       .update(crmOpportunities)
       .set({ ...safeData, updatedAt: new Date() })
       .where(eq(crmOpportunities.id, req.params.id))
       .returning();
+
+    if (safeData.stage && safeData.stage !== existing.stage) {
+      await db.insert(crmOpportunityActivities).values({
+        opportunityId: existing.id,
+        activityType: "NOTE",
+        description: `[Stage Change] ${STAGE_LABELS[existing.stage] ?? existing.stage} → ${STAGE_LABELS[safeData.stage] ?? safeData.stage}`,
+        createdById: req.user!.id,
+      });
+    }
 
     await db.insert(auditLog).values({
       userId: req.user!.id,
@@ -270,7 +297,7 @@ router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_R
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const conditions: any[] = [eq(crmOpportunities.id, req.params.id)];
+    const conditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
     if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
 
     const [existing] = await db.select().from(crmOpportunities).where(and(...conditions)).limit(1);
@@ -298,11 +325,17 @@ router.get("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const oppConditions: any[] = [eq(crmOpportunities.id, req.params.id)];
+    const oppConditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
     if (shouldFilter && orgId) oppConditions.push(eq(crmOpportunities.organizationId, orgId));
 
     const [opp] = await db.select().from(crmOpportunities).where(and(...oppConditions)).limit(1);
     if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+
+    const createdByAlias = db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+    }).from(users).as("creator");
 
     const activities = await db
       .select({
@@ -314,11 +347,11 @@ router.get("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...
         completedAt: crmOpportunityActivities.completedAt,
         createdById: crmOpportunityActivities.createdById,
         createdAt: crmOpportunityActivities.createdAt,
-        createdByFirstName: users.firstName,
-        createdByLastName: users.lastName,
+        createdByFirstName: createdByAlias.firstName,
+        createdByLastName: createdByAlias.lastName,
       })
       .from(crmOpportunityActivities)
-      .leftJoin(users, eq(users.id, crmOpportunityActivities.createdById))
+      .leftJoin(createdByAlias, eq(createdByAlias.id, crmOpportunityActivities.createdById))
       .where(eq(crmOpportunityActivities.opportunityId, req.params.id))
       .orderBy(desc(crmOpportunityActivities.createdAt));
 
@@ -334,7 +367,7 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
 
-    const oppConditions: any[] = [eq(crmOpportunities.id, req.params.id)];
+    const oppConditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
     if (shouldFilter) oppConditions.push(eq(crmOpportunities.organizationId, orgId));
 
     const [opp] = await db.select().from(crmOpportunities).where(and(...oppConditions)).limit(1);
@@ -350,6 +383,12 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
 
     const [created] = await db.insert(crmOpportunityActivities).values(parsed.data).returning();
 
+    const createdByAlias = db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+    }).from(users).as("creator");
+
     const [withUser] = await db
       .select({
         id: crmOpportunityActivities.id,
@@ -360,16 +399,85 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
         completedAt: crmOpportunityActivities.completedAt,
         createdById: crmOpportunityActivities.createdById,
         createdAt: crmOpportunityActivities.createdAt,
-        createdByFirstName: users.firstName,
-        createdByLastName: users.lastName,
+        createdByFirstName: createdByAlias.firstName,
+        createdByLastName: createdByAlias.lastName,
       })
       .from(crmOpportunityActivities)
-      .leftJoin(users, eq(users.id, crmOpportunityActivities.createdById))
+      .leftJoin(createdByAlias, eq(createdByAlias.id, crmOpportunityActivities.createdById))
       .where(eq(crmOpportunityActivities.id, created.id));
 
     res.status(201).json(withUser);
   } catch (error) {
     console.error("Create activity error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const BID_CODE_START = 260001;
+async function getNextProjectCode(): Promise<string> {
+  const result = await db.execute(sql`
+    SELECT GREATEST(
+      COALESCE((SELECT MAX(CAST(code AS INTEGER)) FROM bids WHERE code ~ '^[0-9]+$' AND CAST(code AS INTEGER) >= ${BID_CODE_START}), ${BID_CODE_START - 1}),
+      COALESCE((SELECT MAX(CAST(code AS INTEGER)) FROM projects WHERE code ~ '^[0-9]+$' AND CAST(code AS INTEGER) >= ${BID_CODE_START}), ${BID_CODE_START - 1})
+    ) as max_code
+  `);
+  const maxCode = Number(result.rows[0]?.max_code) || BID_CODE_START - 1;
+  return String(maxCode + 1);
+}
+
+router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const oppConditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
+    if (shouldFilter) oppConditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    const [opp] = await db.select().from(crmOpportunities).where(and(...oppConditions)).limit(1);
+    if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+    if (opp.stage !== "WON") return res.status(400).json({ error: "Only WON opportunities can be converted to projects" });
+
+    const { name, clientName, description, startDate, targetEndDate, location } = req.body as {
+      name?: string;
+      clientName?: string;
+      description?: string;
+      startDate?: string;
+      targetEndDate?: string;
+      location?: string;
+    };
+
+    const code = await getNextProjectCode();
+
+    const [newProject] = await db.insert(projects).values({
+      gcOrganizationId: orgId,
+      code,
+      name: name || opp.name,
+      clientName: clientName || opp.crmOrganisationId || "TBD",
+      description: description || opp.notes || null,
+      locationAddress: location || opp.projectLocation || null,
+      startDate: startDate ? new Date(startDate) : null,
+      status: "PLANNING",
+      contractAmount: opp.dealValue || null,
+    }).returning();
+
+    await db.insert(crmOpportunityActivities).values({
+      opportunityId: opp.id,
+      activityType: "NOTE",
+      description: `[Converted] Opportunity converted to project: ${newProject.name} (ID: ${newProject.id})`,
+      createdById: req.user!.id,
+    });
+
+    await db.insert(auditLog).values({
+      userId: req.user!.id,
+      action: "CREATE",
+      entityType: "projects",
+      entityId: newProject.id,
+      newValue: JSON.stringify({ name: newProject.name, fromOpportunity: opp.id }),
+    });
+
+    res.status(201).json({ project: newProject, opportunityId: opp.id });
+  } catch (error) {
+    console.error("Convert to project error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -2,7 +2,7 @@ import { useState, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -47,9 +48,13 @@ import {
   ArrowRight,
   LayoutList,
   Kanban,
-  AlertCircle,
-  X,
   Clock,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Folder,
+  AlertCircle,
+  GitBranch,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -102,10 +107,9 @@ interface PipelineStats {
   stageValues: Record<string, number>;
 }
 
-interface CrmOrg {
-  id: string;
-  name: string;
-}
+interface CrmOrg { id: string; name: string; }
+interface CrmContact { id: string; firstName: string; lastName: string; }
+interface OrgUser { id: string; firstName: string; lastName: string; role: string; }
 
 const STAGES: { key: PipelineStage; label: string; color: string; bgColor: string; probability: number }[] = [
   { key: "LEAD", label: "Lead", color: "text-slate-600", bgColor: "bg-slate-100 dark:bg-slate-800", probability: 10 },
@@ -148,6 +152,10 @@ function getStageInfo(stage: PipelineStage) {
   return STAGES.find(s => s.key === stage) ?? STAGES[0];
 }
 
+function isStageChange(activity: Activity): boolean {
+  return activity.description.startsWith("[Stage Change]") || activity.description.startsWith("[Converted]");
+}
+
 const DEFAULT_FORM = {
   name: "",
   stage: "LEAD" as PipelineStage,
@@ -164,28 +172,77 @@ const DEFAULT_FORM = {
   lostReason: "",
 };
 
+type SortField = "name" | "stage" | "dealValue" | "probability" | "expectedCloseDate" | "updatedAt";
+type SortDir = "asc" | "desc";
+
+function sortOpportunities(opps: Opportunity[], field: SortField, dir: SortDir): Opportunity[] {
+  return [...opps].sort((a, b) => {
+    let av: number | string = 0;
+    let bv: number | string = 0;
+    switch (field) {
+      case "name": av = a.name.toLowerCase(); bv = b.name.toLowerCase(); break;
+      case "stage": av = STAGES.findIndex(s => s.key === a.stage); bv = STAGES.findIndex(s => s.key === b.stage); break;
+      case "dealValue": av = parseFloat(a.dealValue ?? "0") || 0; bv = parseFloat(b.dealValue ?? "0") || 0; break;
+      case "probability": av = a.probability ?? 0; bv = b.probability ?? 0; break;
+      case "expectedCloseDate": av = a.expectedCloseDate ?? ""; bv = b.expectedCloseDate ?? ""; break;
+      case "updatedAt": av = a.updatedAt; bv = b.updatedAt; break;
+    }
+    if (av < bv) return dir === "asc" ? -1 : 1;
+    if (av > bv) return dir === "asc" ? 1 : -1;
+    return 0;
+  });
+}
+
+function SortableHeader({ label, field, currentField, currentDir, onSort }: {
+  label: string;
+  field: SortField;
+  currentField: SortField;
+  currentDir: SortDir;
+  onSort: (f: SortField) => void;
+}) {
+  const active = currentField === field;
+  return (
+    <button
+      className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase tracking-wide hover:text-foreground"
+      onClick={() => onSort(field)}
+      data-testid={`sort-col-${field}`}
+    >
+      {label}
+      {active ? (currentDir === "asc" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />) : <ArrowUpDown className="w-3 h-3 opacity-40" />}
+    </button>
+  );
+}
+
+const DEFAULT_CONVERT_FORM = { name: "", clientName: "", startDate: "", targetEndDate: "", location: "" };
+
 export default function CrmPipelineView() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [assignedFilter, setAssignedFilter] = useState<string>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ ...DEFAULT_FORM });
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [activityForm, setActivityForm] = useState({ activityType: "NOTE" as ActivityType, description: "", scheduledAt: "" });
   const [addActivityOpen, setAddActivityOpen] = useState(false);
-  const [editStageOpp, setEditStageOpp] = useState<Opportunity | null>(null);
-  const [editForm, setEditForm] = useState({ ...DEFAULT_FORM });
   const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ ...DEFAULT_FORM });
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertForm, setConvertForm] = useState({ ...DEFAULT_CONVERT_FORM });
+  const [sortField, setSortField] = useState<SortField>("updatedAt");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const canEdit = ["ADMIN", "MANAGER", "ESTIMATOR", "SALES"].includes(user?.role ?? "");
   const canDelete = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
+  const canManageProjects = ["ADMIN", "MANAGER"].includes(user?.role ?? "");
 
   const params = new URLSearchParams();
   if (search) params.set("search", search);
   if (stageFilter !== "all") params.set("stage", stageFilter);
+  if (assignedFilter !== "all") params.set("assignedToId", assignedFilter);
   const queryString = params.toString();
 
   const { data: opportunities = [], isLoading } = useQuery<Opportunity[]>({
@@ -226,6 +283,24 @@ export default function CrmPipelineView() {
     },
   });
 
+  const { data: crmContacts = [] } = useQuery<CrmContact[]>({
+    queryKey: ["/api/crm/contacts"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/contacts");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/crm/pipeline/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/pipeline/users");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities"] });
     queryClient.invalidateQueries({ queryKey: ["/api/crm/pipeline/stats"] });
@@ -235,7 +310,7 @@ export default function CrmPipelineView() {
     mutationFn: (data: typeof DEFAULT_FORM) =>
       apiRequest("POST", "/api/crm/opportunities", {
         ...data,
-        dealValue: data.dealValue ? data.dealValue : null,
+        dealValue: data.dealValue || null,
         probability: data.probability ? parseInt(data.probability) : 10,
         crmOrganisationId: data.crmOrganisationId || null,
         contactId: data.contactId || null,
@@ -259,6 +334,8 @@ export default function CrmPipelineView() {
         dealValue: data.dealValue !== undefined ? (data.dealValue || null) : undefined,
         probability: data.probability !== undefined ? (data.probability ? parseInt(data.probability) : 10) : undefined,
         crmOrganisationId: data.crmOrganisationId !== undefined ? (data.crmOrganisationId || null) : undefined,
+        contactId: data.contactId !== undefined ? (data.contactId || null) : undefined,
+        assignedToId: data.assignedToId !== undefined ? (data.assignedToId || null) : undefined,
         expectedCloseDate: data.expectedCloseDate !== undefined ? (data.expectedCloseDate || null) : undefined,
         lostReason: data.lostReason !== undefined ? (data.lostReason || null) : undefined,
       }),
@@ -266,6 +343,8 @@ export default function CrmPipelineView() {
       invalidateAll();
       if (selectedOpp?.id === vars.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", vars.id, "activities"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", vars.id] });
+        setSelectedOpp(prev => prev ? { ...prev, ...vars.data, stage: (vars.data.stage as PipelineStage) ?? prev.stage } : null);
       }
       toast({ title: "Opportunity updated" });
       setEditOpen(false);
@@ -302,11 +381,34 @@ export default function CrmPipelineView() {
   const stageMutation = useMutation({
     mutationFn: ({ id, stage }: { id: string; stage: PipelineStage }) =>
       apiRequest("PATCH", `/api/crm/opportunities/${id}`, { stage }),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       invalidateAll();
+      if (selectedOpp?.id === vars.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", vars.id, "activities"] });
+        setSelectedOpp(prev => prev ? { ...prev, stage: vars.stage } : null);
+      }
       toast({ title: "Stage updated" });
     },
     onError: () => toast({ title: "Failed to update stage", variant: "destructive" }),
+  });
+
+  const convertMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof DEFAULT_CONVERT_FORM }) =>
+      apiRequest("POST", `/api/crm/opportunities/${id}/convert-to-project`, {
+        name: data.name || undefined,
+        clientName: data.clientName || undefined,
+        location: data.location || undefined,
+        startDate: data.startDate || undefined,
+        targetEndDate: data.targetEndDate || undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", selectedOpp?.id, "activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setConvertOpen(false);
+      setConvertForm({ ...DEFAULT_CONVERT_FORM });
+      toast({ title: "Project created from opportunity" });
+    },
+    onError: () => toast({ title: "Failed to convert to project", variant: "destructive" }),
   });
 
   const openDetail = (opp: Opportunity) => {
@@ -333,11 +435,190 @@ export default function CrmPipelineView() {
     setEditOpen(true);
   };
 
-  const oppsByStage = (stage: PipelineStage) =>
-    opportunities.filter(o => o.stage === stage);
+  const openConvert = (opp: Opportunity) => {
+    setConvertForm({
+      name: opp.name,
+      clientName: opp.crmOrgName ?? "",
+      startDate: "",
+      targetEndDate: "",
+      location: opp.projectLocation ?? "",
+    });
+    setConvertOpen(true);
+  };
 
-  const stageTotal = (stage: PipelineStage) =>
-    oppsByStage(stage).reduce((sum, o) => sum + (parseFloat(o.dealValue ?? "0") || 0), 0);
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  };
+
+  const oppsByStage = (stage: PipelineStage) => opportunities.filter(o => o.stage === stage);
+  const stageTotal = (stage: PipelineStage) => oppsByStage(stage).reduce((sum, o) => sum + (parseFloat(o.dealValue ?? "0") || 0), 0);
+  const sortedOpps = sortOpportunities(opportunities, sortField, sortDir);
+
+  const OppFormFields = ({ formData, onUpdate, isEdit = false }: {
+    formData: typeof DEFAULT_FORM;
+    onUpdate: (patch: Partial<typeof DEFAULT_FORM>) => void;
+    isEdit?: boolean;
+  }) => (
+    <div className="flex flex-col gap-4 py-2">
+      <div>
+        <Label>Opportunity Name *</Label>
+        <Input
+          value={formData.name}
+          onChange={e => onUpdate({ name: e.target.value })}
+          placeholder="e.g. Downtown Office Renovation"
+          data-testid={`input-${isEdit ? "edit-" : ""}opp-name`}
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Stage</Label>
+          <Select
+            value={formData.stage}
+            onValueChange={v => onUpdate({ stage: v as PipelineStage, probability: String(STAGES.find(s => s.key === v)?.probability ?? 10) })}
+          >
+            <SelectTrigger data-testid={`select-${isEdit ? "edit-" : ""}opp-stage`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STAGES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label>Probability (%)</Label>
+          <Input
+            type="number"
+            min={0}
+            max={100}
+            value={formData.probability}
+            onChange={e => onUpdate({ probability: e.target.value })}
+            data-testid={`input-${isEdit ? "edit-" : ""}opp-probability`}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Deal Value ($)</Label>
+          <Input
+            type="number"
+            min={0}
+            value={formData.dealValue}
+            onChange={e => onUpdate({ dealValue: e.target.value })}
+            placeholder="0.00"
+            data-testid={`input-${isEdit ? "edit-" : ""}opp-value`}
+          />
+        </div>
+        <div>
+          <Label>Expected Close Date</Label>
+          <Input
+            type="date"
+            value={formData.expectedCloseDate}
+            onChange={e => onUpdate({ expectedCloseDate: e.target.value })}
+            data-testid={`input-${isEdit ? "edit-" : ""}opp-close-date`}
+          />
+        </div>
+      </div>
+      <div>
+        <Label>Linked Organization</Label>
+        <Select
+          value={formData.crmOrganisationId || "__none__"}
+          onValueChange={v => onUpdate({ crmOrganisationId: v === "__none__" ? "" : v })}
+        >
+          <SelectTrigger data-testid={`select-${isEdit ? "edit-" : ""}opp-org`}>
+            <SelectValue placeholder="None" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None</SelectItem>
+            {crmOrgs.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Linked Contact</Label>
+        <Select
+          value={formData.contactId || "__none__"}
+          onValueChange={v => onUpdate({ contactId: v === "__none__" ? "" : v })}
+        >
+          <SelectTrigger data-testid={`select-${isEdit ? "edit-" : ""}opp-contact`}>
+            <SelectValue placeholder="None" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">None</SelectItem>
+            {crmContacts.map(c => <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Assigned To</Label>
+        <Select
+          value={formData.assignedToId || "__none__"}
+          onValueChange={v => onUpdate({ assignedToId: v === "__none__" ? "" : v })}
+        >
+          <SelectTrigger data-testid={`select-${isEdit ? "edit-" : ""}opp-assigned`}>
+            <SelectValue placeholder="Unassigned" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Unassigned</SelectItem>
+            {orgUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Project Type</Label>
+          <Input
+            value={formData.projectType}
+            onChange={e => onUpdate({ projectType: e.target.value })}
+            placeholder="e.g. Commercial, Residential"
+            data-testid={`input-${isEdit ? "edit-" : ""}opp-project-type`}
+          />
+        </div>
+        <div>
+          <Label>Location</Label>
+          <Input
+            value={formData.projectLocation}
+            onChange={e => onUpdate({ projectLocation: e.target.value })}
+            placeholder="City, State"
+            data-testid={`input-${isEdit ? "edit-" : ""}opp-location`}
+          />
+        </div>
+      </div>
+      <div>
+        <Label>Source</Label>
+        <Input
+          value={formData.source}
+          onChange={e => onUpdate({ source: e.target.value })}
+          placeholder="e.g. Referral, Website, LinkedIn"
+          data-testid={`input-${isEdit ? "edit-" : ""}opp-source`}
+        />
+      </div>
+      <div>
+        <Label>Notes</Label>
+        <Textarea
+          value={formData.notes}
+          onChange={e => onUpdate({ notes: e.target.value })}
+          rows={3}
+          data-testid={`textarea-${isEdit ? "edit-" : ""}opp-notes`}
+        />
+      </div>
+      {formData.stage === "LOST" && (
+        <div>
+          <Label>Lost Reason</Label>
+          <Input
+            value={formData.lostReason}
+            onChange={e => onUpdate({ lostReason: e.target.value })}
+            placeholder="Why was this lost?"
+            data-testid={`input-${isEdit ? "edit-" : ""}opp-lost-reason`}
+          />
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="flex flex-col gap-6" data-testid="crm-pipeline-view">
@@ -400,7 +681,7 @@ export default function CrmPipelineView() {
       {/* Controls */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-1 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-xs">
+          <div className="relative flex-1 min-w-[180px] max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search opportunities..."
@@ -411,14 +692,21 @@ export default function CrmPipelineView() {
             />
           </div>
           <Select value={stageFilter} onValueChange={setStageFilter}>
-            <SelectTrigger className="w-[160px]" data-testid="select-stage-filter">
+            <SelectTrigger className="w-[150px]" data-testid="select-stage-filter">
               <SelectValue placeholder="All Stages" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Stages</SelectItem>
-              {STAGES.map(s => (
-                <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>
-              ))}
+              {STAGES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={assignedFilter} onValueChange={setAssignedFilter}>
+            <SelectTrigger className="w-[160px]" data-testid="select-assigned-filter">
+              <SelectValue placeholder="All Assignees" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Assignees</SelectItem>
+              {orgUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
@@ -467,9 +755,7 @@ export default function CrmPipelineView() {
                     <span className={`text-sm font-semibold ${stage.color}`}>{stage.label}</span>
                     <Badge variant="secondary" className="text-xs">{stageOpps.length}</Badge>
                   </div>
-                  {total > 0 && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{formatCurrency(total)}</p>
-                  )}
+                  {total > 0 && <p className="text-xs text-muted-foreground mt-0.5">{formatCurrency(total)}</p>}
                 </div>
                 <div className="flex flex-col gap-2 min-h-[80px]">
                   {isLoading
@@ -483,16 +769,10 @@ export default function CrmPipelineView() {
                       >
                         <CardContent className="p-3 flex flex-col gap-1.5">
                           <p className="text-sm font-medium leading-tight line-clamp-2">{opp.name}</p>
-                          {opp.crmOrgName && (
-                            <p className="text-xs text-muted-foreground truncate">{opp.crmOrgName}</p>
-                          )}
-                          {opp.dealValue && (
-                            <p className="text-sm font-semibold text-primary">{formatCurrency(opp.dealValue)}</p>
-                          )}
+                          {opp.crmOrgName && <p className="text-xs text-muted-foreground truncate">{opp.crmOrgName}</p>}
+                          {opp.dealValue && <p className="text-sm font-semibold text-primary">{formatCurrency(opp.dealValue)}</p>}
                           <div className="flex items-center justify-between">
-                            <Badge variant="outline" className="text-xs">
-                              {opp.probability ?? 10}%
-                            </Badge>
+                            <Badge variant="outline" className="text-xs">{opp.probability ?? 10}%</Badge>
                             {opp.expectedCloseDate && (
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
@@ -506,10 +786,7 @@ export default function CrmPipelineView() {
                                 <button
                                   key={s.key}
                                   className="text-xs text-muted-foreground hover:text-primary underline-offset-2 hover:underline"
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    stageMutation.mutate({ id: opp.id, stage: s.key });
-                                  }}
+                                  onClick={e => { e.stopPropagation(); stageMutation.mutate({ id: opp.id, stage: s.key }); }}
                                   data-testid={`button-move-${opp.id}-${s.key}`}
                                 >
                                   → {s.label}
@@ -548,15 +825,24 @@ export default function CrmPipelineView() {
               </div>
             ) : (
               <div className="divide-y">
-                {/* Header */}
-                <div className="grid grid-cols-12 gap-2 px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                  <div className="col-span-4">Opportunity</div>
-                  <div className="col-span-2">Stage</div>
-                  <div className="col-span-2">Value</div>
-                  <div className="col-span-2">Prob.</div>
-                  <div className="col-span-2">Close Date</div>
+                <div className="grid grid-cols-12 gap-2 px-4 py-2">
+                  <div className="col-span-4">
+                    <SortableHeader label="Opportunity" field="name" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                  </div>
+                  <div className="col-span-2">
+                    <SortableHeader label="Stage" field="stage" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                  </div>
+                  <div className="col-span-2">
+                    <SortableHeader label="Value" field="dealValue" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                  </div>
+                  <div className="col-span-2">
+                    <SortableHeader label="Prob." field="probability" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                  </div>
+                  <div className="col-span-2">
+                    <SortableHeader label="Close Date" field="expectedCloseDate" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
+                  </div>
                 </div>
-                {opportunities.map(opp => {
+                {sortedOpps.map(opp => {
                   const si = getStageInfo(opp.stage);
                   return (
                     <div
@@ -591,125 +877,12 @@ export default function CrmPipelineView() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="dialog-add-opportunity">
           <DialogHeader>
             <DialogTitle>Add Opportunity</DialogTitle>
+            <DialogDescription>Create a new sales opportunity in the pipeline.</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-2">
-            <div>
-              <Label>Opportunity Name *</Label>
-              <Input
-                value={form.name}
-                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="e.g. Downtown Office Renovation"
-                data-testid="input-opp-name"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Stage</Label>
-                <Select value={form.stage} onValueChange={v => setForm(f => ({ ...f, stage: v as PipelineStage, probability: String(STAGES.find(s => s.key === v)?.probability ?? 10) }))}>
-                  <SelectTrigger data-testid="select-opp-stage">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STAGES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Probability (%)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={form.probability}
-                  onChange={e => setForm(f => ({ ...f, probability: e.target.value }))}
-                  data-testid="input-opp-probability"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Deal Value ($)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.dealValue}
-                  onChange={e => setForm(f => ({ ...f, dealValue: e.target.value }))}
-                  placeholder="0.00"
-                  data-testid="input-opp-value"
-                />
-              </div>
-              <div>
-                <Label>Expected Close Date</Label>
-                <Input
-                  type="date"
-                  value={form.expectedCloseDate}
-                  onChange={e => setForm(f => ({ ...f, expectedCloseDate: e.target.value }))}
-                  data-testid="input-opp-close-date"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Linked Organization</Label>
-              <Select value={form.crmOrganisationId || "__none__"} onValueChange={v => setForm(f => ({ ...f, crmOrganisationId: v === "__none__" ? "" : v }))}>
-                <SelectTrigger data-testid="select-opp-org">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {crmOrgs.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Project Type</Label>
-                <Input
-                  value={form.projectType}
-                  onChange={e => setForm(f => ({ ...f, projectType: e.target.value }))}
-                  placeholder="e.g. Commercial, Residential"
-                  data-testid="input-opp-project-type"
-                />
-              </div>
-              <div>
-                <Label>Location</Label>
-                <Input
-                  value={form.projectLocation}
-                  onChange={e => setForm(f => ({ ...f, projectLocation: e.target.value }))}
-                  placeholder="City, State"
-                  data-testid="input-opp-location"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Source</Label>
-              <Input
-                value={form.source}
-                onChange={e => setForm(f => ({ ...f, source: e.target.value }))}
-                placeholder="e.g. Referral, Website, LinkedIn"
-                data-testid="input-opp-source"
-              />
-            </div>
-            <div>
-              <Label>Notes</Label>
-              <Textarea
-                value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                rows={3}
-                data-testid="textarea-opp-notes"
-              />
-            </div>
-            {(form.stage === "LOST") && (
-              <div>
-                <Label>Lost Reason</Label>
-                <Input
-                  value={form.lostReason}
-                  onChange={e => setForm(f => ({ ...f, lostReason: e.target.value }))}
-                  placeholder="Why was this lost?"
-                  data-testid="input-opp-lost-reason"
-                />
-              </div>
-            )}
-          </div>
+          <OppFormFields
+            formData={form}
+            onUpdate={patch => setForm(f => ({ ...f, ...patch }))}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} data-testid="button-cancel-add">Cancel</Button>
             <Button
@@ -728,119 +901,13 @@ export default function CrmPipelineView() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="dialog-edit-opportunity">
           <DialogHeader>
             <DialogTitle>Edit Opportunity</DialogTitle>
+            <DialogDescription>Update the details of this opportunity.</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-4 py-2">
-            <div>
-              <Label>Opportunity Name *</Label>
-              <Input
-                value={editForm.name}
-                onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                data-testid="input-edit-opp-name"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Stage</Label>
-                <Select value={editForm.stage} onValueChange={v => setEditForm(f => ({ ...f, stage: v as PipelineStage }))}>
-                  <SelectTrigger data-testid="select-edit-opp-stage">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STAGES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Probability (%)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={editForm.probability}
-                  onChange={e => setEditForm(f => ({ ...f, probability: e.target.value }))}
-                  data-testid="input-edit-opp-probability"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Deal Value ($)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={editForm.dealValue}
-                  onChange={e => setEditForm(f => ({ ...f, dealValue: e.target.value }))}
-                  data-testid="input-edit-opp-value"
-                />
-              </div>
-              <div>
-                <Label>Expected Close Date</Label>
-                <Input
-                  type="date"
-                  value={editForm.expectedCloseDate}
-                  onChange={e => setEditForm(f => ({ ...f, expectedCloseDate: e.target.value }))}
-                  data-testid="input-edit-opp-close-date"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Linked Organization</Label>
-              <Select value={editForm.crmOrganisationId || "__none__"} onValueChange={v => setEditForm(f => ({ ...f, crmOrganisationId: v === "__none__" ? "" : v }))}>
-                <SelectTrigger data-testid="select-edit-opp-org">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {crmOrgs.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Project Type</Label>
-                <Input
-                  value={editForm.projectType}
-                  onChange={e => setEditForm(f => ({ ...f, projectType: e.target.value }))}
-                  data-testid="input-edit-opp-project-type"
-                />
-              </div>
-              <div>
-                <Label>Location</Label>
-                <Input
-                  value={editForm.projectLocation}
-                  onChange={e => setEditForm(f => ({ ...f, projectLocation: e.target.value }))}
-                  data-testid="input-edit-opp-location"
-                />
-              </div>
-            </div>
-            <div>
-              <Label>Source</Label>
-              <Input
-                value={editForm.source}
-                onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}
-                data-testid="input-edit-opp-source"
-              />
-            </div>
-            <div>
-              <Label>Notes</Label>
-              <Textarea
-                value={editForm.notes}
-                onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
-                rows={3}
-                data-testid="textarea-edit-opp-notes"
-              />
-            </div>
-            {editForm.stage === "LOST" && (
-              <div>
-                <Label>Lost Reason</Label>
-                <Input
-                  value={editForm.lostReason}
-                  onChange={e => setEditForm(f => ({ ...f, lostReason: e.target.value }))}
-                  data-testid="input-edit-opp-lost-reason"
-                />
-              </div>
-            )}
-          </div>
+          <OppFormFields
+            formData={editForm}
+            onUpdate={patch => setEditForm(f => ({ ...f, ...patch }))}
+            isEdit
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} data-testid="button-cancel-edit">Cancel</Button>
             <Button
@@ -849,6 +916,59 @@ export default function CrmPipelineView() {
               data-testid="button-submit-edit"
             >
               {updateMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Convert to Project Dialog */}
+      <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
+        <DialogContent data-testid="dialog-convert-project">
+          <DialogHeader>
+            <DialogTitle>Convert to Project</DialogTitle>
+            <DialogDescription>Create a new project from this WON opportunity.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div>
+              <Label>Project Name *</Label>
+              <Input
+                value={convertForm.name}
+                onChange={e => setConvertForm(f => ({ ...f, name: e.target.value }))}
+                data-testid="input-convert-name"
+              />
+            </div>
+            <div>
+              <Label>Client Name *</Label>
+              <Input
+                value={convertForm.clientName}
+                onChange={e => setConvertForm(f => ({ ...f, clientName: e.target.value }))}
+                placeholder="Client or company name"
+                data-testid="input-convert-client-name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start Date</Label>
+                <Input type="date" value={convertForm.startDate} onChange={e => setConvertForm(f => ({ ...f, startDate: e.target.value }))} data-testid="input-convert-start" />
+              </div>
+              <div>
+                <Label>Target End Date</Label>
+                <Input type="date" value={convertForm.targetEndDate} onChange={e => setConvertForm(f => ({ ...f, targetEndDate: e.target.value }))} data-testid="input-convert-end" />
+              </div>
+            </div>
+            <div>
+              <Label>Location</Label>
+              <Input value={convertForm.location} onChange={e => setConvertForm(f => ({ ...f, location: e.target.value }))} data-testid="input-convert-location" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConvertOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => selectedOpp && convertMutation.mutate({ id: selectedOpp.id, data: convertForm })}
+              disabled={!convertForm.name.trim() || convertMutation.isPending}
+              data-testid="button-submit-convert"
+            >
+              {convertMutation.isPending ? "Creating Project..." : "Create Project"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -863,24 +983,29 @@ export default function CrmPipelineView() {
           {selectedOpp && (
             <div className="mt-4 flex flex-col gap-5">
               {/* Stage badge + quick move */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {(() => {
-                  const si = getStageInfo(selectedOpp.stage);
-                  return <Badge className={`${si.bgColor} ${si.color} border-0`}>{si.label}</Badge>;
-                })()}
-                {canEdit && STAGES.filter(s => s.key !== selectedOpp.stage).map(s => (
-                  <button
-                    key={s.key}
-                    className="text-xs text-muted-foreground hover:text-primary flex items-center gap-0.5"
-                    onClick={() => {
-                      stageMutation.mutate({ id: selectedOpp.id, stage: s.key });
-                      setSelectedOpp(prev => prev ? { ...prev, stage: s.key } : null);
-                    }}
-                    data-testid={`button-detail-move-${s.key}`}
-                  >
-                    <ChevronRight className="w-3 h-3" /> {s.label}
-                  </button>
-                ))}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {(() => {
+                    const si = getStageInfo(selectedOpp.stage);
+                    return <Badge className={`${si.bgColor} ${si.color} border-0`}>{si.label}</Badge>;
+                  })()}
+                </div>
+                {canEdit && (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-xs text-muted-foreground">Move to:</span>
+                    {STAGES.filter(s => s.key !== selectedOpp.stage).map(s => (
+                      <button
+                        key={s.key}
+                        className="text-xs text-muted-foreground hover:text-primary flex items-center gap-0.5 border rounded px-1.5 py-0.5 hover:border-primary transition-colors"
+                        onClick={() => stageMutation.mutate({ id: selectedOpp.id, stage: s.key })}
+                        disabled={stageMutation.isPending}
+                        data-testid={`button-detail-move-${s.key}`}
+                      >
+                        <ChevronRight className="w-3 h-3" /> {s.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Key fields */}
@@ -897,6 +1022,12 @@ export default function CrmPipelineView() {
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Organization</p>
                     <p>{selectedOpp.crmOrgName}</p>
+                  </div>
+                )}
+                {(selectedOpp.contactFirstName || selectedOpp.contactLastName) && (
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Contact</p>
+                    <p>{selectedOpp.contactFirstName} {selectedOpp.contactLastName}</p>
                   </div>
                 )}
                 {selectedOpp.projectType && (
@@ -923,7 +1054,7 @@ export default function CrmPipelineView() {
                     <p>{selectedOpp.source}</p>
                   </div>
                 )}
-                {selectedOpp.assignedFirstName && (
+                {(selectedOpp.assignedFirstName || selectedOpp.assignedLastName) && (
                   <div>
                     <p className="text-xs text-muted-foreground uppercase tracking-wide">Assigned To</p>
                     <p>{selectedOpp.assignedFirstName} {selectedOpp.assignedLastName}</p>
@@ -946,35 +1077,42 @@ export default function CrmPipelineView() {
               )}
 
               {/* Actions */}
-              {canEdit && (
-                <div className="flex gap-2 flex-wrap">
+              <div className="flex gap-2 flex-wrap">
+                {canEdit && (
+                  <Button size="sm" variant="outline" onClick={() => openEdit(selectedOpp)} data-testid="button-edit-opp">
+                    Edit Details
+                  </Button>
+                )}
+                {canManageProjects && selectedOpp.stage === "WON" && (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => { openEdit(selectedOpp); }}
-                    data-testid="button-edit-opp"
+                    className="border-green-600 text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
+                    onClick={() => openConvert(selectedOpp)}
+                    data-testid="button-convert-to-project"
                   >
-                    Edit Details
+                    <Folder className="w-3.5 h-3.5 mr-1.5" />
+                    Convert to Project
                   </Button>
-                  {canDelete && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                      onClick={() => deleteMutation.mutate(selectedOpp.id)}
-                      disabled={deleteMutation.isPending}
-                      data-testid="button-delete-opp"
-                    >
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              )}
+                )}
+                {canDelete && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={() => deleteMutation.mutate(selectedOpp.id)}
+                    disabled={deleteMutation.isPending}
+                    data-testid="button-delete-opp"
+                  >
+                    {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                  </Button>
+                )}
+              </div>
 
               {/* Activity Log */}
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <p className="font-semibold text-sm">Activity Log</p>
+                  <p className="font-semibold text-sm">Activity & Stage History</p>
                   {canEdit && (
                     <Button size="sm" variant="outline" onClick={() => setAddActivityOpen(true)} data-testid="button-add-activity">
                       <Plus className="w-3.5 h-3.5 mr-1" />
@@ -990,31 +1128,42 @@ export default function CrmPipelineView() {
                   <div className="text-center py-6 text-muted-foreground text-sm">
                     <Clock className="w-8 h-8 mx-auto mb-2 opacity-40" />
                     <p>No activities yet</p>
-                    {canEdit && <p className="text-xs">Log a call, email, or meeting to start tracking</p>}
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {activities.map(act => {
-                      const Icon = ACTIVITY_ICONS[act.activityType] ?? FileText;
+                      const isHistory = isStageChange(act);
+                      const isConverted = act.description.startsWith("[Converted]");
+                      const Icon = isHistory
+                        ? (isConverted ? Folder : GitBranch)
+                        : (ACTIVITY_ICONS[act.activityType] ?? FileText);
+                      const displayDesc = isHistory
+                        ? act.description.replace(/^\[(Stage Change|Converted)\]\s*/, "")
+                        : act.description;
+
                       return (
                         <div
                           key={act.id}
-                          className="flex gap-3 p-3 rounded-md bg-muted/40 text-sm"
+                          className={`flex gap-3 p-3 rounded-md text-sm ${isHistory ? "bg-blue-50 dark:bg-blue-950 border border-blue-100 dark:border-blue-800" : "bg-muted/40"}`}
                           data-testid={`activity-${act.id}`}
                         >
                           <div className="mt-0.5 shrink-0">
-                            <div className="p-1.5 rounded-full bg-background border">
-                              <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                            <div className={`p-1.5 rounded-full border ${isHistory ? "bg-blue-100 dark:bg-blue-900 border-blue-200 dark:border-blue-700" : "bg-background"}`}>
+                              <Icon className={`w-3.5 h-3.5 ${isHistory ? "text-blue-600 dark:text-blue-400" : "text-muted-foreground"}`} />
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5">
-                              <span className="font-medium">{ACTIVITY_LABELS[act.activityType]}</span>
+                              <span className="font-medium text-xs">
+                                {isHistory
+                                  ? (isConverted ? "Converted to Project" : "Stage Change")
+                                  : ACTIVITY_LABELS[act.activityType]}
+                              </span>
                               <span className="text-xs text-muted-foreground">
                                 {format(new Date(act.createdAt), "MMM d, h:mm a")}
                               </span>
                             </div>
-                            <p className="text-muted-foreground text-xs leading-snug whitespace-pre-wrap">{act.description}</p>
+                            <p className="text-muted-foreground text-xs leading-snug whitespace-pre-wrap">{displayDesc}</p>
                             {act.createdByFirstName && (
                               <p className="text-xs text-muted-foreground mt-1">by {act.createdByFirstName} {act.createdByLastName}</p>
                             )}
@@ -1035,6 +1184,7 @@ export default function CrmPipelineView() {
         <DialogContent data-testid="dialog-add-activity">
           <DialogHeader>
             <DialogTitle>Log Activity</DialogTitle>
+            <DialogDescription>Record a call, email, meeting, or note for this opportunity.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
             <div>
