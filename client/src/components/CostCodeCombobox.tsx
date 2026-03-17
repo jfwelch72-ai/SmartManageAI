@@ -69,7 +69,8 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
       if (match) {
         onChange(match.code);
       } else {
-        onChange(search);
+        const parts = search.split(" - ");
+        onChange(parts[0].trim());
       }
       setSearch("");
     }
