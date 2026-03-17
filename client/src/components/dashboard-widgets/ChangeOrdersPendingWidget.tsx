@@ -1,0 +1,162 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { FileEdit, DollarSign, CheckCircle2, Lock } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { cn } from "@/lib/utils";
+import { Link } from "wouter";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+
+interface ChangeOrdersPendingData {
+  count: number;
+  totalValue: number;
+  items: {
+    id: string;
+    coNumber: number;
+    description: string;
+    amount: number;
+    projectName: string;
+    daysPending: number;
+  }[];
+}
+
+function formatCurrency(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1000000) return `$${(abs / 1000000).toFixed(1)}M`;
+  if (abs >= 1000) return `$${(abs / 1000).toFixed(1)}K`;
+  return `$${abs.toFixed(0)}`;
+}
+
+function getDaysBadgeColor(days: number): string {
+  if (days > 14) return "text-red-600 dark:text-red-400";
+  if (days > 7) return "text-amber-600 dark:text-amber-500";
+  return "text-muted-foreground";
+}
+
+export function ChangeOrdersPendingWidget() {
+  const hasPermission = useFeaturePermission("canAccessFinancials");
+
+  const { data, isLoading } = useQuery<ChangeOrdersPendingData>({
+    queryKey: ["/api/dashboard/change-orders-pending"],
+    refetchInterval: 120000,
+    enabled: hasPermission,
+  });
+
+  if (!hasPermission) {
+    return (
+      <Card data-testid="change-orders-pending-no-permission">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="flex items-center gap-2">
+            <Lock className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Change Orders Pending</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <p className="text-sm text-muted-foreground text-center py-4">You don't have permission to view financial data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <Card data-testid="change-orders-pending-loading">
+        <CardHeader className="pb-2 px-4 pt-4">
+          <div className="animate-pulse h-4 w-44 bg-muted rounded" />
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          <div className="animate-pulse grid grid-cols-2 gap-3">
+            <div className="h-14 bg-muted/50 rounded-lg" />
+            <div className="h-14 bg-muted/50 rounded-lg" />
+          </div>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="animate-pulse flex gap-3 items-start">
+              <div className="h-4 w-4 rounded bg-muted shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-3/4 bg-muted rounded" />
+                <div className="h-3 w-1/2 bg-muted rounded" />
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const d = data || { count: 0, totalValue: 0, items: [] };
+
+  return (
+    <Card data-testid="change-orders-pending-widget">
+      <CardHeader className="pb-2 px-4 pt-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileEdit className="w-4 h-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Change Orders Pending</CardTitle>
+          </div>
+          {d.count > 0 && (
+            <Badge variant="secondary" className="bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px]" data-testid="co-count-badge">
+              {d.count} Pending
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4">
+        {d.count === 0 ? (
+          <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="change-orders-empty">
+            <CheckCircle2 className="w-8 h-8 text-green-500 opacity-70 mb-2" />
+            <p className="text-sm text-muted-foreground">No pending change orders</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">All submitted change orders have been reviewed</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 mb-1">
+              <div className="rounded-lg bg-amber-500/10 p-3" data-testid="metric-co-count">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <FileEdit className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Pending</span>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">{d.count}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">awaiting approval</p>
+              </div>
+              <div className="rounded-lg bg-green-500/10 p-3" data-testid="metric-co-value">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <DollarSign className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Total Value</span>
+                </div>
+                <p className="text-xl font-bold tabular-nums text-green-600 dark:text-green-400">{formatCurrency(d.totalValue)}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">pending approval</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
+              {d.items.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-start gap-2.5 py-2 px-2.5 rounded-md bg-muted/30 border border-border/50"
+                  data-testid={`co-item-${item.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium">CO-{item.coNumber}</span>
+                      <span className="text-[11px] text-muted-foreground truncate">· {item.projectName}</span>
+                    </div>
+                    {item.description && (
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.description}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs font-semibold text-foreground">{formatCurrency(item.amount)}</p>
+                    <p className={cn("text-[11px]", getDaysBadgeColor(item.daysPending))}>{item.daysPending}d</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Link href="/projects" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-all-cos">
+              View all change orders
+            </Link>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

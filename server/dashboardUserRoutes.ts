@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems } from "@shared/schema";
+import { users, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments } from "@shared/schema";
 import { requireAuth, requireRole, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens, type AuthRequest } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -236,14 +236,23 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       }
       case "OPEN_RFIS": {
         label = "Open RFIs";
+        const rfiOrgFilter = shouldFilter && orgId ? eq(rfis.organizationId, orgId) : sql`true`;
         const result = await db
           .select({ count: sql<number>`count(*)::int` })
-          .from(changeOrders)
-          .innerJoin(projects, eq(changeOrders.projectId, projects.id))
-          .where(and(eq(changeOrders.status, "SUBMITTED"), orgFilter));
+          .from(rfis)
+          .where(and(sql`${rfis.status} IN ('SUBMITTED', 'UNDER_REVIEW')`, rfiOrgFilter));
         value = result[0]?.count || 0;
-        previousValue = Math.max(0, value + Math.floor(Math.random() * 2) - 1);
-        isEstimated = true;
+        const prevResult = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(rfis)
+          .where(and(
+            sql`${rfis.status} IN ('ANSWERED', 'CLOSED')`,
+            sql`${rfis.dateAnswered} >= ${prevStart.toISOString()}::timestamp`,
+            sql`${rfis.dateAnswered} < ${periodStart.toISOString()}::timestamp`,
+            rfiOrgFilter
+          ));
+        previousValue = prevResult[0]?.count || 0;
+        isEstimated = false;
         break;
       }
       case "TOTAL_LABOR_COST": {
@@ -260,14 +269,28 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       }
       case "REVENUE_THIS_MONTH": {
         label = "Revenue This Month";
-        const activeCount = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(projects)
-          .where(and(eq(projects.status, "ACTIVE"), orgFilter));
-        const projectCount = activeCount[0]?.count || 0;
-        value = projectCount * 45000 + Math.floor(Math.random() * 15000);
-        previousValue = Math.floor(value * (0.88 + Math.random() * 0.15));
-        isEstimated = true;
+        const revOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const revResult = await db.execute(sql`
+          SELECT COALESCE(SUM(sli."billed_amount"::numeric), 0) as total
+          FROM "sov_line_items" sli
+          JOIN "schedule_of_values" sov ON sli."sov_id" = sov."id"
+          JOIN "projects" p ON sov."project_id" = p."id"
+          WHERE sli."updated_at" >= ${periodStart.toISOString()}::timestamp
+            AND sli."updated_at" < ${periodEnd.toISOString()}::timestamp
+            ${revOrgCond}
+        `);
+        value = parseFloat((revResult.rows[0] as any)?.total || "0");
+        const prevRevResult = await db.execute(sql`
+          SELECT COALESCE(SUM(sli."billed_amount"::numeric), 0) as total
+          FROM "sov_line_items" sli
+          JOIN "schedule_of_values" sov ON sli."sov_id" = sov."id"
+          JOIN "projects" p ON sov."project_id" = p."id"
+          WHERE sli."updated_at" >= ${prevStart.toISOString()}::timestamp
+            AND sli."updated_at" < ${prevEnd.toISOString()}::timestamp
+            ${revOrgCond}
+        `);
+        previousValue = parseFloat((prevRevResult.rows[0] as any)?.total || "0");
+        isEstimated = false;
         break;
       }
       case "OUTSTANDING_PAYABLES": {
@@ -284,9 +307,59 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       }
       case "GROSS_MARGIN": {
         label = "Gross Margin %";
-        value = 18 + Math.floor(Math.random() * 12);
-        previousValue = value - Math.floor(Math.random() * 5) + 2;
-        isEstimated = true;
+        const gmOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const gmResult = await db.execute(sql`
+          SELECT
+            COALESCE(SUM(COALESCE(p."contract_amount"::numeric, p."budget"::numeric, 0)), 0) as total_revenue,
+            COALESCE(SUM(
+              COALESCE((
+                SELECT SUM(te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
+                         + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75))
+                FROM "time_entries" te
+                JOIN "users" u ON te."user_id" = u."id"
+                WHERE te."project_id" = p."id"
+              ), 0) +
+              COALESCE((
+                SELECT SUM(pi."quantity"::numeric * pi."unit_cost"::numeric)
+                FROM "procurement_items" pi
+                WHERE pi."project_id" = p."id" AND pi."status"::text != 'CANCELLED'
+              ), 0)
+            ), 0) as total_cost
+          FROM "projects" p
+          WHERE p."status"::text = 'ACTIVE'
+            ${gmOrgCond}
+        `);
+        const totalRevenue = parseFloat((gmResult.rows[0] as any)?.total_revenue || "0");
+        const totalCost = parseFloat((gmResult.rows[0] as any)?.total_cost || "0");
+        value = totalRevenue > 0 ? Math.round(((totalRevenue - totalCost) / totalRevenue) * 100) : 0;
+        const prevGmResult = await db.execute(sql`
+          SELECT
+            COALESCE(SUM(COALESCE(p."contract_amount"::numeric, p."budget"::numeric, 0)), 0) as total_revenue,
+            COALESCE(SUM(
+              COALESCE((
+                SELECT SUM(te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
+                         + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75))
+                FROM "time_entries" te
+                JOIN "users" u ON te."user_id" = u."id"
+                WHERE te."project_id" = p."id"
+                  AND te."date" < ${prevEnd.toISOString()}::date
+              ), 0) +
+              COALESCE((
+                SELECT SUM(pi."quantity"::numeric * pi."unit_cost"::numeric)
+                FROM "procurement_items" pi
+                WHERE pi."project_id" = p."id" AND pi."status"::text != 'CANCELLED'
+                  AND pi."created_at" < ${prevEnd.toISOString()}::timestamp
+              ), 0)
+            ), 0) as total_cost
+          FROM "projects" p
+          WHERE p."status"::text IN ('ACTIVE', 'COMPLETED')
+            AND p."created_at" < ${prevEnd.toISOString()}::timestamp
+            ${gmOrgCond}
+        `);
+        const prevRevenue = parseFloat((prevGmResult.rows[0] as any)?.total_revenue || "0");
+        const prevCost = parseFloat((prevGmResult.rows[0] as any)?.total_cost || "0");
+        previousValue = prevRevenue > 0 ? Math.round(((prevRevenue - prevCost) / prevRevenue) * 100) : 0;
+        isEstimated = false;
         break;
       }
       default: {
@@ -2344,6 +2417,210 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
     });
   } catch (error) {
     console.error("Schedule impact error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Labor Utilization Widget
+// ====================
+router.get("/api/dashboard/labor-utilization", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ utilizedPercent: 0, workedHours: 0, availableHours: 0, billablePercent: 0, sparkline: [] });
+    }
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const orgCond = shouldFilter && orgId ? sql`AND u."organization_id" = ${orgId}` : sql``;
+    const projOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+
+    // Total active field workers
+    const totalResult = await db.execute(sql`
+      SELECT COUNT(*)::int as count
+      FROM "users" u
+      WHERE u."is_active" = true
+        AND u."role" IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'PROJECT_ENGINEER', 'DISPATCHER', 'EQUIPMENT_MANAGER', 'MAINTENANCE_MANAGER')
+        ${orgCond}
+    `);
+    const totalWorkers = (totalResult.rows[0] as any)?.count || 0;
+
+    // Workers with time entries today
+    const activeResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT te."user_id")::int as count,
+             COALESCE(SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric), 0) as worked_hours
+      FROM "time_entries" te
+      JOIN "users" u ON te."user_id" = u."id"
+      WHERE te."date" = ${todayStart.toISOString().split('T')[0]}::date
+        ${orgCond}
+    `);
+    const activeWorkers = (activeResult.rows[0] as any)?.count || 0;
+    const workedHours = parseFloat((activeResult.rows[0] as any)?.worked_hours || "0");
+
+    // Standard 8-hour day assumption
+    const availableHours = totalWorkers * 8;
+    const utilizedPercent = availableHours > 0 ? Math.round((workedHours / availableHours) * 100) : 0;
+
+    // Billable hours (time on active projects)
+    const billableResult = await db.execute(sql`
+      SELECT COALESCE(SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric), 0) as billable_hours
+      FROM "time_entries" te
+      JOIN "projects" p ON te."project_id" = p."id"
+      WHERE te."date" = ${todayStart.toISOString().split('T')[0]}::date
+        AND p."status" = 'ACTIVE'
+        ${projOrgCond}
+    `);
+    const billableHours = parseFloat((billableResult.rows[0] as any)?.billable_hours || "0");
+    const billablePercent = workedHours > 0 ? Math.round((billableHours / workedHours) * 100) : 0;
+
+    // 7-day sparkline
+    const sparkline: { date: string; utilizedPercent: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const dayDate = new Date(now);
+      dayDate.setDate(now.getDate() - i);
+      const dayStr = dayDate.toISOString().split('T')[0];
+      const dayResult = await db.execute(sql`
+        SELECT COALESCE(SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric), 0) as worked
+        FROM "time_entries" te
+        JOIN "users" u ON te."user_id" = u."id"
+        WHERE te."date" = ${dayStr}::date
+          ${orgCond}
+      `);
+      const dayHours = parseFloat((dayResult.rows[0] as any)?.worked || "0");
+      const dayPct = availableHours > 0 ? Math.round((dayHours / availableHours) * 100) : 0;
+      sparkline.push({ date: dayStr, utilizedPercent: Math.min(dayPct, 100) });
+    }
+
+    res.json({ utilizedPercent: Math.min(utilizedPercent, 100), workedHours, availableHours, billablePercent, activeWorkers, totalWorkers, sparkline });
+  } catch (error) {
+    console.error("Labor utilization error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Safety Summary Widget
+// ====================
+router.get("/api/dashboard/safety-summary", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ overdueCount: 0, dueThisWeekCount: 0, completionRate: 0, overdueItems: [] });
+    }
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const endOfWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const orgCond = shouldFilter && orgId ? sql`AND sta."organization_id" = ${orgId}` : sql``;
+
+    // Total assignments and completed
+    const totalResult = await db.execute(sql`
+      SELECT
+        COUNT(*)::int as total,
+        COUNT(CASE WHEN sta."completed_at" IS NOT NULL THEN 1 END)::int as completed,
+        COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" IS NOT NULL AND sta."due_date" < ${todayStr} THEN 1 END)::int as overdue,
+        COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" >= ${todayStr} AND sta."due_date" <= ${endOfWeek} THEN 1 END)::int as due_this_week
+      FROM "safety_training_assignments" sta
+      WHERE 1=1 ${orgCond}
+    `);
+    const row = (totalResult.rows[0] as any) || {};
+    const total = row.total || 0;
+    const completed = row.completed || 0;
+    const overdueCount = row.overdue || 0;
+    const dueThisWeekCount = row.due_this_week || 0;
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    // Overdue items with employee name and training title
+    const overdueResult = await db.execute(sql`
+      SELECT
+        sta."id",
+        CONCAT(u."first_name", ' ', u."last_name") as employee_name,
+        st."title" as training_title,
+        sta."due_date",
+        ${todayStr}::date - sta."due_date"::date as days_overdue
+      FROM "safety_training_assignments" sta
+      JOIN "users" u ON sta."employee_id" = u."id"
+      JOIN "safety_trainings" st ON sta."training_id" = st."id"
+      WHERE sta."completed_at" IS NULL
+        AND sta."due_date" IS NOT NULL
+        AND sta."due_date" < ${todayStr}
+        ${orgCond}
+      ORDER BY sta."due_date" ASC
+      LIMIT 5
+    `);
+    const overdueItems = (overdueResult.rows as any[]).map(r => ({
+      id: r.id,
+      employeeName: r.employee_name,
+      trainingTitle: r.training_title,
+      dueDate: r.due_date,
+      daysOverdue: parseInt(r.days_overdue) || 0,
+    }));
+
+    res.json({ overdueCount, dueThisWeekCount, completionRate, total, completed, overdueItems });
+  } catch (error) {
+    console.error("Safety summary error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Change Orders Pending Widget
+// ====================
+router.get("/api/dashboard/change-orders-pending", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.json({ count: 0, totalValue: 0, items: [] });
+    }
+
+    const now = new Date();
+    const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+
+    const summaryResult = await db.execute(sql`
+      SELECT
+        COUNT(*)::int as count,
+        COALESCE(SUM(co."amount"::numeric), 0) as total_value
+      FROM "change_orders" co
+      JOIN "projects" p ON co."project_id" = p."id"
+      WHERE co."status"::text = 'SUBMITTED'
+        ${orgCond}
+    `);
+    const count = (summaryResult.rows[0] as any)?.count || 0;
+    const totalValue = parseFloat((summaryResult.rows[0] as any)?.total_value || "0");
+
+    const itemsResult = await db.execute(sql`
+      SELECT
+        co."id",
+        co."change_order_number",
+        co."description",
+        co."amount",
+        co."created_at",
+        p."name" as project_name,
+        ${now.toISOString()}::timestamp - co."created_at" as age_interval
+      FROM "change_orders" co
+      JOIN "projects" p ON co."project_id" = p."id"
+      WHERE co."status"::text = 'SUBMITTED'
+        ${orgCond}
+      ORDER BY co."created_at" ASC
+      LIMIT 5
+    `);
+
+    const items = (itemsResult.rows as any[]).map(r => ({
+      id: r.id,
+      coNumber: r.change_order_number,
+      description: (r.description || "").substring(0, 60),
+      amount: parseFloat(r.amount || "0"),
+      projectName: r.project_name,
+      daysPending: Math.floor((now.getTime() - new Date(r.created_at).getTime()) / (1000 * 60 * 60 * 24)),
+    }));
+
+    res.json({ count, totalValue, items });
+  } catch (error) {
+    console.error("Change orders pending error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

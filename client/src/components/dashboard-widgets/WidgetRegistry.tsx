@@ -19,6 +19,11 @@ import {
   PieChart,
   CalendarDays,
   Zap,
+  Activity,
+  HeartPulse,
+  HelpCircle,
+  FileEdit,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import type { FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
@@ -45,6 +50,11 @@ import { BidPipelineWidget } from "./BidPipelineWidget";
 import { CostCodeBreakdownWidget } from "./CostCodeBreakdownWidget";
 import { ScheduleImpactWidget } from "./ScheduleImpactWidget";
 import { QuickActionsWidget } from "./QuickActionsWidget";
+import { LaborUtilizationWidget } from "./LaborUtilizationWidget";
+import { ProjectHealthSummaryWidget } from "./ProjectHealthSummaryWidget";
+import { RFIStatusWidget } from "./RFIStatusWidget";
+import { ChangeOrdersPendingWidget } from "./ChangeOrdersPendingWidget";
+import { SafetyAlertsWidget } from "./SafetyAlertsWidget";
 
 export interface WidgetDefinition {
   type: string;
@@ -416,6 +426,86 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxW: 12,
     maxH: 4,
     singleton: true,
+  },
+  {
+    type: "LABOR_UTILIZATION",
+    label: "Labor Utilization",
+    description: "Today's workforce utilization %, billable hours ratio, active workers, and 7-day sparkline",
+    icon: Activity,
+    component: LaborUtilizationWidget,
+    defaultW: 6,
+    defaultH: 5,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 7,
+    singleton: false,
+    featurePerm: "canManagePayroll",
+    hasSettings: false,
+  },
+  {
+    type: "PROJECT_HEALTH_SUMMARY",
+    label: "Project Health Summary",
+    description: "Health score distribution (healthy / at-risk / critical) across all active projects",
+    icon: HeartPulse,
+    component: ProjectHealthSummaryWidget,
+    defaultW: 6,
+    defaultH: 6,
+    minW: 4,
+    minH: 5,
+    maxW: 12,
+    maxH: 10,
+    singleton: false,
+    roleGate: "management",
+    hasSettings: false,
+  },
+  {
+    type: "RFI_STATUS",
+    label: "RFI Status",
+    description: "Open RFIs awaiting response — count, oldest first, with age indicator",
+    icon: HelpCircle,
+    component: RFIStatusWidget,
+    defaultW: 6,
+    defaultH: 6,
+    minW: 4,
+    minH: 5,
+    maxW: 12,
+    maxH: 10,
+    singleton: false,
+    roleGate: "management",
+    hasSettings: false,
+  },
+  {
+    type: "CHANGE_ORDERS_PENDING",
+    label: "Change Orders Pending",
+    description: "Change orders awaiting approval — count, total value, and days pending",
+    icon: FileEdit,
+    component: ChangeOrdersPendingWidget,
+    defaultW: 6,
+    defaultH: 5,
+    minW: 4,
+    minH: 4,
+    maxW: 12,
+    maxH: 8,
+    singleton: false,
+    featurePerm: "canAccessFinancials",
+    hasSettings: false,
+  },
+  {
+    type: "SAFETY_ALERTS",
+    label: "Safety Alerts",
+    description: "Safety training completion rate, overdue assignments, and upcoming due dates",
+    icon: ShieldCheck,
+    component: SafetyAlertsWidget,
+    defaultW: 6,
+    defaultH: 6,
+    minW: 4,
+    minH: 5,
+    maxW: 12,
+    maxH: 10,
+    singleton: false,
+    roleGate: "management",
+    hasSettings: false,
   },
 ];
 

@@ -3,7 +3,8 @@ import type { DashboardLayoutConfig } from "@shared/schema";
 export const KNOWN_WIDGET_TYPES = [
   'QUICK_STATS', 'KPI_SUMMARY', 'TREND_CHART', 'DATA_LIST', 'ALERTS', 'WORKFORCE_SNAPSHOT', 'CASH_POSITION', 'SOV_PROGRESS', 'BID_PIPELINE', 'COST_CODE_BREAKDOWN', 'SCHEDULE_IMPACT', 'WEATHER', 'AI_INSIGHTS', 'MESSAGES', 'NOTIFICATIONS',
   'CALENDAR_EVENTS', 'AI_TASKS', 'OUTSTANDING_ITEMS', 'ACTIVE_PROJECTS',
-  'ACTIVE_BIDS', 'CREW_OVERVIEW', 'PROJECT_ASSIGNMENTS', 'QUICK_ACTIONS'
+  'ACTIVE_BIDS', 'CREW_OVERVIEW', 'PROJECT_ASSIGNMENTS', 'QUICK_ACTIONS',
+  'LABOR_UTILIZATION', 'PROJECT_HEALTH_SUMMARY', 'RFI_STATUS', 'CHANGE_ORDERS_PENDING', 'SAFETY_ALERTS',
 ];
 
 export function migrateV2ToV3(config: any): DashboardLayoutConfig {
@@ -82,6 +83,27 @@ const EXECUTIVE_TIER: DashboardLayoutConfig = {
       ],
     },
     {
+      id: 'section-ops-intelligence',
+      title: 'Operations Intelligence',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'exec-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'exec-change-orders', type: 'CHANGE_ORDERS_PENDING', x: 4, y: 0, w: 4, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+        { id: 'exec-rfi-status', type: 'RFI_STATUS', x: 8, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
+      id: 'section-workforce-safety',
+      title: 'Workforce & Safety',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'exec-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
+        { id: 'exec-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+      ],
+    },
+    {
       id: 'section-communications',
       title: 'Communications',
       columns: 3,
@@ -155,6 +177,27 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       widgets: [
         { id: 'ops-workforce', type: 'WORKFORCE_SNAPSHOT', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
         { id: 'ops-crew', type: 'CREW_OVERVIEW', x: 6, y: 0, w: 6, h: 5, visible: true, minW: 2, minH: 3, maxW: 6, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-project-intelligence',
+      title: 'Project Intelligence',
+      columns: 3,
+      collapsed: false,
+      widgets: [
+        { id: 'ops-project-health', type: 'PROJECT_HEALTH_SUMMARY', x: 0, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'ops-rfi-status', type: 'RFI_STATUS', x: 4, y: 0, w: 4, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
+        { id: 'ops-change-orders', type: 'CHANGE_ORDERS_PENDING', x: 8, y: 0, w: 4, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 8 },
+      ],
+    },
+    {
+      id: 'section-labor-safety',
+      title: 'Labor & Safety',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'ops-labor-util', type: 'LABOR_UTILIZATION', x: 0, y: 0, w: 6, h: 5, visible: true, minW: 4, minH: 4, maxW: 12, maxH: 7 },
+        { id: 'ops-safety-alerts', type: 'SAFETY_ALERTS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 4, minH: 5, maxW: 12, maxH: 10 },
       ],
     },
     {
