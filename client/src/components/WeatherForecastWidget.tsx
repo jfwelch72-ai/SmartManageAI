@@ -125,7 +125,6 @@ export function WeatherForecastWidget({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [geoState, setGeoState] = useState<GeoState>("idle");
-  const [renderError, setRenderError] = useState(false);
 
   useEffect(() => {
     if (defaultLat != null || defaultLng != null) return;
@@ -185,20 +184,6 @@ export function WeatherForecastWidget({
     setSearchQuery("");
     setIsSearching(false);
   };
-
-  if (renderError) {
-    return (
-      <Card data-testid="weather-widget-render-error">
-        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-          <AlertCircle className="w-8 h-8 text-destructive mb-2 opacity-70" />
-          <p className="text-sm text-muted-foreground">Weather unavailable</p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => setRenderError(false)}>
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
 
   if (isLoading && !weather) {
     return (
@@ -265,11 +250,27 @@ export function WeatherForecastWidget({
     );
   }
 
-  try {
-    const todayConditions = weather?.dailyData?.[0];
-
+  const dailyData = weather?.dailyData;
+  if (!dailyData || !Array.isArray(dailyData) || dailyData.length === 0) {
     return (
-      <Card data-testid="weather-widget">
+      <Card data-testid="weather-widget-no-data">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <Cloud className="w-8 h-8 text-muted-foreground mb-2 opacity-40" />
+          <p className="text-sm text-muted-foreground">Weather data unavailable</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()} disabled={isFetching}
+            data-testid="button-retry-weather-nodata">
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const todayConditions = dailyData[0];
+
+  return (
+    <Card data-testid="weather-widget">
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
@@ -373,7 +374,7 @@ export function WeatherForecastWidget({
 
           <ScrollArea className="w-full">
             <div className="flex gap-2 pb-2">
-              {weather?.dailyData?.map((day, index) => (
+              {dailyData.map((day, index) => (
                 <DayCard key={day.date} day={day} isToday={index === 0} />
               ))}
             </div>
@@ -387,10 +388,6 @@ export function WeatherForecastWidget({
         </CardContent>
       </Card>
     );
-  } catch {
-    setRenderError(true);
-    return null;
-  }
 }
 
 export default WeatherForecastWidget;
