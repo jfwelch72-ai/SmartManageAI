@@ -1004,6 +1004,7 @@ export const calendarEvents = pgTable("calendar_events", {
   allDay: boolean("all_day").notNull().default(false),
   userId: varchar("user_id").references(() => users.id),
   projectId: varchar("project_id").references(() => projects.id),
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
   approvedById: varchar("approved_by_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
@@ -1011,6 +1012,7 @@ export const calendarEvents = pgTable("calendar_events", {
 }, (table) => ({
   eventTypeIdx: index("calendar_events_event_type_idx").on(table.eventType),
   userIdIdx: index("calendar_events_user_id_idx").on(table.userId),
+  crmOrgIdx: index("calendar_events_crm_org_idx").on(table.crmOrganisationId),
 }));
 
 // Notifications table

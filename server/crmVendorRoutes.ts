@@ -657,31 +657,36 @@ const router = Router();
         allDay: boolean;
         eventType: string;
         projectId: string | null;
+        crmOrganisationId: string | null;
       }> = [];
 
+      const linkageConditions: SQL[] = [eq(calendarEvents.crmOrganisationId, crmOrg.id)];
       if (projectIds.length > 0) {
-        upcomingEvents = await db
-          .select({
-            id: calendarEvents.id,
-            title: calendarEvents.title,
-            description: calendarEvents.description,
-            startDate: calendarEvents.startDate,
-            endDate: calendarEvents.endDate,
-            allDay: calendarEvents.allDay,
-            eventType: calendarEvents.eventType,
-            projectId: calendarEvents.projectId,
-          })
-          .from(calendarEvents)
-          .where(
-            and(
-              inArray(calendarEvents.projectId, projectIds),
-              gte(calendarEvents.startDate, now),
-              lte(calendarEvents.startDate, thirtyDaysOut)
-            )
-          )
-          .orderBy(calendarEvents.startDate)
-          .limit(10);
+        linkageConditions.push(inArray(calendarEvents.projectId, projectIds));
       }
+
+      upcomingEvents = await db
+        .select({
+          id: calendarEvents.id,
+          title: calendarEvents.title,
+          description: calendarEvents.description,
+          startDate: calendarEvents.startDate,
+          endDate: calendarEvents.endDate,
+          allDay: calendarEvents.allDay,
+          eventType: calendarEvents.eventType,
+          projectId: calendarEvents.projectId,
+          crmOrganisationId: calendarEvents.crmOrganisationId,
+        })
+        .from(calendarEvents)
+        .where(
+          and(
+            gte(calendarEvents.startDate, now),
+            lte(calendarEvents.startDate, thirtyDaysOut),
+            or(...linkageConditions)
+          )
+        )
+        .orderBy(calendarEvents.startDate)
+        .limit(10);
 
       res.json({
         emails: emailRows,

@@ -396,13 +396,20 @@ export function CrmOrgDetail({
     allDay: boolean;
     eventType: string;
     projectId: string | null;
+    crmOrganisationId: string | null;
   }
   interface CommunicationsPagination { page: number; pageSize: number; total: number; hasMore: boolean; }
   interface CommunicationsData { emails: CommEmail[]; upcomingEvents: CommEvent[]; pagination: CommunicationsPagination; }
   const [commsPage, setCommsPage] = useState(1);
   useEffect(() => { setCommsPage(1); }, [selectedOrg?.id]);
   const { data: commsData, isLoading: commsLoading } = useQuery<CommunicationsData>({
-    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`, commsPage],
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`, { page: commsPage }],
+    queryFn: async () => {
+      const url = `/api/crm/organisations/${selectedOrg?.id}/communications?page=${commsPage}&pageSize=20`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch communications");
+      return res.json();
+    },
     enabled: !!selectedOrg?.id && detailOrgOpen && hasEmailIntegration,
   });
 
@@ -466,12 +473,10 @@ export function CrmOrgDetail({
                   Portal Access
                 </TabsTrigger>
               )}
-              {hasEmailIntegration && (
-                <TabsTrigger value="communications" data-testid="tab-communications">
-                  <Mail className="w-3 h-3 mr-1" />
-                  Communications
-                </TabsTrigger>
-              )}
+              <TabsTrigger value="communications" data-testid="tab-communications">
+                <Mail className="w-3 h-3 mr-1" />
+                Communications
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="info" className="space-y-4 mt-4">
