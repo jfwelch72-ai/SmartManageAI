@@ -5,6 +5,10 @@ import {
   insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema,
   auditLog, users, emailThreads, emailMessages, calendarEvents, projects,
   crmOpportunities, vendorPricingCatalogs, vendorPricebooks, vendorPricebookItems,
+  subcontractorContracts, rentalVendors, rentalEquipmentCatalog, vendorEnrollments,
+  vendorUsers, websiteContactSubmissions, emailTasks, pricebookImportJobs,
+  vendorScores, materialPriceIndex, rfis, transmittalRecipients, submittals,
+  subcontractorPortalTokens, bidDocumentDistributions,
 } from "@shared/schema";
 import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, ilike, ne, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -342,6 +346,96 @@ const router = Router();
           .update(emailThreads)
           .set({ vendorId: winnerId })
           .where(eq(emailThreads.vendorId, loserId));
+
+        // Re-parent subcontractor contracts
+        await tx
+          .update(subcontractorContracts)
+          .set({ subcontractorId: winnerId })
+          .where(eq(subcontractorContracts.subcontractorId, loserId));
+
+        // Re-parent rental vendors
+        await tx
+          .update(rentalVendors)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(rentalVendors.crmOrganisationId, loserId));
+
+        // Re-parent rental equipment catalog
+        await tx
+          .update(rentalEquipmentCatalog)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(rentalEquipmentCatalog.crmOrganisationId, loserId));
+
+        // Re-parent vendor enrollments
+        await tx
+          .update(vendorEnrollments)
+          .set({ vendorCrmOrgId: winnerId })
+          .where(eq(vendorEnrollments.vendorCrmOrgId, loserId));
+
+        // Re-parent vendor users
+        await tx
+          .update(vendorUsers)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(vendorUsers.crmOrganisationId, loserId));
+
+        // Re-parent website contact submissions
+        await tx
+          .update(websiteContactSubmissions)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(websiteContactSubmissions.crmOrganisationId, loserId));
+
+        // Re-parent email tasks
+        await tx
+          .update(emailTasks)
+          .set({ vendorId: winnerId })
+          .where(eq(emailTasks.vendorId, loserId));
+
+        // Re-parent pricebook import jobs
+        await tx
+          .update(pricebookImportJobs)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(pricebookImportJobs.crmOrganisationId, loserId));
+
+        // Re-parent vendor scores
+        await tx
+          .update(vendorScores)
+          .set({ crmEntityId: winnerId })
+          .where(eq(vendorScores.crmEntityId, loserId));
+
+        // Re-parent material price index source vendor
+        await tx
+          .update(materialPriceIndex)
+          .set({ sourceVendorId: winnerId })
+          .where(eq(materialPriceIndex.sourceVendorId, loserId));
+
+        // Re-parent RFIs
+        await tx
+          .update(rfis)
+          .set({ subcontractorId: winnerId })
+          .where(eq(rfis.subcontractorId, loserId));
+
+        // Re-parent transmittal recipients
+        await tx
+          .update(transmittalRecipients)
+          .set({ subcontractorId: winnerId })
+          .where(eq(transmittalRecipients.subcontractorId, loserId));
+
+        // Re-parent submittals
+        await tx
+          .update(submittals)
+          .set({ subcontractorId: winnerId })
+          .where(eq(submittals.subcontractorId, loserId));
+
+        // Re-parent subcontractor portal tokens
+        await tx
+          .update(subcontractorPortalTokens)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(subcontractorPortalTokens.crmOrganisationId, loserId));
+
+        // Re-parent bid document distributions
+        await tx
+          .update(bidDocumentDistributions)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(bidDocumentDistributions.crmOrganisationId, loserId));
 
         // Soft-delete the loser
         await tx
