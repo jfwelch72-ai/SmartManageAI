@@ -611,7 +611,6 @@ router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELIN
     const stageDurations: Record<string, number[]> = {};
     for (const stage of ORDERED_STAGES) stageDurations[stage] = [];
 
-    const oppMap = new Map(opps.map(o => [o.id, o]));
     const actsByOpp: Record<string, typeof activities> = {};
     for (const act of activities) {
       if (!actsByOpp[act.opportunityId]) actsByOpp[act.opportunityId] = [];
@@ -620,16 +619,30 @@ router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELIN
 
     for (const opp of opps) {
       const acts = actsByOpp[opp.id] ?? [];
-      // Build timeline: [LEAD entry = createdAt, ...stage-change timestamps]
+      // Build timeline starting from the opp's actual initial stage.
+      // The first stage-change activity's "from" label tells us the real starting stage.
+      // If no activities exist, the opp has never changed stage.
       type Transition = { stage: string; at: Date };
-      const timeline: Transition[] = [{ stage: "LEAD", at: new Date(opp.createdAt) }];
+
+      // Helper: label→key
+      const labelToKey = (label: string): string =>
+        Object.entries(STAGE_LABELS).find(([, lbl]) => lbl === label.trim())?.[0] ?? label.trim();
+
+      let initialStage: string;
+      if (acts.length > 0) {
+        const firstMatch = acts[0].description.match(/\[Stage Change\]\s+(.+?)\s+→\s+(.+)/);
+        initialStage = firstMatch ? labelToKey(firstMatch[1]) : opp.stage;
+      } else {
+        initialStage = opp.stage;
+      }
+
+      const timeline: Transition[] = [{ stage: initialStage, at: new Date(opp.createdAt) }];
 
       for (const act of acts) {
         // description format: "[Stage Change] From → To"
         const match = act.description.match(/\[Stage Change\]\s+(.+?)\s+→\s+(.+)/);
         if (match) {
-          const toStageLabel = match[2].trim();
-          const toStage = Object.entries(STAGE_LABELS).find(([, lbl]) => lbl === toStageLabel)?.[0] ?? toStageLabel;
+          const toStage = labelToKey(match[2]);
           timeline.push({ stage: toStage, at: new Date(act.createdAt) });
         }
       }
