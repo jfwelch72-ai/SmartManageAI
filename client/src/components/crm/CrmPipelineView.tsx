@@ -108,7 +108,7 @@ interface PipelineStats {
 }
 
 interface CrmOrg { id: string; name: string; }
-interface CrmContact { id: string; firstName: string; lastName: string; }
+interface CrmContact { id: string; firstName: string; lastName: string; orgName?: string | null; }
 interface OrgUser { id: string; firstName: string; lastName: string; role: string; }
 
 const STAGES: { key: PipelineStage; label: string; color: string; bgColor: string; probability: number }[] = [
@@ -549,7 +549,11 @@ export default function CrmPipelineView() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__none__">None</SelectItem>
-            {crmContacts.map(c => <SelectItem key={c.id} value={c.id}>{c.firstName} {c.lastName}</SelectItem>)}
+            {crmContacts.map(c => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.firstName} {c.lastName}{c.orgName ? ` — ${c.orgName}` : ""}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
