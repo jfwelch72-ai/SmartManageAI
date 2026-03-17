@@ -274,7 +274,23 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
 router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
-    const rows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
+    const rows = await db
+      .select({
+        id: orgCostCodes.id,
+        organizationId: orgCostCodes.organizationId,
+        code: orgCostCodes.code,
+        description: orgCostCodes.description,
+        division: orgCostCodes.division,
+        isCustom: orgCostCodes.isCustom,
+        isActive: orgCostCodes.isActive,
+        deactivatedById: orgCostCodes.deactivatedById,
+        deactivatedAt: orgCostCodes.deactivatedAt,
+        deactivatedByName: sql<string | null>`(SELECT CONCAT(first_name, ' ', last_name) FROM users WHERE id = ${orgCostCodes.deactivatedById})`,
+        createdAt: orgCostCodes.createdAt,
+        updatedAt: orgCostCodes.updatedAt,
+      })
+      .from(orgCostCodes)
+      .where(eq(orgCostCodes.organizationId, orgId));
     res.json(rows);
   } catch (error) {
     console.error("Error fetching org cost codes:", error);
@@ -298,7 +314,12 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
     }
 
     const parsed = insertOrgCostCodeSchema.parse({ ...req.body, organizationId: orgId, isCustom });
-    const [row] = await db.insert(orgCostCodes).values(parsed).returning();
+    const insertData: Record<string, any> = { ...parsed };
+    if (parsed.isActive === false) {
+      insertData.deactivatedById = req.user!.id;
+      insertData.deactivatedAt = new Date();
+    }
+    const [row] = await db.insert(orgCostCodes).values(insertData).returning();
     res.status(201).json(row);
   } catch (error: any) {
     if (error?.code === "23505") {
@@ -318,8 +339,19 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
     if (code !== undefined) updates.code = code;
     if (description !== undefined) updates.description = description;
     if (division !== undefined) updates.division = division;
-    if (isActive !== undefined) updates.isActive = isActive;
     if (isCustom !== undefined) updates.isCustom = isCustom;
+
+    if (isActive !== undefined) {
+      updates.isActive = isActive;
+      if (isActive === false) {
+        updates.deactivatedById = req.user!.id;
+        updates.deactivatedAt = new Date();
+      } else {
+        updates.deactivatedById = null;
+        updates.deactivatedAt = null;
+      }
+    }
+
     const [row] = await db.update(orgCostCodes).set(updates).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
     if (!row) return res.status(404).json({ error: "Cost code not found" });
     res.json(row);

@@ -71,7 +71,7 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
 
   const lines = await db.select().from(budgetLineItems).where(eq(budgetLineItems.projectId, projectId));
   for (const line of lines) {
-    const row = ensureRow(line.costCode, line.description, line.division);
+    const row = ensureRow(normalizeCostCode(line.costCode) || line.costCode, line.description, line.division);
     row.budgetedLabor = Number(line.laborBudget);
     row.budgetedMaterial = Number(line.materialBudget);
     row.budgetedSub = Number(line.subcontractorBudget);

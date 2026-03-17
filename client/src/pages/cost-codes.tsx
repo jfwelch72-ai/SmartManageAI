@@ -30,7 +30,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Plus, Search, Pencil, FolderOpen } from "lucide-react";
+import { format } from "date-fns";
 import type { CostCode } from "@shared/costCodes";
 import { CSI_DIVISIONS } from "@shared/costCodes";
 
@@ -41,6 +48,9 @@ interface OrgCostCode {
   description: string;
   division: string;
   isActive: boolean;
+  deactivatedById: string | null;
+  deactivatedAt: string | null;
+  deactivatedByName: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -248,78 +258,103 @@ export default function CostCodesPage() {
             </div>
           ) : (
             <div className="max-h-[600px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[120px]">Code</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-[100px] text-center">Active</TableHead>
-                    <TableHead className="w-[80px] text-center">Type</TableHead>
-                    <TableHead className="w-[80px] text-right">Edit</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {grouped.map((group) => (
-                    <Fragment key={group.division}>
-                      <TableRow className="bg-muted/50 hover:bg-muted/50">
-                        <TableCell colSpan={5} className="py-2">
-                          <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                            <FolderOpen className="w-4 h-4" />
-                            {group.division}
-                            <Badge variant="outline" className="ml-1 text-[10px]">{group.items.length}</Badge>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      {group.items.map((code) => {
-                        const isCustom = !!code.isCustom;
-                        const orgEntry = orgCodeMap.get(code.code);
-                        const isActive = code.isActive !== false;
-                        return (
-                          <TableRow key={code.code} className={!isActive ? "opacity-50" : ""} data-testid={`row-cost-code-${code.code}`}>
-                            <TableCell>
-                              <code className="text-sm font-mono" data-testid={`text-code-${code.code}`}>{code.code}</code>
-                            </TableCell>
-                            <TableCell data-testid={`text-desc-${code.code}`}>{code.description}</TableCell>
-                            <TableCell className="text-center">
-                              <Switch
-                                checked={isActive}
-                                onCheckedChange={(checked) => toggleActiveMutation.mutate({
-                                  code: code.code,
-                                  isActive: checked,
-                                  orgEntry: orgEntry || undefined,
-                                  division: code.division || "",
-                                  description: code.description,
-                                })}
-                                data-testid={`switch-active-${code.code}`}
-                              />
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {isCustom ? (
-                                <Badge variant="secondary" className="text-[10px]" data-testid={`badge-custom-${code.code}`}>Custom</Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-[10px]" data-testid={`badge-standard-${code.code}`}>Standard</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {isCustom && orgEntry && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => openEdit(code)}
-                                  data-testid={`button-edit-${code.code}`}
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </Fragment>
-                  ))}
-                </TableBody>
-              </Table>
+              <TooltipProvider>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Code</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-[100px] text-center">Active</TableHead>
+                      <TableHead className="w-[80px] text-center">Type</TableHead>
+                      <TableHead className="w-[160px]">Deactivated</TableHead>
+                      <TableHead className="w-[80px] text-right">Edit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grouped.map((group) => (
+                      <Fragment key={group.division}>
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell colSpan={6} className="py-2">
+                            <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
+                              <FolderOpen className="w-4 h-4" />
+                              {group.division}
+                              <Badge variant="outline" className="ml-1 text-[10px]">{group.items.length}</Badge>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                        {group.items.map((code) => {
+                          const isCustom = !!code.isCustom;
+                          const orgEntry = orgCodeMap.get(code.code);
+                          const isActive = code.isActive !== false;
+                          const deactivatedByName = orgEntry?.deactivatedByName;
+                          const deactivatedAt = orgEntry?.deactivatedAt;
+                          return (
+                            <TableRow key={code.code} className={!isActive ? "opacity-50" : ""} data-testid={`row-cost-code-${code.code}`}>
+                              <TableCell>
+                                <code className="text-sm font-mono" data-testid={`text-code-${code.code}`}>{code.code}</code>
+                              </TableCell>
+                              <TableCell data-testid={`text-desc-${code.code}`}>{code.description}</TableCell>
+                              <TableCell className="text-center">
+                                <Switch
+                                  checked={isActive}
+                                  onCheckedChange={(checked) => toggleActiveMutation.mutate({
+                                    code: code.code,
+                                    isActive: checked,
+                                    orgEntry: orgEntry || undefined,
+                                    division: code.division || "",
+                                    description: code.description,
+                                  })}
+                                  data-testid={`switch-active-${code.code}`}
+                                />
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {isCustom ? (
+                                  <Badge variant="secondary" className="text-[10px]" data-testid={`badge-custom-${code.code}`}>Custom</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-[10px]" data-testid={`badge-standard-${code.code}`}>Standard</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell data-testid={`text-deactivated-${code.code}`}>
+                                {!isActive && deactivatedByName ? (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="text-xs text-muted-foreground cursor-help">
+                                        {deactivatedByName}
+                                        {deactivatedAt && (
+                                          <>, {format(new Date(deactivatedAt), "MMM d, yyyy")}</>
+                                        )}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Deactivated by {deactivatedByName}</p>
+                                      {deactivatedAt && <p>{format(new Date(deactivatedAt), "PPpp")}</p>}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                ) : !isActive ? (
+                                  <span className="text-xs text-muted-foreground">-</span>
+                                ) : null}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {isCustom && orgEntry && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => openEdit(code)}
+                                    data-testid={`button-edit-${code.code}`}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </Fragment>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TooltipProvider>
             </div>
           )}
         </CardContent>

@@ -2099,6 +2099,8 @@ export const orgCostCodes = pgTable("org_cost_codes", {
   division: varchar("division", { length: 100 }).notNull(),
   isCustom: boolean("is_custom").notNull().default(true),
   isActive: boolean("is_active").notNull().default(true),
+  deactivatedById: varchar("deactivated_by_id"),
+  deactivatedAt: timestamp("deactivated_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [

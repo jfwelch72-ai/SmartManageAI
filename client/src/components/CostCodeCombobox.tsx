@@ -25,6 +25,14 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
     queryKey: ["/api/cost-codes"],
   });
 
+  const allCodesMap = useMemo(() => {
+    const map = new Map<string, CostCode>();
+    for (const c of costCodes) {
+      map.set(c.code, c);
+    }
+    return map;
+  }, [costCodes]);
+
   const activeCodes = useMemo(() => costCodes.filter(c => c.isActive !== false), [costCodes]);
 
   const filtered = useMemo(() => {
@@ -75,7 +83,7 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
   }, [activeIndex]);
 
   const handleSelect = useCallback((code: CostCode) => {
-    onChange(`${code.code} - ${code.description}`);
+    onChange(code.code);
     setSearch("");
     setOpen(false);
     setActiveIndex(-1);
@@ -132,7 +140,24 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
     }
   };
 
-  const displayValue = open ? (search || value) : value;
+  const normalizedValue = useMemo(() => {
+    if (!value) return "";
+    const parts = value.split(" - ");
+    return parts[0].trim();
+  }, [value]);
+
+  const matchedCode = allCodesMap.get(normalizedValue);
+  const isInactive = matchedCode && matchedCode.isActive === false;
+
+  const displayLabel = useMemo(() => {
+    if (!normalizedValue) return "";
+    if (matchedCode) {
+      return `${matchedCode.code} - ${matchedCode.description}`;
+    }
+    return value;
+  }, [normalizedValue, matchedCode, value]);
+
+  const displayValue = open ? search : displayLabel;
 
   let globalIndex = -1;
 
@@ -153,12 +178,15 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
           onFocus={handleFocus}
           onKeyDown={handleKeyDown}
           placeholder="Search or type a cost code..."
-          className="pl-9 pr-16"
+          className={`pl-9 pr-16 ${isInactive ? "text-muted-foreground line-through" : ""}`}
           autoComplete="off"
           data-testid={testId}
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
           {isLoading && <Loader2 className="w-3.5 h-3.5 text-muted-foreground animate-spin" />}
+          {isInactive && !isLoading && (
+            <Badge variant="destructive" className="text-[9px] px-1 py-0" data-testid={testId ? `${testId}-inactive` : undefined}>Inactive</Badge>
+          )}
           {value && !isLoading && (
             <button
               type="button"
