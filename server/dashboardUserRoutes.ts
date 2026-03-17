@@ -2542,11 +2542,16 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
       return res.json({ overdueCount: 0, dueThisWeekCount: 0, completionRate: 0, overdueItems: [] });
     }
 
-    const ssResult = await orgScopedCache(orgId, "dashboard:safety-summary", DASHBOARD_CACHE_TTL, async () => {
+    const projectId = typeof req.query.projectId === "string" && req.query.projectId ? req.query.projectId : null;
+    const safetyCacheKey = projectId ? `dashboard:safety-summary:${projectId}` : "dashboard:safety-summary";
+
+    const ssResult = await orgScopedCache(orgId, safetyCacheKey, DASHBOARD_CACHE_TTL, async () => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
     const endOfWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const orgCond = shouldFilter && orgId ? sql`AND sta."organization_id" = ${orgId}` : sql``;
+    // Filter employees who have time entries on the selected project
+    const projectCond = projectId ? sql`AND sta."employee_id" IN (SELECT DISTINCT te."user_id" FROM "time_entries" te WHERE te."project_id" = ${projectId})` : sql``;
 
     // Total assignments and completed
     const totalResult = await db.execute(sql`
@@ -2556,7 +2561,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
         COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" IS NOT NULL AND sta."due_date"::date < ${todayStr}::date THEN 1 END)::int as overdue,
         COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" IS NOT NULL AND sta."due_date"::date >= ${todayStr}::date AND sta."due_date"::date <= ${endOfWeek}::date THEN 1 END)::int as due_this_week
       FROM "safety_training_assignments" sta
-      WHERE 1=1 ${orgCond}
+      WHERE 1=1 ${orgCond} ${projectCond}
     `);
     const row = (totalResult.rows[0] as any) || {};
     const total = row.total || 0;
@@ -2579,9 +2584,9 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
       WHERE sta."completed_at" IS NULL
         AND sta."due_date" IS NOT NULL
         AND sta."due_date"::date < ${todayStr}::date
-        ${orgCond}
+        ${orgCond} ${projectCond}
       ORDER BY sta."due_date" ASC
-      LIMIT 5
+      LIMIT 20
     `);
     const overdueItems = (overdueResult.rows as any[]).map(r => ({
       id: r.id,

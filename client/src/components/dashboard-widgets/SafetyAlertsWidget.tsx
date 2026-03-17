@@ -36,7 +36,15 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
   const cfg: SafetyAlertsConfig = { ...DEFAULT_SAFETY_ALERTS_CONFIG, ...(config as Partial<SafetyAlertsConfig>) };
 
   const { data, isLoading, isError } = useQuery<SafetySummaryData>({
-    queryKey: ["/api/dashboard/safety-summary"],
+    queryKey: ["/api/dashboard/safety-summary", cfg.filterByProject || ""],
+    queryFn: async () => {
+      const url = cfg.filterByProject
+        ? `/api/dashboard/safety-summary?projectId=${encodeURIComponent(cfg.filterByProject)}`
+        : "/api/dashboard/safety-summary";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch safety summary");
+      return res.json();
+    },
     refetchInterval: 300000,
   });
 
@@ -143,7 +151,7 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
             {filteredOverdueItems.length > 0 && (
               <div className="space-y-1.5">
                 <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
-                  Overdue{cfg.filterByEmployee ? ` — ${cfg.filterByEmployee}` : cfg.filterByCategory ? ` — ${cfg.filterByCategory}` : ""}
+                  Overdue{cfg.filterByEmployee ? ` — ${cfg.filterByEmployee}` : cfg.filterByProject ? ` — Project Filter` : cfg.filterByCategory ? ` — ${cfg.filterByCategory}` : ""}
                 </p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
                   {filteredOverdueItems.slice(0, cfg.showLimit).map((item) => (

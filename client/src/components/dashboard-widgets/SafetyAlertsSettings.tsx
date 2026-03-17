@@ -2,12 +2,14 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { useQuery } from "@tanstack/react-query";
 
 export interface SafetyAlertsConfig {
   showLimit: number;
   showDueThisWeek: boolean;
   filterByEmployee: string;
   filterByCategory: string;
+  filterByProject: string;
 }
 
 export const DEFAULT_SAFETY_ALERTS_CONFIG: SafetyAlertsConfig = {
@@ -15,7 +17,13 @@ export const DEFAULT_SAFETY_ALERTS_CONFIG: SafetyAlertsConfig = {
   showDueThisWeek: true,
   filterByEmployee: "",
   filterByCategory: "",
+  filterByProject: "",
 };
+
+interface Project {
+  id: string;
+  name: string;
+}
 
 interface SafetyAlertsSettingsProps {
   config: SafetyAlertsConfig;
@@ -24,6 +32,11 @@ interface SafetyAlertsSettingsProps {
 
 export function SafetyAlertsSettings({ config, onChange }: SafetyAlertsSettingsProps) {
   const cfg = { ...DEFAULT_SAFETY_ALERTS_CONFIG, ...config };
+
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    select: (data: any[]) => data.map((p) => ({ id: p.id, name: p.name })),
+  });
 
   return (
     <div className="space-y-5">
@@ -37,6 +50,25 @@ export function SafetyAlertsSettings({ config, onChange }: SafetyAlertsSettingsP
           data-testid="input-safety-employee-filter"
         />
         <p className="text-xs text-muted-foreground">Show overdue items for this employee only. Leave blank to show all employees.</p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="safety-project-filter">Filter by Project</Label>
+        <Select
+          value={cfg.filterByProject || "__all__"}
+          onValueChange={(v) => onChange({ ...cfg, filterByProject: v === "__all__" ? "" : v })}
+        >
+          <SelectTrigger id="safety-project-filter" data-testid="select-safety-project-filter">
+            <SelectValue placeholder="All projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All projects</SelectItem>
+            {projects.map((p) => (
+              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Show overdue items for employees assigned to this project.</p>
       </div>
 
       <div className="space-y-2">
