@@ -42,7 +42,11 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
 
   const { data, isLoading, isError } = useQuery<ChangeOrdersPendingData>({
     queryKey: ["/api/dashboard/change-orders-pending", { projectId: cfg.projectId }],
-    queryFn: () => fetch(apiUrl, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch(apiUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch change orders");
+      return res.json();
+    },
     refetchInterval: 120000,
     enabled: hasPermission,
   });

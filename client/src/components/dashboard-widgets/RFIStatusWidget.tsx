@@ -35,13 +35,21 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
 
   const { data: submittedRfis, isLoading: submittedLoading, isError: submittedError } = useQuery<RFIItem[]>({
     queryKey: ["/api/rfi", { status: "SUBMITTED", projectId: cfg.projectId }],
-    queryFn: () => fetch(submittedUrl, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch(submittedUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch submitted RFIs");
+      return res.json();
+    },
     refetchInterval: 300000,
   });
 
   const { data: underReviewRfis, isLoading: underReviewLoading, isError: underReviewError } = useQuery<RFIItem[]>({
     queryKey: ["/api/rfi", { status: "UNDER_REVIEW", projectId: cfg.projectId }],
-    queryFn: () => fetch(underReviewUrl, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const res = await fetch(underReviewUrl, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch under-review RFIs");
+      return res.json();
+    },
     refetchInterval: 300000,
   });
 
