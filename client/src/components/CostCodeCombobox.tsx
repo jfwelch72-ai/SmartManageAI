@@ -63,15 +63,28 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
     setActiveIndex(-1);
   }, [filtered.length, search]);
 
+  const commitSearch = useCallback(() => {
+    if (search) {
+      const match = activeCodes.find(c => c.code.toLowerCase() === search.toLowerCase() || `${c.code} - ${c.description}`.toLowerCase() === search.toLowerCase());
+      if (match) {
+        onChange(match.code);
+      } else {
+        onChange(search);
+      }
+      setSearch("");
+    }
+  }, [search, activeCodes, onChange]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        commitSearch();
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [commitSearch]);
 
   useEffect(() => {
     if (activeIndex >= 0 && listRef.current) {
@@ -99,7 +112,6 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
 
   const handleInputChange = (val: string) => {
     setSearch(val);
-    onChange(val);
     if (!open) setOpen(true);
   };
 
@@ -135,6 +147,7 @@ export function CostCodeCombobox({ value, onChange, id, "data-testid": testId }:
       case "Escape":
         e.preventDefault();
         setOpen(false);
+        setSearch("");
         setActiveIndex(-1);
         break;
     }

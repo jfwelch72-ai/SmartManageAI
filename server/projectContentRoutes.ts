@@ -335,6 +335,10 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
     const orgId = req.user!.organizationId;
     const id = Number(req.params.id);
     const { code, description, division, isActive, isCustom } = req.body;
+
+    const [existing] = await db.select().from(orgCostCodes).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).limit(1);
+    if (!existing) return res.status(404).json({ error: "Cost code not found" });
+
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (code !== undefined) updates.code = code;
     if (description !== undefined) updates.description = description;
@@ -343,17 +347,16 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
 
     if (isActive !== undefined) {
       updates.isActive = isActive;
-      if (isActive === false) {
+      if (isActive === false && existing.isActive === true) {
         updates.deactivatedById = req.user!.id;
         updates.deactivatedAt = new Date();
-      } else {
+      } else if (isActive === true && existing.isActive === false) {
         updates.deactivatedById = null;
         updates.deactivatedAt = null;
       }
     }
 
     const [row] = await db.update(orgCostCodes).set(updates).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
-    if (!row) return res.status(404).json({ error: "Cost code not found" });
     res.json(row);
   } catch (error: any) {
     if (error?.code === "23505") {
