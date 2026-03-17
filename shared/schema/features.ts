@@ -907,6 +907,8 @@ export const crmOrganisations = pgTable("crm_organisations", {
   notes: text("notes"),
   crmStatus: crmOrgStatusEnum("crm_status").notNull().default("ACTIVE"),
   isActive: boolean("is_active").notNull().default(true),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at"),
   legacySubcontractorId: varchar("legacy_subcontractor_id"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -915,6 +917,7 @@ export const crmOrganisations = pgTable("crm_organisations", {
   organizationIdx: index("crm_organisations_org_idx").on(table.organizationId),
   typeIdx: index("crm_organisations_type_idx").on(table.type),
   nameIdx: index("crm_organisations_name_idx").on(table.name),
+  isDeletedIdx: index("crm_organisations_is_deleted_idx").on(table.isDeleted),
 }));
 
 export const insertCrmOrganisationSchema = createInsertSchema(crmOrganisations).omit({ id: true, createdAt: true, updatedAt: true });

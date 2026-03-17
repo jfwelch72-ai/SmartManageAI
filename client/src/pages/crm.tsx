@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,10 +15,17 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import {
   Building2,
   Plus,
   Search,
-  Edit,
   MapPin,
   Package,
   AlertCircle,
@@ -28,10 +35,11 @@ import {
   Users,
   Mail,
   Phone,
-  User,
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  Copy,
+  Filter,
 } from "lucide-react";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import type {
@@ -46,6 +54,8 @@ import {
 } from "@/components/crm/CrmOrgDialogs";
 import { CrmContactDialogs } from "@/components/crm/CrmContactDialogs";
 import { CrmOrgDetail } from "@/components/crm/CrmOrgDetail";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 type OrganizationType =
   | "CONTRACTOR"
@@ -129,8 +139,26 @@ const DEFAULT_CONTACT = {
   notes: "",
 };
 
+interface DupOrg {
+  id: string;
+  name: string;
+  type: string | null;
+  city: string | null;
+  state: string | null;
+  crmStatus: string;
+  isActive: boolean;
+}
+
+interface DupPair {
+  orgA: DupOrg;
+  orgB: DupOrg;
+  matchReason: string;
+}
+
 export default function CRMPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline">("orgs");
   const [contactSearch, setContactSearch] = useState("");
@@ -138,6 +166,13 @@ export default function CRMPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [specialtyFilter, setSpecialtyFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [stateFilter, setStateFilter] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
+
+  const [dupOpen, setDupOpen] = useState(false);
+  const [mergePair, setMergePair] = useState<DupPair | null>(null);
+  const [mergeWinnerId, setMergeWinnerId] = useState<string>("");
 
   const [createOrgOpen, setCreateOrgOpen] = useState(false);
   const [editOrgOpen, setEditOrgOpen] = useState(false);
@@ -226,6 +261,28 @@ export default function CRMPage() {
     setContactSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   };
 
+  const isAdminOrManager = user?.role === "ADMIN" || user?.role === "MANAGER";
+
+  const { data: dupData, isLoading: dupLoading } = useQuery<{ pairs: DupPair[]; total: number }>({
+    queryKey: ["/api/crm/organisations/duplicates"],
+    enabled: dupOpen && isAdminOrManager,
+  });
+
+  const mergeMutation = useMutation({
+    mutationFn: async ({ winnerId, loserId }: { winnerId: string; loserId: string }) =>
+      apiRequest("POST", `/api/crm/organisations/${winnerId}/merge/${loserId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/organisations/duplicates"] });
+      toast({ title: "Merged", description: "Organizations merged successfully." });
+      setMergePair(null);
+      setMergeWinnerId("");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to merge organizations.", variant: "destructive" });
+    },
+  });
+
   const mutations = useCrmMutations(selectedOrg?.id);
 
   const createOrgMutationWrapped = {
@@ -292,8 +349,14 @@ export default function CRMPage() {
     return Array.from(new Set(allSpecialties)).sort();
   }, [organizations]);
 
+  const uniqueStates = useMemo(() => {
+    const states = organizations?.map((o) => o.state).filter(Boolean) as string[];
+    return Array.from(new Set(states)).sort();
+  }, [organizations]);
+
   const filteredOrganizations =
     organizations?.filter((org) => {
+      if (org.isDeleted) return false;
       const matchesSearch =
         org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         org.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -302,7 +365,9 @@ export default function CRMPage() {
       const matchesSpecialty =
         specialtyFilter === "all" ||
         (org.specialties?.includes(specialtyFilter) ?? false);
-      return matchesSearch && matchesType && matchesSpecialty && org.isActive;
+      const matchesStatus = statusFilter === "all" || org.crmStatus === statusFilter;
+      const matchesState = !stateFilter || org.state?.toLowerCase() === stateFilter.toLowerCase();
+      return matchesSearch && matchesType && matchesSpecialty && matchesStatus && matchesState;
     }) || [];
 
   const orgCounts = {
@@ -396,6 +461,16 @@ export default function CRMPage() {
             </div>
             <div className="flex gap-2">
               <AIAnalysisButton module="VENDOR_PRICING" />
+              {crmTab === "orgs" && isAdminOrManager && (
+                <Button
+                  variant="outline"
+                  onClick={() => setDupOpen(true)}
+                  data-testid="button-find-duplicates"
+                >
+                  <Copy className="w-4 h-4 mr-2" />
+                  Find Duplicates
+                </Button>
+              )}
               {crmTab === "orgs" && (
                 <Button
                   onClick={() => setCreateOrgOpen(true)}
@@ -735,56 +810,85 @@ export default function CRMPage() {
                       data-testid="input-search"
                     />
                   </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowFilters((v) => !v)}
+                    data-testid="button-toggle-filters"
+                  >
+                    <Filter className="w-4 h-4 mr-1.5" />
+                    Filters
+                    {(selectedType !== "all" || specialtyFilter !== "all" || statusFilter !== "all" || stateFilter) && (
+                      <span className="ml-1.5 bg-primary text-primary-foreground rounded-full w-4 h-4 text-xs flex items-center justify-center">
+                        {[selectedType !== "all", specialtyFilter !== "all", statusFilter !== "all", !!stateFilter].filter(Boolean).length}
+                      </span>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {showFilters && (
+                <div className="flex flex-wrap gap-2 pt-3 border-t mt-3" data-testid="filter-panel">
                   <Select value={selectedType} onValueChange={setSelectedType}>
-                    <SelectTrigger
-                      className="w-[160px]"
-                      data-testid="select-type-filter"
-                    >
-                      <SelectValue placeholder="Filter by type" />
+                    <SelectTrigger className="w-[160px]" data-testid="select-type-filter">
+                      <SelectValue placeholder="All Types" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="CONTRACTOR">
-                        GC / Contractors
-                      </SelectItem>
-                      <SelectItem value="SUBCONTRACTOR">
-                        Subcontractors
-                      </SelectItem>
+                      <SelectItem value="CONTRACTOR">GC / Contractors</SelectItem>
+                      <SelectItem value="SUBCONTRACTOR">Subcontractors</SelectItem>
                       <SelectItem value="SUPPLIER">Suppliers</SelectItem>
                       <SelectItem value="VENDOR">Vendors</SelectItem>
-                      <SelectItem value="RENTAL_VENDOR">
-                        Rental Vendors
-                      </SelectItem>
+                      <SelectItem value="RENTAL_VENDOR">Rental Vendors</SelectItem>
                       <SelectItem value="OWNER_REP">Owner Reps</SelectItem>
                     </SelectContent>
                   </Select>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-[180px]" data-testid="select-status-filter">
+                      <SelectValue placeholder="All Statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      <SelectItem value="ACTIVE">Active</SelectItem>
+                      <SelectItem value="PREQUALIFIED">Prequalified</SelectItem>
+                      <SelectItem value="COMPLIANCE_ISSUE">Compliance Issue</SelectItem>
+                      <SelectItem value="INACTIVE">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {uniqueStates.length > 0 && (
+                    <Select value={stateFilter || "all"} onValueChange={(v) => setStateFilter(v === "all" ? "" : v)}>
+                      <SelectTrigger className="w-[160px]" data-testid="select-state-filter">
+                        <SelectValue placeholder="All States" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All States</SelectItem>
+                        {uniqueStates.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   {uniqueSpecialties.length > 0 && (
-                    <Select
-                      value={specialtyFilter}
-                      onValueChange={setSpecialtyFilter}
-                    >
-                      <SelectTrigger
-                        className="w-[180px]"
-                        data-testid="select-specialty-filter"
-                      >
-                        <SelectValue placeholder="Filter by specialty" />
+                    <Select value={specialtyFilter} onValueChange={setSpecialtyFilter}>
+                      <SelectTrigger className="w-[180px]" data-testid="select-specialty-filter">
+                        <SelectValue placeholder="All Specialties" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="all">All Specialties</SelectItem>
                         {uniqueSpecialties.map((specialty) => (
-                          <SelectItem key={specialty} value={specialty}>
-                            {specialty}
-                          </SelectItem>
+                          <SelectItem key={specialty} value={specialty}>{specialty}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   )}
                 </div>
-              </div>
+              )}
 
               {(searchTerm ||
                 selectedType !== "all" ||
-                specialtyFilter !== "all") && (
+                specialtyFilter !== "all" ||
+                statusFilter !== "all" ||
+                stateFilter) && (
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   <span className="text-sm text-muted-foreground">
                     Active filters:
@@ -809,6 +913,26 @@ export default function CRMPage() {
                       />
                     </Badge>
                   )}
+                  {statusFilter !== "all" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {statusFilter === "COMPLIANCE_ISSUE" ? "Compliance Issue" : statusFilter.charAt(0) + statusFilter.slice(1).toLowerCase()}
+                      <X
+                        className="w-3 h-3 cursor-pointer"
+                        onClick={() => setStatusFilter("all")}
+                        data-testid="button-clear-status-filter"
+                      />
+                    </Badge>
+                  )}
+                  {stateFilter && (
+                    <Badge variant="secondary" className="gap-1">
+                      State: {stateFilter}
+                      <X
+                        className="w-3 h-3 cursor-pointer"
+                        onClick={() => setStateFilter("")}
+                        data-testid="button-clear-state-filter"
+                      />
+                    </Badge>
+                  )}
                   {specialtyFilter !== "all" && (
                     <Badge variant="secondary" className="gap-1">
                       {specialtyFilter}
@@ -826,6 +950,8 @@ export default function CRMPage() {
                       setSearchTerm("");
                       setSelectedType("all");
                       setSpecialtyFilter("all");
+                      setStatusFilter("all");
+                      setStateFilter("");
                     }}
                     data-testid="button-clear-all-filters"
                   >
@@ -1054,6 +1180,142 @@ export default function CRMPage() {
         updateContactMutation={updateContactMutationWrapped}
         openEditContact={openEditContact}
       />
+
+      {/* Duplicate Detection Dialog */}
+      <Dialog open={dupOpen} onOpenChange={setDupOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col" data-testid="dialog-duplicates">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Copy className="w-5 h-5" />
+              Potential Duplicate Organizations
+            </DialogTitle>
+            <DialogDescription>
+              Records with similar names or shared contact information are shown below. Review each pair and merge if needed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {dupLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-20 w-full" />)}
+              </div>
+            ) : !dupData || dupData.pairs.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <Copy className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                <p className="font-medium">No potential duplicates found</p>
+                <p className="text-sm mt-1">All organizations appear to be unique.</p>
+              </div>
+            ) : (
+              dupData.pairs.map((pair, idx) => (
+                <div
+                  key={idx}
+                  className="border rounded-lg p-4 space-y-3"
+                  data-testid={`dup-pair-${idx}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <Badge variant="outline" className="text-xs">
+                      Matched by: {pair.matchReason}
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setMergePair(pair);
+                        setMergeWinnerId(pair.orgA.id);
+                      }}
+                      data-testid={`button-review-pair-${idx}`}
+                    >
+                      Review & Merge
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {[pair.orgA, pair.orgB].map((org) => (
+                      <div key={org.id} className="space-y-1">
+                        <p className="font-semibold text-sm truncate">{org.name}</p>
+                        <p className="text-xs text-muted-foreground">{org.type ?? "—"}</p>
+                        {(org.city || org.state) && (
+                          <p className="text-xs text-muted-foreground flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {[org.city, org.state].filter(Boolean).join(", ")}
+                          </p>
+                        )}
+                        <Badge
+                          variant="secondary"
+                          className="text-xs"
+                          data-testid={`dup-org-status-${org.id}`}
+                        >
+                          {org.crmStatus === "COMPLIANCE_ISSUE" ? "Compliance Issue" : org.crmStatus.charAt(0) + org.crmStatus.slice(1).toLowerCase()}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDupOpen(false)} data-testid="button-close-duplicates">
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Confirmation Dialog */}
+      {mergePair && (
+        <Dialog open={!!mergePair} onOpenChange={(open) => { if (!open) { setMergePair(null); setMergeWinnerId(""); } }}>
+          <DialogContent className="max-w-xl" data-testid="dialog-merge">
+            <DialogHeader>
+              <DialogTitle>Merge Organizations</DialogTitle>
+              <DialogDescription>
+                Choose the record to keep (winner). All contacts and notes from the other record will be moved to the winner, and the duplicate will be archived.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              {[mergePair.orgA, mergePair.orgB].map((org) => (
+                <div
+                  key={org.id}
+                  className={`border rounded-lg p-4 cursor-pointer transition-colors ${mergeWinnerId === org.id ? "border-primary bg-primary/5" : "hover:border-muted-foreground/40"}`}
+                  onClick={() => setMergeWinnerId(org.id)}
+                  data-testid={`merge-option-${org.id}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="font-semibold">{org.name}</p>
+                      <p className="text-sm text-muted-foreground">{org.type ?? "—"}{org.city ? ` · ${org.city}${org.state ? `, ${org.state}` : ""}` : ""}</p>
+                    </div>
+                    {mergeWinnerId === org.id && (
+                      <Badge className="shrink-0" data-testid={`badge-winner-${org.id}`}>Keep (Winner)</Badge>
+                    )}
+                  </div>
+                </div>
+              ))}
+              <p className="text-xs text-muted-foreground pt-1">
+                The record not selected will be archived. This action cannot be undone.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => { setMergePair(null); setMergeWinnerId(""); }}
+                data-testid="button-cancel-merge"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={!mergeWinnerId || mergeMutation.isPending}
+                onClick={() => {
+                  const loserId = mergeWinnerId === mergePair.orgA.id ? mergePair.orgB.id : mergePair.orgA.id;
+                  mergeMutation.mutate({ winnerId: mergeWinnerId, loserId });
+                }}
+                data-testid="button-confirm-merge"
+              >
+                {mergeMutation.isPending ? "Merging..." : "Merge & Archive Duplicate"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import {
   insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema,
   auditLog, users, emailThreads, emailMessages, calendarEvents, projects,
 } from "@shared/schema";
-import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, type SQL } from "drizzle-orm";
+import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, ilike, ne, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -19,42 +19,9 @@ const router = Router();
         return res.status(403).json({ error: "Access denied - no organization" });
       }
       
-      const { type, search, active } = req.query;
+      const { type, search, active, status, specialty, state } = req.query as Record<string, string>;
       
-      let query = db
-        .select({
-          id: crmOrganisations.id,
-          organizationId: crmOrganisations.organizationId,
-          type: crmOrganisations.type,
-          name: crmOrganisations.name,
-          address: crmOrganisations.address,
-          city: crmOrganisations.city,
-          state: crmOrganisations.state,
-          zipCode: crmOrganisations.zipCode,
-          website: crmOrganisations.website,
-          specialties: crmOrganisations.specialties,
-          insuranceExpiration: crmOrganisations.insuranceExpiration,
-          wcInsuranceExpiration: crmOrganisations.wcInsuranceExpiration,
-          licenseExpiration: crmOrganisations.licenseExpiration,
-          paymentTerms: crmOrganisations.paymentTerms,
-          notes: crmOrganisations.notes,
-          isActive: crmOrganisations.isActive,
-          crmStatus: crmOrganisations.crmStatus,
-          activeProjectIds: crmOrganisations.activeProjectIds,
-          bondingCapacity: crmOrganisations.bondingCapacity,
-          tradeSpecialty: crmOrganisations.tradeSpecialty,
-          materialCategories: crmOrganisations.materialCategories,
-          serviceCategory: crmOrganisations.serviceCategory,
-          contractExpiration: crmOrganisations.contractExpiration,
-          equipmentCategory: crmOrganisations.equipmentCategory,
-          rentalTerms: crmOrganisations.rentalTerms,
-          companyRepresented: crmOrganisations.companyRepresented,
-          createdAt: crmOrganisations.createdAt,
-          updatedAt: crmOrganisations.updatedAt,
-        })
-        .from(crmOrganisations);
-      
-      const conditions: SQL[] = [];
+      const conditions: SQL[] = [eq(crmOrganisations.isDeleted, false)];
       
       if (shouldFilter && orgId) {
         conditions.push(eq(crmOrganisations.organizationId, orgId));
@@ -66,18 +33,26 @@ const router = Router();
       if (active !== undefined) {
         conditions.push(eq(crmOrganisations.isActive, active === 'true'));
       }
+      if (status) {
+        conditions.push(sql`${crmOrganisations.crmStatus} = ${status}`);
+      }
+      if (state) {
+        conditions.push(ilike(crmOrganisations.state, state));
+      }
+      if (specialty) {
+        conditions.push(sql`${specialty} = ANY(${crmOrganisations.specialties})`);
+      }
       if (search) {
         conditions.push(
           sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + search + '%'})`
         );
       }
       
-      let results;
-      if (conditions.length > 0) {
-        results = await query.where(and(...conditions)).orderBy(crmOrganisations.name);
-      } else {
-        results = await query.orderBy(crmOrganisations.name);
-      }
+      const results = await db
+        .select()
+        .from(crmOrganisations)
+        .where(and(...conditions))
+        .orderBy(crmOrganisations.name);
       
       res.json(results);
     } catch (error) {
@@ -168,6 +143,185 @@ const router = Router();
       });
     } catch (error) {
       console.error("Expiring compliance check error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Duplicate detection — must be before /:id to avoid route conflict
+  router.get("/api/crm/organisations/duplicates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const conditions: SQL[] = [eq(crmOrganisations.isDeleted, false)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+
+      const allOrgs = await db
+        .select({
+          id: crmOrganisations.id,
+          name: crmOrganisations.name,
+          type: crmOrganisations.type,
+          city: crmOrganisations.city,
+          state: crmOrganisations.state,
+          crmStatus: crmOrganisations.crmStatus,
+          isActive: crmOrganisations.isActive,
+        })
+        .from(crmOrganisations)
+        .where(and(...conditions))
+        .orderBy(crmOrganisations.name);
+
+      // Fetch primary contact emails+phones for phone/email matching
+      const orgIds = allOrgs.map((o) => o.id);
+      const contacts = orgIds.length > 0
+        ? await db
+            .select({
+              organisationId: crmContacts.organisationId,
+              email: crmContacts.email,
+              phone: crmContacts.phone,
+            })
+            .from(crmContacts)
+            .where(inArray(crmContacts.organisationId, orgIds))
+        : [];
+
+      // Build lookup: orgId -> [emails], [phones]
+      const emailsByOrg: Record<string, string[]> = {};
+      const phonesByOrg: Record<string, string[]> = {};
+      for (const c of contacts) {
+        if (c.email) {
+          emailsByOrg[c.organisationId] = emailsByOrg[c.organisationId] || [];
+          emailsByOrg[c.organisationId].push(c.email.toLowerCase());
+        }
+        if (c.phone) {
+          const normalized = c.phone.replace(/\D/g, "");
+          phonesByOrg[c.organisationId] = phonesByOrg[c.organisationId] || [];
+          phonesByOrg[c.organisationId].push(normalized);
+        }
+      }
+
+      // Find pairs: name similarity (first 6 chars) or shared email/phone
+      const pairs: Array<{
+        orgA: typeof allOrgs[0];
+        orgB: typeof allOrgs[0];
+        matchReason: string;
+      }> = [];
+      const seen = new Set<string>();
+
+      for (let i = 0; i < allOrgs.length; i++) {
+        for (let j = i + 1; j < allOrgs.length; j++) {
+          const a = allOrgs[i];
+          const b = allOrgs[j];
+          const pairKey = [a.id, b.id].sort().join("|");
+          if (seen.has(pairKey)) continue;
+
+          const reasons: string[] = [];
+
+          // Name similarity: normalize and compare first 8 chars
+          const normA = a.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const normB = b.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+          if (normA.length >= 4 && normB.length >= 4) {
+            const prefix = Math.min(8, Math.min(normA.length, normB.length));
+            if (normA.slice(0, prefix) === normB.slice(0, prefix)) {
+              reasons.push("similar name");
+            }
+          }
+
+          // Shared contact email
+          const emailsA = emailsByOrg[a.id] || [];
+          const emailsB = emailsByOrg[b.id] || [];
+          if (emailsA.some((e) => emailsB.includes(e))) {
+            reasons.push("shared contact email");
+          }
+
+          // Shared contact phone
+          const phonesA = phonesByOrg[a.id] || [];
+          const phonesB = phonesByOrg[b.id] || [];
+          if (phonesA.some((p) => p.length >= 7 && phonesB.includes(p))) {
+            reasons.push("shared contact phone");
+          }
+
+          if (reasons.length > 0) {
+            seen.add(pairKey);
+            pairs.push({ orgA: a, orgB: b, matchReason: reasons.join(", ") });
+          }
+        }
+      }
+
+      res.json({ pairs, total: pairs.length });
+    } catch (error) {
+      console.error("Duplicate detection error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Merge two orgs: re-parent contacts, notes, compliance records, then soft-delete loser
+  router.post("/api/crm/organisations/:id/merge/:targetId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId: userOrgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const winnerId = req.params.id;
+      const loserId = req.params.targetId;
+
+      if (winnerId === loserId) {
+        return res.status(400).json({ error: "Cannot merge an organization with itself" });
+      }
+
+      const baseConditions: SQL[] = [eq(crmOrganisations.isDeleted, false)];
+      if (shouldFilter && userOrgId) {
+        baseConditions.push(eq(crmOrganisations.organizationId, userOrgId));
+      }
+
+      const [winner] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(and(eq(crmOrganisations.id, winnerId), ...baseConditions))
+        .limit(1);
+
+      const [loser] = await db
+        .select()
+        .from(crmOrganisations)
+        .where(and(eq(crmOrganisations.id, loserId), ...baseConditions))
+        .limit(1);
+
+      if (!winner) return res.status(404).json({ error: "Winner organization not found" });
+      if (!loser) return res.status(404).json({ error: "Loser organization not found" });
+
+      // Re-parent contacts
+      await db
+        .update(crmContacts)
+        .set({ organisationId: winnerId })
+        .where(eq(crmContacts.organisationId, loserId));
+
+      // Re-parent notes
+      await db
+        .update(crmOrganisationNotes)
+        .set({ organisationId: winnerId })
+        .where(eq(crmOrganisationNotes.organisationId, loserId));
+
+      // Soft-delete the loser
+      await db
+        .update(crmOrganisations)
+        .set({ isDeleted: true, deletedAt: new Date(), isActive: false })
+        .where(eq(crmOrganisations.id, loserId));
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "MERGE",
+        entityType: "crm_organisations",
+        entityId: winnerId,
+        oldValue: JSON.stringify({ loserId, loserName: loser.name }),
+        newValue: JSON.stringify({ winnerId, winnerName: winner.name }),
+      });
+
+      res.json({ success: true, winnerId, loserId });
+    } catch (error) {
+      console.error("Merge CRM organisations error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
