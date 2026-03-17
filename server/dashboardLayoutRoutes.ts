@@ -104,6 +104,31 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     ...ALL_FALSE,
     canManageProcurement: true,
   },
+  SAFETY_MANAGER: {
+    ...ALL_FALSE,
+    canAccessReports: true,
+  },
+  HR_MANAGER: {
+    ...ALL_FALSE,
+    canAccessReports: true,
+    canManagePayroll: true,
+  },
+  SALES: {
+    ...ALL_FALSE,
+    canAccessReports: true,
+  },
+  MARKETING: {
+    ...ALL_FALSE,
+    canPostSocialMedia: true,
+    canManageWebsite: true,
+  },
+  PROJECT_ENGINEER: {
+    ...ALL_FALSE,
+    canAccessReports: true,
+  },
+  DISPATCHER: { ...ALL_FALSE },
+  HOURLY_EMPLOYEE: { ...ALL_FALSE },
+  VENDOR: { ...ALL_FALSE },
 };
 
 export function getRoleDefaults(role?: string | null): PermissionSet {

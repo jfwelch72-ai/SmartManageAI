@@ -884,7 +884,7 @@ function ManageCriteriaDialog() {
 function PerformanceTab() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER";
+  const canManageKpis = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "HUSTLER" || user?.role === "HR_MANAGER" || user?.role === "SAFETY_MANAGER";
   const [perfSubTab, setPerfSubTab] = useState<"rate" | "kpi-library" | "history" | "analytics">("rate");
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [scores, setScores] = useState<Record<string, number>>({});
@@ -1581,7 +1581,8 @@ export default function ManageWorkersPage() {
   const isMobile = useIsMobile();
   const isAdmin = user?.role === "ADMIN";
   const isManager = user?.role === "MANAGER" || user?.role === "OFFICE_MANAGER";
-  const canManageWorkers = isAdmin || isManager;
+  const canManageWorkers = isAdmin || isManager || user?.role === "HR_MANAGER" || user?.role === "SAFETY_MANAGER" || user?.role === "SUPERINTENDENT";
+  const canViewAnalytics = isAdmin || isManager || user?.role === "HR_MANAGER" || user?.role === "SAFETY_MANAGER" || user?.role === "SUPERINTENDENT";
   const defaultTab = canManageWorkers ? "workers" : "performance";
   const [activeTab, setActiveTab] = useState(defaultTab);
 
@@ -1590,8 +1591,10 @@ export default function ManageWorkersPage() {
     if (canManageWorkers) opts.push({ value: "workers", label: "Workers" });
     opts.push({ value: "performance", label: "Performance" });
     opts.push({ value: "rewards", label: "Rewards" });
+    if (canViewAnalytics) opts.push({ value: "analytics", label: "Analytics" });
+    opts.push({ value: "my-kpis", label: "My KPIs" });
     return opts;
-  }, [canManageWorkers]);
+  }, [canManageWorkers, canViewAnalytics]);
 
   if (!user) return <div className="p-6 space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-64 w-full" /></div>;
 
