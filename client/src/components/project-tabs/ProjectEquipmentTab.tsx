@@ -19,6 +19,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { apiRequest } from "@/lib/queryClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 
 interface ProjectEquipmentTabProps {
   projectId: string;
@@ -35,6 +36,7 @@ function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: { open: boole
   const [plannedDays, setPlannedDays] = useState("");
   const [dailyRate, setDailyRate] = useState("");
   const [notes, setNotes] = useState("");
+  const [costCode, setCostCode] = useState("");
 
   const createPlan = useMutation({
     mutationFn: async () => {
@@ -50,6 +52,7 @@ function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: { open: boole
         dailyRate: rate,
         plannedCost: cost,
         notes: notes || null,
+        costCode: costCode || null,
       });
     },
     onSuccess: () => {
@@ -74,6 +77,7 @@ function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: { open: boole
     setPlannedDays("");
     setDailyRate("");
     setNotes("");
+    setCostCode("");
   };
 
   const calculatedCost = plannedDays && dailyRate ? Number(plannedDays) * Number(dailyRate) : 0;
@@ -168,6 +172,15 @@ function AddEquipmentPlanDialog({ open, onOpenChange, projectId }: { open: boole
               </div>
             </div>
           )}
+
+          <div>
+            <Label>Cost Code</Label>
+            <CostCodeCombobox
+              value={costCode}
+              onChange={setCostCode}
+              data-testid="select-cost-code-equipment"
+            />
+          </div>
 
           <div>
             <Label>Notes (Optional)</Label>

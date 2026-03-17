@@ -14,6 +14,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { Project } from "@shared/schema";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 
 interface ReceiptsTabProps {
   projectCode: string;
@@ -29,6 +30,7 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
   const [receiptAmount, setReceiptAmount] = useState("");
   const [receiptCategory, setReceiptCategory] = useState("");
   const [receiptDate, setReceiptDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [receiptCostCode, setReceiptCostCode] = useState("");
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
   const onGetUploadParameters = async () => {
@@ -64,6 +66,7 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
         vendor: receiptVendor,
         amount: receiptAmount,
         category: receiptCategory,
+        costCode: receiptCostCode || null,
         date: new Date(receiptDate).toISOString(),
         fileUrl,
         fileName,
@@ -77,6 +80,7 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
       setReceiptVendor("");
       setReceiptAmount("");
       setReceiptCategory("");
+      setReceiptCostCode("");
       setReceiptDate(format(new Date(), "yyyy-MM-dd"));
     } catch (error) {
       toast({ title: "Error", description: "Failed to save receipt", variant: "destructive" });
@@ -136,6 +140,14 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
                   data-testid="input-receipt-category"
                 />
               </div>
+              <div>
+                <Label>Cost Code</Label>
+                <CostCodeCombobox
+                  value={receiptCostCode}
+                  onChange={setReceiptCostCode}
+                  data-testid="select-cost-code-receipt"
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="receipt-date">Date</Label>
                 <Popover>
@@ -171,6 +183,7 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
                   setReceiptVendor("");
                   setReceiptAmount("");
                   setReceiptCategory("");
+                  setReceiptCostCode("");
                   setReceiptDate(format(new Date(), "yyyy-MM-dd"));
                 }}
                 data-testid="button-cancel-receipt"

@@ -16,6 +16,7 @@ import { format, parseISO } from "date-fns";
 import { Users, Wrench, Package, Ruler, ListChecks, Calendar as CalendarIcon } from "lucide-react";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import type { ScopeItem } from "@shared/schema";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import TMLaborTab, { type LaborEntry, emptyLaborEntry } from "./TMLaborTab";
 import TMEquipmentTab, { type EquipmentEntry, emptyEquipmentEntry } from "./TMEquipmentTab";
 import TMMaterialTab, { type MaterialEntry, emptyMaterialEntry } from "./TMMaterialTab";
@@ -44,6 +45,7 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
   const [activeEntryTab, setActiveEntryTab] = useState("labor");
   const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
   const [scopeQuantity, setScopeQuantity] = useState("");
+  const [costCode, setCostCode] = useState("");
 
   const resetForm = () => {
     setWorkDate(format(new Date(), "yyyy-MM-dd"));
@@ -55,6 +57,7 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
     setActiveEntryTab("labor");
     setScopeSelection(null);
     setScopeQuantity("");
+    setCostCode("");
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
@@ -83,6 +86,7 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
         workDate,
         description,
         location: location || undefined,
+        costCode: costCode || undefined,
         workTypeId: scopeSelection?.workTypeId || undefined,
         workTypeCode: scopeSelection?.workTypeCode || undefined,
         workTypeName: scopeSelection?.workTypeName || undefined,
@@ -267,6 +271,15 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
               </p>
             )}
           </Card>
+
+          <div className="space-y-2">
+            <Label>Cost Code</Label>
+            <CostCodeCombobox
+              value={costCode}
+              onChange={setCostCode}
+              data-testid="select-cost-code-tm"
+            />
+          </div>
 
           <div>
             <Label htmlFor="tm-description">Work Description / Notes</Label>

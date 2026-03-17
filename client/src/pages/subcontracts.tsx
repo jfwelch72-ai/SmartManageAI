@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -110,7 +111,8 @@ export default function SubcontractsPage() {
     completionDate: "",
     paymentTerms: "",
     retentionPercent: "",
-    notes: ""
+    notes: "",
+    costCode: "",
   });
 
   const { data: projects = [], isLoading: loadingProjects } = useQuery<Project[]>({
@@ -272,7 +274,8 @@ export default function SubcontractsPage() {
       completionDate: "",
       paymentTerms: "",
       retentionPercent: "",
-      notes: ""
+      notes: "",
+      costCode: "",
     });
   };
 
@@ -320,7 +323,8 @@ export default function SubcontractsPage() {
       completionDate: contract.completionDate || "",
       paymentTerms: contract.paymentTerms || "",
       retentionPercent: contract.retentionPercent || "",
-      notes: contract.notes || ""
+      notes: contract.notes || "",
+      costCode: contract.costCode || "",
     });
     setShowEditDialog(true);
   };
@@ -670,6 +674,15 @@ export default function SubcontractsPage() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label>Cost Code</Label>
+              <CostCodeCombobox
+                value={createForm.costCode}
+                onChange={(value) => setCreateForm({...createForm, costCode: value})}
+                data-testid="select-cost-code-subcontract"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Start Date</Label>
@@ -966,6 +979,15 @@ export default function SubcontractsPage() {
                 value={createForm.contractAmount}
                 onChange={(e) => setCreateForm({...createForm, contractAmount: e.target.value})}
                 data-testid="input-edit-amount"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Cost Code</Label>
+              <CostCodeCombobox
+                value={createForm.costCode}
+                onChange={(value) => setCreateForm({...createForm, costCode: value})}
+                data-testid="select-cost-code-edit-subcontract"
               />
             </div>
 

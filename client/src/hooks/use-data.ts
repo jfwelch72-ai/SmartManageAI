@@ -1668,6 +1668,7 @@ export function useCreateTMTicket() {
       workDate: string;
       description: string;
       location?: string;
+      costCode?: string;
       workTypeId?: string;
       workTypeCode?: string;
       workTypeName?: string;

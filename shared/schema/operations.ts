@@ -406,6 +406,7 @@ export const tmTickets = pgTable("tm_tickets", {
   invoiceId: varchar("invoice_id").references(() => tmInvoices.id, { onDelete: "set null" }),
   billedAt: timestamp("billed_at"),
   billingNotes: text("billing_notes"),
+  costCode: text("cost_code"),
   
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -477,6 +478,7 @@ export const receipts = pgTable("receipts", {
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
   notes: text("notes"),
+  costCode: text("cost_code"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

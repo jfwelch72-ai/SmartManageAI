@@ -250,7 +250,8 @@ const createSubcontractSchema = z.object({
   completionDate: z.string().optional().nullable(),
   paymentTerms: z.string().optional().nullable(),
   retentionPercent: z.string().or(z.number()).optional().nullable(),
-  notes: z.string().optional().nullable()
+  notes: z.string().optional().nullable(),
+  costCode: z.string().optional().nullable(),
 });
 
 router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
@@ -309,6 +310,7 @@ router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "
         paymentTerms: data.paymentTerms,
         retentionPercent: data.retentionPercent ? String(data.retentionPercent) : null,
         notes: data.notes,
+        costCode: data.costCode || null,
         status: "PENDING",
         createdById: req.user!.id
       })
@@ -332,6 +334,7 @@ const updateSubcontractSchema = z.object({
   paymentTerms: z.string().optional().nullable(),
   retentionPercent: z.string().or(z.number()).optional().nullable(),
   notes: z.string().optional().nullable(),
+  costCode: z.string().optional().nullable(),
   status: z.enum(["PENDING", "ACTIVE", "COMPLETED", "TERMINATED"]).optional()
 });
 
@@ -367,6 +370,7 @@ router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMI
     if (data.paymentTerms !== undefined) updates.paymentTerms = data.paymentTerms;
     if (data.retentionPercent !== undefined) updates.retentionPercent = data.retentionPercent ? String(data.retentionPercent) : null;
     if (data.notes !== undefined) updates.notes = data.notes;
+    if (data.costCode !== undefined) updates.costCode = data.costCode || null;
     if (data.status !== undefined) updates.status = data.status;
 
     const oldStatus = contract.status;

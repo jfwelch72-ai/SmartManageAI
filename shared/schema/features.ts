@@ -800,6 +800,7 @@ export const subcontractorContracts = pgTable("subcontractor_contracts", {
   paymentTerms: text("payment_terms"),
   retentionPercent: decimal("retention_percent", { precision: 5, scale: 2 }),
   notes: text("notes"),
+  costCode: text("cost_code"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1839,6 +1840,7 @@ export const projectEquipmentPlans = pgTable("project_equipment_plans", {
   dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
   
   notes: text("notes"),
+  costCode: text("cost_code"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

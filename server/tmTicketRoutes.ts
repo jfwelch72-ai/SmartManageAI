@@ -145,6 +145,7 @@ export function registerTMTicketRoutes(app: Express) {
         canonicalName,
         scopeUnit,
         scopeQuantity,
+        costCode,
         ...restTicketData 
       } = req.body;
       
@@ -167,6 +168,7 @@ export function registerTMTicketRoutes(app: Express) {
         canonicalName: canonicalName || null,
         scopeUnit: scopeUnit || null,
         scopeQuantity: scopeQuantity || null,
+        costCode: costCode || null,
         status: "DRAFT",
       }).returning();
       

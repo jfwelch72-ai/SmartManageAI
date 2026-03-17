@@ -155,6 +155,7 @@ const router = Router();
         hourlyRate: req.body.hourlyRate != null ? String(req.body.hourlyRate) : null,
         dailyRate: req.body.dailyRate != null ? String(req.body.dailyRate) : null,
         notes: req.body.notes || null,
+        costCode: req.body.costCode || null,
         createdById: userId!,
       }).returning();
       
@@ -224,6 +225,7 @@ const router = Router();
       if (req.body.dailyRate !== undefined) updateData.dailyRate = req.body.dailyRate != null ? String(req.body.dailyRate) : null;
       if (req.body.rentalConfirmationNumber !== undefined) updateData.rentalConfirmationNumber = req.body.rentalConfirmationNumber || null;
       if (req.body.notes !== undefined) updateData.notes = req.body.notes || null;
+      if (req.body.costCode !== undefined) updateData.costCode = req.body.costCode || null;
       
       const [updated] = await db
         .update(projectEquipmentPlans)
