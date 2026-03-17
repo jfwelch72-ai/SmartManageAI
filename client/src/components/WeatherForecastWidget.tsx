@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Component, type ReactNode } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -106,17 +106,64 @@ function DayCard({ day, isToday }: { day: WeatherDay; isToday: boolean }) {
 
 type GeoState = "idle" | "requesting" | "denied" | "unavailable" | "granted";
 
-export function WeatherForecastWidget({ 
-  compact = false,
-  defaultLat,
-  defaultLng,
-  defaultLocationName,
-}: { 
+interface WeatherWidgetProps {
   compact?: boolean;
   defaultLat?: number;
   defaultLng?: number;
   defaultLocationName?: string;
-}) {
+}
+
+interface WeatherErrorBoundaryState {
+  hasError: boolean;
+}
+
+class WeatherErrorBoundary extends Component<
+  { children: ReactNode; onRetry?: () => void },
+  WeatherErrorBoundaryState
+> {
+  constructor(props: { children: ReactNode; onRetry?: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): WeatherErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Card data-testid="weather-widget-render-error">
+          <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+            <AlertCircle className="w-8 h-8 text-destructive mb-2 opacity-70" />
+            <p className="text-sm text-muted-foreground">Weather unavailable</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => {
+                this.setState({ hasError: false });
+                if (this.props.onRetry) this.props.onRetry();
+              }}
+              data-testid="button-retry-weather-boundary"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function WeatherForecastWidgetInner({ 
+  compact = false,
+  defaultLat,
+  defaultLng,
+  defaultLocationName,
+}: WeatherWidgetProps) {
   const [location, setLocation] = useState<{ lat: number; lng: number; name?: string }>({
     lat: defaultLat ?? 40.7128,
     lng: defaultLng ?? -74.0060,
@@ -388,6 +435,14 @@ export function WeatherForecastWidget({
         </CardContent>
       </Card>
     );
+}
+
+export function WeatherForecastWidget(props: WeatherWidgetProps) {
+  return (
+    <WeatherErrorBoundary>
+      <WeatherForecastWidgetInner {...props} />
+    </WeatherErrorBoundary>
+  );
 }
 
 export default WeatherForecastWidget;
