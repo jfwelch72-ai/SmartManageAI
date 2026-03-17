@@ -39,18 +39,18 @@ export default function TMTicketDetail({
           </div>
           <div>
             <span className="text-muted-foreground">Location:</span>{" "}
-            <span className="font-medium">{(ticket as any).location || "Not specified"}</span>
+            <span className="font-medium">{ticket.location || "Not specified"}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Created By:</span>{" "}
-            <span className="font-medium">{(ticket as any).createdByName || "Unknown"}</span>
+            <span className="font-medium">{ticket.createdByName || "Unknown"}</span>
           </div>
         </div>
 
-        {(ticket as any).costCode && (
+        {ticket.costCode && (
           <div className="text-sm">
             <span className="text-muted-foreground">Cost Code:</span>{" "}
-            <span className="font-medium">{(ticket as any).costCode}</span>
+            <span className="font-medium">{ticket.costCode}</span>
           </div>
         )}
 
@@ -103,9 +103,9 @@ export default function TMTicketDetail({
                   <TableRow key={entry.id}>
                     <TableCell>{entry.employeeName}</TableCell>
                     <TableCell>{entry.position || "-"}</TableCell>
-                    <TableCell className="text-right">{(entry as any).regularHours}</TableCell>
-                    <TableCell className="text-right">{(entry as any).overtimeHours || "0"}</TableCell>
-                    <TableCell className="text-right font-mono">{formatCurrency((entry as any).regularRate || "0")}</TableCell>
+                    <TableCell className="text-right">{entry.hoursWorked}</TableCell>
+                    <TableCell className="text-right">{entry.totalHours || "0"}</TableCell>
+                    <TableCell className="text-right font-mono">{formatCurrency(entry.hourlyRate || "0")}</TableCell>
                     <TableCell className="text-right font-mono">{formatCurrency(entry.totalCost || "0")}</TableCell>
                   </TableRow>
                 ))}

@@ -778,10 +778,127 @@ function RentalTrackingDialog({ open, onOpenChange, projectId, plan }: { open: b
   );
 }
 
+function EditEquipmentPlanDialog({ open, onOpenChange, projectId, plan }: { open: boolean; onOpenChange: (open: boolean) => void; projectId: string; plan: any }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [equipmentName, setEquipmentName] = useState("");
+  const [plannedDays, setPlannedDays] = useState("");
+  const [dailyRate, setDailyRate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [costCode, setCostCode] = useState("");
+
+  useEffect(() => {
+    if (open && plan) {
+      setEquipmentName(plan.equipmentName || "");
+      setPlannedDays(plan.plannedDays ? String(plan.plannedDays) : "");
+      setDailyRate(plan.dailyRate ? String(plan.dailyRate) : "");
+      setNotes(plan.notes || "");
+      setCostCode(plan.costCode || "");
+    }
+  }, [open, plan]);
+
+  const updatePlan = useMutation({
+    mutationFn: async () => {
+      const days = plannedDays ? Number(plannedDays) : null;
+      const rate = dailyRate ? Number(dailyRate) : null;
+      const cost = days && rate ? days * rate : null;
+
+      return apiRequest("PATCH", `/api/projects/${projectId}/equipment-plans/${plan.id}`, {
+        equipmentName,
+        plannedDays: days,
+        dailyRate: rate,
+        plannedCost: cost,
+        notes: notes || null,
+        costCode: costCode || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "equipment-plans"] });
+      toast({ title: "Success", description: "Equipment plan updated" });
+      onOpenChange(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update plan", variant: "destructive" });
+    },
+  });
+
+  if (!plan) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Equipment Plan</DialogTitle>
+          <DialogDescription>Update equipment plan details</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Equipment Name</Label>
+            <Input
+              value={equipmentName}
+              onChange={(e) => setEquipmentName(e.target.value)}
+              data-testid="input-edit-plan-name"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Planned Days</Label>
+              <Input
+                type="number"
+                value={plannedDays}
+                onChange={(e) => setPlannedDays(e.target.value)}
+                data-testid="input-edit-plan-days"
+              />
+            </div>
+            <div>
+              <Label>Daily Rate ($)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={dailyRate}
+                onChange={(e) => setDailyRate(e.target.value)}
+                data-testid="input-edit-plan-rate"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Cost Code</Label>
+            <CostCodeCombobox
+              value={costCode}
+              onChange={setCostCode}
+              data-testid="select-cost-code-edit-equipment"
+            />
+          </div>
+          <div>
+            <Label>Notes (Optional)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              data-testid="input-edit-plan-notes"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => updatePlan.mutate()}
+            disabled={!equipmentName || updatePlan.isPending}
+            data-testid="button-save-edit-plan"
+          >
+            {updatePlan.isPending ? "Saving..." : "Save Changes"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ProjectEquipmentTab({ projectId, projectCode, userRole }: ProjectEquipmentTabProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showAddPlanDialog, setShowAddPlanDialog] = useState(false);
+  const [showEditPlanDialog, setShowEditPlanDialog] = useState(false);
+  const [selectedPlanForEdit, setSelectedPlanForEdit] = useState<any>(null);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedPlanForAssignment, setSelectedPlanForAssignment] = useState<any>(null);
   const [showRentalBookingDialog, setShowRentalBookingDialog] = useState(false);
@@ -935,6 +1052,7 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
                     <TableHead>Planned Days</TableHead>
                     <TableHead>Rate</TableHead>
                     <TableHead>Planned Cost</TableHead>
+                    <TableHead>Cost Code</TableHead>
                     <TableHead>Status</TableHead>
                     {canManagePlans && <TableHead>Actions</TableHead>}
                   </TableRow>
@@ -957,6 +1075,13 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
                       </TableCell>
                       <TableCell className="font-medium">
                         {plan.plannedCost ? `$${Number(plan.plannedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {plan.costCode ? (
+                          <Badge variant="outline" data-testid={`text-cost-code-equipment-${plan.id}`}>{plan.costCode}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Select
@@ -1022,6 +1147,17 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
                                 Track
                               </Button>
                             )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                setSelectedPlanForEdit(plan);
+                                setShowEditPlanDialog(true);
+                              }}
+                              data-testid={`button-edit-plan-${plan.id}`}
+                            >
+                              <Settings2 className="h-4 w-4" />
+                            </Button>
                             {plan.equipmentId && (
                               <Button
                                 variant="ghost"
@@ -1090,6 +1226,10 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
                       <p className="font-medium">{plan.plannedCost ? `$${Number(plan.plannedCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}</p>
                     </div>
                     <div>
+                      <span className="text-muted-foreground">Cost Code</span>
+                      <p>{plan.costCode ? plan.costCode : "-"}</p>
+                    </div>
+                    <div>
                       <span className="text-muted-foreground">Status</span>
                       <div className="mt-1">
                         <Select
@@ -1156,6 +1296,17 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
                           Track
                         </Button>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setSelectedPlanForEdit(plan);
+                          setShowEditPlanDialog(true);
+                        }}
+                        data-testid={`button-edit-plan-mobile-${plan.id}`}
+                      >
+                        <Settings2 className="h-4 w-4" />
+                      </Button>
                       {plan.equipmentId && (
                         <Button
                           variant="ghost"
@@ -1367,6 +1518,16 @@ export default function ProjectEquipmentTab({ projectId, projectCode, userRole }
         }}
         projectId={projectId}
         plan={selectedPlanForRental}
+      />
+
+      <EditEquipmentPlanDialog
+        open={showEditPlanDialog}
+        onOpenChange={(open) => {
+          setShowEditPlanDialog(open);
+          if (!open) setSelectedPlanForEdit(null);
+        }}
+        projectId={projectId}
+        plan={selectedPlanForEdit}
       />
     </div>
   );

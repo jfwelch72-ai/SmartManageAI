@@ -1604,7 +1604,10 @@ export interface TMTicket {
   grandTotal: string;
   rejectionReason: string | null;
   signedDocumentUrl: string | null;
+  costCode: string | null;
+  location: string | null;
   createdById: string;
+  createdByName: string | null;
   approvedById: string | null;
   createdAt: string;
   updatedAt: string;
