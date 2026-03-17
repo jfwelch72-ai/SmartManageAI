@@ -7,7 +7,7 @@ import { Link } from "wouter";
 
 interface RFIItem {
   id: string;
-  rfiNumber: number;
+  rfiNumber: string;
   subject: string;
   status: string;
   priority: string;
@@ -107,7 +107,7 @@ export function RFIStatusWidget() {
                     <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium truncate">
-                        RFI-{item.rfiNumber}: {item.subject}
+                        {item.rfiNumber}: {item.subject}
                       </p>
                       {item.project && (
                         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.project.name}</p>

@@ -2540,8 +2540,8 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
       SELECT
         COUNT(*)::int as total,
         COUNT(CASE WHEN sta."completed_at" IS NOT NULL THEN 1 END)::int as completed,
-        COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" IS NOT NULL AND sta."due_date" < ${todayStr} THEN 1 END)::int as overdue,
-        COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" >= ${todayStr} AND sta."due_date" <= ${endOfWeek} THEN 1 END)::int as due_this_week
+        COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" IS NOT NULL AND sta."due_date"::date < ${todayStr}::date THEN 1 END)::int as overdue,
+        COUNT(CASE WHEN sta."completed_at" IS NULL AND sta."due_date" IS NOT NULL AND sta."due_date"::date >= ${todayStr}::date AND sta."due_date"::date <= ${endOfWeek}::date THEN 1 END)::int as due_this_week
       FROM "safety_training_assignments" sta
       WHERE 1=1 ${orgCond}
     `);
@@ -2565,7 +2565,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
       JOIN "safety_trainings" st ON sta."training_id" = st."id"
       WHERE sta."completed_at" IS NULL
         AND sta."due_date" IS NOT NULL
-        AND sta."due_date" < ${todayStr}
+        AND sta."due_date"::date < ${todayStr}::date
         ${orgCond}
       ORDER BY sta."due_date" ASC
       LIMIT 5

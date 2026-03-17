@@ -121,26 +121,36 @@ export function LaborUtilizationWidget() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg bg-blue-500/10 p-3" data-testid="metric-workers">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Users className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Workers</span>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg bg-blue-500/10 p-2.5" data-testid="metric-workers">
+            <div className="flex items-center gap-1 mb-1">
+              <Users className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Workers</span>
             </div>
-            <p className="text-xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
-              {d.activeWorkers}<span className="text-sm font-normal text-muted-foreground">/{d.totalWorkers}</span>
+            <p className="text-lg font-bold tabular-nums text-blue-600 dark:text-blue-400">
+              {d.activeWorkers}<span className="text-xs font-normal text-muted-foreground">/{d.totalWorkers}</span>
             </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">active today</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">active today</p>
           </div>
-          <div className="rounded-lg bg-purple-500/10 p-3" data-testid="metric-billable">
-            <div className="flex items-center gap-1.5 mb-1">
-              <Clock className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-              <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Billable</span>
+          <div className="rounded-lg bg-green-500/10 p-2.5" data-testid="metric-billable">
+            <div className="flex items-center gap-1 mb-1">
+              <Clock className="w-3 h-3 text-green-600 dark:text-green-400" />
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Billable</span>
             </div>
-            <p className="text-xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
+            <p className="text-lg font-bold tabular-nums text-green-600 dark:text-green-400">
               {d.billablePercent}%
             </p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">of worked hours</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">of hrs worked</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-2.5" data-testid="metric-nonbillable">
+            <div className="flex items-center gap-1 mb-1">
+              <Clock className="w-3 h-3 text-muted-foreground" />
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Non-Bill</span>
+            </div>
+            <p className="text-lg font-bold tabular-nums text-muted-foreground">
+              {Math.max(0, 100 - d.billablePercent)}%
+            </p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">of hrs worked</p>
           </div>
         </div>
 
