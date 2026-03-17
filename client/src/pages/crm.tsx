@@ -25,6 +25,10 @@ import {
   X,
   ShieldAlert,
   TrendingUp,
+  Users,
+  Mail,
+  Phone,
+  User,
 } from "lucide-react";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import type {
@@ -125,7 +129,8 @@ const DEFAULT_CONTACT = {
 export default function CRMPage() {
   const { user } = useAuth();
 
-  const [crmTab, setCrmTab] = useState<"orgs" | "pipeline">("orgs");
+  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline">("orgs");
+  const [contactSearch, setContactSearch] = useState("");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
@@ -175,6 +180,28 @@ export default function CRMPage() {
   }>({
     queryKey: ["/api/crm/organisations/expiring-compliance"],
   });
+
+  interface AllContact extends CrmContact {
+    orgName?: string | null;
+    orgType?: string | null;
+  }
+  const { data: allContacts = [], isLoading: contactsLoading } = useQuery<AllContact[]>({
+    queryKey: ["/api/crm/contacts", { search: contactSearch }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (contactSearch) params.set("search", contactSearch);
+      const res = await fetch(`/api/crm/contacts?${params}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: crmTab === "contacts",
+  });
+
+  const ROLE_LABELS: Record<string, string> = {
+    PM: "Project Manager", ESTIMATOR: "Estimator", SUPERINTENDENT: "Superintendent",
+    SALES: "Sales", ACCOUNTS_PAYABLE: "Accounts Payable", ACCOUNTS_RECEIVABLE: "Accounts Receivable",
+    OWNER: "Owner", GENERAL_MANAGER: "General Manager", FOREMAN: "Foreman", OTHER: "Other",
+  };
 
   const mutations = useCrmMutations(selectedOrg?.id);
 
@@ -369,6 +396,14 @@ export default function CRMPage() {
               Organizations
             </button>
             <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "contacts" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("contacts")}
+              data-testid="tab-contacts"
+            >
+              <Users className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              Contacts
+            </button>
+            <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "pipeline" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
               onClick={() => setCrmTab("pipeline")}
               data-testid="tab-sales-pipeline"
@@ -379,6 +414,104 @@ export default function CRMPage() {
           </div>
 
           {crmTab === "pipeline" && <CrmPipelineView />}
+
+          {crmTab === "contacts" && (
+            <Card>
+              <CardHeader className="pb-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <CardTitle>All Contacts</CardTitle>
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by name, email, or organization..."
+                      value={contactSearch}
+                      onChange={(e) => setContactSearch(e.target.value)}
+                      className="pl-9"
+                      data-testid="input-contacts-search"
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {contactsLoading ? (
+                  <div className="space-y-3">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-14 w-full" />
+                    ))}
+                  </div>
+                ) : allContacts.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No contacts found</p>
+                    <p className="text-sm">
+                      {contactSearch ? "Try a different search term." : "Add contacts inside an organization to see them here."}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {allContacts.map((contact) => (
+                      <div
+                        key={contact.id}
+                        className="flex items-center gap-4 py-3 px-1 cursor-pointer hover:bg-muted/40 rounded-md transition-colors group"
+                        onClick={() => {
+                          setSelectedContact(contact);
+                          setViewContactOpen(true);
+                        }}
+                        data-testid={`row-contact-${contact.id}`}
+                      >
+                        <div className="p-2 rounded-full bg-muted shrink-0">
+                          <User className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">
+                              {contact.firstName} {contact.lastName}
+                            </span>
+                            {contact.isPrimary && (
+                              <Badge variant="secondary" className="text-xs">Primary</Badge>
+                            )}
+                            <Badge variant="outline" className="text-xs">
+                              {ROLE_LABELS[contact.role as string] || contact.role}
+                            </Badge>
+                          </div>
+                          {contact.orgName && (
+                            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                              <Building2 className="w-3 h-3" />
+                              {contact.orgName}
+                            </p>
+                          )}
+                        </div>
+                        <div className="hidden sm:flex items-center gap-4 text-sm text-muted-foreground shrink-0">
+                          {contact.email && (
+                            <a
+                              href={`mailto:${contact.email}`}
+                              className="flex items-center gap-1 hover:text-primary"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`link-contact-email-${contact.id}`}
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              <span className="max-w-[160px] truncate">{contact.email}</span>
+                            </a>
+                          )}
+                          {contact.phone && (
+                            <a
+                              href={`tel:${contact.phone}`}
+                              className="flex items-center gap-1 hover:text-primary"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`link-contact-phone-${contact.id}`}
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                              {contact.phone}
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {crmTab === "orgs" && <><div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card

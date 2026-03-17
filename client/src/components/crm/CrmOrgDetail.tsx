@@ -16,7 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import {
   Building2, Plus, Edit, Trash2, User, MapPin, Globe, Shield, FileText,
   ChevronRight, DollarSign, Truck, Package, Calendar, Check, ChevronsUpDown,
-  Link2, Send, CheckCircle, XCircle, Clock as ClockIcon, UserPlus, Store, MessageSquare, Clock, X
+  Link2, Send, CheckCircle, XCircle, Clock as ClockIcon, UserPlus, Store, MessageSquare, Clock, X, FolderOpen
 } from "lucide-react";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -556,21 +556,48 @@ export function CrmOrgDetail({
                 </div>
               )}
 
-              {selectedOrg?.activeProjectIds && selectedOrg.activeProjectIds.length > 0 && (
-                <div>
-                  <p className="text-sm font-medium mb-2">Active Projects</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedOrg.activeProjectIds.map((projId: string) => {
-                      const proj = allProjects.find(p => p.id === projId);
-                      return proj ? (
-                        <Badge key={projId} variant="secondary">{proj.name}</Badge>
-                      ) : (
-                        <Badge key={projId} variant="outline" className="text-muted-foreground">{projId}</Badge>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              <div>
+                <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                  <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                  Related Projects
+                </p>
+                {(() => {
+                  const relatedProjects = allProjects.filter(p =>
+                    selectedOrg?.activeProjectIds?.includes(p.id)
+                  );
+                  const statusColors: Record<string, string> = {
+                    BID: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+                    PLANNING: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+                    ACTIVE: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+                    COMPLETE: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+                    CLOSED: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+                  };
+                  if (relatedProjects.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground italic">No active projects linked to this organization.</p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-1.5">
+                      {relatedProjects.map(proj => (
+                        <div key={proj.id} className="flex items-center gap-2 text-sm group">
+                          <Badge className={`text-xs shrink-0 ${statusColors[proj.status] || statusColors.ACTIVE}`}>
+                            {proj.status}
+                          </Badge>
+                          <a
+                            href={`/projects/${proj.code}`}
+                            className="font-medium text-primary hover:underline truncate"
+                            data-testid={`link-related-project-${proj.id}`}
+                          >
+                            {proj.name}
+                          </a>
+                          <ChevronRight className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0 ml-auto" />
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
 
               {selectedOrg?.specialties && selectedOrg.specialties.length > 0 && (
                 <div>
