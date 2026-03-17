@@ -3,9 +3,9 @@ import { db } from "./db";
 import {
   crmOrganisations, crmContacts, crmOrganisationNotes,
   insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema,
-  auditLog, users,
+  auditLog, users, emailThreads, emailMessages, calendarEvents,
 } from "@shared/schema";
-import { eq, and, sql, desc, or, lte, gte, isNotNull, type SQL } from "drizzle-orm";
+import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -547,6 +547,137 @@ const router = Router();
       res.json({ organisations });
     } catch (error) {
       console.error("CRM search error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/crm/organisations/:id/communications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT", "OFFICE_MANAGER", "SALES", "MARKETING", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId: userOrgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const crmOrgConditions = [eq(crmOrganisations.id, req.params.id)];
+      if (shouldFilter && userOrgId) {
+        crmOrgConditions.push(eq(crmOrganisations.organizationId, userOrgId));
+      }
+
+      const [crmOrg] = await db
+        .select({ id: crmOrganisations.id, activeProjectIds: crmOrganisations.activeProjectIds })
+        .from(crmOrganisations)
+        .where(and(...crmOrgConditions))
+        .limit(1);
+
+      if (!crmOrg) {
+        return res.status(404).json({ error: "Organisation not found" });
+      }
+
+      const threadConditions: SQL[] = [eq(emailThreads.vendorId, crmOrg.id)];
+      if (shouldFilter && userOrgId) {
+        threadConditions.push(eq(emailThreads.organizationId, userOrgId));
+      }
+
+      const threads = await db
+        .select({
+          id: emailThreads.id,
+          subject: emailThreads.subject,
+          lastMessageAt: emailThreads.lastMessageAt,
+          messageCount: emailThreads.messageCount,
+          aiSummary: emailThreads.aiSummary,
+          status: emailThreads.status,
+        })
+        .from(emailThreads)
+        .where(and(...threadConditions))
+        .orderBy(desc(emailThreads.lastMessageAt))
+        .limit(20);
+
+      const emailRows: Array<{
+        threadId: string;
+        subject: string;
+        lastMessageAt: Date;
+        messageCount: number;
+        aiSummary: string | null;
+        status: string;
+        fromAddress: string | null;
+        fromName: string | null;
+        snippet: string | null;
+        receivedAt: Date | null;
+      }> = [];
+
+      for (const thread of threads) {
+        const [latestMsg] = await db
+          .select({
+            fromAddress: emailMessages.fromAddress,
+            fromName: emailMessages.fromName,
+            snippet: emailMessages.snippet,
+            receivedAt: emailMessages.receivedAt,
+          })
+          .from(emailMessages)
+          .where(eq(emailMessages.threadId, thread.id))
+          .orderBy(desc(emailMessages.receivedAt))
+          .limit(1);
+
+        emailRows.push({
+          threadId: thread.id,
+          subject: thread.subject,
+          lastMessageAt: thread.lastMessageAt,
+          messageCount: thread.messageCount,
+          aiSummary: thread.aiSummary,
+          status: thread.status,
+          fromAddress: latestMsg?.fromAddress ?? null,
+          fromName: latestMsg?.fromName ?? null,
+          snippet: latestMsg?.snippet ?? null,
+          receivedAt: latestMsg?.receivedAt ?? null,
+        });
+      }
+
+      const now = new Date();
+      const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const projectIds = (crmOrg.activeProjectIds ?? []).filter(Boolean);
+
+      let upcomingEvents: Array<{
+        id: string;
+        title: string;
+        description: string | null;
+        startDate: Date;
+        endDate: Date | null;
+        allDay: boolean;
+        eventType: string;
+        projectId: string | null;
+      }> = [];
+
+      if (projectIds.length > 0) {
+        upcomingEvents = await db
+          .select({
+            id: calendarEvents.id,
+            title: calendarEvents.title,
+            description: calendarEvents.description,
+            startDate: calendarEvents.startDate,
+            endDate: calendarEvents.endDate,
+            allDay: calendarEvents.allDay,
+            eventType: calendarEvents.eventType,
+            projectId: calendarEvents.projectId,
+          })
+          .from(calendarEvents)
+          .where(
+            and(
+              inArray(calendarEvents.projectId, projectIds),
+              gte(calendarEvents.startDate, now),
+              lte(calendarEvents.startDate, thirtyDaysOut)
+            )
+          )
+          .orderBy(calendarEvents.startDate)
+          .limit(10);
+      }
+
+      res.json({
+        emails: emailRows,
+        upcomingEvents,
+      });
+    } catch (error) {
+      console.error("Get CRM org communications error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

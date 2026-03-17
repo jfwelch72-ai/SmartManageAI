@@ -16,7 +16,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import {
   Building2, Plus, Edit, Trash2, User, MapPin, Globe, Shield, FileText,
   ChevronRight, DollarSign, Truck, Package, Calendar, Check, ChevronsUpDown,
-  Link2, Send, CheckCircle, XCircle, Clock as ClockIcon, UserPlus, Store, MessageSquare, Clock, X, FolderOpen
+  Link2, Send, CheckCircle, XCircle, Clock as ClockIcon, UserPlus, Store, MessageSquare, Clock, X, FolderOpen,
+  Mail, CalendarDays, ExternalLink, Wifi, WifiOff
 } from "lucide-react";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
@@ -365,6 +366,43 @@ export function CrmOrgDetail({
     enabled: !!selectedOrg?.id && detailOrgOpen && showPortalTab && !!vendorEnrollment,
   });
 
+  interface IntegrationConnection { provider: string; status: string; }
+  const { data: integrationConnections = [] } = useQuery<IntegrationConnection[]>({
+    queryKey: ["/api/integrations/connections"],
+    enabled: detailOrgOpen,
+  });
+  const hasEmailIntegration = integrationConnections.some(
+    (c) => (c.provider === "google" || c.provider === "microsoft") && (c.status === "active" || c.status === "connected")
+  );
+
+  interface CommEmail {
+    threadId: string;
+    subject: string;
+    lastMessageAt: string;
+    messageCount: number;
+    aiSummary: string | null;
+    status: string;
+    fromAddress: string | null;
+    fromName: string | null;
+    snippet: string | null;
+    receivedAt: string | null;
+  }
+  interface CommEvent {
+    id: string;
+    title: string;
+    description: string | null;
+    startDate: string;
+    endDate: string | null;
+    allDay: boolean;
+    eventType: string;
+    projectId: string | null;
+  }
+  interface CommunicationsData { emails: CommEmail[]; upcomingEvents: CommEvent[]; }
+  const { data: commsData, isLoading: commsLoading } = useQuery<CommunicationsData>({
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`],
+    enabled: !!selectedOrg?.id && detailOrgOpen && hasEmailIntegration,
+  });
+
   return (
     <>
       <Dialog open={detailOrgOpen} onOpenChange={setDetailOrgOpen}>
@@ -425,6 +463,10 @@ export function CrmOrgDetail({
                   Portal Access
                 </TabsTrigger>
               )}
+              <TabsTrigger value="communications" data-testid="tab-communications">
+                <Mail className="w-3 h-3 mr-1" />
+                Communications
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="info" className="space-y-4 mt-4">
@@ -1240,6 +1282,129 @@ export function CrmOrgDetail({
                 </div>
               </TabsContent>
             )}
+
+            <TabsContent value="communications" className="mt-4">
+              {!hasEmailIntegration ? (
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="text-center">
+                      <WifiOff className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                      <h3 className="font-medium text-lg mb-2">No Email Integration Connected</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Connect a Google Workspace or Microsoft 365 account to see email threads and calendar events linked to this organization.
+                      </p>
+                      <Button variant="outline" asChild data-testid="button-connect-email">
+                        <a href="/integrations">
+                          <Wifi className="w-4 h-4 mr-2" />
+                          Connect Email Integration
+                        </a>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : commsLoading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Mail className="w-4 h-4 text-muted-foreground" />
+                      <h3 className="text-sm font-medium">Email Threads</h3>
+                      <Badge variant="secondary" className="text-xs">{commsData?.emails?.length ?? 0}</Badge>
+                    </div>
+                    {!commsData?.emails?.length ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <Mail className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">No email threads linked to this organization</p>
+                        <p className="text-xs mt-1">Threads appear here when emails are matched to this org in the Email Assistant.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {commsData.emails.map((email) => (
+                          <Card key={email.threadId} className="hover-elevate" data-testid={`card-email-${email.threadId}`}>
+                            <CardContent className="p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="text-sm font-medium truncate">{email.subject}</p>
+                                    <Badge variant="outline" className="text-xs shrink-0">{email.messageCount} msg{email.messageCount !== 1 ? "s" : ""}</Badge>
+                                  </div>
+                                  {(email.fromName || email.fromAddress) && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      From: {email.fromName ? `${email.fromName} <${email.fromAddress}>` : email.fromAddress}
+                                    </p>
+                                  )}
+                                  {email.snippet && (
+                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{email.snippet}</p>
+                                  )}
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {email.receivedAt
+                                      ? formatDistanceToNow(new Date(email.receivedAt), { addSuffix: true })
+                                      : formatDistanceToNow(new Date(email.lastMessageAt), { addSuffix: true })}
+                                  </p>
+                                </div>
+                                <Button variant="ghost" size="icon" asChild className="shrink-0" data-testid={`button-open-email-${email.threadId}`}>
+                                  <a href="/email-assistant" title="Open in Email Assistant">
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <Separator />
+
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <CalendarDays className="w-4 h-4 text-muted-foreground" />
+                      <h3 className="text-sm font-medium">Upcoming Events</h3>
+                      <span className="text-xs text-muted-foreground">(next 30 days)</span>
+                      <Badge variant="secondary" className="text-xs">{commsData?.upcomingEvents?.length ?? 0}</Badge>
+                    </div>
+                    {!commsData?.upcomingEvents?.length ? (
+                      <div className="text-center py-6 text-muted-foreground">
+                        <CalendarDays className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                        <p className="text-sm">No upcoming events linked to this organization's projects</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {commsData.upcomingEvents.map((event) => (
+                          <Card key={event.id} className="hover-elevate" data-testid={`card-event-${event.id}`}>
+                            <CardContent className="p-3">
+                              <div className="flex items-start gap-3">
+                                <div className="p-1.5 rounded-md bg-primary/10 shrink-0">
+                                  <CalendarDays className="w-3.5 h-3.5 text-primary" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium">{event.title}</p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {event.allDay
+                                      ? format(new Date(event.startDate), "EEEE, MMMM d")
+                                      : format(new Date(event.startDate), "EEEE, MMMM d 'at' h:mm a")}
+                                    {event.endDate && !event.allDay && (
+                                      <> – {format(new Date(event.endDate), "h:mm a")}</>
+                                    )}
+                                  </p>
+                                  {event.description && (
+                                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{event.description}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
         </DialogContent>
       </Dialog>
