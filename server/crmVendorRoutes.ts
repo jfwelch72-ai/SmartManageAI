@@ -5,7 +5,7 @@ import {
   insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema,
   auditLog, users,
 } from "@shared/schema";
-import { eq, and, sql, desc, or, lte, gte, isNotNull } from "drizzle-orm";
+import { eq, and, sql, desc, or, lte, gte, isNotNull, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -54,7 +54,7 @@ const router = Router();
         })
         .from(crmOrganisations);
       
-      const conditions: any[] = [];
+      const conditions: SQL[] = [];
       
       if (shouldFilter && orgId) {
         conditions.push(eq(crmOrganisations.organizationId, orgId));
@@ -82,6 +82,92 @@ const router = Router();
       res.json(results);
     } catch (error) {
       console.error("Get CRM organisations error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const now = new Date();
+      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const conditions: SQL[] = [];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(crmOrganisations.organizationId, orgId));
+      }
+      conditions.push(eq(crmOrganisations.isActive, true));
+
+      const expirationCheck = or(
+        and(isNotNull(crmOrganisations.insuranceExpiration), lte(crmOrganisations.insuranceExpiration, thirtyDaysFromNow)),
+        and(isNotNull(crmOrganisations.wcInsuranceExpiration), lte(crmOrganisations.wcInsuranceExpiration, thirtyDaysFromNow)),
+        and(isNotNull(crmOrganisations.licenseExpiration), lte(crmOrganisations.licenseExpiration, thirtyDaysFromNow)),
+        and(isNotNull(crmOrganisations.contractExpiration), lte(crmOrganisations.contractExpiration, thirtyDaysFromNow))
+      );
+      conditions.push(expirationCheck!);
+
+      const orgs = await db
+        .select({
+          id: crmOrganisations.id,
+          name: crmOrganisations.name,
+          type: crmOrganisations.type,
+          insuranceExpiration: crmOrganisations.insuranceExpiration,
+          wcInsuranceExpiration: crmOrganisations.wcInsuranceExpiration,
+          licenseExpiration: crmOrganisations.licenseExpiration,
+          contractExpiration: crmOrganisations.contractExpiration,
+        })
+        .from(crmOrganisations)
+        .where(and(...conditions))
+        .orderBy(crmOrganisations.insuranceExpiration);
+
+      const items: Array<{
+        orgId: string;
+        orgName: string;
+        orgType: string;
+        complianceType: string;
+        expirationDate: string;
+        status: "expired" | "expiring_soon";
+        daysUntilExpiration: number;
+      }> = [];
+
+      for (const org of orgs) {
+        const fields = [
+          { type: "General Liability Insurance", date: org.insuranceExpiration },
+          { type: "Workers Comp Insurance", date: org.wcInsuranceExpiration },
+          { type: "License", date: org.licenseExpiration },
+          { type: "Contract", date: org.contractExpiration },
+        ];
+        for (const field of fields) {
+          if (field.date && new Date(field.date) <= thirtyDaysFromNow) {
+            const expDate = new Date(field.date);
+            const daysUntil = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            items.push({
+              orgId: org.id,
+              orgName: org.name,
+              orgType: org.type || "UNKNOWN",
+              complianceType: field.type,
+              expirationDate: field.date instanceof Date ? field.date.toISOString() : String(field.date),
+              status: daysUntil <= 0 ? "expired" : "expiring_soon",
+              daysUntilExpiration: daysUntil,
+            });
+          }
+        }
+      }
+
+      items.sort((a, b) => a.daysUntilExpiration - b.daysUntilExpiration);
+
+      res.json({
+        total: items.length,
+        expired: items.filter(i => i.status === "expired").length,
+        expiringSoon: items.filter(i => i.status === "expiring_soon").length,
+        items,
+      });
+    } catch (error) {
+      console.error("Expiring compliance check error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -432,7 +518,7 @@ const router = Router();
         return;
       }
       
-      const conditions: any[] = [
+      const conditions: SQL[] = [
         eq(crmOrganisations.isActive, true),
         sql`LOWER(${crmOrganisations.name}) LIKE LOWER(${'%' + query + '%'})`,
       ];
@@ -461,92 +547,6 @@ const router = Router();
       res.json({ organisations });
     } catch (error) {
       console.error("CRM search error:", error);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  router.get("/api/crm/organisations/expiring-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "PROCUREMENT_MANAGER"), async (req: AuthRequest, res) => {
-    try {
-      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      if (mustDenyAccess) {
-        return res.status(403).json({ error: "Access denied - no organization" });
-      }
-
-      const now = new Date();
-      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-
-      const conditions: any[] = [];
-      if (shouldFilter && orgId) {
-        conditions.push(eq(crmOrganisations.organizationId, orgId));
-      }
-      conditions.push(eq(crmOrganisations.isActive, true));
-
-      const expirationCheck = or(
-        and(isNotNull(crmOrganisations.insuranceExpiration), lte(crmOrganisations.insuranceExpiration, thirtyDaysFromNow)),
-        and(isNotNull(crmOrganisations.wcInsuranceExpiration), lte(crmOrganisations.wcInsuranceExpiration, thirtyDaysFromNow)),
-        and(isNotNull(crmOrganisations.licenseExpiration), lte(crmOrganisations.licenseExpiration, thirtyDaysFromNow)),
-        and(isNotNull(crmOrganisations.contractExpiration), lte(crmOrganisations.contractExpiration, thirtyDaysFromNow))
-      );
-      conditions.push(expirationCheck!);
-
-      const orgs = await db
-        .select({
-          id: crmOrganisations.id,
-          name: crmOrganisations.name,
-          type: crmOrganisations.type,
-          insuranceExpiration: crmOrganisations.insuranceExpiration,
-          wcInsuranceExpiration: crmOrganisations.wcInsuranceExpiration,
-          licenseExpiration: crmOrganisations.licenseExpiration,
-          contractExpiration: crmOrganisations.contractExpiration,
-        })
-        .from(crmOrganisations)
-        .where(and(...conditions))
-        .orderBy(crmOrganisations.insuranceExpiration);
-
-      const items: Array<{
-        orgId: string;
-        orgName: string;
-        orgType: string;
-        complianceType: string;
-        expirationDate: string;
-        status: "expired" | "expiring_soon";
-        daysUntilExpiration: number;
-      }> = [];
-
-      for (const org of orgs) {
-        const fields = [
-          { type: "General Liability Insurance", date: org.insuranceExpiration },
-          { type: "Workers Comp Insurance", date: org.wcInsuranceExpiration },
-          { type: "License", date: org.licenseExpiration },
-          { type: "Contract", date: org.contractExpiration },
-        ];
-        for (const field of fields) {
-          if (field.date && new Date(field.date) <= thirtyDaysFromNow) {
-            const expDate = new Date(field.date);
-            const daysUntil = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-            items.push({
-              orgId: org.id,
-              orgName: org.name,
-              orgType: org.type || "UNKNOWN",
-              complianceType: field.type,
-              expirationDate: field.date instanceof Date ? field.date.toISOString() : String(field.date),
-              status: daysUntil <= 0 ? "expired" : "expiring_soon",
-              daysUntilExpiration: daysUntil,
-            });
-          }
-        }
-      }
-
-      items.sort((a, b) => a.daysUntilExpiration - b.daysUntilExpiration);
-
-      res.json({
-        total: items.length,
-        expired: items.filter(i => i.status === "expired").length,
-        expiringSoon: items.filter(i => i.status === "expiring_soon").length,
-        items,
-      });
-    } catch (error) {
-      console.error("Expiring compliance check error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
