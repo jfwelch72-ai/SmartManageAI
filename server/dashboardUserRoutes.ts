@@ -1824,6 +1824,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
       });
     }
 
+    const sovResult = await orgScopedCache(orgId, "dashboard:sov-progress", DASHBOARD_CACHE_TTL, async () => {
     const orgCond = shouldFilter && orgId ? sql`AND s."organization_id" = ${orgId}` : sql``;
 
     // 1. Aggregate SOV totals (% billed vs % complete)
@@ -1935,7 +1936,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
       console.error("SOV progress: retainage error:", e);
     }
 
-    res.json({
+    return {
       billedPercent,
       completePercent,
       totalScheduledValue: Math.round(totalScheduledValue * 100) / 100,
@@ -1947,7 +1948,10 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
       retainageHeld: Math.round(retainageHeld * 100) / 100,
       avgRetainagePercent,
       projects: projectBreakdown,
+    };
     });
+
+    res.json(sovResult);
   } catch (error) {
     console.error("SOV progress error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -2248,6 +2252,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
       });
     }
 
+    const siResult = await orgScopedCache(orgId, "dashboard:schedule-impact", DASHBOARD_CACHE_TTL, async () => {
     const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
 
     const today = new Date();
@@ -2365,7 +2370,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
       const conflictResult = await db.execute(sql`
         SELECT
           cm."user_id",
-          u."full_name" as user_name,
+          (u."first_name" || ' ' || u."last_name") as user_name,
           d.day::date as conflict_date,
           array_agg(DISTINCT p."name") as project_names
         FROM generate_series(${todayStr}::date, ${endStr}::date, '1 day'::interval) AS d(day)
@@ -2375,9 +2380,9 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
         JOIN "projects" p ON cpa."project_id" = p."id"
         JOIN "users" u ON cm."user_id" = u."id"
         WHERE 1=1 ${orgCond}
-        GROUP BY cm."user_id", u."full_name", d.day::date
+        GROUP BY cm."user_id", u."first_name", u."last_name", d.day::date
         HAVING COUNT(DISTINCT cpa."project_id") > 1
-        ORDER BY d.day::date, u."full_name"
+        ORDER BY d.day::date, u."first_name", u."last_name"
         LIMIT 10
       `);
 
@@ -2419,7 +2424,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
       }
     }
 
-    res.json({
+    return {
       dailyAllocation,
       projectForecast,
       conflicts,
@@ -2429,7 +2434,10 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
         peakWorkers,
         conflictCount,
       },
+    };
     });
+
+    res.json(siResult);
   } catch (error) {
     console.error("Schedule impact error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -2447,6 +2455,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
       return res.json({ utilizedPercent: 0, workedHours: 0, availableHours: 0, billablePercent: 0, sparkline: [] });
     }
 
+    const luResult = await orgScopedCache(orgId, "dashboard:labor-utilization", DASHBOARD_CACHE_TTL, async () => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const orgCond = shouldFilter && orgId ? sql`AND u."organization_id" = ${orgId}` : sql``;
@@ -2512,7 +2521,10 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
     }
 
     const availableHours = totalWorkers * 8;
-    res.json({ utilizedPercent: Math.min(utilizedPercent, 100), workedHours, availableHours, billablePercent, activeWorkers, totalWorkers, sparkline });
+    return { utilizedPercent: Math.min(utilizedPercent, 100), workedHours, availableHours, billablePercent, activeWorkers, totalWorkers, sparkline };
+    });
+
+    res.json(luResult);
   } catch (error) {
     console.error("Labor utilization error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -2530,6 +2542,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
       return res.json({ overdueCount: 0, dueThisWeekCount: 0, completionRate: 0, overdueItems: [] });
     }
 
+    const ssResult = await orgScopedCache(orgId, "dashboard:safety-summary", DASHBOARD_CACHE_TTL, async () => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
     const endOfWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -2578,7 +2591,10 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
       daysOverdue: parseInt(r.days_overdue) || 0,
     }));
 
-    res.json({ overdueCount, dueThisWeekCount, completionRate, total, completed, overdueItems });
+    return { overdueCount, dueThisWeekCount, completionRate, total, completed, overdueItems };
+    });
+
+    res.json(ssResult);
   } catch (error) {
     console.error("Safety summary error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -2596,6 +2612,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       return res.json({ count: 0, totalValue: 0, items: [] });
     }
 
+    const coResult = await orgScopedCache(orgId, "dashboard:change-orders-pending", DASHBOARD_CACHE_TTL, async () => {
     const now = new Date();
     const orgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
 
@@ -2637,7 +2654,10 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       daysPending: Math.floor((now.getTime() - new Date(r.created_at).getTime()) / (1000 * 60 * 60 * 24)),
     }));
 
-    res.json({ count, totalValue, items });
+    return { count, totalValue, items };
+    });
+
+    res.json(coResult);
   } catch (error) {
     console.error("Change orders pending error:", error);
     res.status(500).json({ error: "Internal server error" });
