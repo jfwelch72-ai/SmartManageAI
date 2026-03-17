@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -38,6 +38,10 @@ export default function EmailAssistantPage() {
   const [mobileView, setMobileView] = useState<"list" | "overview">("list");
   const [filterClassification, setFilterClassification] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("OPEN");
+  const [pendingThreadId, setPendingThreadId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("threadId");
+  });
   const [showSummarySheet, setShowSummarySheet] = useState(false);
   const [summaryType, setSummaryType] = useState<"daily" | "weekly">("daily");
 
@@ -56,6 +60,16 @@ export default function EmailAssistantPage() {
   const syncMutation = useSyncEmails(refetchThreads);
   const dailySummaryMutation = useDailySummary();
   const weeklySummaryMutation = useWeeklySummary();
+
+  useEffect(() => {
+    if (pendingThreadId && threads && threads.length > 0) {
+      const match = threads.find((t) => t.id === pendingThreadId);
+      if (match) {
+        setSelectedThread(match);
+        setPendingThreadId(null);
+      }
+    }
+  }, [pendingThreadId, threads]);
 
   const currentSummary = summaryType === "daily" ? dailySummaryMutation.data : weeklySummaryMutation.data;
   const isSummaryLoading = dailySummaryMutation.isPending || weeklySummaryMutation.isPending;

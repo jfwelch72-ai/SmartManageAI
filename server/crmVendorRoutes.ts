@@ -558,6 +558,10 @@ const router = Router();
         return res.status(403).json({ error: "Access denied - no organization" });
       }
 
+      const page = Math.max(1, parseInt(String(req.query.page || "1"), 10));
+      const pageSize = Math.min(50, Math.max(1, parseInt(String(req.query.pageSize || "20"), 10)));
+      const offset = (page - 1) * pageSize;
+
       const crmOrgConditions = [eq(crmOrganisations.id, req.params.id)];
       if (shouldFilter && userOrgId) {
         crmOrgConditions.push(eq(crmOrganisations.organizationId, userOrgId));
@@ -578,6 +582,12 @@ const router = Router();
         threadConditions.push(eq(emailThreads.organizationId, userOrgId));
       }
 
+      const [totalRow] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(emailThreads)
+        .where(and(...threadConditions));
+      const totalEmails = totalRow?.count ?? 0;
+
       const threads = await db
         .select({
           id: emailThreads.id,
@@ -590,7 +600,8 @@ const router = Router();
         .from(emailThreads)
         .where(and(...threadConditions))
         .orderBy(desc(emailThreads.lastMessageAt))
-        .limit(20);
+        .limit(pageSize)
+        .offset(offset);
 
       const emailRows: Array<{
         threadId: string;
@@ -675,6 +686,12 @@ const router = Router();
       res.json({
         emails: emailRows,
         upcomingEvents,
+        pagination: {
+          page,
+          pageSize,
+          total: totalEmails,
+          hasMore: offset + emailRows.length < totalEmails,
+        },
       });
     } catch (error) {
       console.error("Get CRM org communications error:", error);

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -397,9 +397,12 @@ export function CrmOrgDetail({
     eventType: string;
     projectId: string | null;
   }
-  interface CommunicationsData { emails: CommEmail[]; upcomingEvents: CommEvent[]; }
+  interface CommunicationsPagination { page: number; pageSize: number; total: number; hasMore: boolean; }
+  interface CommunicationsData { emails: CommEmail[]; upcomingEvents: CommEvent[]; pagination: CommunicationsPagination; }
+  const [commsPage, setCommsPage] = useState(1);
+  useEffect(() => { setCommsPage(1); }, [selectedOrg?.id]);
   const { data: commsData, isLoading: commsLoading } = useQuery<CommunicationsData>({
-    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`],
+    queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`, commsPage],
     enabled: !!selectedOrg?.id && detailOrgOpen && hasEmailIntegration,
   });
 
@@ -463,10 +466,12 @@ export function CrmOrgDetail({
                   Portal Access
                 </TabsTrigger>
               )}
-              <TabsTrigger value="communications" data-testid="tab-communications">
-                <Mail className="w-3 h-3 mr-1" />
-                Communications
-              </TabsTrigger>
+              {hasEmailIntegration && (
+                <TabsTrigger value="communications" data-testid="tab-communications">
+                  <Mail className="w-3 h-3 mr-1" />
+                  Communications
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="info" className="space-y-4 mt-4">
@@ -1346,7 +1351,7 @@ export function CrmOrgDetail({
                                   </p>
                                 </div>
                                 <Button variant="ghost" size="icon" asChild className="shrink-0" data-testid={`button-open-email-${email.threadId}`}>
-                                  <a href="/email-assistant" title="Open in Email Assistant">
+                                  <a href={`/email-assistant?threadId=${email.threadId}`} title="Open in Email Assistant">
                                     <ExternalLink className="w-3.5 h-3.5" />
                                   </a>
                                 </Button>
@@ -1354,6 +1359,17 @@ export function CrmOrgDetail({
                             </CardContent>
                           </Card>
                         ))}
+                        {commsData.pagination?.hasMore && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full mt-2"
+                            onClick={() => setCommsPage((p) => p + 1)}
+                            data-testid="button-load-more-emails"
+                          >
+                            Load more ({commsData.pagination.total - (commsPage * commsData.pagination.pageSize)} remaining)
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>
