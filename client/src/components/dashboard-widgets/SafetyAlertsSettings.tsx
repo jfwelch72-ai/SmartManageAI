@@ -1,15 +1,18 @@
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
 export interface SafetyAlertsConfig {
   showLimit: number;
   showDueThisWeek: boolean;
+  filterByCategory: string;
 }
 
 export const DEFAULT_SAFETY_ALERTS_CONFIG: SafetyAlertsConfig = {
   showLimit: 5,
   showDueThisWeek: true,
+  filterByCategory: "",
 };
 
 interface SafetyAlertsSettingsProps {
@@ -22,6 +25,18 @@ export function SafetyAlertsSettings({ config, onChange }: SafetyAlertsSettingsP
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="safety-category-filter">Filter by Category</Label>
+        <Input
+          id="safety-category-filter"
+          placeholder="e.g. OSHA, Fall Protection (leave blank for all)"
+          value={cfg.filterByCategory}
+          onChange={(e) => onChange({ ...cfg, filterByCategory: e.target.value })}
+          data-testid="input-safety-category-filter"
+        />
+        <p className="text-xs text-muted-foreground">Show overdue items for this training category only. Leave blank to show all.</p>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="safety-show-limit">Max overdue items to display</Label>
         <Select

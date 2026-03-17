@@ -1,7 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { HardHat, Bell, Check } from "lucide-react";
+import { HardHat, Bell, Check, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -9,7 +10,7 @@ import type { Notification } from "@shared/schema";
 
 export function ProjectAssignmentsWidget() {
   const [, setLocation] = useLocation();
-  const { data: notifications = [], isLoading } = useQuery<Notification[]>({
+  const { data: notifications = [], isLoading, isError } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
 
@@ -32,15 +33,26 @@ export function ProjectAssignmentsWidget() {
         <CardContent className="flex items-center justify-center h-full">
           <div className="w-full space-y-3 pt-6">
             {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="animate-pulse flex items-center gap-3 p-3 rounded-md bg-muted/30">
-                <div className="h-4 w-4 rounded bg-muted shrink-0" />
+              <div key={i} className="flex items-center gap-3 p-3 rounded-md bg-muted/30">
+                <Skeleton className="h-4 w-4 shrink-0" />
                 <div className="flex-1 space-y-1.5">
-                  <div className="h-3.5 w-3/4 bg-muted rounded" />
-                  <div className="h-3 w-full bg-muted rounded" />
+                  <Skeleton className="h-3.5 w-3/4" />
+                  <Skeleton className="h-3 w-full" />
                 </div>
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-project-assignments-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load assignments.</p>
         </CardContent>
       </Card>
     );

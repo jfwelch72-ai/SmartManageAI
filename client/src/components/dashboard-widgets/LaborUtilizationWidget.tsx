@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Activity, Users, Clock, TrendingUp, Lock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Activity, Users, Clock, TrendingUp, Lock, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -46,12 +47,19 @@ function SparklineBar({ sparkline, cfg }: { sparkline: { date: string; utilizedP
   );
 }
 
+const DATE_RANGE_LABELS: Record<string, string> = {
+  today: "Today",
+  last7days: "Last 7 Days",
+  last30days: "Last 30 Days",
+};
+
 export function LaborUtilizationWidget({ config }: WidgetComponentProps) {
   const hasPermission = useFeaturePermission("canManagePayroll");
   const cfg: LaborUtilizationConfig = { ...DEFAULT_LABOR_UTIL_CONFIG, ...(config as Partial<LaborUtilizationConfig>) };
 
-  const { data, isLoading } = useQuery<LaborUtilization>({
-    queryKey: ["/api/dashboard/labor-utilization"],
+  const { data, isLoading, isError } = useQuery<LaborUtilization>({
+    queryKey: ["/api/dashboard/labor-utilization", { dateRange: cfg.dateRange }],
+    queryFn: () => fetch(`/api/dashboard/labor-utilization?dateRange=${cfg.dateRange || "today"}`).then(r => r.json()),
     refetchInterval: 120000,
     enabled: hasPermission,
   });
@@ -76,15 +84,15 @@ export function LaborUtilizationWidget({ config }: WidgetComponentProps) {
     return (
       <Card data-testid="labor-utilization-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-36 bg-muted rounded" />
+          <Skeleton className="h-4 w-36" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-4">
-          <div className="animate-pulse h-14 w-full bg-muted rounded" />
-          <div className="grid grid-cols-2 gap-3">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-lg bg-muted/50 p-3 space-y-2">
-                <div className="h-3 w-16 bg-muted rounded" />
-                <div className="h-6 w-12 bg-muted rounded" />
+          <Skeleton className="h-14 w-full" />
+          <div className="grid grid-cols-3 gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-lg bg-muted/50 p-2.5 space-y-2">
+                <Skeleton className="h-3 w-12" />
+                <Skeleton className="h-6 w-10" />
               </div>
             ))}
           </div>
@@ -93,7 +101,19 @@ export function LaborUtilizationWidget({ config }: WidgetComponentProps) {
     );
   }
 
+  if (isError) {
+    return (
+      <Card data-testid="labor-utilization-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load labor data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const d = data || { utilizedPercent: 0, workedHours: 0, availableHours: 0, billablePercent: 0, activeWorkers: 0, totalWorkers: 0, sparkline: [] };
+  const dateRangeLabel = DATE_RANGE_LABELS[cfg.dateRange || "today"] || "Today";
 
   return (
     <Card data-testid="labor-utilization-widget">
@@ -104,7 +124,7 @@ export function LaborUtilizationWidget({ config }: WidgetComponentProps) {
             <CardTitle className="text-sm font-medium">Labor Utilization</CardTitle>
           </div>
           <span className={cn("text-xs font-semibold", getUtilizationColor(d.utilizedPercent, cfg))} data-testid="utilization-badge">
-            {d.utilizedPercent}% Today
+            {d.utilizedPercent}% — {dateRangeLabel}
           </span>
         </div>
       </CardHeader>

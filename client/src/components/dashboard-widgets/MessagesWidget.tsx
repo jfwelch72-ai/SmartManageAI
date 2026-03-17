@@ -1,8 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MessageSquare, ChevronRight } from "lucide-react";
+import { MessageSquare, ChevronRight, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
@@ -26,27 +27,38 @@ interface ConversationWithDetails {
 export function MessagesWidget() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const { data: conversations = [], isLoading } = useQuery<ConversationWithDetails[]>({
+  const { data: conversations = [], isLoading, isError } = useQuery<ConversationWithDetails[]>({
     queryKey: ["/api/conversations"],
   });
 
   if (isLoading) {
     return (
-      <Card className="h-full" data-testid="card-messages-loading">
+      <Card className="h-full" data-testid="card-messages">
         <CardHeader className="pb-3">
-          <div className="animate-pulse h-4 w-24 bg-muted rounded" />
+          <Skeleton className="h-4 w-24" />
         </CardHeader>
         <CardContent className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex items-center gap-3 p-2">
-              <div className="h-8 w-8 rounded-full bg-muted shrink-0" />
+            <div key={i} className="flex items-center gap-3 p-2">
+              <Skeleton className="h-8 w-8 rounded-full shrink-0" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-3/4 bg-muted rounded" />
-                <div className="h-3 w-full bg-muted rounded" />
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-full" />
               </div>
-              <div className="h-5 w-6 rounded-full bg-muted shrink-0" />
+              <Skeleton className="h-5 w-6 rounded-full shrink-0" />
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-messages-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load messages.</p>
         </CardContent>
       </Card>
     );

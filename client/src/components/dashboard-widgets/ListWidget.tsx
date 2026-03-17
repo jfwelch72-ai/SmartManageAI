@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { List, Calendar, DollarSign, Clock } from "lucide-react";
+import { List, Calendar, DollarSign, Clock, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
@@ -74,7 +75,7 @@ export function ListWidget({ config }: ListWidgetProps) {
   const merged = { ...DEFAULT_LIST_CONFIG, ...config };
   const entityDef = LIST_ENTITIES.find(e => e.value === merged.entity) || LIST_ENTITIES[0];
 
-  const { data, isLoading } = useQuery<ListResponse>({
+  const { data, isLoading, isError } = useQuery<ListResponse>({
     queryKey: ["/api/dashboard/list", merged.entity, merged.status, merged.sortBy, merged.sortDir, merged.limit],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -95,15 +96,26 @@ export function ListWidget({ config }: ListWidgetProps) {
     return (
       <Card data-testid="list-widget-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-28 bg-muted rounded" />
+          <Skeleton className="h-4 w-28" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse space-y-1.5">
-              <div className="h-3.5 w-3/4 bg-muted rounded" />
-              <div className="h-3 w-1/2 bg-muted rounded" />
+            <div key={i} className="space-y-1.5">
+              <Skeleton className="h-3.5 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="list-widget-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load list data.</p>
         </CardContent>
       </Card>
     );

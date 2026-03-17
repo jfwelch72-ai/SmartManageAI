@@ -1,15 +1,18 @@
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
 export interface RFIStatusConfig {
   showLimit: number;
   highlightDaysThreshold: number;
+  projectCode: string;
 }
 
 export const DEFAULT_RFI_STATUS_CONFIG: RFIStatusConfig = {
   showLimit: 5,
   highlightDaysThreshold: 7,
+  projectCode: "",
 };
 
 interface RFIStatusSettingsProps {
@@ -22,6 +25,18 @@ export function RFIStatusSettings({ config, onChange }: RFIStatusSettingsProps) 
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="rfi-project-filter">Filter by Project Code</Label>
+        <Input
+          id="rfi-project-filter"
+          placeholder="e.g. PROJ-001 (leave blank for all)"
+          value={cfg.projectCode}
+          onChange={(e) => onChange({ ...cfg, projectCode: e.target.value })}
+          data-testid="input-rfi-project-filter"
+        />
+        <p className="text-xs text-muted-foreground">Show RFIs only for this project. Leave blank to show all projects.</p>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="rfi-show-limit">Max RFIs to display</Label>
         <Select

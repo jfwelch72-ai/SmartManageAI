@@ -1,14 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Bell, Check } from "lucide-react";
+import { Bell, Check, AlertCircle } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Notification } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
 export function NotificationsWidget() {
-  const { data: notifications = [], isLoading } = useQuery<Notification[]>({
+  const { data: notifications = [], isLoading, isError } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
 
@@ -27,21 +28,32 @@ export function NotificationsWidget() {
 
   if (isLoading) {
     return (
-      <Card className="h-full" data-testid="card-notifications-loading">
+      <Card className="h-full" data-testid="card-notifications">
         <CardHeader className="pb-3">
-          <div className="animate-pulse h-4 w-28 bg-muted rounded" />
+          <Skeleton className="h-4 w-28" />
         </CardHeader>
         <CardContent className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex items-start gap-3 p-2 rounded-md bg-muted/30">
+            <div key={i} className="flex items-start gap-3 p-2 rounded-md">
               <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-3/4 bg-muted rounded" />
-                <div className="h-3 w-full bg-muted rounded" />
-                <div className="h-2.5 w-1/3 bg-muted rounded" />
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-2.5 w-1/3" />
               </div>
-              <div className="h-7 w-7 rounded bg-muted shrink-0" />
+              <Skeleton className="h-7 w-7 rounded shrink-0" />
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-notifications-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load notifications.</p>
         </CardContent>
       </Card>
     );

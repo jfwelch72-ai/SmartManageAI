@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Calendar, ChevronRight } from "lucide-react";
+import { Calendar, ChevronRight, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import type { CalendarEvent } from "@shared/schema";
@@ -17,24 +18,24 @@ function formatEventDate(dateStr: string | Date): string {
 
 export function CalendarWidget() {
   const [, setLocation] = useLocation();
-  const { data: calendarEvents = [], isLoading } = useQuery<CalendarEvent[]>({
+  const { data: calendarEvents = [], isLoading, isError } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/my-events"],
   });
 
   if (isLoading) {
     return (
-      <Card className="h-full" data-testid="card-calendar-loading">
+      <Card className="h-full" data-testid="card-calendar">
         <CardHeader className="pb-3">
-          <div className="animate-pulse h-4 w-32 bg-muted rounded" />
+          <Skeleton className="h-4 w-32" />
         </CardHeader>
         <CardContent className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex items-start gap-3 p-2">
-              <div className="h-10 w-10 rounded-md bg-muted shrink-0" />
+            <div key={i} className="flex items-start gap-3 p-2">
+              <Skeleton className="h-10 w-10 rounded-md shrink-0" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-3/4 bg-muted rounded" />
-                <div className="h-3 w-1/2 bg-muted rounded" />
-                <div className="h-5 w-24 bg-muted rounded-full" />
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-5 w-24 rounded-full" />
               </div>
             </div>
           ))}
@@ -43,12 +44,20 @@ export function CalendarWidget() {
     );
   }
 
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-calendar-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load calendar events.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const upcomingEvents = calendarEvents
     .filter((e) => new Date(e.startDate) >= new Date())
-    .sort(
-      (a, b) =>
-        new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
-    )
+    .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
     .slice(0, 5);
 
   return (

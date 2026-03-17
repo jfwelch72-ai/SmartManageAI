@@ -1,14 +1,17 @@
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
 export interface LaborUtilizationConfig {
   lowThreshold: number;
   goodThreshold: number;
+  dateRange: "today" | "last7days" | "last30days";
 }
 
 export const DEFAULT_LABOR_UTIL_CONFIG: LaborUtilizationConfig = {
   lowThreshold: 50,
   goodThreshold: 80,
+  dateRange: "today",
 };
 
 interface LaborUtilizationSettingsProps {
@@ -21,6 +24,26 @@ export function LaborUtilizationSettings({ config, onChange }: LaborUtilizationS
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="labor-date-range">Date Range</Label>
+        <Select
+          value={cfg.dateRange}
+          onValueChange={(v) => onChange({ ...cfg, dateRange: v as LaborUtilizationConfig["dateRange"] })}
+        >
+          <SelectTrigger id="labor-date-range" data-testid="select-labor-date-range">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="today">Today</SelectItem>
+            <SelectItem value="last7days">Last 7 Days</SelectItem>
+            <SelectItem value="last30days">Last 30 Days</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Time window for labor utilization metrics.
+        </p>
+      </div>
+
       <div className="space-y-2">
         <Label>Low utilization threshold: {cfg.lowThreshold}%</Label>
         <Slider

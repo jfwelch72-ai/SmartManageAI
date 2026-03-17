@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HeartPulse, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { HeartPulse, CheckCircle2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -42,7 +43,7 @@ function getScoreLabel(score: number, cfg: ProjectHealthSummaryConfig): string {
 export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
   const cfg: ProjectHealthSummaryConfig = { ...DEFAULT_PROJECT_HEALTH_CONFIG, ...(config as Partial<ProjectHealthSummaryConfig>) };
 
-  const { data, isLoading } = useQuery<ProjectHealthEntry[]>({
+  const { data, isLoading, isError } = useQuery<ProjectHealthEntry[]>({
     queryKey: ["/api/project-health/overview"],
     refetchInterval: 300000,
   });
@@ -51,19 +52,40 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
     return (
       <Card data-testid="project-health-summary-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-40 bg-muted rounded" />
+          <Skeleton className="h-4 w-40" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse rounded-lg bg-muted/50 p-3 flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-muted shrink-0" />
-              <div className="flex-1 space-y-1.5">
-                <div className="h-3 w-32 bg-muted rounded" />
-                <div className="h-2 w-full bg-muted rounded" />
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="rounded-lg bg-muted/50 p-2 text-center space-y-1.5">
+                <Skeleton className="h-7 w-8 mx-auto" />
+                <Skeleton className="h-2.5 w-12 mx-auto" />
               </div>
-              <div className="h-6 w-10 bg-muted rounded" />
+            ))}
+          </div>
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="rounded-lg border p-2.5 flex items-center gap-3">
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="h-1.5 w-full" />
+              </div>
+              <div className="text-right space-y-1 shrink-0">
+                <Skeleton className="h-5 w-8" />
+                <Skeleton className="h-2.5 w-12" />
+              </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="project-health-summary-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load project health data.</p>
         </CardContent>
       </Card>
     );

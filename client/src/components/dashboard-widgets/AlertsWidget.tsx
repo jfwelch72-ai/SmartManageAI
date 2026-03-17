@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, AlertCircle, Info, Shield, DollarSign, Clock, CreditCard, TrendingDown, CheckCircle2, ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -59,7 +60,7 @@ const TYPE_LINKS: Record<string, string> = {
 
 export function AlertsWidget() {
   const [, setLocation] = useLocation();
-  const { data, isLoading } = useQuery<AlertsResponse>({
+  const { data, isLoading, isError } = useQuery<AlertsResponse>({
     queryKey: ["/api/dashboard/alerts"],
     refetchInterval: 300000,
   });
@@ -68,18 +69,29 @@ export function AlertsWidget() {
     return (
       <Card data-testid="alerts-widget-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-24 bg-muted rounded" />
+          <Skeleton className="h-4 w-24" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex gap-3 items-start">
-              <div className="h-5 w-5 rounded-full bg-muted shrink-0 mt-0.5" />
+            <div key={i} className="flex gap-3 items-start py-2.5 px-3 rounded-md">
+              <Skeleton className="h-4 w-4 rounded-full shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-3/4 bg-muted rounded" />
-                <div className="h-3 w-full bg-muted rounded" />
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-full" />
               </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="alerts-widget-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load alerts.</p>
         </CardContent>
       </Card>
     );

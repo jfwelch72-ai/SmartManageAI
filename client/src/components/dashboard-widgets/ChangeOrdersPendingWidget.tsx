@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { FileEdit, DollarSign, CheckCircle2, Lock } from "lucide-react";
+import { FileEdit, DollarSign, CheckCircle2, Lock, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -8,17 +9,20 @@ import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { type ChangeOrdersPendingConfig, DEFAULT_CO_PENDING_CONFIG } from "./ChangeOrdersPendingSettings";
 import type { WidgetComponentProps } from "./WidgetRegistry";
 
+interface ChangeOrderItem {
+  id: string;
+  coNumber: number;
+  description: string;
+  amount: number;
+  projectName: string;
+  projectCode?: string;
+  daysPending: number;
+}
+
 interface ChangeOrdersPendingData {
   count: number;
   totalValue: number;
-  items: {
-    id: string;
-    coNumber: number;
-    description: string;
-    amount: number;
-    projectName: string;
-    daysPending: number;
-  }[];
+  items: ChangeOrderItem[];
 }
 
 function formatCurrency(value: number): string {
@@ -32,7 +36,7 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
   const hasPermission = useFeaturePermission("canAccessFinancials");
   const cfg: ChangeOrdersPendingConfig = { ...DEFAULT_CO_PENDING_CONFIG, ...(config as Partial<ChangeOrdersPendingConfig>) };
 
-  const { data, isLoading } = useQuery<ChangeOrdersPendingData>({
+  const { data, isLoading, isError } = useQuery<ChangeOrdersPendingData>({
     queryKey: ["/api/dashboard/change-orders-pending"],
     refetchInterval: 120000,
     enabled: hasPermission,
@@ -58,19 +62,22 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
     return (
       <Card data-testid="change-orders-pending-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-44 bg-muted rounded" />
+          <Skeleton className="h-4 w-44" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
-          <div className="animate-pulse grid grid-cols-2 gap-3">
-            <div className="h-14 bg-muted/50 rounded-lg" />
-            <div className="h-14 bg-muted/50 rounded-lg" />
+          <div className="grid grid-cols-2 gap-3">
+            <Skeleton className="h-14 rounded-lg" />
+            <Skeleton className="h-14 rounded-lg" />
           </div>
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex gap-3 items-start">
-              <div className="h-4 w-4 rounded bg-muted shrink-0 mt-0.5" />
+            <div key={i} className="flex gap-3 items-start py-2 px-2.5 rounded-md">
               <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-3/4 bg-muted rounded" />
-                <div className="h-3 w-1/2 bg-muted rounded" />
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+              <div className="text-right space-y-1">
+                <Skeleton className="h-3.5 w-12" />
+                <Skeleton className="h-3 w-6" />
               </div>
             </div>
           ))}
@@ -79,7 +86,25 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
     );
   }
 
-  const d = data || { count: 0, totalValue: 0, items: [] };
+  if (isError) {
+    return (
+      <Card data-testid="change-orders-pending-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load change orders.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const allItems = (data?.items || []).filter(item =>
+    !cfg.projectCode ||
+    (item.projectCode && item.projectCode === cfg.projectCode) ||
+    item.projectName.toLowerCase().includes(cfg.projectCode.toLowerCase())
+  );
+  const filteredCount = allItems.length;
+  const filteredValue = allItems.reduce((sum, item) => sum + item.amount, 0);
+  const d = { count: filteredCount, totalValue: filteredValue, items: allItems };
 
   return (
     <Card data-testid="change-orders-pending-widget">
@@ -101,7 +126,9 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
           <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="change-orders-empty">
             <CheckCircle2 className="w-8 h-8 text-green-500 opacity-70 mb-2" />
             <p className="text-sm text-muted-foreground">No pending change orders</p>
-            <p className="text-xs text-muted-foreground/70 mt-1">All submitted change orders have been reviewed</p>
+            <p className="text-xs text-muted-foreground/70 mt-1">
+              {cfg.projectCode ? `No pending COs for project "${cfg.projectCode}"` : "All submitted change orders have been reviewed"}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">

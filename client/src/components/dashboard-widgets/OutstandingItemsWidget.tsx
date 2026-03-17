@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertCircle,
@@ -13,27 +14,39 @@ import { useDashboardStats, useProjects } from "@/hooks/use-data";
 
 export function OutstandingItemsWidget() {
   const [, setLocation] = useLocation();
-  const { data: stats, isLoading: statsLoading } = useDashboardStats();
-  const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const { data: stats, isLoading: statsLoading, isError: statsError } = useDashboardStats();
+  const { data: projects = [], isLoading: projectsLoading, isError: projectsError } = useProjects();
 
   const isLoading = statsLoading || projectsLoading;
+  const isError = statsError || projectsError;
 
   if (isLoading) {
     return (
-      <Card className="h-full" data-testid="card-outstanding-items-loading">
+      <Card className="h-full" data-testid="card-outstanding-items">
         <CardHeader className="pb-3">
-          <div className="animate-pulse h-4 w-36 bg-muted rounded" />
+          <Skeleton className="h-4 w-36" />
         </CardHeader>
         <CardContent className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex items-center justify-between p-2 rounded-md bg-muted/30">
+            <div key={i} className="flex items-center justify-between p-2 rounded-md">
               <div className="flex items-center gap-2">
-                <div className="h-4 w-4 rounded bg-muted shrink-0" />
-                <div className="h-3.5 w-40 bg-muted rounded" />
+                <Skeleton className="h-4 w-4 shrink-0" />
+                <Skeleton className="h-3.5 w-40" />
               </div>
-              <div className="h-5 w-8 rounded-full bg-muted" />
+              <Skeleton className="h-5 w-8 rounded-full" />
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-outstanding-items-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load outstanding items.</p>
         </CardContent>
       </Card>
     );
@@ -64,9 +77,7 @@ export function OutstandingItemsWidget() {
                 <AlertTriangle className="w-4 h-4 text-yellow-500" />
                 <span className="text-sm">Pending Change Orders</span>
               </div>
-              <Badge variant="secondary">
-                {stats.pendingChangeOrdersCount}
-              </Badge>
+              <Badge variant="secondary">{stats.pendingChangeOrdersCount}</Badge>
             </div>
           ) : null}
 
@@ -108,9 +119,7 @@ export function OutstandingItemsWidget() {
                 <CloudRain className="w-4 h-4 text-blue-500" />
                 <span className="text-sm">Delays Awaiting Acknowledgment</span>
               </div>
-              <Badge variant="secondary">
-                {stats.delaysNeedingAckCount}
-              </Badge>
+              <Badge variant="secondary">{stats.delaysNeedingAckCount}</Badge>
             </div>
           ) : null}
 
@@ -124,9 +133,7 @@ export function OutstandingItemsWidget() {
                 <AlertTriangle className="w-4 h-4 text-red-500" />
                 <span className="text-sm">Delays Needing Change Order</span>
               </div>
-              <Badge variant="secondary">
-                {stats.delaysNeedingChangeOrderCount}
-              </Badge>
+              <Badge variant="secondary">{stats.delaysNeedingChangeOrderCount}</Badge>
             </div>
           ) : null}
 

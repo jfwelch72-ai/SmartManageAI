@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus, AlertTriangle, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 
@@ -57,7 +58,7 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   const merged = { ...DEFAULT_KPI_CONFIG, ...config };
   const metricDef = KPI_METRICS.find(m => m.value === merged.metric) || KPI_METRICS[2];
 
-  const { data, isLoading } = useQuery<{
+  const { data, isLoading, isError } = useQuery<{
     value: number;
     previousValue: number;
     changePercent: number;
@@ -84,12 +85,21 @@ export function KPISummaryWidget({ config }: KPISummaryWidgetProps) {
   if (isLoading) {
     return (
       <Card data-testid="kpi-summary-loading">
-        <CardContent className="py-4 px-4 sm:px-6">
-          <div className="animate-pulse space-y-2">
-            <div className="h-3 w-24 bg-muted rounded" />
-            <div className="h-8 w-32 bg-muted rounded" />
-            <div className="h-3 w-20 bg-muted rounded" />
-          </div>
+        <CardContent className="py-4 px-4 sm:px-6 space-y-2">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-3 w-20" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="kpi-summary-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load KPI data.</p>
         </CardContent>
       </Card>
     );

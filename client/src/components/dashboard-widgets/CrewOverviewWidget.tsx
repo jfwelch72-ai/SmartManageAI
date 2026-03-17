@@ -1,41 +1,54 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Users } from "lucide-react";
+import { Users, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useProjects } from "@/hooks/use-data";
 
 export function CrewOverviewWidget() {
   const [, setLocation] = useLocation();
-  const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const { data: projects = [], isLoading: projectsLoading, isError: projectsError } = useProjects();
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
 
-  const { data: crewAssignments = [], isLoading: assignmentsLoading } = useQuery<any[]>({
+  const { data: crewAssignments = [], isLoading: assignmentsLoading, isError: assignmentsError } = useQuery<any[]>({
     queryKey: ["/api/crew-assignments"],
   });
 
-  const { data: crews = [], isLoading: crewsLoading } = useQuery<any[]>({
+  const { data: crews = [], isLoading: crewsLoading, isError: crewsError } = useQuery<any[]>({
     queryKey: ["/api/crews"],
   });
 
   const isLoading = projectsLoading || assignmentsLoading || crewsLoading;
+  const isError = projectsError || assignmentsError || crewsError;
 
   if (isLoading) {
     return (
-      <Card className="h-full" data-testid="card-crew-overview-loading">
+      <Card className="h-full" data-testid="card-crew-overview">
         <CardHeader className="pb-3">
-          <div className="animate-pulse h-4 w-28 bg-muted rounded" />
+          <Skeleton className="h-4 w-28" />
         </CardHeader>
         <CardContent>
-          <div className="animate-pulse grid grid-cols-3 gap-2 mb-4">
+          <div className="grid grid-cols-3 gap-2 mb-4">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="bg-muted rounded-md p-2 space-y-1.5">
-                <div className="h-6 w-8 bg-muted-foreground/20 rounded mx-auto" />
-                <div className="h-3 w-12 bg-muted-foreground/20 rounded mx-auto" />
+                <Skeleton className="h-6 w-8 mx-auto" />
+                <Skeleton className="h-3 w-12 mx-auto" />
               </div>
             ))}
           </div>
-          <div className="animate-pulse h-9 w-full bg-muted rounded" />
+          <Skeleton className="h-9 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-crew-overview-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load crew data.</p>
         </CardContent>
       </Card>
     );
@@ -57,24 +70,13 @@ export function CrewOverviewWidget() {
           </div>
           <div className="text-center p-1.5 sm:p-2 bg-muted rounded-md">
             <div className="text-base sm:text-lg font-bold">
-              {
-                crewAssignments.filter(
-                  (a: any) => a.project?.status === "ACTIVE"
-                ).length
-              }
+              {crewAssignments.filter((a: any) => a.project?.status === "ACTIVE").length}
             </div>
             <div className="text-[10px] sm:text-xs text-muted-foreground">Assigned</div>
           </div>
           <div className="text-center p-1.5 sm:p-2 bg-muted rounded-md">
             <div className="text-base sm:text-lg font-bold">
-              {
-                activeProjects.filter(
-                  (p: any) =>
-                    !crewAssignments.some(
-                      (a: any) => a.project?.id === p.id
-                    )
-                ).length
-              }
+              {activeProjects.filter((p: any) => !crewAssignments.some((a: any) => a.project?.id === p.id)).length}
             </div>
             <div className="text-[10px] sm:text-xs text-muted-foreground">Need Crews</div>
           </div>

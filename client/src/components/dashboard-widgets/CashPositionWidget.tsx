@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowDownLeft, ArrowUpRight, Wallet, TrendingUp, TrendingDown, Landmark, Lock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowDownLeft, ArrowUpRight, Wallet, TrendingUp, TrendingDown, Landmark, Lock, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -28,7 +29,7 @@ function formatSignedCurrency(value: number): string {
 export function CashPositionWidget() {
   const hasPermission = useFeaturePermission("canAccessFinancials");
 
-  const { data, isLoading } = useQuery<CashPosition>({
+  const { data, isLoading, isError } = useQuery<CashPosition>({
     queryKey: ["/api/dashboard/cash-position"],
     refetchInterval: 300000,
     enabled: hasPermission,
@@ -54,18 +55,29 @@ export function CashPositionWidget() {
     return (
       <Card data-testid="cash-position-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-28 bg-muted rounded" />
+          <Skeleton className="h-4 w-28" />
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-lg bg-muted/50 p-3 space-y-2">
-                <div className="h-3 w-16 bg-muted rounded" />
-                <div className="h-6 w-14 bg-muted rounded" />
-                <div className="h-2.5 w-20 bg-muted rounded" />
+              <div key={i} className="rounded-lg bg-muted/50 p-3 space-y-2">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-6 w-14" />
+                <Skeleton className="h-2.5 w-20" />
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="cash-position-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load cash position.</p>
         </CardContent>
       </Card>
     );

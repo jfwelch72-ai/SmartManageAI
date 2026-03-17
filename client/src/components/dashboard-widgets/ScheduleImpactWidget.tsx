@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, Users, TrendingUp, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { CalendarDays, Users, TrendingUp, AlertTriangle, CheckCircle2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -60,7 +61,7 @@ function formatDateShort(dateStr: string | null): string {
 }
 
 export function ScheduleImpactWidget() {
-  const { data, isLoading } = useQuery<ScheduleImpactResponse>({
+  const { data, isLoading, isError } = useQuery<ScheduleImpactResponse>({
     queryKey: ["/api/dashboard/schedule-impact"],
     refetchInterval: 300000,
   });
@@ -69,12 +70,23 @@ export function ScheduleImpactWidget() {
     return (
       <Card data-testid="schedule-impact-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-40 bg-muted rounded" />
+          <Skeleton className="h-4 w-40" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
-          <div className="animate-pulse h-8 bg-muted/50 rounded-lg" />
-          <div className="animate-pulse h-32 bg-muted/50 rounded-lg" />
-          <div className="animate-pulse h-20 bg-muted/50 rounded-lg" />
+          <Skeleton className="h-8 w-full rounded-lg" />
+          <Skeleton className="h-32 w-full rounded-lg" />
+          <Skeleton className="h-20 w-full rounded-lg" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="schedule-impact-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load schedule data.</p>
         </CardContent>
       </Card>
     );

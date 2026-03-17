@@ -1,14 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, ChevronRight } from "lucide-react";
+import { FileText, ChevronRight, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useBids } from "@/hooks/use-data";
 import { format } from "date-fns";
 
 export function ActiveBidsWidget() {
   const [, setLocation] = useLocation();
-  const { data: bids = [], isLoading } = useBids();
+  const { data: bids = [], isLoading, isError } = useBids();
 
   return (
     <Card className="h-full" data-testid="card-active-bids">
@@ -31,9 +32,23 @@ export function ActiveBidsWidget() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Loading...
-          </p>
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="p-3 rounded-md border space-y-2">
+                <div className="flex gap-2">
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-5 w-10" />
+                </div>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="active-bids-error">
+            <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+            <p className="text-sm text-muted-foreground">Failed to load bids.</p>
+          </div>
         ) : bids.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
             No active bids

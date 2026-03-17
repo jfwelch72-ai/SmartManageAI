@@ -1,15 +1,18 @@
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 
 export interface ChangeOrdersPendingConfig {
   showLimit: number;
   highlightDaysThreshold: number;
+  projectCode: string;
 }
 
 export const DEFAULT_CO_PENDING_CONFIG: ChangeOrdersPendingConfig = {
   showLimit: 5,
   highlightDaysThreshold: 7,
+  projectCode: "",
 };
 
 interface ChangeOrdersPendingSettingsProps {
@@ -22,6 +25,18 @@ export function ChangeOrdersPendingSettings({ config, onChange }: ChangeOrdersPe
 
   return (
     <div className="space-y-5">
+      <div className="space-y-2">
+        <Label htmlFor="co-project-filter">Filter by Project Code</Label>
+        <Input
+          id="co-project-filter"
+          placeholder="e.g. PROJ-001 (leave blank for all)"
+          value={cfg.projectCode}
+          onChange={(e) => onChange({ ...cfg, projectCode: e.target.value })}
+          data-testid="input-co-project-filter"
+        />
+        <p className="text-xs text-muted-foreground">Show change orders only for this project. Leave blank for all projects.</p>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="co-show-limit">Max change orders to display</Label>
         <Select

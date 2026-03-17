@@ -1,28 +1,40 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { AITask } from "@shared/schema";
 
 export function AITasksWidget() {
-  const { data: aiTasks = [], isLoading } = useQuery<AITask[]>({
+  const { data: aiTasks = [], isLoading, isError } = useQuery<AITask[]>({
     queryKey: ["/api/ai/tasks"],
   });
 
   if (isLoading) {
     return (
-      <Card className="h-full" data-testid="card-tasks-loading">
+      <Card className="h-full" data-testid="card-tasks">
         <CardHeader className="pb-3">
-          <div className="animate-pulse h-4 w-32 bg-muted rounded" />
+          <Skeleton className="h-4 w-32" />
         </CardHeader>
         <CardContent className="space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex items-center gap-3 p-2 rounded-md bg-muted/50">
-              <div className="h-2 w-2 rounded-full bg-muted shrink-0" />
-              <div className="flex-1 h-3.5 bg-muted rounded" />
-              <div className="h-5 w-16 bg-muted rounded-full shrink-0" />
+            <div key={i} className="flex items-center gap-3 p-2 rounded-md bg-muted/50">
+              <Skeleton className="h-2 w-2 rounded-full shrink-0" />
+              <Skeleton className="flex-1 h-3.5" />
+              <Skeleton className="h-5 w-16 rounded-full shrink-0" />
             </div>
           ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card className="h-full" data-testid="card-tasks-error">
+        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load tasks.</p>
         </CardContent>
       </Card>
     );

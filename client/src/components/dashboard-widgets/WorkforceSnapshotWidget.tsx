@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Clock, DollarSign, UserMinus, HardHat, Lock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Users, Clock, DollarSign, UserMinus, HardHat, Lock, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,7 @@ function getAbsentBg(absent: number, total: number): string {
 export function WorkforceSnapshotWidget() {
   const hasPermission = useFeaturePermission("canManagePayroll");
 
-  const { data, isLoading } = useQuery<WorkforceSnapshot>({
+  const { data, isLoading, isError } = useQuery<WorkforceSnapshot>({
     queryKey: ["/api/dashboard/workforce-snapshot"],
     refetchInterval: 120000,
     enabled: hasPermission,
@@ -76,18 +77,29 @@ export function WorkforceSnapshotWidget() {
     return (
       <Card data-testid="workforce-snapshot-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-32 bg-muted rounded" />
+          <Skeleton className="h-4 w-32" />
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="grid grid-cols-2 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-lg bg-muted/50 p-3 space-y-2">
-                <div className="h-3 w-16 bg-muted rounded" />
-                <div className="h-6 w-12 bg-muted rounded" />
-                <div className="h-2.5 w-20 bg-muted rounded" />
+              <div key={i} className="rounded-lg bg-muted/50 p-3 space-y-2">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-6 w-12" />
+                <Skeleton className="h-2.5 w-20" />
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="workforce-snapshot-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load workforce data.</p>
         </CardContent>
       </Card>
     );
@@ -99,8 +111,7 @@ export function WorkforceSnapshotWidget() {
     {
       key: "active",
       label: "Active Workers",
-      value: snapshot.activeWorkers,
-      formatted: String(snapshot.activeWorkers),
+      value: String(snapshot.activeWorkers),
       subtitle: "on site today",
       icon: Users,
       iconColor: "text-blue-600 dark:text-blue-400",
@@ -109,8 +120,7 @@ export function WorkforceSnapshotWidget() {
     {
       key: "overtime",
       label: "Overtime",
-      value: snapshot.overtimePercent,
-      formatted: `${snapshot.overtimePercent.toFixed(1)}%`,
+      value: `${snapshot.overtimePercent.toFixed(1)}%`,
       subtitle: "of total hours",
       icon: Clock,
       iconColor: getOvertimeColor(snapshot.overtimePercent),
@@ -119,8 +129,7 @@ export function WorkforceSnapshotWidget() {
     {
       key: "labor-cost",
       label: "Labor Cost",
-      value: snapshot.laborCostToday,
-      formatted: formatCurrency(snapshot.laborCostToday),
+      value: formatCurrency(snapshot.laborCostToday),
       subtitle: "today",
       icon: DollarSign,
       iconColor: "text-emerald-600 dark:text-emerald-400",
@@ -129,8 +138,7 @@ export function WorkforceSnapshotWidget() {
     {
       key: "absent",
       label: "Absent",
-      value: snapshot.absentWorkers,
-      formatted: String(snapshot.absentWorkers),
+      value: String(snapshot.absentWorkers),
       subtitle: `of ${snapshot.totalWorkers} workers`,
       icon: UserMinus,
       iconColor: getAbsentColor(snapshot.absentWorkers, snapshot.totalWorkers),
@@ -161,7 +169,7 @@ export function WorkforceSnapshotWidget() {
                   <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">{metric.label}</span>
                 </div>
                 <p className={cn("text-xl font-bold tabular-nums", metric.iconColor)}>
-                  {metric.formatted}
+                  {metric.value}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">{metric.subtitle}</p>
               </div>

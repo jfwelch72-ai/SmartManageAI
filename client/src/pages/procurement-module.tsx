@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -372,7 +373,9 @@ function PurchaseRequestsTab() {
       <CardContent>
         <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PR_STATUSES} placeholder="Search by title, PR number, or project..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
         {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">Loading...</div>
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
+          </div>
         ) : prs.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">No purchase requests found</div>
         ) : (
@@ -566,7 +569,9 @@ function PurchaseOrdersTab() {
         <CardContent>
           <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PO_STATUSES} placeholder="Search by PO number, vendor, or project..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
           {isLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
+            </div>
           ) : pos.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No purchase orders found</div>
           ) : (
@@ -923,7 +928,13 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
             <SheetDescription>Purchase order details and lifecycle</SheetDescription>
           </SheetHeader>
           {isLoading || !po ? (
-            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            <div className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 gap-3">
+                {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-5 w-full rounded" />)}
+              </div>
+              <Skeleton className="h-px w-full" />
+              <Skeleton className="h-40 w-full rounded-md" />
+            </div>
           ) : (
             <div className="space-y-6 mt-4">
               <div className="flex items-center justify-between">
@@ -1456,7 +1467,9 @@ function InvoicesTab() {
         <CardContent>
           <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={INV_STATUSES} placeholder="Search by invoice number or vendor..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
           {isLoading ? (
-            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
+            </div>
           ) : invoices.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No vendor invoices found. Add invoices from a PO detail view.</div>
           ) : (
@@ -1818,7 +1831,9 @@ function ReceiptsTab() {
       <CardContent>
         <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={RECEIPT_STATUSES} placeholder="Search by PO number or notes..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
         {isLoading ? (
-          <div className="text-center py-8 text-muted-foreground">Loading...</div>
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-md" />)}
+          </div>
         ) : receipts.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">No delivery receipts yet. Record receipts from a PO detail view.</div>
         ) : (

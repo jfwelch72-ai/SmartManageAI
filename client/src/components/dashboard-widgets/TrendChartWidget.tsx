@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, TrendingUp, AlertTriangle } from "lucide-react";
+import { BarChart3, TrendingUp, AlertTriangle, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ResponsiveContainer,
@@ -109,10 +110,21 @@ export function TrendChartWidget({ config }: TrendChartWidgetProps) {
     return (
       <Card data-testid="trend-chart-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-32 bg-muted rounded" />
+          <Skeleton className="h-4 w-32" />
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="animate-pulse h-48 bg-muted rounded" />
+          <Skeleton className="h-48 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="trend-chart-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load trend data.</p>
         </CardContent>
       </Card>
     );

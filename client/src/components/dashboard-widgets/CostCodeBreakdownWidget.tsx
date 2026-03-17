@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PieChart as PieChartIcon, Lock } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PieChart as PieChartIcon, Lock, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
@@ -77,7 +78,7 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
   if (merged.projectId) params.set("projectId", merged.projectId);
   if (merged.groupByDivision) params.set("groupByDivision", "true");
 
-  const { data, isLoading } = useQuery<CostCodeResponse>({
+  const { data, isLoading, isError } = useQuery<CostCodeResponse>({
     queryKey: [`/api/dashboard/cost-code-breakdown?${params.toString()}`],
     refetchInterval: 300000,
     enabled: hasPermission,
@@ -103,10 +104,21 @@ export function CostCodeBreakdownWidget({ config }: CostCodeBreakdownWidgetProps
     return (
       <Card data-testid="cost-code-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-36 bg-muted rounded" />
+          <Skeleton className="h-4 w-36" />
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="animate-pulse h-48 bg-muted/50 rounded-lg" />
+          <Skeleton className="h-48 w-full rounded-lg" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="cost-code-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load cost code data.</p>
         </CardContent>
       </Card>
     );

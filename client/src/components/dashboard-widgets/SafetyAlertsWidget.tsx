@@ -1,11 +1,21 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, AlertTriangle, CheckCircle2, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { type SafetyAlertsConfig, DEFAULT_SAFETY_ALERTS_CONFIG } from "./SafetyAlertsSettings";
 import type { WidgetComponentProps } from "./WidgetRegistry";
+
+interface OverdueItem {
+  id: string;
+  employeeName: string;
+  trainingTitle: string;
+  category?: string;
+  dueDate: string;
+  daysOverdue: number;
+}
 
 interface SafetySummaryData {
   overdueCount: number;
@@ -13,13 +23,7 @@ interface SafetySummaryData {
   completionRate: number;
   total: number;
   completed: number;
-  overdueItems: {
-    id: string;
-    employeeName: string;
-    trainingTitle: string;
-    dueDate: string;
-    daysOverdue: number;
-  }[];
+  overdueItems: OverdueItem[];
 }
 
 function getDaysOverdueColor(days: number): string {
@@ -31,7 +35,7 @@ function getDaysOverdueColor(days: number): string {
 export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
   const cfg: SafetyAlertsConfig = { ...DEFAULT_SAFETY_ALERTS_CONFIG, ...(config as Partial<SafetyAlertsConfig>) };
 
-  const { data, isLoading } = useQuery<SafetySummaryData>({
+  const { data, isLoading, isError } = useQuery<SafetySummaryData>({
     queryKey: ["/api/dashboard/safety-summary"],
     refetchInterval: 300000,
   });
@@ -40,20 +44,21 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
     return (
       <Card data-testid="safety-alerts-loading">
         <CardHeader className="pb-2 px-4 pt-4">
-          <div className="animate-pulse h-4 w-36 bg-muted rounded" />
+          <Skeleton className="h-4 w-36" />
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3">
-          <div className="animate-pulse grid grid-cols-2 gap-3">
-            <div className="h-14 bg-muted/50 rounded-lg" />
-            <div className="h-14 bg-muted/50 rounded-lg" />
+          <div className="grid grid-cols-2 gap-3">
+            <Skeleton className="h-14 rounded-lg" />
+            <Skeleton className="h-14 rounded-lg" />
           </div>
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="animate-pulse flex gap-3 items-start">
-              <div className="h-4 w-4 rounded bg-muted shrink-0 mt-0.5" />
+            <div key={i} className="flex gap-3 items-start py-2 px-2.5 rounded-md">
+              <Skeleton className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-3/4 bg-muted rounded" />
-                <div className="h-3 w-1/2 bg-muted rounded" />
+                <Skeleton className="h-3.5 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
               </div>
+              <Skeleton className="h-3.5 w-10 shrink-0" />
             </div>
           ))}
         </CardContent>
@@ -61,7 +66,22 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
     );
   }
 
+  if (isError) {
+    return (
+      <Card data-testid="safety-alerts-error">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+          <p className="text-sm text-muted-foreground">Failed to load safety data.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const d = data || { overdueCount: 0, dueThisWeekCount: 0, completionRate: 0, total: 0, completed: 0, overdueItems: [] };
+
+  const filteredOverdueItems = d.overdueItems.filter(item =>
+    !cfg.filterByCategory || item.category === cfg.filterByCategory
+  );
 
   return (
     <Card data-testid="safety-alerts-widget">
@@ -118,11 +138,13 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
               </div>
             </div>
 
-            {d.overdueItems.length > 0 && (
+            {filteredOverdueItems.length > 0 && (
               <div className="space-y-1.5">
-                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Overdue</p>
+                <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+                  Overdue{cfg.filterByCategory ? ` — ${cfg.filterByCategory}` : ""}
+                </p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
-                  {d.overdueItems.slice(0, cfg.showLimit).map((item) => (
+                  {filteredOverdueItems.slice(0, cfg.showLimit).map((item) => (
                     <div
                       key={item.id}
                       className="flex items-start gap-2.5 py-2 px-2.5 rounded-md bg-red-500/5 border border-red-200 dark:border-red-800/40"

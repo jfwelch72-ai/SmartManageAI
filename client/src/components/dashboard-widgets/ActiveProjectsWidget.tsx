@@ -1,13 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Briefcase, ChevronRight } from "lucide-react";
+import { Briefcase, ChevronRight, AlertCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { useProjects } from "@/hooks/use-data";
 
 export function ActiveProjectsWidget() {
   const [, setLocation] = useLocation();
-  const { data: projects = [], isLoading } = useProjects();
+  const { data: projects = [], isLoading, isError } = useProjects();
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
 
   return (
@@ -31,9 +32,23 @@ export function ActiveProjectsWidget() {
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Loading...
-          </p>
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="p-3 rounded-md border space-y-2">
+                <div className="flex gap-2">
+                  <Skeleton className="h-5 w-16" />
+                  <Skeleton className="h-5 w-12" />
+                </div>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="active-projects-error">
+            <AlertCircle className="w-6 h-6 text-destructive mb-2" />
+            <p className="text-sm text-muted-foreground">Failed to load projects.</p>
+          </div>
         ) : activeProjects.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
             No active projects
