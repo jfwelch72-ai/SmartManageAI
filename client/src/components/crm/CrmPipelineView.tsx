@@ -780,6 +780,16 @@ export default function CrmPipelineView() {
                               </span>
                             )}
                           </div>
+                          {(opp.assignedFirstName || opp.assignedLastName) && (
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <div className="w-5 h-5 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0" data-testid={`avatar-assigned-${opp.id}`}>
+                                <span className="text-[9px] font-semibold text-primary uppercase leading-none">
+                                  {(opp.assignedFirstName?.[0] ?? "")}{(opp.assignedLastName?.[0] ?? "")}
+                                </span>
+                              </div>
+                              <span className="text-xs text-muted-foreground truncate">{opp.assignedFirstName} {opp.assignedLastName}</span>
+                            </div>
+                          )}
                           {canEdit && (
                             <div className="flex gap-1 mt-1 flex-wrap">
                               {STAGES.filter(s => s.key !== opp.stage).slice(0, 2).map(s => (
