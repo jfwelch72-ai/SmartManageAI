@@ -49,7 +49,7 @@ export function registerTMApprovalRoutes(app: Express) {
         newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber }),
       });
 
-      notifyApprovers(
+      await notifyApprovers(
         ticket.organizationId,
         userId,
         {
@@ -109,7 +109,7 @@ export function registerTMApprovalRoutes(app: Express) {
       });
 
       if (ticket.submittedById) {
-        notifySubmitter(ticket.submittedById, {
+        await notifySubmitter(ticket.submittedById, {
           type: "TM_TICKET_APPROVED",
           title: "T&M Ticket Approved",
           message: `T&M Ticket ${ticket.ticketNumber} has been approved`,
@@ -167,7 +167,7 @@ export function registerTMApprovalRoutes(app: Express) {
       });
 
       if (ticket.submittedById) {
-        notifySubmitter(ticket.submittedById, {
+        await notifySubmitter(ticket.submittedById, {
           type: "TM_TICKET_REJECTED",
           title: "T&M Ticket Rejected",
           message: `T&M Ticket ${ticket.ticketNumber} has been rejected${reason ? `: ${reason}` : ""}`,

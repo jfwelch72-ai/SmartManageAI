@@ -14,6 +14,7 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { logAudit, logCreate, logUpdate, logDelete } from "./auditLogger";
+import { notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 
@@ -58,6 +59,14 @@ async function sendPayableNotifications(
   triggeredByUserId: string
 ): Promise<void> {
   try {
+    const typeMap: Record<string, string> = {
+      CREATED: "PAYABLE_SUBMITTED",
+      APPROVED: "PAYABLE_APPROVED",
+      REJECTED: "PAYABLE_REJECTED",
+    };
+    const notificationType = typeMap[action] || "GENERAL";
+    const formattedAmount = `$${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
     const eligibleUsers = await db
       .select({ id: users.id, role: users.role })
       .from(users)
@@ -65,24 +74,17 @@ async function sendPayableNotifications(
         and(
           eq(users.organizationId, organizationId),
           eq(users.isActive, true),
-          inArray(users.role, ["ADMIN", "MANAGER", "OFFICE_MANAGER"])
+          inArray(users.role, ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"])
         )
       );
-
-    const typeMap: Record<string, string> = {
-      CREATED: "PAYABLE_CREATED",
-      APPROVED: "PAYABLE_APPROVED",
-      REJECTED: "PAYABLE_REJECTED",
-    };
-    const notificationType = typeMap[action] || "GENERAL";
 
     const notificationRecords = eligibleUsers
       .filter(u => u.id !== triggeredByUserId)
       .map(user => ({
         userId: user.id,
         type: notificationType as any,
-        title: `Subcontractor Payable ${action}`,
-        message: `A ${action === "CREATED" ? "new" : action.toLowerCase()} payable for ${subcontractorName} - $${parseFloat(amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+        title: `Subcontractor Payable ${action === "CREATED" ? "Submitted" : action.charAt(0) + action.slice(1).toLowerCase()}`,
+        message: `A ${action === "CREATED" ? "new" : action.toLowerCase()} payable for ${subcontractorName} - ${formattedAmount}`,
         isRead: false,
         relatedEntityType: "PAYABLE",
         relatedEntityId: paymentId,
@@ -449,6 +451,16 @@ router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN",
       req.user!.id
     );
 
+    if (payment.createdById && payment.createdById !== req.user!.id) {
+      await notifySubmitter(payment.createdById, {
+        type: "PAYABLE_APPROVED",
+        title: "Subcontractor Payable Approved",
+        message: `Subcontractor payable for ${fullPayment.subcontractor.companyName} - $${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} has been approved`,
+        relatedEntityId: id,
+        relatedEntityType: "PAYABLE",
+      });
+    }
+
     res.json({
       ...updatedPayment,
       contract: {
@@ -547,6 +559,16 @@ router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", 
       fullPayment.subcontractor.companyName,
       req.user!.id
     );
+
+    if (payment.createdById && payment.createdById !== req.user!.id) {
+      await notifySubmitter(payment.createdById, {
+        type: "PAYABLE_REJECTED",
+        title: "Subcontractor Payable Rejected",
+        message: `Subcontractor payable for ${fullPayment.subcontractor.companyName} - $${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} has been rejected: ${rejectionReason}`,
+        relatedEntityId: id,
+        relatedEntityType: "PAYABLE",
+      });
+    }
 
     res.json({
       ...updatedPayment,

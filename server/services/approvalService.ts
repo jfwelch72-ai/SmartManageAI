@@ -25,7 +25,7 @@ export async function createApprovalRequest(
   logInfo("Approval request created", { requestId: request.id, orgId, entityType, entityId });
 
   const entityLabel = entityType.replace(/_/g, " ");
-  notifyApprovers(orgId, requestedByUserId, {
+  await notifyApprovers(orgId, requestedByUserId, {
     type: "APPROVAL_REQUEST_NEW",
     title: "New Approval Request",
     message: `A ${entityLabel} requires your approval`,

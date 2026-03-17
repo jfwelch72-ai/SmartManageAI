@@ -9,6 +9,7 @@ import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
 import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
+import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 
@@ -71,19 +72,15 @@ function checkOrgAccess(
 
 /**
  * Notifies relevant users about a change order status change
- * Transaction-aware to support atomic operations
  */
 async function notifyStatusChange(
   order: any,
   newStatus: string,
   message: string,
   notifyRequestedBy: boolean = true,
-  tx?: DbTransaction
+  orgId?: string
 ) {
   try {
-    const dbClient = tx || db;
-    const notificationsToCreate: any[] = [];
-
     const statusTypeMap: Record<string, string> = {
       SUBMITTED: "CHANGE_ORDER_PENDING",
       APPROVED: "CHANGE_ORDER_APPROVED",
@@ -91,37 +88,30 @@ async function notifyStatusChange(
       DRAFT: "GENERAL",
     };
 
-    if (notifyRequestedBy) {
-      notificationsToCreate.push({
-        userId: order.requestedById,
-        type: (statusTypeMap[newStatus] || "GENERAL") as any,
-        title: `Change Order ${newStatus}`,
-        message,
-        relatedEntityId: order.id,
-        relatedEntityType: "changeOrder",
-      });
-    }
+    const notificationType = statusTypeMap[newStatus] || "GENERAL";
 
-    if (newStatus === "SUBMITTED") {
-      const adminsAndManagers = await dbClient
-        .select()
-        .from(users)
-        .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
-
-      adminsAndManagers.forEach((user: any) => {
-        notificationsToCreate.push({
-          userId: user.id,
-          type: "CHANGE_ORDER_PENDING" as const,
+    if (newStatus === "SUBMITTED" && orgId) {
+      await notifyApprovers(
+        orgId,
+        order.requestedById,
+        {
+          type: "CHANGE_ORDER_PENDING",
           title: "Change Order Submitted",
           message: `Change order ${order.changeOrderNumber} has been submitted to client`,
           relatedEntityId: order.id,
           relatedEntityType: "changeOrder",
-        });
-      });
+        }
+      );
     }
 
-    if (notificationsToCreate.length > 0) {
-      await dbClient.insert(notifications).values(notificationsToCreate);
+    if (notifyRequestedBy && order.requestedById && newStatus !== "SUBMITTED") {
+      await notifySubmitter(order.requestedById, {
+        type: notificationType,
+        title: `Change Order ${newStatus.charAt(0) + newStatus.slice(1).toLowerCase()}`,
+        message,
+        relatedEntityId: order.id,
+        relatedEntityType: "changeOrder",
+      });
     }
   } catch (error) {
     console.error("Failed to create change order notifications:", error);
@@ -227,7 +217,8 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
       updatedOrder,
       "SUBMITTED",
       `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`,
-      true
+      true,
+      project?.gcOrganizationId || undefined
     );
 
     if (project?.gcOrganizationId) {
@@ -316,7 +307,8 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       updatedOrder,
       "SUBMITTED",
       `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`,
-      true
+      true,
+      project?.gcOrganizationId || undefined
     );
 
     res.json(updatedOrder);

@@ -60,7 +60,7 @@ router.post("/:id/approve", requireAuth, async (req, res) => {
 
     if (result.requestedByUserId) {
       const entityLabel = (result.entityType || "Request").replace(/_/g, " ");
-      notifySubmitter(result.requestedByUserId, {
+      await notifySubmitter(result.requestedByUserId, {
         type: "APPROVAL_REQUEST_APPROVED",
         title: "Approval Request Approved",
         message: `Your ${entityLabel} has been approved${req.body.notes ? `: ${req.body.notes}` : ""}`,
@@ -87,7 +87,7 @@ router.post("/:id/reject", requireAuth, async (req, res) => {
 
     if (result.requestedByUserId) {
       const entityLabel = (result.entityType || "Request").replace(/_/g, " ");
-      notifySubmitter(result.requestedByUserId, {
+      await notifySubmitter(result.requestedByUserId, {
         type: "APPROVAL_REQUEST_REJECTED",
         title: "Approval Request Rejected",
         message: `Your ${entityLabel} has been rejected${req.body.notes ? `: ${req.body.notes}` : ""}`,

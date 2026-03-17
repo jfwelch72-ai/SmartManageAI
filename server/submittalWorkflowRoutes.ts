@@ -65,7 +65,7 @@ router.post("/submittals/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "A
       notifyDocumentEvent("SUBMITTAL", id, existing.submittal.organizationId, existing.submittal.projectId, user.id, submitRecipients, `Submittal Submitted: ${existing.submittal.subject}`, existing.submittal.submittalNumber);
     }
 
-    notifyApprovers(
+    await notifyApprovers(
       existing.submittal.organizationId,
       user.id,
       {
@@ -190,7 +190,7 @@ router.post("/submittals/:id/approve", requireAuth, requireRole("SUPER_ADMIN", "
     notifyDocumentEvent("SUBMITTAL", id, existing.submittal.organizationId, existing.submittal.projectId, user.id, [existing.submittal.submittedById], `Submittal Approved: ${existing.submittal.subject}`, existing.submittal.submittalNumber);
 
     if (existing.submittal.submittedById) {
-      notifySubmitter(existing.submittal.submittedById, {
+      await notifySubmitter(existing.submittal.submittedById, {
         type: "SUBMITTAL_APPROVED",
         title: "Submittal Approved",
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been approved`,
@@ -262,7 +262,7 @@ router.post("/submittals/:id/approve-as-noted", requireAuth, requireRole("SUPER_
     notifyDocumentEvent("SUBMITTAL", id, existing.submittal.organizationId, existing.submittal.projectId, user.id, [existing.submittal.submittedById], `Submittal Approved As Noted: ${existing.submittal.subject}`, existing.submittal.submittalNumber);
 
     if (existing.submittal.submittedById) {
-      notifySubmitter(existing.submittal.submittedById, {
+      await notifySubmitter(existing.submittal.submittedById, {
         type: "SUBMITTAL_APPROVED",
         title: "Submittal Approved As Noted",
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been approved as noted`,
@@ -334,7 +334,7 @@ router.post("/submittals/:id/reject", requireAuth, requireRole("SUPER_ADMIN", "A
     notifyDocumentEvent("SUBMITTAL", id, existing.submittal.organizationId, existing.submittal.projectId, user.id, [existing.submittal.submittedById], `Submittal Rejected: ${existing.submittal.subject}`, existing.submittal.submittalNumber);
 
     if (existing.submittal.submittedById) {
-      notifySubmitter(existing.submittal.submittedById, {
+      await notifySubmitter(existing.submittal.submittedById, {
         type: "SUBMITTAL_REJECTED",
         title: "Submittal Rejected",
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been rejected`,
@@ -406,7 +406,7 @@ router.post("/submittals/:id/revise", requireAuth, requireRole("SUPER_ADMIN", "A
     notifyDocumentEvent("SUBMITTAL", id, existing.submittal.organizationId, existing.submittal.projectId, user.id, [existing.submittal.submittedById], `Submittal Requires Revision: ${existing.submittal.subject}`, existing.submittal.submittalNumber);
 
     if (existing.submittal.submittedById) {
-      notifySubmitter(existing.submittal.submittedById, {
+      await notifySubmitter(existing.submittal.submittedById, {
         type: "SUBMITTAL_REVISION_REQUESTED",
         title: "Submittal Revision Requested",
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" requires revision`,

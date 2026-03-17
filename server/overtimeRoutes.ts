@@ -5,7 +5,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
-import { notifyUsers, notifySubmitter } from "./services/approvalNotificationService";
+import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 
@@ -73,13 +73,17 @@ router.post("/api/overtime-requests", requireAuth, async (req: AuthRequest, res)
       newValue: JSON.stringify(otRequest),
     }, req);
 
-    notifyUsers([superintendentId], {
-      type: "OVERTIME_REQUESTED",
-      title: "Overtime Request",
-      message: `${req.user!.firstName} ${req.user!.lastName} has requested ${hours} hours of overtime`,
-      relatedEntityId: otRequest.id,
-      relatedEntityType: "overtime_request",
-    });
+    await notifyApprovers(
+      req.user!.organizationId,
+      req.user!.id,
+      {
+        type: "OVERTIME_REQUESTED",
+        title: "Overtime Request",
+        message: `${req.user!.firstName} ${req.user!.lastName} has requested ${hours} hours of overtime`,
+        relatedEntityId: otRequest.id,
+        relatedEntityType: "overtime_request",
+      }
+    );
 
     res.status(201).json(otRequest);
   } catch (error) {
@@ -209,7 +213,7 @@ router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMI
       newValue: JSON.stringify(updated),
     }, req);
 
-    notifySubmitter(otReq.userId, {
+    await notifySubmitter(otReq.userId, {
       type: "OVERTIME_APPROVED",
       title: "Overtime Approved",
       message: `Your overtime request for ${hours} hours has been approved`,
@@ -254,7 +258,7 @@ router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN
       newValue: JSON.stringify(updated),
     }, req);
 
-    notifySubmitter(otReq.userId, {
+    await notifySubmitter(otReq.userId, {
       type: "OVERTIME_REJECTED",
       title: "Overtime Rejected",
       message: `Your overtime request has been rejected: ${reason}`,

@@ -81,6 +81,7 @@ export function getNotificationDestination(notification: {
     case "OVERTIME_REJECTED":
       return "/time-clock-manager";
 
+    case "PAYABLE_SUBMITTED":
     case "PAYABLE_CREATED":
     case "PAYABLE_APPROVED":
     case "PAYABLE_REJECTED":
