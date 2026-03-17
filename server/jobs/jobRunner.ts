@@ -4,7 +4,7 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, notifications, users, projects, projectProfitabilitySnapshots } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, users, projects, projectProfitabilitySnapshots } from "@shared/schema";
 import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -19,6 +19,7 @@ let socialPostTask: ReturnType<typeof cron.schedule> | null = null;
 let tokenExpiryTask: ReturnType<typeof cron.schedule> | null = null;
 let complianceCheckTask: ReturnType<typeof cron.schedule> | null = null;
 let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
+let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -79,7 +80,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, and profitability monitor schedulers)");
+  idleOpportunityTask = cron.schedule("0 8 * * *", async () => {
+    try {
+      await processIdleOpportunities();
+    } catch (err) {
+      logError("Idle opportunity check failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, and idle opportunity schedulers)");
 }
 
 export function stopJobRunner() {
@@ -110,6 +119,10 @@ export function stopJobRunner() {
   if (profitabilityMonitorTask) {
     profitabilityMonitorTask.stop();
     profitabilityMonitorTask = null;
+  }
+  if (idleOpportunityTask) {
+    idleOpportunityTask.stop();
+    idleOpportunityTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -771,4 +784,106 @@ async function processProfitabilityMonitor() {
   }
 
   logInfo("Profitability monitor run complete", { projectsChecked: profitabilityResults.length });
+}
+
+async function processIdleOpportunities() {
+  const IDLE_DAYS = 14;
+  const cutoff = new Date(Date.now() - IDLE_DAYS * 24 * 60 * 60 * 1000);
+
+  const openOpps = await db
+    .select({
+      id: crmOpportunities.id,
+      name: crmOpportunities.name,
+      organizationId: crmOpportunities.organizationId,
+      assignedToId: crmOpportunities.assignedToId,
+      stage: crmOpportunities.stage,
+      updatedAt: crmOpportunities.updatedAt,
+    })
+    .from(crmOpportunities)
+    .where(
+      and(
+        sql`${crmOpportunities.stage} NOT IN ('WON', 'LOST')`,
+        lt(crmOpportunities.updatedAt, cutoff)
+      )
+    );
+
+  if (openOpps.length === 0) {
+    logInfo("Idle opportunity check: no idle deals found");
+    return;
+  }
+
+  const oppIds = openOpps.map(o => o.id);
+  const recentActivities = await db
+    .select({ opportunityId: crmOpportunityActivities.opportunityId })
+    .from(crmOpportunityActivities)
+    .where(
+      and(
+        inArray(crmOpportunityActivities.opportunityId, oppIds),
+        sql`${crmOpportunityActivities.createdAt} >= ${cutoff}`
+      )
+    );
+
+  const activeOppIds = new Set(recentActivities.map(a => a.opportunityId));
+  const idleOpps = openOpps.filter(o => !activeOppIds.has(o.id));
+
+  if (idleOpps.length === 0) {
+    logInfo("Idle opportunity check: all open deals had recent activity");
+    return;
+  }
+
+  const assigneeMap = new Map<string, { userId: string; orgId: string; names: string[] }>();
+  for (const opp of idleOpps) {
+    if (!opp.assignedToId) continue;
+    const key = opp.assignedToId;
+    if (!assigneeMap.has(key)) {
+      assigneeMap.set(key, { userId: opp.assignedToId, orgId: opp.organizationId, names: [] });
+    }
+    assigneeMap.get(key)!.names.push(opp.name);
+  }
+
+  if (assigneeMap.size === 0) {
+    logInfo("Idle opportunity check: no assigned users to notify");
+    return;
+  }
+
+  const existingIdleNotifs = await db
+    .select({ userId: notifications.userId })
+    .from(notifications)
+    .where(
+      and(
+        sql`${notifications.type} = 'CRM_IDLE_OPPORTUNITY'`,
+        eq(notifications.isRead, false)
+      )
+    );
+
+  const alreadyNotified = new Set(existingIdleNotifs.map(n => n.userId));
+
+  const toInsert: Array<{
+    userId: string;
+    type: "CRM_IDLE_OPPORTUNITY";
+    title: string;
+    message: string;
+    relatedEntityType: string;
+  }> = [];
+
+  for (const [, entry] of assigneeMap) {
+    if (alreadyNotified.has(entry.userId)) continue;
+    const count = entry.names.length;
+    const preview = entry.names.slice(0, 3).join(", ");
+    const extra = count > 3 ? ` and ${count - 3} more` : "";
+    toInsert.push({
+      userId: entry.userId,
+      type: "CRM_IDLE_OPPORTUNITY",
+      title: `${count} pipeline deal${count !== 1 ? "s" : ""} need attention`,
+      message: `No activity in ${IDLE_DAYS}+ days: ${preview}${extra}. Open the pipeline to follow up.`,
+      relatedEntityType: "CRM_OPPORTUNITY",
+    });
+  }
+
+  if (toInsert.length > 0) {
+    await db.insert(notifications).values(toInsert as any);
+    logInfo("Idle opportunity notifications sent", { count: toInsert.length });
+  } else {
+    logInfo("Idle opportunity check: all assignees already have unread idle notifications");
+  }
 }

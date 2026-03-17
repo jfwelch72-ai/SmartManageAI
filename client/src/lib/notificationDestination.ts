@@ -91,6 +91,10 @@ export function getNotificationDestination(notification: {
     case "APPROVAL_REQUEST_REJECTED":
       return "/approvals";
 
+    case "CRM_STAGE_CHANGE":
+    case "CRM_IDLE_OPPORTUNITY":
+      return "/crm";
+
     case "GENERAL":
     default:
       return null;

@@ -10,6 +10,7 @@ import {
   auditLog,
   users,
   projects,
+  notifications,
 } from "@shared/schema";
 import { eq, and, desc, sql, ilike, or, type SQL, asc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -274,6 +275,18 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
         description: `[Stage Change] ${STAGE_LABELS[existing.stage] ?? existing.stage} → ${STAGE_LABELS[safeData.stage] ?? safeData.stage}`,
         createdById: req.user!.id,
       });
+
+      const assigneeId = updated.assignedToId;
+      if (assigneeId && assigneeId !== req.user!.id) {
+        await db.insert(notifications).values({
+          userId: assigneeId,
+          type: "CRM_STAGE_CHANGE",
+          title: "Pipeline stage updated",
+          message: `"${updated.name}" moved to ${STAGE_LABELS[updated.stage] ?? updated.stage}`,
+          relatedEntityId: updated.id,
+          relatedEntityType: "CRM_OPPORTUNITY",
+        });
+      }
     }
 
     await db.insert(auditLog).values({
