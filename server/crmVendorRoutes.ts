@@ -4,6 +4,7 @@ import {
   crmOrganisations, crmContacts, crmOrganisationNotes,
   insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema,
   auditLog, users, emailThreads, emailMessages, calendarEvents, projects,
+  crmOpportunities, vendorPricingCatalogs, vendorPricebooks, vendorPricebookItems,
 } from "@shared/schema";
 import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, ilike, ne, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -19,8 +20,13 @@ const router = Router();
         return res.status(403).json({ error: "Access denied - no organization" });
       }
       
-      const { type, search, active, status, specialty, state } = req.query as Record<string, string>;
-      
+      const { type, search, active, status, state } = req.query as Record<string, string | undefined>;
+      // specialty may be repeated: ?specialty=A&specialty=B
+      const specialtyRaw = req.query.specialty;
+      const specialties: string[] = specialtyRaw
+        ? Array.isArray(specialtyRaw) ? specialtyRaw as string[] : [specialtyRaw as string]
+        : [];
+
       const conditions: SQL[] = [eq(crmOrganisations.isDeleted, false)];
       
       if (shouldFilter && orgId) {
@@ -39,8 +45,10 @@ const router = Router();
       if (state) {
         conditions.push(ilike(crmOrganisations.state, state));
       }
-      if (specialty) {
-        conditions.push(sql`${specialty} = ANY(${crmOrganisations.specialties})`);
+      if (specialties.length > 0) {
+        // match orgs that have ANY of the selected specialties
+        const specConditions = specialties.map((s) => sql`${s} = ANY(${crmOrganisations.specialties})`);
+        conditions.push(or(...specConditions) as SQL);
       }
       if (search) {
         conditions.push(
@@ -292,31 +300,64 @@ const router = Router();
       if (!winner) return res.status(404).json({ error: "Winner organization not found" });
       if (!loser) return res.status(404).json({ error: "Loser organization not found" });
 
-      // Re-parent contacts
-      await db
-        .update(crmContacts)
-        .set({ organisationId: winnerId })
-        .where(eq(crmContacts.organisationId, loserId));
+      await db.transaction(async (tx) => {
+        // Re-parent contacts
+        await tx
+          .update(crmContacts)
+          .set({ organisationId: winnerId })
+          .where(eq(crmContacts.organisationId, loserId));
 
-      // Re-parent notes
-      await db
-        .update(crmOrganisationNotes)
-        .set({ organisationId: winnerId })
-        .where(eq(crmOrganisationNotes.organisationId, loserId));
+        // Re-parent notes
+        await tx
+          .update(crmOrganisationNotes)
+          .set({ organisationId: winnerId })
+          .where(eq(crmOrganisationNotes.organisationId, loserId));
 
-      // Soft-delete the loser
-      await db
-        .update(crmOrganisations)
-        .set({ isDeleted: true, deletedAt: new Date(), isActive: false })
-        .where(eq(crmOrganisations.id, loserId));
+        // Re-parent CRM opportunities
+        await tx
+          .update(crmOpportunities)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(crmOpportunities.crmOrganisationId, loserId));
 
-      await db.insert(auditLog).values({
-        userId: req.user!.id,
-        action: "MERGE",
-        entityType: "crm_organisations",
-        entityId: winnerId,
-        oldValue: JSON.stringify({ loserId, loserName: loser.name }),
-        newValue: JSON.stringify({ winnerId, winnerName: winner.name }),
+        // Re-parent vendor pricing catalogs
+        await tx
+          .update(vendorPricingCatalogs)
+          .set({ crmOrganisationId: winnerId })
+          .where(eq(vendorPricingCatalogs.crmOrganisationId, loserId));
+
+        // Re-parent vendor pricebooks (uses vendorId for crmOrganisations.id)
+        await tx
+          .update(vendorPricebooks)
+          .set({ vendorId: winnerId })
+          .where(eq(vendorPricebooks.vendorId, loserId));
+
+        // Re-parent vendor pricebook items (also uses vendorId)
+        await tx
+          .update(vendorPricebookItems)
+          .set({ vendorId: winnerId })
+          .where(eq(vendorPricebookItems.vendorId, loserId));
+
+        // Re-parent email threads (uses vendorId for crmOrganisations.id)
+        await tx
+          .update(emailThreads)
+          .set({ vendorId: winnerId })
+          .where(eq(emailThreads.vendorId, loserId));
+
+        // Soft-delete the loser
+        await tx
+          .update(crmOrganisations)
+          .set({ isDeleted: true, deletedAt: new Date(), isActive: false })
+          .where(eq(crmOrganisations.id, loserId));
+
+        // Audit log
+        await tx.insert(auditLog).values({
+          userId: req.user!.id,
+          action: "MERGE",
+          entityType: "crm_organisations",
+          entityId: winnerId,
+          oldValue: JSON.stringify({ loserId, loserName: loser.name }),
+          newValue: JSON.stringify({ winnerId, winnerName: winner.name }),
+        });
       });
 
       res.json({ success: true, winnerId, loserId });

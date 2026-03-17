@@ -165,9 +165,9 @@ export default function CRMPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
-  const [specialtyFilter, setSpecialtyFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("");
+  const [specialtyFilters, setSpecialtyFilters] = useState<string[]>([]);
   const [showFilters, setShowFilters] = useState(false);
 
   const [dupOpen, setDupOpen] = useState(false);
@@ -190,10 +190,27 @@ export default function CRMPage() {
   const [newOrg, setNewOrg] = useState<OrgFormState>({ ...DEFAULT_ORG });
   const [newContact, setNewContact] = useState({ ...DEFAULT_CONTACT });
 
-  const { data: organizations, isLoading: orgsLoading } = useQuery<
-    CrmOrganization[]
-  >({
-    queryKey: ["/api/crm/organisations"],
+  const orgQueryParams = {
+    search: searchTerm,
+    type: selectedType !== "all" ? selectedType : "",
+    status: statusFilter !== "all" ? statusFilter : "",
+    state: stateFilter,
+    specialties: specialtyFilters,
+  };
+
+  const { data: organizations, isLoading: orgsLoading } = useQuery<CrmOrganization[]>({
+    queryKey: ["/api/crm/organisations", orgQueryParams],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (orgQueryParams.search) params.set("search", orgQueryParams.search);
+      if (orgQueryParams.type) params.set("type", orgQueryParams.type);
+      if (orgQueryParams.status) params.set("status", orgQueryParams.status);
+      if (orgQueryParams.state) params.set("state", orgQueryParams.state);
+      orgQueryParams.specialties.forEach((s) => params.append("specialty", s));
+      const res = await fetch(`/api/crm/organisations?${params}`);
+      if (!res.ok) throw new Error("Failed to fetch organizations");
+      return res.json();
+    },
   });
 
   const { data: projectsResponse } = useQuery<{ data: Project[] }>({
@@ -343,32 +360,28 @@ export default function CRMPage() {
     },
   };
 
+  const { data: allOrgsForOptions } = useQuery<CrmOrganization[]>({
+    queryKey: ["/api/crm/organisations", "options"],
+    queryFn: async () => {
+      const res = await fetch("/api/crm/organisations");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const uniqueSpecialties = useMemo(() => {
     const allSpecialties =
-      organizations?.flatMap((org) => org.specialties || []) || [];
+      (allOrgsForOptions ?? []).flatMap((org) => org.specialties || []);
     return Array.from(new Set(allSpecialties)).sort();
-  }, [organizations]);
+  }, [allOrgsForOptions]);
 
   const uniqueStates = useMemo(() => {
-    const states = organizations?.map((o) => o.state).filter(Boolean) as string[];
+    const states = (allOrgsForOptions ?? []).map((o) => o.state).filter(Boolean) as string[];
     return Array.from(new Set(states)).sort();
-  }, [organizations]);
+  }, [allOrgsForOptions]);
 
-  const filteredOrganizations =
-    organizations?.filter((org) => {
-      if (org.isDeleted) return false;
-      const matchesSearch =
-        org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        org.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        org.state?.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesType = selectedType === "all" || org.type === selectedType;
-      const matchesSpecialty =
-        specialtyFilter === "all" ||
-        (org.specialties?.includes(specialtyFilter) ?? false);
-      const matchesStatus = statusFilter === "all" || org.crmStatus === statusFilter;
-      const matchesState = !stateFilter || org.state?.toLowerCase() === stateFilter.toLowerCase();
-      return matchesSearch && matchesType && matchesSpecialty && matchesStatus && matchesState;
-    }) || [];
+  const filteredOrganizations = organizations ?? [];
 
   const orgCounts = {
     total: organizations?.length || 0,
@@ -818,9 +831,9 @@ export default function CRMPage() {
                   >
                     <Filter className="w-4 h-4 mr-1.5" />
                     Filters
-                    {(selectedType !== "all" || specialtyFilter !== "all" || statusFilter !== "all" || stateFilter) && (
+                    {(selectedType !== "all" || specialtyFilters.length > 0 || statusFilter !== "all" || stateFilter) && (
                       <span className="ml-1.5 bg-primary text-primary-foreground rounded-full w-4 h-4 text-xs flex items-center justify-center">
-                        {[selectedType !== "all", specialtyFilter !== "all", statusFilter !== "all", !!stateFilter].filter(Boolean).length}
+                        {[selectedType !== "all", specialtyFilters.length > 0, statusFilter !== "all", !!stateFilter].filter(Boolean).length}
                       </span>
                     )}
                   </Button>
@@ -869,24 +882,33 @@ export default function CRMPage() {
                     </Select>
                   )}
                   {uniqueSpecialties.length > 0 && (
-                    <Select value={specialtyFilter} onValueChange={setSpecialtyFilter}>
-                      <SelectTrigger className="w-[180px]" data-testid="select-specialty-filter">
-                        <SelectValue placeholder="All Specialties" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Specialties</SelectItem>
-                        {uniqueSpecialties.map((specialty) => (
-                          <SelectItem key={specialty} value={specialty}>{specialty}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-wrap gap-1.5 items-center">
+                      <span className="text-xs text-muted-foreground">Specialties:</span>
+                      {uniqueSpecialties.map((specialty) => (
+                        <Badge
+                          key={specialty}
+                          variant={specialtyFilters.includes(specialty) ? "default" : "outline"}
+                          className="cursor-pointer select-none text-xs"
+                          onClick={() =>
+                            setSpecialtyFilters((prev) =>
+                              prev.includes(specialty)
+                                ? prev.filter((s) => s !== specialty)
+                                : [...prev, specialty]
+                            )
+                          }
+                          data-testid={`badge-specialty-${specialty}`}
+                        >
+                          {specialty}
+                        </Badge>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
 
               {(searchTerm ||
                 selectedType !== "all" ||
-                specialtyFilter !== "all" ||
+                specialtyFilters.length > 0 ||
                 statusFilter !== "all" ||
                 stateFilter) && (
                 <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -933,23 +955,23 @@ export default function CRMPage() {
                       />
                     </Badge>
                   )}
-                  {specialtyFilter !== "all" && (
-                    <Badge variant="secondary" className="gap-1">
-                      {specialtyFilter}
+                  {specialtyFilters.map((s) => (
+                    <Badge key={s} variant="secondary" className="gap-1">
+                      {s}
                       <X
                         className="w-3 h-3 cursor-pointer"
-                        onClick={() => setSpecialtyFilter("all")}
-                        data-testid="button-clear-specialty-filter"
+                        onClick={() => setSpecialtyFilters((prev) => prev.filter((f) => f !== s))}
+                        data-testid={`button-clear-specialty-${s}`}
                       />
                     </Badge>
-                  )}
+                  ))}
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
                       setSearchTerm("");
                       setSelectedType("all");
-                      setSpecialtyFilter("all");
+                      setSpecialtyFilters([]);
                       setStatusFilter("all");
                       setStateFilter("");
                     }}
