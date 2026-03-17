@@ -29,6 +29,9 @@ import {
   Mail,
   Phone,
   User,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import type {
@@ -201,6 +204,26 @@ export default function CRMPage() {
     PM: "Project Manager", ESTIMATOR: "Estimator", SUPERINTENDENT: "Superintendent",
     SALES: "Sales", ACCOUNTS_PAYABLE: "Accounts Payable", ACCOUNTS_RECEIVABLE: "Accounts Receivable",
     OWNER: "Owner", GENERAL_MANAGER: "General Manager", FOREMAN: "Foreman", OTHER: "Other",
+  };
+
+  type ContactSortKey = "name" | "role" | "orgName" | "email" | "phone";
+  const [contactSort, setContactSort] = useState<{ key: ContactSortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
+
+  const sortedContacts = [...allContacts].sort((a, b) => {
+    const dir = contactSort.dir === "asc" ? 1 : -1;
+    const getVal = (c: AllContact): string => {
+      if (contactSort.key === "name") return `${c.firstName ?? ""} ${c.lastName ?? ""}`.toLowerCase();
+      if (contactSort.key === "role") return (ROLE_LABELS[c.role as string] || c.role || "").toLowerCase();
+      if (contactSort.key === "orgName") return (c.orgName ?? "").toLowerCase();
+      if (contactSort.key === "email") return (c.email ?? "").toLowerCase();
+      if (contactSort.key === "phone") return (c.phone ?? "").toLowerCase();
+      return "";
+    };
+    return getVal(a) < getVal(b) ? -dir : getVal(a) > getVal(b) ? dir : 0;
+  });
+
+  const handleContactSort = (key: ContactSortKey) => {
+    setContactSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   };
 
   const mutations = useCrmMutations(selectedOrg?.id);
@@ -419,7 +442,13 @@ export default function CRMPage() {
             <Card>
               <CardHeader className="pb-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <CardTitle>All Contacts</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5" />
+                    All Contacts
+                    {!contactsLoading && (
+                      <Badge variant="secondary" className="ml-1 text-xs font-normal">{allContacts.length}</Badge>
+                    )}
+                  </CardTitle>
                   <div className="relative flex-1 max-w-sm">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input
@@ -432,81 +461,116 @@ export default function CRMPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent>
+              <CardContent className="p-0">
                 {contactsLoading ? (
-                  <div className="space-y-3">
+                  <div className="space-y-2 p-6">
                     {[1, 2, 3, 4, 5].map((i) => (
-                      <Skeleton key={i} className="h-14 w-full" />
+                      <Skeleton key={i} className="h-12 w-full" />
                     ))}
                   </div>
                 ) : allContacts.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No contacts found</p>
-                    <p className="text-sm">
+                    <p className="font-medium">No contacts found</p>
+                    <p className="text-sm mt-1">
                       {contactSearch ? "Try a different search term." : "Add contacts inside an organization to see them here."}
                     </p>
                   </div>
                 ) : (
-                  <div className="divide-y">
-                    {allContacts.map((contact) => (
-                      <div
-                        key={contact.id}
-                        className="flex items-center gap-4 py-3 px-1 cursor-pointer hover:bg-muted/40 rounded-md transition-colors group"
-                        onClick={() => {
-                          setSelectedContact(contact);
-                          setViewContactOpen(true);
-                        }}
-                        data-testid={`row-contact-${contact.id}`}
-                      >
-                        <div className="p-2 rounded-full bg-muted shrink-0">
-                          <User className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">
-                              {contact.firstName} {contact.lastName}
-                            </span>
-                            {contact.isPrimary && (
-                              <Badge variant="secondary" className="text-xs">Primary</Badge>
-                            )}
-                            <Badge variant="outline" className="text-xs">
-                              {ROLE_LABELS[contact.role as string] || contact.role}
-                            </Badge>
-                          </div>
-                          {contact.orgName && (
-                            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                              <Building2 className="w-3 h-3" />
-                              {contact.orgName}
-                            </p>
-                          )}
-                        </div>
-                        <div className="hidden sm:flex items-center gap-4 text-sm text-muted-foreground shrink-0">
-                          {contact.email && (
-                            <a
-                              href={`mailto:${contact.email}`}
-                              className="flex items-center gap-1 hover:text-primary"
-                              onClick={(e) => e.stopPropagation()}
-                              data-testid={`link-contact-email-${contact.id}`}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm" data-testid="table-contacts">
+                      <thead>
+                        <tr className="border-b bg-muted/40">
+                          {(
+                            [
+                              { key: "name", label: "Name" },
+                              { key: "role", label: "Role" },
+                              { key: "orgName", label: "Organization" },
+                              { key: "email", label: "Email" },
+                              { key: "phone", label: "Phone" },
+                            ] as { key: ContactSortKey; label: string }[]
+                          ).map(({ key, label }) => (
+                            <th
+                              key={key}
+                              className="px-4 py-3 text-left font-medium text-muted-foreground cursor-pointer select-none hover:text-foreground transition-colors whitespace-nowrap"
+                              onClick={() => handleContactSort(key)}
+                              data-testid={`th-contact-${key}`}
                             >
-                              <Mail className="w-3.5 h-3.5" />
-                              <span className="max-w-[160px] truncate">{contact.email}</span>
-                            </a>
-                          )}
-                          {contact.phone && (
-                            <a
-                              href={`tel:${contact.phone}`}
-                              className="flex items-center gap-1 hover:text-primary"
-                              onClick={(e) => e.stopPropagation()}
-                              data-testid={`link-contact-phone-${contact.id}`}
-                            >
-                              <Phone className="w-3.5 h-3.5" />
-                              {contact.phone}
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                              <span className="inline-flex items-center gap-1">
+                                {label}
+                                {contactSort.key === key ? (
+                                  contactSort.dir === "asc" ? (
+                                    <ChevronUp className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <ChevronDown className="w-3.5 h-3.5" />
+                                  )
+                                ) : (
+                                  <ChevronsUpDown className="w-3.5 h-3.5 opacity-40" />
+                                )}
+                              </span>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {sortedContacts.map((contact) => (
+                          <tr
+                            key={contact.id}
+                            className="cursor-pointer hover:bg-muted/40 transition-colors"
+                            onClick={() => {
+                              setSelectedContact(contact);
+                              setViewContactOpen(true);
+                            }}
+                            data-testid={`row-contact-${contact.id}`}
+                          >
+                            <td className="px-4 py-3 font-medium">
+                              <div className="flex items-center gap-2">
+                                {contact.firstName} {contact.lastName}
+                                {contact.isPrimary && (
+                                  <Badge variant="secondary" className="text-xs">Primary</Badge>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {ROLE_LABELS[contact.role as string] || contact.role || "—"}
+                            </td>
+                            <td className="px-4 py-3 text-muted-foreground">
+                              {contact.orgName || "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              {contact.email ? (
+                                <a
+                                  href={`mailto:${contact.email}`}
+                                  className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                  data-testid={`link-contact-email-${contact.id}`}
+                                >
+                                  <Mail className="w-3.5 h-3.5 shrink-0" />
+                                  <span className="truncate max-w-[180px]">{contact.email}</span>
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground/50">—</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              {contact.phone ? (
+                                <a
+                                  href={`tel:${contact.phone}`}
+                                  className="flex items-center gap-1 text-muted-foreground hover:text-primary transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                  data-testid={`link-contact-phone-${contact.id}`}
+                                >
+                                  <Phone className="w-3.5 h-3.5 shrink-0" />
+                                  {contact.phone}
+                                </a>
+                              ) : (
+                                <span className="text-muted-foreground/50">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </CardContent>
