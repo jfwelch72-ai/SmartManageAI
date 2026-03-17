@@ -350,8 +350,8 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
         `);
         const totalBudget = parseFloat((gmResult.rows[0] as any)?.total_budget || "0");
         const totalCost = parseFloat((gmResult.rows[0] as any)?.total_cost || "0");
-        const totalMargin = parseFloat((gmResult.rows[0] as any)?.total_margin || "0");
-        value = totalBudget > 0 ? Math.round((totalMargin / totalBudget) * 100) : 0;
+        // Derive margin directly from contract (adjusted budget) minus actual cost for accuracy
+        value = totalBudget > 0 ? Math.round(((totalBudget - totalCost) / totalBudget) * 100) : 0;
 
         // Previous period: snapshots created in the previous month window
         const prevGmOrgCond = shouldFilter && orgId ? sql`AND pps."organization_id" = ${orgId}` : sql``;
@@ -368,12 +368,12 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
           )
           SELECT
             COALESCE(SUM(adjusted_budget), 0) as total_budget,
-            COALESCE(SUM(estimated_margin), 0) as total_margin
+            COALESCE(SUM(total_actual_cost), 0) as total_cost
           FROM prev_latest
         `);
         const prevBudget = parseFloat((prevGmResult.rows[0] as any)?.total_budget || "0");
-        const prevMargin = parseFloat((prevGmResult.rows[0] as any)?.total_margin || "0");
-        previousValue = prevBudget > 0 ? Math.round((prevMargin / prevBudget) * 100) : 0;
+        const prevCost = parseFloat((prevGmResult.rows[0] as any)?.total_cost || "0");
+        previousValue = prevBudget > 0 ? Math.round(((prevBudget - prevCost) / prevBudget) * 100) : 0;
         isEstimated = false;
         break;
       }
@@ -2462,13 +2462,15 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
     `);
     const totalWorkers = (totalResult.rows[0] as any)?.count || 0;
 
-    // Workers with time entries today
+    // Workers with time entries today (restricted to field-worker roles to match denominator)
     const activeResult = await db.execute(sql`
       SELECT COUNT(DISTINCT te."user_id")::int as count,
              COALESCE(SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric), 0) as worked_hours
       FROM "time_entries" te
       JOIN "users" u ON te."user_id" = u."id"
       WHERE te."date" = ${todayStart.toISOString().split('T')[0]}::date
+        AND u."role" IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'PROJECT_ENGINEER', 'DISPATCHER', 'EQUIPMENT_MANAGER', 'MAINTENANCE_MANAGER')
+        AND u."is_active" = true
         ${orgCond}
     `);
     const activeWorkers = (activeResult.rows[0] as any)?.count || 0;
@@ -2500,6 +2502,8 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
         FROM "time_entries" te
         JOIN "users" u ON te."user_id" = u."id"
         WHERE te."date" = ${dayStr}::date
+          AND u."role" IN ('HOURLY_EMPLOYEE', 'SUPERINTENDENT', 'PROJECT_ENGINEER', 'DISPATCHER', 'EQUIPMENT_MANAGER', 'MAINTENANCE_MANAGER')
+          AND u."is_active" = true
           ${orgCond}
       `);
       const dayActive = parseInt((dayResult.rows[0] as any)?.active_workers || "0");
