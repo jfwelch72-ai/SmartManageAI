@@ -156,6 +156,7 @@ import materialTrackingRoutes from "./materialTrackingRoutes";
 import productionRateRoutes from "./productionRateRoutes";
 import crmVendorRoutes from "./crmVendorRoutes";
 import crmContactRoutes from "./crmContactRoutes";
+import crmPipelineRoutes from "./crmPipelineRoutes";
 import vendorEnrollmentRoutes from "./vendorEnrollmentRoutes";
 import vendorPricingRoutes from "./vendorPricingRoutes";
 import scopeConfigRoutes from "./scopeConfigRoutes";
@@ -494,6 +495,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // CRM + Vendor Routes (extracted to crmVendorRoutes.ts, crmContactRoutes.ts, vendorEnrollmentRoutes.ts, vendorPricingRoutes.ts)
   app.use(crmVendorRoutes);
   app.use(crmContactRoutes);
+  app.use(crmPipelineRoutes);
   app.use(vendorEnrollmentRoutes);
   app.use(vendorPricingRoutes);
 

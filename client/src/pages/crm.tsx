@@ -24,7 +24,9 @@ import {
   AlertCircle,
   X,
   ShieldAlert,
+  TrendingUp,
 } from "lucide-react";
+import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import type {
   CrmOrganisation as CrmOrganization,
   CrmContact,
@@ -122,6 +124,8 @@ const DEFAULT_CONTACT = {
 
 export default function CRMPage() {
   const { user } = useAuth();
+
+  const [crmTab, setCrmTab] = useState<"orgs" | "pipeline">("orgs");
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedType, setSelectedType] = useState<string>("all");
@@ -342,17 +346,41 @@ export default function CRMPage() {
             </div>
             <div className="flex gap-2">
               <AIAnalysisButton module="VENDOR_PRICING" />
-              <Button
-                onClick={() => setCreateOrgOpen(true)}
-                data-testid="button-add-organization"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Organization
-              </Button>
+              {crmTab === "orgs" && (
+                <Button
+                  onClick={() => setCreateOrgOpen(true)}
+                  data-testid="button-add-organization"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Organization
+                </Button>
+              )}
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Tab Switcher */}
+          <div className="flex gap-1 border-b" data-testid="crm-tab-switcher">
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "orgs" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("orgs")}
+              data-testid="tab-organizations"
+            >
+              <Building2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              Organizations
+            </button>
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "pipeline" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("pipeline")}
+              data-testid="tab-sales-pipeline"
+            >
+              <TrendingUp className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              Sales Pipeline
+            </button>
+          </div>
+
+          {crmTab === "pipeline" && <CrmPipelineView />}
+
+          {crmTab === "orgs" && <><div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card
               className="hover-elevate cursor-pointer"
               onClick={() => setSelectedType("all")}
@@ -779,6 +807,7 @@ export default function CRMPage() {
               )}
             </CardContent>
           </Card>
+          </>}
         </div>
       </main>
 
