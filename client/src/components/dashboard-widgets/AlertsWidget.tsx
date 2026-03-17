@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, AlertCircle, Info, Shield, DollarSign, Clock, CreditCard, TrendingDown, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info, Shield, DollarSign, Clock, CreditCard, TrendingDown, CheckCircle2, ExternalLink } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 
 interface AlertItem {
@@ -48,7 +49,16 @@ const TYPE_ICONS: Record<string, typeof Shield> = {
   LOW_MARGIN: TrendingDown,
 };
 
+const TYPE_LINKS: Record<string, string> = {
+  INSURANCE_EXPIRING: "/crm",
+  OVER_BUDGET: "/projects",
+  UNAPPROVED_TIME: "/time-entry",
+  LATE_SUB_PAYMENT: "/subcontracts",
+  LOW_MARGIN: "/projects",
+};
+
 export function AlertsWidget() {
+  const [, setLocation] = useLocation();
   const { data, isLoading } = useQuery<AlertsResponse>({
     queryKey: ["/api/dashboard/alerts"],
     refetchInterval: 300000,
@@ -119,6 +129,7 @@ export function AlertsWidget() {
               const severity = SEVERITY_STYLES[alert.severity] || SEVERITY_STYLES.info;
               const SeverityIcon = severity.icon;
               const TypeIcon = TYPE_ICONS[alert.type] || AlertTriangle;
+              const navTarget = alert.link || TYPE_LINKS[alert.type];
 
               return (
                 <div
@@ -127,8 +138,10 @@ export function AlertsWidget() {
                     "flex items-start gap-3 py-2.5 px-3 rounded-md border",
                     severity.bg,
                     severity.border,
-                    "transition-colors"
+                    "transition-colors",
+                    navTarget ? "cursor-pointer hover:opacity-80" : ""
                   )}
+                  onClick={navTarget ? () => setLocation(navTarget) : undefined}
                   data-testid={`alert-item-${alert.id}`}
                 >
                   <SeverityIcon className={cn("w-4 h-4 shrink-0 mt-0.5", severity.text)} />
@@ -139,6 +152,9 @@ export function AlertsWidget() {
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{alert.description}</p>
                   </div>
+                  {navTarget && (
+                    <ExternalLink className={cn("w-3.5 h-3.5 shrink-0 mt-0.5 opacity-50", severity.text)} />
+                  )}
                 </div>
               );
             })}

@@ -5,9 +5,28 @@ import { useQuery } from "@tanstack/react-query";
 import type { AITask } from "@shared/schema";
 
 export function AITasksWidget() {
-  const { data: aiTasks = [] } = useQuery<AITask[]>({
+  const { data: aiTasks = [], isLoading } = useQuery<AITask[]>({
     queryKey: ["/api/ai/tasks"],
   });
+
+  if (isLoading) {
+    return (
+      <Card className="h-full" data-testid="card-tasks-loading">
+        <CardHeader className="pb-3">
+          <div className="animate-pulse h-4 w-32 bg-muted rounded" />
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="animate-pulse flex items-center gap-3 p-2 rounded-md bg-muted/50">
+              <div className="h-2 w-2 rounded-full bg-muted shrink-0" />
+              <div className="flex-1 h-3.5 bg-muted rounded" />
+              <div className="h-5 w-16 bg-muted rounded-full shrink-0" />
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
 
   const pendingTasks = aiTasks.filter(
     (t) => t.status === "PENDING" || t.status === "IN_PROGRESS"

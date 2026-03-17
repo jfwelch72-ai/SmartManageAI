@@ -2,9 +2,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FileEdit, DollarSign, CheckCircle2, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { type ChangeOrdersPendingConfig, DEFAULT_CO_PENDING_CONFIG } from "./ChangeOrdersPendingSettings";
+import type { WidgetComponentProps } from "./WidgetRegistry";
 
 interface ChangeOrdersPendingData {
   count: number;
@@ -26,14 +28,9 @@ function formatCurrency(value: number): string {
   return `$${abs.toFixed(0)}`;
 }
 
-function getDaysBadgeColor(days: number): string {
-  if (days > 14) return "text-red-600 dark:text-red-400";
-  if (days > 7) return "text-amber-600 dark:text-amber-500";
-  return "text-muted-foreground";
-}
-
-export function ChangeOrdersPendingWidget() {
+export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
   const hasPermission = useFeaturePermission("canAccessFinancials");
+  const cfg: ChangeOrdersPendingConfig = { ...DEFAULT_CO_PENDING_CONFIG, ...(config as Partial<ChangeOrdersPendingConfig>) };
 
   const { data, isLoading } = useQuery<ChangeOrdersPendingData>({
     queryKey: ["/api/dashboard/change-orders-pending"],
@@ -128,27 +125,32 @@ export function ChangeOrdersPendingWidget() {
             </div>
 
             <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
-              {d.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-2.5 py-2 px-2.5 rounded-md bg-muted/30 border border-border/50"
-                  data-testid={`co-item-${item.id}`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium">CO-{item.coNumber}</span>
-                      <span className="text-[11px] text-muted-foreground truncate">· {item.projectName}</span>
+              {d.items.slice(0, cfg.showLimit).map((item) => {
+                const isOld = item.daysPending > cfg.highlightDaysThreshold;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-2.5 py-2 px-2.5 rounded-md bg-muted/30 border border-border/50"
+                    data-testid={`co-item-${item.id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium">CO-{item.coNumber}</span>
+                        <span className="text-[11px] text-muted-foreground truncate">· {item.projectName}</span>
+                      </div>
+                      {item.description && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.description}</p>
+                      )}
                     </div>
-                    {item.description && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.description}</p>
-                    )}
+                    <div className="text-right shrink-0">
+                      <p className="text-xs font-semibold text-foreground">{formatCurrency(item.amount)}</p>
+                      <p className={cn("text-[11px]", isOld ? "text-red-600 dark:text-red-400" : item.daysPending > Math.floor(cfg.highlightDaysThreshold / 2) ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}>
+                        {item.daysPending}d
+                      </p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-xs font-semibold text-foreground">{formatCurrency(item.amount)}</p>
-                    <p className={cn("text-[11px]", getDaysBadgeColor(item.daysPending))}>{item.daysPending}d</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <Link href="/projects" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-all-cos">

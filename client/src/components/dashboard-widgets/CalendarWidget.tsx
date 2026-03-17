@@ -17,9 +17,31 @@ function formatEventDate(dateStr: string | Date): string {
 
 export function CalendarWidget() {
   const [, setLocation] = useLocation();
-  const { data: calendarEvents = [] } = useQuery<CalendarEvent[]>({
+  const { data: calendarEvents = [], isLoading } = useQuery<CalendarEvent[]>({
     queryKey: ["/api/calendar/my-events"],
   });
+
+  if (isLoading) {
+    return (
+      <Card className="h-full" data-testid="card-calendar-loading">
+        <CardHeader className="pb-3">
+          <div className="animate-pulse h-4 w-32 bg-muted rounded" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="animate-pulse flex items-start gap-3 p-2">
+              <div className="h-10 w-10 rounded-md bg-muted shrink-0" />
+              <div className="flex-1 space-y-1.5">
+                <div className="h-3.5 w-3/4 bg-muted rounded" />
+                <div className="h-3 w-1/2 bg-muted rounded" />
+                <div className="h-5 w-24 bg-muted rounded-full" />
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
 
   const upcomingEvents = calendarEvents
     .filter((e) => new Date(e.startDate) >= new Date())

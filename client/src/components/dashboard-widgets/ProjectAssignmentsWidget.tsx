@@ -9,7 +9,7 @@ import type { Notification } from "@shared/schema";
 
 export function ProjectAssignmentsWidget() {
   const [, setLocation] = useLocation();
-  const { data: notifications = [] } = useQuery<Notification[]>({
+  const { data: notifications = [], isLoading } = useQuery<Notification[]>({
     queryKey: ["/api/notifications"],
   });
 
@@ -25,6 +25,26 @@ export function ProjectAssignmentsWidget() {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
     },
   });
+
+  if (isLoading) {
+    return (
+      <Card className="h-full" data-testid="card-project-assignments-loading">
+        <CardContent className="flex items-center justify-center h-full">
+          <div className="w-full space-y-3 pt-6">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="animate-pulse flex items-center gap-3 p-3 rounded-md bg-muted/30">
+                <div className="h-4 w-4 rounded bg-muted shrink-0" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 w-3/4 bg-muted rounded" />
+                  <div className="h-3 w-full bg-muted rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const projectAssignmentNotifications = notifications.filter(
     (n) => n.type === "PROJECT_ASSIGNMENT" && !n.isRead

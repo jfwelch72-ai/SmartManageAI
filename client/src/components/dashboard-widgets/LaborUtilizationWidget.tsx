@@ -1,8 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Users, Clock, TrendingUp, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { type LaborUtilizationConfig, DEFAULT_LABOR_UTIL_CONFIG } from "./LaborUtilizationSettings";
+import type { WidgetComponentProps } from "./WidgetRegistry";
 
 interface LaborUtilization {
   utilizedPercent: number;
@@ -14,19 +17,19 @@ interface LaborUtilization {
   sparkline: { date: string; utilizedPercent: number }[];
 }
 
-function getUtilizationColor(pct: number): string {
-  if (pct >= 80) return "text-green-600 dark:text-green-400";
-  if (pct >= 50) return "text-amber-600 dark:text-amber-500";
+function getUtilizationColor(pct: number, cfg: LaborUtilizationConfig): string {
+  if (pct >= cfg.goodThreshold) return "text-green-600 dark:text-green-400";
+  if (pct >= cfg.lowThreshold) return "text-amber-600 dark:text-amber-500";
   return "text-red-600 dark:text-red-400";
 }
 
-function getUtilizationBg(pct: number): string {
-  if (pct >= 80) return "bg-green-500";
-  if (pct >= 50) return "bg-amber-500";
+function getUtilizationBg(pct: number, cfg: LaborUtilizationConfig): string {
+  if (pct >= cfg.goodThreshold) return "bg-green-500";
+  if (pct >= cfg.lowThreshold) return "bg-amber-500";
   return "bg-red-500";
 }
 
-function SparklineBar({ sparkline }: { sparkline: { date: string; utilizedPercent: number }[] }) {
+function SparklineBar({ sparkline, cfg }: { sparkline: { date: string; utilizedPercent: number }[]; cfg: LaborUtilizationConfig }) {
   if (!sparkline || sparkline.length === 0) return null;
   const max = Math.max(...sparkline.map(s => s.utilizedPercent), 1);
   return (
@@ -34,7 +37,7 @@ function SparklineBar({ sparkline }: { sparkline: { date: string; utilizedPercen
       {sparkline.map((s, i) => (
         <div
           key={i}
-          className={cn("flex-1 rounded-sm min-h-[2px] transition-all", getUtilizationBg(s.utilizedPercent), "opacity-70")}
+          className={cn("flex-1 rounded-sm min-h-[2px] transition-all", getUtilizationBg(s.utilizedPercent, cfg), "opacity-70")}
           style={{ height: `${Math.max((s.utilizedPercent / max) * 100, 5)}%` }}
           title={`${new Date(s.date).toLocaleDateString(undefined, { weekday: "short" })}: ${s.utilizedPercent}%`}
         />
@@ -43,8 +46,9 @@ function SparklineBar({ sparkline }: { sparkline: { date: string; utilizedPercen
   );
 }
 
-export function LaborUtilizationWidget() {
+export function LaborUtilizationWidget({ config }: WidgetComponentProps) {
   const hasPermission = useFeaturePermission("canManagePayroll");
+  const cfg: LaborUtilizationConfig = { ...DEFAULT_LABOR_UTIL_CONFIG, ...(config as Partial<LaborUtilizationConfig>) };
 
   const { data, isLoading } = useQuery<LaborUtilization>({
     queryKey: ["/api/dashboard/labor-utilization"],
@@ -99,7 +103,7 @@ export function LaborUtilizationWidget() {
             <Activity className="w-4 h-4 text-muted-foreground" />
             <CardTitle className="text-sm font-medium">Labor Utilization</CardTitle>
           </div>
-          <span className={cn("text-xs font-semibold", getUtilizationColor(d.utilizedPercent))} data-testid="utilization-badge">
+          <span className={cn("text-xs font-semibold", getUtilizationColor(d.utilizedPercent, cfg))} data-testid="utilization-badge">
             {d.utilizedPercent}% Today
           </span>
         </div>
@@ -108,13 +112,13 @@ export function LaborUtilizationWidget() {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-muted-foreground">Utilization</span>
-            <span className={cn("text-2xl font-bold tabular-nums", getUtilizationColor(d.utilizedPercent))} data-testid="utilization-pct">
+            <span className={cn("text-2xl font-bold tabular-nums", getUtilizationColor(d.utilizedPercent, cfg))} data-testid="utilization-pct">
               {d.utilizedPercent}%
             </span>
           </div>
           <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
             <div
-              className={cn("h-full rounded-full transition-all", getUtilizationBg(d.utilizedPercent))}
+              className={cn("h-full rounded-full transition-all", getUtilizationBg(d.utilizedPercent, cfg))}
               style={{ width: `${Math.min(d.utilizedPercent, 100)}%` }}
               data-testid="utilization-bar"
             />
@@ -159,7 +163,13 @@ export function LaborUtilizationWidget() {
             <TrendingUp className="w-3 h-3 text-muted-foreground" />
             <span className="text-[11px] text-muted-foreground">7-day trend</span>
           </div>
-          <SparklineBar sparkline={d.sparkline} />
+          <SparklineBar sparkline={d.sparkline} cfg={cfg} />
+        </div>
+
+        <div className="pt-1 border-t border-border/50">
+          <Link href="/workforce" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-workforce-util">
+            View workforce management
+          </Link>
         </div>
       </CardContent>
     </Card>

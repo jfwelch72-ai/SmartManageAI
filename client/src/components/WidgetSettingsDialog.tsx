@@ -16,6 +16,11 @@ import { KPISummarySettings, type KPIConfig, DEFAULT_KPI_CONFIG } from "@/compon
 import { TrendChartSettings, type TrendChartConfig, DEFAULT_TREND_CONFIG } from "@/components/dashboard-widgets/TrendChartSettings";
 import { ListWidgetSettings, type ListWidgetConfig, DEFAULT_LIST_CONFIG } from "@/components/dashboard-widgets/ListWidgetSettings";
 import { CostCodeBreakdownSettings, type CostCodeBreakdownConfig, DEFAULT_COST_CODE_CONFIG } from "@/components/dashboard-widgets/CostCodeBreakdownSettings";
+import { RFIStatusSettings, type RFIStatusConfig, DEFAULT_RFI_STATUS_CONFIG } from "@/components/dashboard-widgets/RFIStatusSettings";
+import { ChangeOrdersPendingSettings, type ChangeOrdersPendingConfig, DEFAULT_CO_PENDING_CONFIG } from "@/components/dashboard-widgets/ChangeOrdersPendingSettings";
+import { SafetyAlertsSettings, type SafetyAlertsConfig, DEFAULT_SAFETY_ALERTS_CONFIG } from "@/components/dashboard-widgets/SafetyAlertsSettings";
+import { LaborUtilizationSettings, type LaborUtilizationConfig, DEFAULT_LABOR_UTIL_CONFIG } from "@/components/dashboard-widgets/LaborUtilizationSettings";
+import { ProjectHealthSummarySettings, type ProjectHealthSummaryConfig, DEFAULT_PROJECT_HEALTH_CONFIG } from "@/components/dashboard-widgets/ProjectHealthSummarySettings";
 
 interface WidgetSettingsDialogProps {
   open: boolean;
@@ -25,7 +30,18 @@ interface WidgetSettingsDialogProps {
   sectionId: string;
 }
 
-export const WIDGETS_WITH_SETTINGS = new Set(["QUICK_STATS", "KPI_SUMMARY", "TREND_CHART", "DATA_LIST", "COST_CODE_BREAKDOWN"]);
+export const WIDGETS_WITH_SETTINGS = new Set([
+  "QUICK_STATS",
+  "KPI_SUMMARY",
+  "TREND_CHART",
+  "DATA_LIST",
+  "COST_CODE_BREAKDOWN",
+  "RFI_STATUS",
+  "CHANGE_ORDERS_PENDING",
+  "SAFETY_ALERTS",
+  "LABOR_UTILIZATION",
+  "PROJECT_HEALTH_SUMMARY",
+]);
 
 export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType, sectionId }: WidgetSettingsDialogProps) {
   const { getWidgetConfig, updateWidgetConfig } = useDashboardCustomization();
@@ -78,6 +94,41 @@ export function WidgetSettingsDialog({ open, onOpenChange, widgetId, widgetType,
         return (
           <CostCodeBreakdownSettings
             config={{ ...DEFAULT_COST_CODE_CONFIG, ...localConfig } as CostCodeBreakdownConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "RFI_STATUS":
+        return (
+          <RFIStatusSettings
+            config={{ ...DEFAULT_RFI_STATUS_CONFIG, ...localConfig } as RFIStatusConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "CHANGE_ORDERS_PENDING":
+        return (
+          <ChangeOrdersPendingSettings
+            config={{ ...DEFAULT_CO_PENDING_CONFIG, ...localConfig } as ChangeOrdersPendingConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "SAFETY_ALERTS":
+        return (
+          <SafetyAlertsSettings
+            config={{ ...DEFAULT_SAFETY_ALERTS_CONFIG, ...localConfig } as SafetyAlertsConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "LABOR_UTILIZATION":
+        return (
+          <LaborUtilizationSettings
+            config={{ ...DEFAULT_LABOR_UTIL_CONFIG, ...localConfig } as LaborUtilizationConfig}
+            onChange={(config) => setLocalConfig(config)}
+          />
+        );
+      case "PROJECT_HEALTH_SUMMARY":
+        return (
+          <ProjectHealthSummarySettings
+            config={{ ...DEFAULT_PROJECT_HEALTH_CONFIG, ...localConfig } as ProjectHealthSummaryConfig}
             onChange={(config) => setLocalConfig(config)}
           />
         );

@@ -2,8 +2,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { HelpCircle, Clock, CheckCircle2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+import { cn } from "@/lib/utils";
+import { type RFIStatusConfig, DEFAULT_RFI_STATUS_CONFIG } from "./RFIStatusSettings";
+import type { WidgetComponentProps } from "./WidgetRegistry";
 
 interface RFIItem {
   id: string;
@@ -20,7 +22,9 @@ function getDaysOpen(createdAt: string): number {
   return Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function RFIStatusWidget() {
+export function RFIStatusWidget({ config }: WidgetComponentProps) {
+  const cfg: RFIStatusConfig = { ...DEFAULT_RFI_STATUS_CONFIG, ...(config as Partial<RFIStatusConfig>) };
+
   const { data: submittedRfis, isLoading: submittedLoading } = useQuery<RFIItem[]>({
     queryKey: ["/api/rfi", { status: "SUBMITTED" }],
     queryFn: () => fetch("/api/rfi?status=SUBMITTED").then(r => r.json()),
@@ -96,8 +100,9 @@ export function RFIStatusWidget() {
             </div>
 
             <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
-              {allOpen.slice(0, 5).map((item) => {
+              {allOpen.slice(0, cfg.showLimit).map((item) => {
                 const daysOpen = getDaysOpen(item.createdAt);
+                const isOld = daysOpen >= cfg.highlightDaysThreshold;
                 return (
                   <div
                     key={item.id}
@@ -113,7 +118,7 @@ export function RFIStatusWidget() {
                         <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{item.project.name}</p>
                       )}
                     </div>
-                    <span className={cn("text-[11px] font-medium shrink-0 ml-1", daysOpen > 7 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
+                    <span className={cn("text-[11px] font-medium shrink-0 ml-1", isOld ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>
                       {daysOpen}d
                     </span>
                   </div>

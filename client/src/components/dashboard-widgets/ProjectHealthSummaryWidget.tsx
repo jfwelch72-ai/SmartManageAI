@@ -1,8 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { HeartPulse, CheckCircle2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+import { cn } from "@/lib/utils";
+import { type ProjectHealthSummaryConfig, DEFAULT_PROJECT_HEALTH_CONFIG } from "./ProjectHealthSummarySettings";
+import type { WidgetComponentProps } from "./WidgetRegistry";
 
 interface ProjectHealthEntry {
   project_id: string;
@@ -13,31 +15,33 @@ interface ProjectHealthEntry {
   project_name: string;
 }
 
-function getScoreColor(score: number): string {
-  if (score >= 75) return "text-green-600 dark:text-green-400";
-  if (score >= 50) return "text-amber-600 dark:text-amber-500";
+function getScoreColor(score: number, cfg: ProjectHealthSummaryConfig): string {
+  if (score >= cfg.healthyThreshold) return "text-green-600 dark:text-green-400";
+  if (score >= cfg.criticalThreshold) return "text-amber-600 dark:text-amber-500";
   return "text-red-600 dark:text-red-400";
 }
 
-function getScoreBg(score: number): string {
-  if (score >= 75) return "bg-green-500/10 border-green-200 dark:border-green-800/50";
-  if (score >= 50) return "bg-amber-500/10 border-amber-200 dark:border-amber-800/50";
+function getScoreBg(score: number, cfg: ProjectHealthSummaryConfig): string {
+  if (score >= cfg.healthyThreshold) return "bg-green-500/10 border-green-200 dark:border-green-800/50";
+  if (score >= cfg.criticalThreshold) return "bg-amber-500/10 border-amber-200 dark:border-amber-800/50";
   return "bg-red-500/10 border-red-200 dark:border-red-800/50";
 }
 
-function getScoreBarColor(score: number): string {
-  if (score >= 75) return "bg-green-500";
-  if (score >= 50) return "bg-amber-500";
+function getScoreBarColor(score: number, cfg: ProjectHealthSummaryConfig): string {
+  if (score >= cfg.healthyThreshold) return "bg-green-500";
+  if (score >= cfg.criticalThreshold) return "bg-amber-500";
   return "bg-red-500";
 }
 
-function getScoreLabel(score: number): string {
-  if (score >= 75) return "Healthy";
-  if (score >= 50) return "At Risk";
+function getScoreLabel(score: number, cfg: ProjectHealthSummaryConfig): string {
+  if (score >= cfg.healthyThreshold) return "Healthy";
+  if (score >= cfg.criticalThreshold) return "At Risk";
   return "Critical";
 }
 
-export function ProjectHealthSummaryWidget() {
+export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
+  const cfg: ProjectHealthSummaryConfig = { ...DEFAULT_PROJECT_HEALTH_CONFIG, ...(config as Partial<ProjectHealthSummaryConfig>) };
+
   const { data, isLoading } = useQuery<ProjectHealthEntry[]>({
     queryKey: ["/api/project-health/overview"],
     refetchInterval: 300000,
@@ -65,12 +69,16 @@ export function ProjectHealthSummaryWidget() {
     );
   }
 
-  const projects = data || [];
-  const green = projects.filter(p => (p.overall_score || 0) >= 75);
-  const yellow = projects.filter(p => (p.overall_score || 0) >= 50 && (p.overall_score || 0) < 75);
-  const red = projects.filter(p => (p.overall_score || 0) < 50);
-  const avgScore = projects.length > 0
-    ? Math.round(projects.reduce((sum, p) => sum + (p.overall_score || 0), 0) / projects.length)
+  const allProjects = data || [];
+  const projects = cfg.showOnlyCritical
+    ? allProjects.filter(p => (p.overall_score || 0) < cfg.healthyThreshold)
+    : allProjects;
+
+  const green = allProjects.filter(p => (p.overall_score || 0) >= cfg.healthyThreshold);
+  const yellow = allProjects.filter(p => (p.overall_score || 0) >= cfg.criticalThreshold && (p.overall_score || 0) < cfg.healthyThreshold);
+  const red = allProjects.filter(p => (p.overall_score || 0) < cfg.criticalThreshold);
+  const avgScore = allProjects.length > 0
+    ? Math.round(allProjects.reduce((sum, p) => sum + (p.overall_score || 0), 0) / allProjects.length)
     : 0;
 
   return (
@@ -81,15 +89,15 @@ export function ProjectHealthSummaryWidget() {
             <HeartPulse className="w-4 h-4 text-muted-foreground" />
             <CardTitle className="text-sm font-medium">Project Health</CardTitle>
           </div>
-          {projects.length > 0 && (
-            <span className={cn("text-xs font-semibold", getScoreColor(avgScore))} data-testid="avg-health-score">
+          {allProjects.length > 0 && (
+            <span className={cn("text-xs font-semibold", getScoreColor(avgScore, cfg))} data-testid="avg-health-score">
               Avg {avgScore}
             </span>
           )}
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4">
-        {projects.length === 0 ? (
+        {allProjects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-6 text-center" data-testid="project-health-empty">
             <CheckCircle2 className="w-8 h-8 text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">No health snapshots yet</p>
@@ -120,21 +128,21 @@ export function ProjectHealthSummaryWidget() {
                   return (
                     <div
                       key={p.project_id}
-                      className={cn("flex items-center gap-3 rounded-lg border p-2.5", getScoreBg(score))}
+                      className={cn("flex items-center gap-3 rounded-lg border p-2.5", getScoreBg(score, cfg))}
                       data-testid={`health-project-${p.project_id}`}
                     >
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-medium truncate">{p.project_name}</p>
                         <div className="mt-1 w-full h-1.5 bg-muted/50 rounded-full overflow-hidden">
                           <div
-                            className={cn("h-full rounded-full", getScoreBarColor(score))}
+                            className={cn("h-full rounded-full", getScoreBarColor(score, cfg))}
                             style={{ width: `${score}%` }}
                           />
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className={cn("text-sm font-bold tabular-nums", getScoreColor(score))}>{score}</span>
-                        <p className={cn("text-[10px]", getScoreColor(score))}>{getScoreLabel(score)}</p>
+                        <span className={cn("text-sm font-bold tabular-nums", getScoreColor(score, cfg))}>{score}</span>
+                        <p className={cn("text-[10px]", getScoreColor(score, cfg))}>{getScoreLabel(score, cfg)}</p>
                       </div>
                     </div>
                   );

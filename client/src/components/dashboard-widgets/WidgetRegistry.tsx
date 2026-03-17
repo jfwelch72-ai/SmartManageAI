@@ -324,7 +324,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 8,
     maxH: 10,
-    singleton: true,
+    singleton: false,
   },
   {
     type: "NOTIFICATIONS",
@@ -338,7 +338,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 8,
     maxH: 10,
-    singleton: true,
+    singleton: false,
   },
   {
     type: "CALENDAR_EVENTS",
@@ -352,7 +352,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 8,
     maxH: 10,
-    singleton: true,
+    singleton: false,
   },
   {
     type: "AI_TASKS",
@@ -397,7 +397,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 8,
     maxH: 10,
-    singleton: true,
+    singleton: false,
   },
   {
     type: "ACTIVE_BIDS",
@@ -411,7 +411,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     minH: 4,
     maxW: 8,
     maxH: 10,
-    singleton: true,
+    singleton: false,
     roleGate: "management",
   },
   {
@@ -471,7 +471,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 7,
     singleton: false,
     featurePerm: "canManagePayroll",
-    hasSettings: false,
+    hasSettings: true,
   },
   {
     type: "PROJECT_HEALTH_SUMMARY",
@@ -487,7 +487,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     roleGate: "management",
-    hasSettings: false,
+    hasSettings: true,
   },
   {
     type: "RFI_STATUS",
@@ -503,7 +503,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     roleGate: "management",
-    hasSettings: false,
+    hasSettings: true,
   },
   {
     type: "CHANGE_ORDERS_PENDING",
@@ -519,7 +519,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 8,
     singleton: false,
     featurePerm: "canAccessFinancials",
-    hasSettings: false,
+    hasSettings: true,
   },
   {
     type: "SAFETY_ALERTS",
@@ -535,7 +535,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     maxH: 10,
     singleton: false,
     roleGate: "management",
-    hasSettings: false,
+    hasSettings: true,
   },
 ];
 

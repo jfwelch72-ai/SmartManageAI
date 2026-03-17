@@ -2,8 +2,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShieldCheck, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@/lib/utils";
 import { Link } from "wouter";
+import { cn } from "@/lib/utils";
+import { type SafetyAlertsConfig, DEFAULT_SAFETY_ALERTS_CONFIG } from "./SafetyAlertsSettings";
+import type { WidgetComponentProps } from "./WidgetRegistry";
 
 interface SafetySummaryData {
   overdueCount: number;
@@ -26,7 +28,9 @@ function getDaysOverdueColor(days: number): string {
   return "text-amber-600 dark:text-amber-500";
 }
 
-export function SafetyAlertsWidget() {
+export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
+  const cfg: SafetyAlertsConfig = { ...DEFAULT_SAFETY_ALERTS_CONFIG, ...(config as Partial<SafetyAlertsConfig>) };
+
   const { data, isLoading } = useQuery<SafetySummaryData>({
     queryKey: ["/api/dashboard/safety-summary"],
     refetchInterval: 300000,
@@ -58,7 +62,6 @@ export function SafetyAlertsWidget() {
   }
 
   const d = data || { overdueCount: 0, dueThisWeekCount: 0, completionRate: 0, total: 0, completed: 0, overdueItems: [] };
-  const hasAlerts = d.overdueCount > 0 || d.dueThisWeekCount > 0;
 
   return (
     <Card data-testid="safety-alerts-widget">
@@ -84,7 +87,7 @@ export function SafetyAlertsWidget() {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2">
+            <div className={cn("grid gap-2", cfg.showDueThisWeek ? "grid-cols-3" : "grid-cols-2")}>
               <div className="rounded-lg bg-green-500/10 p-2 text-center" data-testid="metric-completion-rate">
                 <p className="text-lg font-bold tabular-nums text-green-600 dark:text-green-400">{d.completionRate}%</p>
                 <p className="text-[10px] text-muted-foreground">Complete</p>
@@ -93,10 +96,12 @@ export function SafetyAlertsWidget() {
                 <p className={cn("text-lg font-bold tabular-nums", d.overdueCount > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>{d.overdueCount}</p>
                 <p className="text-[10px] text-muted-foreground">Overdue</p>
               </div>
-              <div className="rounded-lg bg-amber-500/10 p-2 text-center" data-testid="metric-due-this-week">
-                <p className={cn("text-lg font-bold tabular-nums", d.dueThisWeekCount > 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}>{d.dueThisWeekCount}</p>
-                <p className="text-[10px] text-muted-foreground">Due Soon</p>
-              </div>
+              {cfg.showDueThisWeek && (
+                <div className="rounded-lg bg-amber-500/10 p-2 text-center" data-testid="metric-due-this-week">
+                  <p className={cn("text-lg font-bold tabular-nums", d.dueThisWeekCount > 0 ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}>{d.dueThisWeekCount}</p>
+                  <p className="text-[10px] text-muted-foreground">Due Soon</p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-0.5 mb-1">
@@ -117,7 +122,7 @@ export function SafetyAlertsWidget() {
               <div className="space-y-1.5">
                 <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Overdue</p>
                 <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
-                  {d.overdueItems.map((item) => (
+                  {d.overdueItems.slice(0, cfg.showLimit).map((item) => (
                     <div
                       key={item.id}
                       className="flex items-start gap-2.5 py-2 px-2.5 rounded-md bg-red-500/5 border border-red-200 dark:border-red-800/40"

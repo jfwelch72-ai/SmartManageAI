@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ClipboardList, DollarSign, ShieldCheck, ArrowRight, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
@@ -207,6 +208,11 @@ export function SOVProgressWidget() {
             </div>
           </div>
         )}
+        <div className="pt-2.5 border-t border-border/50">
+          <Link href="/projects" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-projects-sov">
+            View all projects
+          </Link>
+        </div>
       </CardContent>
     </Card>
   );

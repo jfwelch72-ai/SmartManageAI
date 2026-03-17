@@ -121,7 +121,7 @@ export function WeatherForecastWidget({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
 
-  const { data: weather, isLoading, refetch, isFetching } = useQuery<WeatherResponse>({
+  const { data: weather, isLoading, isError, refetch, isFetching } = useQuery<WeatherResponse>({
     queryKey: ['/api/weather/forecast', location.lat, location.lng, 7],
     queryFn: async () => {
       const res = await fetch(`/api/weather/forecast?lat=${location.lat}&lng=${location.lng}&days=7`, {
@@ -131,6 +131,7 @@ export function WeatherForecastWidget({
       return res.json();
     },
     staleTime: 1000 * 60 * 30,
+    retry: 1,
   });
 
   const { data: searchResults } = useQuery<{ results: GeocodeResult[] }>({
@@ -175,6 +176,48 @@ export function WeatherForecastWidget({
                 <div key={i} className="w-24 h-32 bg-muted rounded-lg flex-shrink-0" />
               ))}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError && !weather) {
+    return (
+      <Card data-testid="weather-widget-error">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Cloud className="h-5 w-5 text-primary" />
+              Weather Forecast
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              data-testid="button-retry-weather"
+            >
+              <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground" data-testid="weather-error-state">
+            <Cloud className="w-12 h-12 mb-3 opacity-30" />
+            <p className="text-sm font-medium">Weather data unavailable</p>
+            <p className="text-xs mt-1 opacity-75">Unable to load forecast. Check your connection or try again.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              data-testid="button-retry-weather-cta"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? 'animate-spin' : ''}`} />
+              Retry
+            </Button>
           </div>
         </CardContent>
       </Card>

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Clock, DollarSign, UserMinus, HardHat, Lock } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 
@@ -166,6 +167,11 @@ export function WorkforceSnapshotWidget() {
               </div>
             );
           })}
+        </div>
+        <div className="mt-3 pt-2.5 border-t border-border/50">
+          <Link href="/workforce" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-workforce">
+            View workforce management
+          </Link>
         </div>
       </CardContent>
     </Card>

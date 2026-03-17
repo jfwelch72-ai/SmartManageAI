@@ -7,16 +7,39 @@ import { useProjects } from "@/hooks/use-data";
 
 export function CrewOverviewWidget() {
   const [, setLocation] = useLocation();
-  const { data: projects = [] } = useProjects();
+  const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const activeProjects = projects.filter((p) => p.status === "ACTIVE");
 
-  const { data: crewAssignments = [] } = useQuery<any[]>({
+  const { data: crewAssignments = [], isLoading: assignmentsLoading } = useQuery<any[]>({
     queryKey: ["/api/crew-assignments"],
   });
 
-  const { data: crews = [] } = useQuery<any[]>({
+  const { data: crews = [], isLoading: crewsLoading } = useQuery<any[]>({
     queryKey: ["/api/crews"],
   });
+
+  const isLoading = projectsLoading || assignmentsLoading || crewsLoading;
+
+  if (isLoading) {
+    return (
+      <Card className="h-full" data-testid="card-crew-overview-loading">
+        <CardHeader className="pb-3">
+          <div className="animate-pulse h-4 w-28 bg-muted rounded" />
+        </CardHeader>
+        <CardContent>
+          <div className="animate-pulse grid grid-cols-3 gap-2 mb-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="bg-muted rounded-md p-2 space-y-1.5">
+                <div className="h-6 w-8 bg-muted-foreground/20 rounded mx-auto" />
+                <div className="h-3 w-12 bg-muted-foreground/20 rounded mx-auto" />
+              </div>
+            ))}
+          </div>
+          <div className="animate-pulse h-9 w-full bg-muted rounded" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="h-full" data-testid="card-crew-overview">

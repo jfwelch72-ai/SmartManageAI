@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Briefcase, FileText, DollarSign, Target, HardHat } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
 interface BidPipeline {
@@ -63,6 +64,11 @@ export function BidPipelineWidget() {
             <Briefcase className="w-8 h-8 text-muted-foreground/40 mb-2" />
             <p className="text-sm text-muted-foreground">No bids in the pipeline</p>
             <p className="text-xs text-muted-foreground/70 mt-1">Bid metrics will appear here once bids are created</p>
+          </div>
+          <div className="pt-2.5 border-t border-border/50">
+            <Link href="/bids" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-all-bids">
+              View all bids
+            </Link>
           </div>
         </CardContent>
       </Card>
@@ -137,6 +143,11 @@ export function BidPipelineWidget() {
               </div>
             );
           })}
+        </div>
+        <div className="mt-3 pt-2.5 border-t border-border/50">
+          <Link href="/bids" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-view-all-bids">
+            View all bids
+          </Link>
         </div>
       </CardContent>
     </Card>
