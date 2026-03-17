@@ -13,6 +13,8 @@ export interface PageData {
   metaTitle: string | null;
   metaDescription: string | null;
   keywords: string[] | null;
+  ogImageUrl: string | null;
+  canonicalUrl: string | null;
   showInNavigation: boolean;
   navigationOrder: number;
   navigationLabel: string | null;
