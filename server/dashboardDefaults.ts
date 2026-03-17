@@ -140,6 +140,16 @@ const OPERATIONS_TIER: DashboardLayoutConfig = {
       ],
     },
     {
+      id: 'section-pipeline',
+      title: 'Pipeline & Estimating',
+      columns: 2,
+      collapsed: false,
+      widgets: [
+        { id: 'ops-pipeline', type: 'BID_PIPELINE', x: 0, y: 0, w: 6, h: 4, visible: true, minW: 4, minH: 3, maxW: 12, maxH: 6 },
+        { id: 'ops-active-bids', type: 'ACTIVE_BIDS', x: 6, y: 0, w: 6, h: 6, visible: true, minW: 2, minH: 4, maxW: 8, maxH: 10 },
+      ],
+    },
+    {
       id: 'section-projects-schedule',
       title: 'Projects & Schedule',
       columns: 2,

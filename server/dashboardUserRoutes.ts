@@ -270,24 +270,47 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       case "REVENUE_THIS_MONTH": {
         label = "Revenue This Month";
         const revOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const revTmOrgCond = shouldFilter && orgId ? sql`AND i."organization_id" = ${orgId}` : sql``;
         const revResult = await db.execute(sql`
-          SELECT COALESCE(SUM(sli."billed_amount"::numeric), 0) as total
-          FROM "sov_line_items" sli
-          JOIN "schedule_of_values" sov ON sli."sov_id" = sov."id"
-          JOIN "projects" p ON sov."project_id" = p."id"
-          WHERE sli."updated_at" >= ${periodStart.toISOString()}::timestamp
-            AND sli."updated_at" < ${periodEnd.toISOString()}::timestamp
-            ${revOrgCond}
+          SELECT
+            COALESCE((
+              SELECT SUM(sli."this_period_completed"::numeric)
+              FROM "sov_line_items" sli
+              JOIN "schedule_of_values" sov ON sli."sov_id" = sov."id"
+              JOIN "projects" p ON sov."project_id" = p."id"
+              WHERE sli."updated_at" >= ${periodStart.toISOString()}::timestamp
+                AND sli."updated_at" < ${periodEnd.toISOString()}::timestamp
+                ${revOrgCond}
+            ), 0) +
+            COALESCE((
+              SELECT SUM(i."total"::numeric)
+              FROM "tm_invoices" i
+              WHERE i."status"::text IN ('SENT', 'PAID')
+                AND i."created_at" >= ${periodStart.toISOString()}::timestamp
+                AND i."created_at" < ${periodEnd.toISOString()}::timestamp
+                ${revTmOrgCond}
+            ), 0) as total
         `);
         value = parseFloat((revResult.rows[0] as any)?.total || "0");
         const prevRevResult = await db.execute(sql`
-          SELECT COALESCE(SUM(sli."billed_amount"::numeric), 0) as total
-          FROM "sov_line_items" sli
-          JOIN "schedule_of_values" sov ON sli."sov_id" = sov."id"
-          JOIN "projects" p ON sov."project_id" = p."id"
-          WHERE sli."updated_at" >= ${prevStart.toISOString()}::timestamp
-            AND sli."updated_at" < ${prevEnd.toISOString()}::timestamp
-            ${revOrgCond}
+          SELECT
+            COALESCE((
+              SELECT SUM(sli."this_period_completed"::numeric)
+              FROM "sov_line_items" sli
+              JOIN "schedule_of_values" sov ON sli."sov_id" = sov."id"
+              JOIN "projects" p ON sov."project_id" = p."id"
+              WHERE sli."updated_at" >= ${prevStart.toISOString()}::timestamp
+                AND sli."updated_at" < ${prevEnd.toISOString()}::timestamp
+                ${revOrgCond}
+            ), 0) +
+            COALESCE((
+              SELECT SUM(i."total"::numeric)
+              FROM "tm_invoices" i
+              WHERE i."status"::text IN ('SENT', 'PAID')
+                AND i."created_at" >= ${prevStart.toISOString()}::timestamp
+                AND i."created_at" < ${prevEnd.toISOString()}::timestamp
+                ${revTmOrgCond}
+            ), 0) as total
         `);
         previousValue = parseFloat((prevRevResult.rows[0] as any)?.total || "0");
         isEstimated = false;
@@ -307,58 +330,50 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       }
       case "GROSS_MARGIN": {
         label = "Gross Margin %";
-        const gmOrgCond = shouldFilter && orgId ? sql`AND p."gc_organization_id" = ${orgId}` : sql``;
+        const gmOrgCond = shouldFilter && orgId ? sql`AND pps."organization_id" = ${orgId}` : sql``;
+        // Use the latest profitability snapshot per project to compute org-wide margin
         const gmResult = await db.execute(sql`
+          WITH latest_snapshots AS (
+            SELECT DISTINCT ON (pps."project_id")
+              pps."adjusted_budget"::numeric as adjusted_budget,
+              pps."total_actual_cost"::numeric as total_actual_cost,
+              pps."estimated_margin"::numeric as estimated_margin
+            FROM "project_profitability_snapshots" pps
+            WHERE 1=1 ${gmOrgCond}
+            ORDER BY pps."project_id", pps."created_at" DESC
+          )
           SELECT
-            COALESCE(SUM(COALESCE(p."contract_amount"::numeric, p."budget"::numeric, 0)), 0) as total_revenue,
-            COALESCE(SUM(
-              COALESCE((
-                SELECT SUM(te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
-                         + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75))
-                FROM "time_entries" te
-                JOIN "users" u ON te."user_id" = u."id"
-                WHERE te."project_id" = p."id"
-              ), 0) +
-              COALESCE((
-                SELECT SUM(pi."quantity"::numeric * pi."unit_cost"::numeric)
-                FROM "procurement_items" pi
-                WHERE pi."project_id" = p."id" AND pi."status"::text != 'CANCELLED'
-              ), 0)
-            ), 0) as total_cost
-          FROM "projects" p
-          WHERE p."status"::text = 'ACTIVE'
-            ${gmOrgCond}
+            COALESCE(SUM(adjusted_budget), 0) as total_budget,
+            COALESCE(SUM(total_actual_cost), 0) as total_cost,
+            COALESCE(SUM(estimated_margin), 0) as total_margin
+          FROM latest_snapshots
         `);
-        const totalRevenue = parseFloat((gmResult.rows[0] as any)?.total_revenue || "0");
+        const totalBudget = parseFloat((gmResult.rows[0] as any)?.total_budget || "0");
         const totalCost = parseFloat((gmResult.rows[0] as any)?.total_cost || "0");
-        value = totalRevenue > 0 ? Math.round(((totalRevenue - totalCost) / totalRevenue) * 100) : 0;
+        const totalMargin = parseFloat((gmResult.rows[0] as any)?.total_margin || "0");
+        value = totalBudget > 0 ? Math.round((totalMargin / totalBudget) * 100) : 0;
+
+        // Previous period: snapshots created in the previous month window
+        const prevGmOrgCond = shouldFilter && orgId ? sql`AND pps."organization_id" = ${orgId}` : sql``;
         const prevGmResult = await db.execute(sql`
+          WITH prev_latest AS (
+            SELECT DISTINCT ON (pps."project_id")
+              pps."adjusted_budget"::numeric as adjusted_budget,
+              pps."total_actual_cost"::numeric as total_actual_cost,
+              pps."estimated_margin"::numeric as estimated_margin
+            FROM "project_profitability_snapshots" pps
+            WHERE pps."created_at" < ${prevEnd.toISOString()}::timestamp
+              ${prevGmOrgCond}
+            ORDER BY pps."project_id", pps."created_at" DESC
+          )
           SELECT
-            COALESCE(SUM(COALESCE(p."contract_amount"::numeric, p."budget"::numeric, 0)), 0) as total_revenue,
-            COALESCE(SUM(
-              COALESCE((
-                SELECT SUM(te."hours_regular"::numeric * COALESCE(u."cost_rate_regular"::numeric, 50)
-                         + te."hours_overtime"::numeric * COALESCE(u."cost_rate_overtime"::numeric, 75))
-                FROM "time_entries" te
-                JOIN "users" u ON te."user_id" = u."id"
-                WHERE te."project_id" = p."id"
-                  AND te."date" < ${prevEnd.toISOString()}::date
-              ), 0) +
-              COALESCE((
-                SELECT SUM(pi."quantity"::numeric * pi."unit_cost"::numeric)
-                FROM "procurement_items" pi
-                WHERE pi."project_id" = p."id" AND pi."status"::text != 'CANCELLED'
-                  AND pi."created_at" < ${prevEnd.toISOString()}::timestamp
-              ), 0)
-            ), 0) as total_cost
-          FROM "projects" p
-          WHERE p."status"::text IN ('ACTIVE', 'COMPLETED')
-            AND p."created_at" < ${prevEnd.toISOString()}::timestamp
-            ${gmOrgCond}
+            COALESCE(SUM(adjusted_budget), 0) as total_budget,
+            COALESCE(SUM(estimated_margin), 0) as total_margin
+          FROM prev_latest
         `);
-        const prevRevenue = parseFloat((prevGmResult.rows[0] as any)?.total_revenue || "0");
-        const prevCost = parseFloat((prevGmResult.rows[0] as any)?.total_cost || "0");
-        previousValue = prevRevenue > 0 ? Math.round(((prevRevenue - prevCost) / prevRevenue) * 100) : 0;
+        const prevBudget = parseFloat((prevGmResult.rows[0] as any)?.total_budget || "0");
+        const prevMargin = parseFloat((prevGmResult.rows[0] as any)?.total_margin || "0");
+        previousValue = prevBudget > 0 ? Math.round((prevMargin / prevBudget) * 100) : 0;
         isEstimated = false;
         break;
       }
@@ -2424,7 +2439,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
 // ====================
 // Labor Utilization Widget
 // ====================
-router.get("/api/dashboard/labor-utilization", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER", "HR_MANAGER"], "canManagePayroll"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -2459,9 +2474,8 @@ router.get("/api/dashboard/labor-utilization", requireAuth, async (req: AuthRequ
     const activeWorkers = (activeResult.rows[0] as any)?.count || 0;
     const workedHours = parseFloat((activeResult.rows[0] as any)?.worked_hours || "0");
 
-    // Standard 8-hour day assumption
-    const availableHours = totalWorkers * 8;
-    const utilizedPercent = availableHours > 0 ? Math.round((workedHours / availableHours) * 100) : 0;
+    // Worker-based utilization: workers with time entries today / total active field workers * 100
+    const utilizedPercent = totalWorkers > 0 ? Math.round((activeWorkers / totalWorkers) * 100) : 0;
 
     // Billable hours (time on active projects)
     const billableResult = await db.execute(sql`
@@ -2475,24 +2489,25 @@ router.get("/api/dashboard/labor-utilization", requireAuth, async (req: AuthRequ
     const billableHours = parseFloat((billableResult.rows[0] as any)?.billable_hours || "0");
     const billablePercent = workedHours > 0 ? Math.round((billableHours / workedHours) * 100) : 0;
 
-    // 7-day sparkline
+    // 7-day sparkline (worker-based: distinct workers per day / total workers)
     const sparkline: { date: string; utilizedPercent: number }[] = [];
     for (let i = 6; i >= 0; i--) {
       const dayDate = new Date(now);
       dayDate.setDate(now.getDate() - i);
       const dayStr = dayDate.toISOString().split('T')[0];
       const dayResult = await db.execute(sql`
-        SELECT COALESCE(SUM(te."hours_regular"::numeric + te."hours_overtime"::numeric), 0) as worked
+        SELECT COUNT(DISTINCT te."user_id")::int as active_workers
         FROM "time_entries" te
         JOIN "users" u ON te."user_id" = u."id"
         WHERE te."date" = ${dayStr}::date
           ${orgCond}
       `);
-      const dayHours = parseFloat((dayResult.rows[0] as any)?.worked || "0");
-      const dayPct = availableHours > 0 ? Math.round((dayHours / availableHours) * 100) : 0;
+      const dayActive = parseInt((dayResult.rows[0] as any)?.active_workers || "0");
+      const dayPct = totalWorkers > 0 ? Math.round((dayActive / totalWorkers) * 100) : 0;
       sparkline.push({ date: dayStr, utilizedPercent: Math.min(dayPct, 100) });
     }
 
+    const availableHours = totalWorkers * 8;
     res.json({ utilizedPercent: Math.min(utilizedPercent, 100), workedHours, availableHours, billablePercent, activeWorkers, totalWorkers, sparkline });
   } catch (error) {
     console.error("Labor utilization error:", error);
@@ -2503,7 +2518,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, async (req: AuthRequ
 // ====================
 // Safety Summary Widget
 // ====================
-router.get("/api/dashboard/safety-summary", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SAFETY_MANAGER", "HR_MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -2569,7 +2584,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, async (req: AuthRequest
 // ====================
 // Change Orders Pending Widget
 // ====================
-router.get("/api/dashboard/change-orders-pending", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "OFFICE_MANAGER"], "canAccessFinancials"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
@@ -2605,7 +2620,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, async (req: Auth
       JOIN "projects" p ON co."project_id" = p."id"
       WHERE co."status"::text = 'SUBMITTED'
         ${orgCond}
-      ORDER BY co."created_at" ASC
+      ORDER BY co."created_at" DESC
       LIMIT 5
     `);
 
