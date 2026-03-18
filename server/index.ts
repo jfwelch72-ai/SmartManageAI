@@ -8,6 +8,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { initializeEventBus } from "./events";
+import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 
 const app = express();
 
@@ -164,6 +165,13 @@ app.use((req, res, next) => {
         console.log('AI Notes Scheduler started successfully');
       } catch (error) {
         console.error('Failed to start AI Notes Scheduler:', error);
+      }
+
+      // Initialize nightly GCS orphan scan (runs at 02:00 daily)
+      try {
+        startOrphanScanScheduler();
+      } catch (error) {
+        console.error('Failed to start Storage Orphan Scan Scheduler:', error);
       }
       
       console.log('AI auto-scan schedulers ENABLED (production mode)');

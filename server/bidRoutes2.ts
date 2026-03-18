@@ -2023,6 +2023,17 @@ router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMI
     const [doc] = await db.select().from(bidDocuments).where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id))).limit(1);
     if (!doc) return res.status(404).json({ error: "Document not found" });
 
+    if (doc.objectKey) {
+      try {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        const objectFile = await objectStorageService.getObjectEntityFile(doc.objectKey);
+        await objectFile.delete();
+      } catch (error) {
+        console.error("Error deleting bid document from object storage:", error);
+      }
+    }
+
     await db.delete(bidDocuments).where(eq(bidDocuments.id, req.params.docId));
     res.json({ success: true });
   } catch (error) {

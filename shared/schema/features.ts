@@ -5884,3 +5884,22 @@ export const insertProjectProfitabilitySnapshotSchema = createInsertSchema(proje
 export type InsertProjectProfitabilitySnapshot = z.infer<typeof insertProjectProfitabilitySnapshotSchema>;
 export type ProjectProfitabilitySnapshot = typeof projectProfitabilitySnapshots.$inferSelect;
 
+// ============================================
+// Object ACL Policy mirror (resilience fallback for GCS metadata)
+// ============================================
+export const objectAclPolicies = pgTable("object_acl_policies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  objectKey: text("object_key").notNull().unique(),
+  owner: text("owner").notNull(),
+  organizationId: text("organization_id").notNull(),
+  visibility: text("visibility").notNull().default("private"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  objectKeyIdx: index("object_acl_policies_object_key_idx").on(table.objectKey),
+  orgIdx: index("object_acl_policies_org_idx").on(table.organizationId),
+}));
+
+export const insertObjectAclPolicySchema = createInsertSchema(objectAclPolicies).omit({ id: true, updatedAt: true });
+export type InsertObjectAclPolicy = z.infer<typeof insertObjectAclPolicySchema>;
+export type ObjectAclPolicyRecord = typeof objectAclPolicies.$inferSelect;
+

@@ -641,6 +641,23 @@ const upload = multer({
         .where(and(eq(userPhotos.id, photoId), eq(userPhotos.userId, userId))).limit(1);
       if (!photo) { res.status(404).json({ error: "Photo not found" }); return; }
 
+      if (photo.objectKey) {
+        try {
+          const { objectStorageClient } = await import("./objectStorage");
+          const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+          const fullPath = `${privateDir}/${photo.objectKey}`;
+          const pathStr = fullPath.startsWith("/") ? fullPath.slice(1) : fullPath;
+          const parts = pathStr.split("/");
+          const bucketName = parts[0];
+          const objectName = parts.slice(1).join("/");
+          const bucket = objectStorageClient.bucket(bucketName);
+          const objectFile = bucket.file(objectName);
+          await objectFile.delete().catch(() => {});
+        } catch (e) {
+          console.error("Error deleting user photo from storage:", e);
+        }
+      }
+
       await db.delete(userPhotos).where(eq(userPhotos.id, photoId));
       res.json({ message: "Photo deleted" });
     } catch (error) {

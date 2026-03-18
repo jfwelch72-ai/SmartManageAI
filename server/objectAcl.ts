@@ -1,6 +1,6 @@
 import { File } from "@google-cloud/storage";
 import { db } from "./db";
-import { filePermissions } from "@shared/schema";
+import { filePermissions, objectAclPolicies } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 
 const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";
@@ -41,17 +41,67 @@ export async function setObjectAclPolicy(
       [ACL_POLICY_METADATA_KEY]: JSON.stringify(aclPolicy),
     },
   });
+
+  const objectKey = objectFile.name;
+  try {
+    await db
+      .insert(objectAclPolicies)
+      .values({
+        objectKey,
+        owner: aclPolicy.owner,
+        organizationId: aclPolicy.organizationId,
+        visibility: aclPolicy.visibility,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: objectAclPolicies.objectKey,
+        set: {
+          owner: aclPolicy.owner,
+          organizationId: aclPolicy.organizationId,
+          visibility: aclPolicy.visibility,
+          updatedAt: new Date(),
+        },
+      });
+  } catch (dbErr) {
+    console.error("Failed to mirror ACL policy to DB:", dbErr);
+  }
 }
 
 export async function getObjectAclPolicy(
   objectFile: File,
 ): Promise<ObjectAclPolicy | null> {
-  const [metadata] = await objectFile.getMetadata();
-  const aclPolicy = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
-  if (!aclPolicy) {
-    return null;
+  try {
+    const [metadata] = await objectFile.getMetadata();
+    const aclPolicyStr = metadata?.metadata?.[ACL_POLICY_METADATA_KEY];
+    if (aclPolicyStr) {
+      return JSON.parse(aclPolicyStr as string);
+    }
+  } catch (gcsErr) {
+    console.warn(
+      `GCS metadata fetch failed for ${objectFile.name}, falling back to DB:`,
+      gcsErr,
+    );
   }
-  return JSON.parse(aclPolicy as string);
+
+  try {
+    const [row] = await db
+      .select()
+      .from(objectAclPolicies)
+      .where(eq(objectAclPolicies.objectKey, objectFile.name))
+      .limit(1);
+
+    if (row) {
+      return {
+        owner: row.owner,
+        organizationId: row.organizationId,
+        visibility: row.visibility as "public" | "private",
+      };
+    }
+  } catch (dbErr) {
+    console.error("DB ACL fallback also failed:", dbErr);
+  }
+
+  return null;
 }
 
 export async function canAccessObject({

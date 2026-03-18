@@ -217,6 +217,17 @@ router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res) => {
       return;
     }
 
+    if (mediaItem.objectKey) {
+      try {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        const objectFile = await objectStorageService.getObjectEntityFile(mediaItem.objectKey);
+        await objectFile.delete();
+      } catch (error) {
+        console.error("Error deleting media file from object storage:", error);
+      }
+    }
+
     await db.delete(media).where(eq(media.id, req.params.id));
     res.json({ success: true });
   } catch (error) {

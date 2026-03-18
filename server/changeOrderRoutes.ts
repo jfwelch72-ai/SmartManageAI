@@ -1225,6 +1225,17 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
     // Remove file from attachments
     const updatedAttachments = attachments.filter((f: any) => f.id !== req.params.fileId);
 
+    if (fileToDelete.objectKey) {
+      try {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        const objectFile = await objectStorageService.getObjectEntityFile(fileToDelete.objectKey);
+        await objectFile.delete();
+      } catch (error) {
+        console.error("Error deleting change order attachment from object storage:", error);
+      }
+    }
+
     // Update change order
     const [updatedOrder] = await db
       .update(changeOrders)

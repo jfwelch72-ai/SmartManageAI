@@ -1034,7 +1034,50 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
     await db.delete(dailyScopeProgress).where(eq(dailyScopeProgress.projectId, project.id));
     await db.delete(scopeItems).where(eq(scopeItems.projectId, project.id));
     
+    // GCS cleanup for change order attachments before DB delete
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const projectChangeOrders = await db.select({ attachmentsJson: changeOrders.attachmentsJson }).from(changeOrders).where(eq(changeOrders.projectId, project.id));
+      for (const co of projectChangeOrders) {
+        if (co.attachmentsJson) {
+          let attachments: any[] = [];
+          try { attachments = JSON.parse(co.attachmentsJson); } catch (_) {}
+          for (const att of attachments) {
+            if (att.objectKey) {
+              try {
+                const objectFile = await objectStorageService.getObjectEntityFile(att.objectKey);
+                await objectFile.delete();
+              } catch (e) {
+                console.error("Error deleting change order attachment GCS object:", e);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error during change order attachment GCS cleanup:", e);
+    }
     await db.delete(changeOrders).where(eq(changeOrders.projectId, project.id));
+
+    // GCS cleanup for receipts before DB delete
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const projectReceipts = await db.select({ objectKey: receipts.objectKey }).from(receipts).where(eq(receipts.projectId, project.id));
+      for (const receipt of projectReceipts) {
+        if (receipt.objectKey) {
+          try {
+            const objectFile = await objectStorageService.getObjectEntityFile(receipt.objectKey);
+            await objectFile.delete();
+          } catch (e) {
+            console.error("Error deleting receipt GCS object:", e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error during receipt GCS cleanup:", e);
+    }
     await db.delete(receipts).where(eq(receipts.projectId, project.id));
     await db.delete(procurementItems).where(eq(procurementItems.projectId, project.id));
     
@@ -1045,12 +1088,49 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
     await db.delete(projectPlans).where(eq(projectPlans.projectId, project.id));
     await db.delete(takeoffSheets).where(eq(takeoffSheets.projectId, project.id));
     await db.delete(quantityCategories).where(eq(quantityCategories.projectId, project.id));
+
+    // GCS cleanup for plan documents before DB delete
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const projectDocs = await db.select({ objectKey: planDocuments.objectKey }).from(planDocuments).where(eq(planDocuments.projectId, project.id));
+      for (const doc of projectDocs) {
+        if (doc.objectKey) {
+          try {
+            const objectFile = await objectStorageService.getObjectEntityFile(doc.objectKey);
+            await objectFile.delete();
+          } catch (e) {
+            console.error("Error deleting plan document GCS object:", e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error during plan document GCS cleanup:", e);
+    }
     await db.delete(planDocuments).where(eq(planDocuments.projectId, project.id));
     
     await db.delete(projectNotes).where(eq(projectNotes.projectId, project.id));
     
     await db.delete(calendarEvents).where(eq(calendarEvents.projectId, project.id));
-    
+
+    // GCS cleanup for media before DB delete
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const projectMedia = await db.select({ objectKey: media.objectKey }).from(media).where(eq(media.projectId, project.id));
+      for (const m of projectMedia) {
+        if (m.objectKey) {
+          try {
+            const objectFile = await objectStorageService.getObjectEntityFile(m.objectKey);
+            await objectFile.delete();
+          } catch (e) {
+            console.error("Error deleting media GCS object:", e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Error during media GCS cleanup:", e);
+    }
     await db.delete(media).where(eq(media.projectId, project.id));
     
     await db.delete(tasks).where(eq(tasks.projectId, project.id));

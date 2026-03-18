@@ -568,6 +568,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin endpoint: manually trigger orphan scan
+  app.post("/api/admin/storage/orphan-scan", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+    try {
+      const { runOrphanScan } = await import("./storageOrphanScanJob");
+      const result = await runOrphanScan();
+      res.json(result);
+    } catch (err: any) {
+      console.error("Orphan scan error:", err);
+      res.status(500).json({ error: "Orphan scan failed", detail: err?.message });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
