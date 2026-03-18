@@ -1,5 +1,7 @@
 import { db } from "../db";
 import { notifications } from "@shared/schema";
+import { deliverNotifications } from "./notificationDelivery";
+import { logError } from "../utils/logger";
 
 type DocumentEventType = "RFI" | "SUBMITTAL" | "TRANSMITTAL" | "ADDENDUM" | "DOCUMENT_REVISION";
 
@@ -29,8 +31,11 @@ export async function notifyDocumentEvent(
       relatedEntityType: type,
     }));
 
-    await db.insert(notifications).values(notificationValues);
+    const inserted = await db.insert(notifications).values(notificationValues).returning();
+    setImmediate(() => {
+      deliverNotifications(inserted as Parameters<typeof deliverNotifications>[0]).catch(() => undefined);
+    });
   } catch (error) {
-    console.error(`[DocumentNotification] Failed to create notifications for ${type} ${entityId}:`, error);
+    logError(`[DocumentNotification] Failed to create notifications for ${type} ${entityId}`, { error: String(error) });
   }
 }

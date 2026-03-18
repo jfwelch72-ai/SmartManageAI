@@ -2,6 +2,7 @@ import { db } from "../db";
 import { notifications, users } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
+import { deliverNotifications } from "./notificationDelivery";
 
 const APPROVER_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
 
@@ -29,11 +30,14 @@ export async function notifyUsers(
       relatedEntityType: params.relatedEntityType,
     }));
 
-    await db.insert(notifications).values(records);
+    const inserted = await db.insert(notifications).values(records).returning();
     logInfo("Approval notifications created", {
       type: params.type,
       recipientCount: userIds.length,
       entityId: params.relatedEntityId,
+    });
+    setImmediate(() => {
+      deliverNotifications(inserted as Parameters<typeof deliverNotifications>[0]).catch(() => undefined);
     });
   } catch (error) {
     logError("Failed to create approval notifications", { error: String(error), type: params.type });

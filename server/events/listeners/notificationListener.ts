@@ -3,6 +3,7 @@ import { db } from "../../db";
 import { notifications, users } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { logError } from "../../utils/logger";
+import { deliverNotifications } from "../../services/notificationDelivery";
 import type {
   ChangeOrderApprovedEvent,
   ChangeOrderRejectedEvent,
@@ -51,7 +52,10 @@ async function insertNotifications(
     relatedEntityId,
     relatedEntityType,
   }));
-  await db.insert(notifications).values(records);
+  const inserted = await db.insert(notifications).values(records).returning();
+  setImmediate(() => {
+    deliverNotifications(inserted as Parameters<typeof deliverNotifications>[0]).catch(() => undefined);
+  });
 }
 
 export function registerNotificationListener(): void {

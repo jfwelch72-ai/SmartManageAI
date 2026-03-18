@@ -32,6 +32,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "PROCUREMENT_PO_SUBMITTED", "PROCUREMENT_PO_APPROVED", "PROCUREMENT_PO_REJECTED",
   "CRM_STAGE_CHANGE", "CRM_IDLE_OPPORTUNITY",
   "TASK_MENTIONED",
+  "DEADLINE_WARNING", "REMINDER",
 ]);
 
 // Messaging enums

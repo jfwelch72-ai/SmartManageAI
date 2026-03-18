@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -33,7 +33,9 @@ import {
   ShieldCheck,
   FileText,
   TrendingUp,
+  Bell,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import SkillsCertificationsTab from "@/components/SkillsCertificationsTab";
 import PerformanceHistoryTab from "@/components/PerformanceHistoryTab";
 
@@ -236,6 +238,51 @@ export default function ProfilePage() {
 
   const { data: myPhotos = [], isLoading: loadingPhotos } = useQuery<UserPhoto[]>({
     queryKey: ["/api/auth/my-photos"],
+  });
+
+  interface ChannelPrefsData {
+    emailEnabled: boolean;
+    smsEnabled: boolean;
+    pushEnabled: boolean;
+    teamsEnabled: boolean;
+    slackEnabled: boolean;
+  }
+
+  const { data: notifPrefs, isLoading: loadingNotifPrefs } = useQuery<{ channel: ChannelPrefsData; typeOverrides: unknown[] }>({
+    queryKey: ["/api/notifications/preferences"],
+  });
+
+  const [channelPrefs, setChannelPrefs] = useState<ChannelPrefsData>({
+    emailEnabled: true,
+    smsEnabled: false,
+    pushEnabled: false,
+    teamsEnabled: false,
+    slackEnabled: false,
+  });
+
+  useEffect(() => {
+    if (notifPrefs?.channel) {
+      setChannelPrefs({
+        emailEnabled: notifPrefs.channel.emailEnabled,
+        smsEnabled: notifPrefs.channel.smsEnabled,
+        pushEnabled: notifPrefs.channel.pushEnabled,
+        teamsEnabled: notifPrefs.channel.teamsEnabled,
+        slackEnabled: notifPrefs.channel.slackEnabled,
+      });
+    }
+  }, [notifPrefs]);
+
+  const updateChannelPrefsMutation = useMutation({
+    mutationFn: async (prefs: ChannelPrefsData) => {
+      return await apiRequest("PUT", "/api/notifications/preferences/channel", prefs);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/preferences"] });
+      toast({ title: "Notification preferences saved" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save preferences", description: error.message, variant: "destructive" });
+    },
   });
 
   const handleAvatarUpload = useCallback(async (file: File) => {
@@ -970,6 +1017,96 @@ export default function ProfilePage() {
               {changePasswordMutation.isPending ? "Changing..." : "Change Password"}
             </Button>
           </div>
+        </div>
+
+        <div className="border-t pt-6 mt-6">
+          <h2 className="text-xl font-bold mb-1 flex items-center gap-2" data-testid="text-notification-prefs-title">
+            <Bell className="h-5 w-5" />
+            Notification Preferences
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">Choose how you want to receive notifications.</p>
+
+          {loadingNotifPrefs ? (
+            <div className="space-y-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-8 w-full" />
+            </div>
+          ) : (
+            <div className="space-y-4 max-w-lg">
+              <div className="flex items-center justify-between" data-testid="row-pref-email">
+                <div>
+                  <p className="text-sm font-medium">Email</p>
+                  <p className="text-xs text-muted-foreground">Receive notifications via email</p>
+                </div>
+                <Switch
+                  checked={channelPrefs.emailEnabled}
+                  onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, emailEnabled: checked }))}
+                  data-testid="switch-pref-email"
+                />
+              </div>
+
+              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-sms">
+                <div>
+                  <p className="text-sm font-medium">SMS <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                  <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                </div>
+                <Switch
+                  checked={channelPrefs.smsEnabled}
+                  disabled
+                  data-testid="switch-pref-sms"
+                />
+              </div>
+
+              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-push">
+                <div>
+                  <p className="text-sm font-medium">Push Notifications <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                  <p className="text-xs text-muted-foreground">Browser and mobile push alerts</p>
+                </div>
+                <Switch
+                  checked={channelPrefs.pushEnabled}
+                  disabled
+                  data-testid="switch-pref-push"
+                />
+              </div>
+
+              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-teams">
+                <div>
+                  <p className="text-sm font-medium">Microsoft Teams <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                  <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
+                </div>
+                <Switch
+                  checked={channelPrefs.teamsEnabled}
+                  disabled
+                  data-testid="switch-pref-teams"
+                />
+              </div>
+
+              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-slack">
+                <div>
+                  <p className="text-sm font-medium">Slack <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                  <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
+                </div>
+                <Switch
+                  checked={channelPrefs.slackEnabled}
+                  disabled
+                  data-testid="switch-pref-slack"
+                />
+              </div>
+
+              <Button
+                onClick={() => updateChannelPrefsMutation.mutate(channelPrefs)}
+                disabled={updateChannelPrefsMutation.isPending}
+                data-testid="button-save-notification-prefs"
+              >
+                {updateChannelPrefsMutation.isPending ? (
+                  <Fragment><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</Fragment>
+                ) : (
+                  <Fragment><Bell className="h-4 w-4 mr-2" />Save Preferences</Fragment>
+                )}
+              </Button>
+            </div>
+          )}
         </div>
         </div>
         )}

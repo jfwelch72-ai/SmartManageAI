@@ -658,14 +658,20 @@ const messagingSetup = (async () => {
           if (t.assignedToId && t.assignedToId !== userId && !notifiedUsers.has(t.assignedToId)) {
             notifiedUsers.add(t.assignedToId);
             // Link target: /projects?taskId=<id> — encoded in relatedEntityType/Id for notification routing
-            await db.insert(notifications).values({
+            const [insertedNotif] = await db.insert(notifications).values({
               userId: t.assignedToId,
               type: "TASK_MENTIONED",
               title: "You were mentioned in a message",
               message: `Someone referenced your task "${t.title}" in a conversation.`,
               relatedEntityId: t.id,
               relatedEntityType: "task",
-            });
+            }).returning();
+            if (insertedNotif) {
+              const { deliverNotification } = await import("./services/notificationDelivery");
+              setImmediate(() => {
+                deliverNotification(insertedNotif as Parameters<typeof deliverNotification>[0]).catch(() => undefined);
+              });
+            }
           }
         }
       }

@@ -2163,3 +2163,46 @@ export const insertDomainEventSchema = createInsertSchema(domainEvents).omit({
 export type InsertDomainEvent = z.infer<typeof insertDomainEventSchema>;
 export type DomainEventRecord = typeof domainEvents.$inferSelect;
 
+export const notificationChannelPrefs = pgTable("notification_channel_prefs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }).unique(),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  smsEnabled: boolean("sms_enabled").notNull().default(false),
+  pushEnabled: boolean("push_enabled").notNull().default(false),
+  teamsEnabled: boolean("teams_enabled").notNull().default(false),
+  slackEnabled: boolean("slack_enabled").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertNotificationChannelPrefsSchema = createInsertSchema(notificationChannelPrefs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertNotificationChannelPrefs = z.infer<typeof insertNotificationChannelPrefsSchema>;
+export type NotificationChannelPrefs = typeof notificationChannelPrefs.$inferSelect;
+
+export const notificationTypePrefs = pgTable("notification_type_prefs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  notificationType: notificationTypeEnum("notification_type").notNull(),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  smsEnabled: boolean("sms_enabled").notNull().default(false),
+  pushEnabled: boolean("push_enabled").notNull().default(false),
+  teamsEnabled: boolean("teams_enabled").notNull().default(false),
+  slackEnabled: boolean("slack_enabled").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userTypeUnique: unique().on(table.userId, table.notificationType),
+}));
+
+export const insertNotificationTypePrefsSchema = createInsertSchema(notificationTypePrefs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertNotificationTypePrefs = z.infer<typeof insertNotificationTypePrefsSchema>;
+export type NotificationTypePrefs = typeof notificationTypePrefs.$inferSelect;
+

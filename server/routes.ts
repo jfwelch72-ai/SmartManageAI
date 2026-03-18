@@ -163,6 +163,7 @@ import scopeConfigRoutes from "./scopeConfigRoutes";
 import projectContentRoutes from "./projectContentRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
 import notificationRoutes2 from "./notificationRoutes2";
+import notificationPreferencesRoutes from "./notificationPreferencesRoutes";
 import auditBillingStorageRoutes from "./auditBillingStorageRoutes";
 import crewRoutes2 from "./crewRoutes2";
 import skillRoutes from "./skillRoutes";
@@ -510,6 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Notifications Routes
   app.use(notificationRoutes2);
+  app.use(notificationPreferencesRoutes);
   // Audit Log, Billing Events, Object Storage Routes
   app.use(auditBillingStorageRoutes);
   // Crews & Crew Assignments Routes
