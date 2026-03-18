@@ -47,6 +47,7 @@ async function fanOutToWebhooks(event: DomainEvent): Promise<void> {
         event.type,
         {
           event: event.type,
+          version: event.version,
           orgId: event.orgId,
           actorId: event.actorId,
           timestamp: event.timestamp.toISOString(),
