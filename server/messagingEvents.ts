@@ -6,13 +6,22 @@ interface SseClient {
   res: Response;
 }
 
-const clients = new Set<SseClient>();
+/**
+ * Registry of active SSE connections keyed by userId.
+ * Using a Map allows O(1) per-user lookup and easy per-user lifecycle management.
+ * Multiple tabs for the same user will overwrite the previous entry (last-write-wins),
+ * which is acceptable since EventSource auto-reconnects on close.
+ */
+const clients = new Map<string, SseClient>();
 
 export function registerSseClient(userId: string, orgId: string, res: Response): () => void {
   const client: SseClient = { userId, orgId, res };
-  clients.add(client);
+  clients.set(userId, client);
   return () => {
-    clients.delete(client);
+    // Only remove if this is still the registered client for this user
+    if (clients.get(userId) === client) {
+      clients.delete(userId);
+    }
   };
 }
 
@@ -20,7 +29,7 @@ function sendEvent(client: SseClient, event: string, data: unknown): void {
   try {
     client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   } catch {
-    clients.delete(client);
+    clients.delete(client.userId);
   }
 }
 
@@ -35,8 +44,9 @@ export function emitMessageNew(
   participantUserIds: ReadonlySet<string>,
   message: unknown,
 ): void {
-  for (const client of clients) {
-    if (client.orgId === orgId && participantUserIds.has(client.userId)) {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
       sendEvent(client, "message_new", { conversationId, message });
     }
   }
@@ -55,12 +65,10 @@ export function emitTyping(
   firstName: string,
   lastName: string,
 ): void {
-  for (const client of clients) {
-    if (
-      client.orgId === orgId &&
-      participantUserIds.has(client.userId) &&
-      client.userId !== senderUserId
-    ) {
+  for (const uid of participantUserIds) {
+    if (uid === senderUserId) continue;
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
       sendEvent(client, "user_typing", { conversationId, userId: senderUserId, firstName, lastName });
     }
   }

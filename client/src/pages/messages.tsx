@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useMessagingEvents } from "@/hooks/use-messaging-events";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -272,14 +273,9 @@ export function TeamMessagesContent() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // ── SSE real-time state ──
-  const [sseLive, setSseLive] = useState(false);
-  const sseRef = useRef<EventSource | null>(null);
-  const [typingNames, setTypingNames] = useState<Record<string, string>>({});
-  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // ── SSE real-time — handled by dedicated hook ──
+  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId);
   const lastTypingSignalRef = useRef<number>(0);
-  // Keep a stable ref to selectedConversationId for use inside SSE callbacks
-  const selectedConvIdRef = useRef<string | null>(selectedConversationId);
 
   useEffect(() => {
     const checkMobile = () => setIsMobileView(window.innerWidth < 768);
@@ -287,82 +283,6 @@ export function TeamMessagesContent() {
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
-
-  // Keep ref in sync so SSE callbacks always read the latest conversation
-  useEffect(() => {
-    selectedConvIdRef.current = selectedConversationId;
-    // Clear typing names when switching conversations
-    setTypingNames({});
-  }, [selectedConversationId]);
-
-  // ── SSE connection ──
-  useEffect(() => {
-    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
-    sseRef.current = es;
-
-    const handleConnected = () => setSseLive(true);
-
-    const handleMessageNew = (e: MessageEvent) => {
-      try {
-        const { conversationId: convId, message } = JSON.parse(e.data) as {
-          conversationId: string;
-          message: Message;
-        };
-        // Append to active conversation cache if it matches
-        if (convId === selectedConvIdRef.current) {
-          queryClient.setQueryData<Message[]>(
-            ["/api/conversations", convId, "messages"],
-            (prev = []) => {
-              const exists = prev.some(m => m.id === message.id);
-              return exists ? prev : [...prev, message];
-            }
-          );
-        }
-        // Refresh sidebar conversation list (unread counts, last message)
-        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-      } catch {
-        // malformed event — ignore
-      }
-    };
-
-    const handleTyping = (e: MessageEvent) => {
-      try {
-        const { conversationId: convId, userId: uid, firstName, lastName } = JSON.parse(e.data) as {
-          conversationId: string;
-          userId: string;
-          firstName: string;
-          lastName: string;
-        };
-        if (convId !== selectedConvIdRef.current) return;
-        const name = `${firstName} ${lastName}`.trim();
-        setTypingNames(prev => ({ ...prev, [uid]: name }));
-        if (typingTimersRef.current[uid]) clearTimeout(typingTimersRef.current[uid]);
-        typingTimersRef.current[uid] = setTimeout(() => {
-          setTypingNames(prev => {
-            const next = { ...prev };
-            delete next[uid];
-            return next;
-          });
-        }, 3000);
-      } catch {
-        // malformed event — ignore
-      }
-    };
-
-    es.addEventListener("connected", handleConnected);
-    es.addEventListener("message_new", handleMessageNew);
-    es.addEventListener("user_typing", handleTyping);
-    es.onerror = () => setSseLive(false);
-
-    return () => {
-      es.removeEventListener("connected", handleConnected);
-      es.removeEventListener("message_new", handleMessageNew);
-      es.removeEventListener("user_typing", handleTyping);
-      es.close();
-      setSseLive(false);
-      sseRef.current = null;
-    };
-  }, []); // Mount once — stable callbacks via refs
 
   // ── Data queries ──
   const { data: conversations = [], isLoading: conversationsLoading } = useQuery<Conversation[]>({
