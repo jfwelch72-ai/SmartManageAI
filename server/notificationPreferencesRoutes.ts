@@ -2,8 +2,11 @@ import { Router } from "express";
 import { db } from "./db";
 import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { isValidE164 } from "./services/smsService";
+import { isValidTeamsWebhookUrl } from "./services/teamsService";
+import { isValidSlackWebhookUrl } from "./services/slackService";
 
 const router = Router();
 
@@ -23,6 +26,12 @@ const typePrefsSchema = z.record(
 const preferencesBodySchema = z.object({
   channel: channelPrefsSchema,
   typeOverrides: typePrefsSchema.optional(),
+});
+
+const webhooksBodySchema = z.object({
+  smsPhoneNumber: z.string().nullable().optional(),
+  teamsWebhookUrl: z.string().nullable().optional(),
+  slackWebhookUrl: z.string().nullable().optional(),
 });
 
 router.get("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res) => {
@@ -48,6 +57,9 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
             pushEnabled: channelRow.pushEnabled,
             teamsEnabled: channelRow.teamsEnabled,
             slackEnabled: channelRow.slackEnabled,
+            smsPhoneNumber: channelRow.smsPhoneNumber ?? null,
+            teamsWebhookUrl: channelRow.teamsWebhookUrl ?? null,
+            slackWebhookUrl: channelRow.slackWebhookUrl ?? null,
           }
         : {
             emailEnabled: false,
@@ -55,6 +67,9 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
             pushEnabled: false,
             teamsEnabled: false,
             slackEnabled: false,
+            smsPhoneNumber: null,
+            teamsWebhookUrl: null,
+            slackWebhookUrl: null,
           },
       typeOverrides: typeRows.map((r) => ({
         notificationType: r.notificationType,
@@ -83,7 +98,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
     const { channel, typeOverrides } = parsed.data;
     const now = new Date();
 
-    // Upsert channel prefs
+    // Upsert channel prefs (preserve existing webhook URLs)
     await db
       .insert(notificationChannelPrefs)
       .values({
@@ -140,6 +155,60 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
     res.json({ success: true });
   } catch (error) {
     console.error("Update notification preferences error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+
+    const parsed = webhooksBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid webhook data", details: parsed.error.flatten() });
+    }
+
+    const { smsPhoneNumber, teamsWebhookUrl, slackWebhookUrl } = parsed.data;
+
+    if (smsPhoneNumber && !isValidE164(smsPhoneNumber)) {
+      return res.status(400).json({ error: "Phone number must be in E.164 format (e.g. +15551234567)" });
+    }
+    if (teamsWebhookUrl && !isValidTeamsWebhookUrl(teamsWebhookUrl)) {
+      return res.status(400).json({ error: "Teams webhook URL must start with https://*.webhook.office.com/" });
+    }
+    if (slackWebhookUrl && !isValidSlackWebhookUrl(slackWebhookUrl)) {
+      return res.status(400).json({ error: "Slack webhook URL must start with https://hooks.slack.com/" });
+    }
+
+    const now = new Date();
+
+    await db
+      .insert(notificationChannelPrefs)
+      .values({
+        userId,
+        emailEnabled: false,
+        smsEnabled: false,
+        pushEnabled: false,
+        teamsEnabled: false,
+        slackEnabled: false,
+        smsPhoneNumber: smsPhoneNumber ?? null,
+        teamsWebhookUrl: teamsWebhookUrl ?? null,
+        slackWebhookUrl: slackWebhookUrl ?? null,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: notificationChannelPrefs.userId,
+        set: {
+          smsPhoneNumber: smsPhoneNumber ?? null,
+          teamsWebhookUrl: teamsWebhookUrl ?? null,
+          slackWebhookUrl: slackWebhookUrl ?? null,
+          updatedAt: now,
+        },
+      });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Update webhook preferences error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

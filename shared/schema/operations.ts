@@ -2192,6 +2192,9 @@ export const notificationChannelPrefs = pgTable("notification_channel_prefs", {
   pushEnabled: boolean("push_enabled").notNull().default(false),
   teamsEnabled: boolean("teams_enabled").notNull().default(false),
   slackEnabled: boolean("slack_enabled").notNull().default(false),
+  smsPhoneNumber: text("sms_phone_number"),
+  teamsWebhookUrl: text("teams_webhook_url"),
+  slackWebhookUrl: text("slack_webhook_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

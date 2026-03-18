@@ -3,6 +3,9 @@ import { users, notificationChannelPrefs, notificationTypePrefs, notificationTyp
 import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "./emailService";
 import { sendPushToUser } from "./pushService";
+import { sendSms } from "./smsService";
+import { sendTeamsMessage } from "./teamsService";
+import { sendSlackMessage } from "./slackService";
 import { logError } from "../utils/logger";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
@@ -23,6 +26,9 @@ interface ChannelPrefs {
   pushEnabled: boolean;
   teamsEnabled: boolean;
   slackEnabled: boolean;
+  smsPhoneNumber: string | null;
+  teamsWebhookUrl: string | null;
+  slackWebhookUrl: string | null;
 }
 
 // All channels off by default — users must explicitly enable them
@@ -32,6 +38,9 @@ const DEFAULT_PREFS: ChannelPrefs = {
   pushEnabled: false,
   teamsEnabled: false,
   slackEnabled: false,
+  smsPhoneNumber: null,
+  teamsWebhookUrl: null,
+  slackWebhookUrl: null,
 };
 
 async function loadEffectivePrefs(userId: string, notifType: NotificationType | null): Promise<ChannelPrefs> {
@@ -48,6 +57,9 @@ async function loadEffectivePrefs(userId: string, notifType: NotificationType | 
         pushEnabled: channelRow.pushEnabled,
         teamsEnabled: channelRow.teamsEnabled,
         slackEnabled: channelRow.slackEnabled,
+        smsPhoneNumber: channelRow.smsPhoneNumber ?? null,
+        teamsWebhookUrl: channelRow.teamsWebhookUrl ?? null,
+        slackWebhookUrl: channelRow.slackWebhookUrl ?? null,
       }
     : { ...DEFAULT_PREFS };
 
@@ -69,12 +81,16 @@ async function loadEffectivePrefs(userId: string, notifType: NotificationType | 
   // Merge type-level overrides onto base channel prefs field-by-field.
   // This ensures a per-type row only overrides the channels explicitly stored in it,
   // and future partial-row scenarios are handled gracefully.
+  // Webhook URLs and phone numbers are channel-level settings — always carry base values.
   return {
     emailEnabled: typeRow.emailEnabled ?? base.emailEnabled,
     smsEnabled: typeRow.smsEnabled ?? base.smsEnabled,
     pushEnabled: typeRow.pushEnabled ?? base.pushEnabled,
     teamsEnabled: typeRow.teamsEnabled ?? base.teamsEnabled,
     slackEnabled: typeRow.slackEnabled ?? base.slackEnabled,
+    smsPhoneNumber: base.smsPhoneNumber,
+    teamsWebhookUrl: base.teamsWebhookUrl,
+    slackWebhookUrl: base.slackWebhookUrl,
   };
 }
 
@@ -216,8 +232,19 @@ async function deliverEmail(userEmail: string, notification: NotificationRecord)
   }
 }
 
-function deliverSms(_userPhone: string | null, _notification: NotificationRecord): void {
-  // SMS delivery — stub, implemented in Task #51
+function deliverSms(phone: string | null, notification: NotificationRecord): void {
+  if (!phone) return;
+  const baseUrl = process.env.APP_BASE_URL || "";
+  const { actionUrl } = composeEmailContent(notification);
+  const url = actionUrl || baseUrl || "";
+  const body = url
+    ? `${notification.title}: ${notification.message} ${url}`
+    : `${notification.title}: ${notification.message}`;
+  setImmediate(() => {
+    sendSms(phone, body).catch((err) =>
+      logError("notificationDelivery: SMS failed", { userId: notification.userId, error: String(err) })
+    );
+  });
 }
 
 async function deliverPush(userId: string, notification: NotificationRecord): Promise<void> {
@@ -231,12 +258,24 @@ async function deliverPush(userId: string, notification: NotificationRecord): Pr
   });
 }
 
-function deliverTeams(_userId: string, _notification: NotificationRecord): void {
-  // Microsoft Teams delivery — stub, implemented in Task #51
+function deliverTeams(webhookUrl: string | null, notification: NotificationRecord): void {
+  if (!webhookUrl) return;
+  const { actionUrl } = composeEmailContent(notification);
+  setImmediate(() => {
+    sendTeamsMessage(webhookUrl, notification.title, notification.message, actionUrl).catch((err) =>
+      logError("notificationDelivery: Teams failed", { userId: notification.userId, error: String(err) })
+    );
+  });
 }
 
-function deliverSlack(_userId: string, _notification: NotificationRecord): void {
-  // Slack delivery — stub, implemented in Task #51
+function deliverSlack(webhookUrl: string | null, notification: NotificationRecord): void {
+  if (!webhookUrl) return;
+  const { actionUrl } = composeEmailContent(notification);
+  setImmediate(() => {
+    sendSlackMessage(webhookUrl, notification.title, notification.message, actionUrl).catch((err) =>
+      logError("notificationDelivery: Slack failed", { userId: notification.userId, error: String(err) })
+    );
+  });
 }
 
 export async function deliverNotification(notification: NotificationRecord): Promise<void> {
@@ -257,16 +296,17 @@ export async function deliverNotification(notification: NotificationRecord): Pro
       tasks.push(deliverEmail(userRow.email, notification));
     }
     if (prefs.smsEnabled) {
-      deliverSms(userRow.phone ?? null, notification);
+      const smsPhone = prefs.smsPhoneNumber || userRow.phone || null;
+      deliverSms(smsPhone, notification);
     }
     if (prefs.pushEnabled) {
       tasks.push(deliverPush(notification.userId, notification));
     }
     if (prefs.teamsEnabled) {
-      deliverTeams(notification.userId, notification);
+      deliverTeams(prefs.teamsWebhookUrl, notification);
     }
     if (prefs.slackEnabled) {
-      deliverSlack(notification.userId, notification);
+      deliverSlack(prefs.slackWebhookUrl, notification);
     }
 
     if (tasks.length > 0) {

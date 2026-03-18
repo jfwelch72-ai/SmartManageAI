@@ -247,6 +247,9 @@ export default function ProfilePage() {
     pushEnabled: boolean;
     teamsEnabled: boolean;
     slackEnabled: boolean;
+    smsPhoneNumber: string | null;
+    teamsWebhookUrl: string | null;
+    slackWebhookUrl: string | null;
   }
 
   interface TypeOverride {
@@ -264,7 +267,14 @@ export default function ProfilePage() {
     pushEnabled: false,
     teamsEnabled: false,
     slackEnabled: false,
+    smsPhoneNumber: null,
+    teamsWebhookUrl: null,
+    slackWebhookUrl: null,
   });
+
+  const [smsPhoneInput, setSmsPhoneInput] = useState("");
+  const [teamsWebhookInput, setTeamsWebhookInput] = useState("");
+  const [slackWebhookInput, setSlackWebhookInput] = useState("");
 
   const [typeEmailOverrides, setTypeEmailOverrides] = useState<Record<string, boolean>>({});
 
@@ -365,7 +375,13 @@ export default function ProfilePage() {
         pushEnabled: notifPrefs.channel.pushEnabled,
         teamsEnabled: notifPrefs.channel.teamsEnabled,
         slackEnabled: notifPrefs.channel.slackEnabled,
+        smsPhoneNumber: notifPrefs.channel.smsPhoneNumber ?? null,
+        teamsWebhookUrl: notifPrefs.channel.teamsWebhookUrl ?? null,
+        slackWebhookUrl: notifPrefs.channel.slackWebhookUrl ?? null,
       });
+      setSmsPhoneInput(notifPrefs.channel.smsPhoneNumber ?? "");
+      setTeamsWebhookInput(notifPrefs.channel.teamsWebhookUrl ?? "");
+      setSlackWebhookInput(notifPrefs.channel.slackWebhookUrl ?? "");
     }
     if (notifPrefs?.typeOverrides) {
       const overrides: Record<string, boolean> = {};
@@ -431,6 +447,23 @@ export default function ProfilePage() {
     },
     onError: (error: Error) => {
       toast({ title: "Failed to save preferences", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const saveWebhooksMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("PUT", "/api/notifications/preferences/webhooks", {
+        smsPhoneNumber: smsPhoneInput.trim() || null,
+        teamsWebhookUrl: teamsWebhookInput.trim() || null,
+        slackWebhookUrl: slackWebhookInput.trim() || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/preferences"] });
+      toast({ title: "Connection settings saved" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to save connection settings", description: error.message, variant: "destructive" });
     },
   });
 
@@ -1198,12 +1231,30 @@ export default function ProfilePage() {
                     />
                   </div>
 
-                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-sms">
-                    <div>
-                      <p className="text-sm font-medium">SMS <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                      <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                  <div data-testid="row-pref-sms">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">SMS</p>
+                        <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                      </div>
+                      <Switch
+                        checked={channelPrefs.smsEnabled}
+                        onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, smsEnabled: checked }))}
+                        data-testid="switch-pref-sms"
+                      />
                     </div>
-                    <Switch checked={false} disabled data-testid="switch-pref-sms" />
+                    {channelPrefs.smsEnabled && (
+                      <div className="mt-2 space-y-1">
+                        <Label htmlFor="sms-phone-input" className="text-xs text-muted-foreground">Mobile number (E.164 format, e.g. +15551234567)</Label>
+                        <Input
+                          id="sms-phone-input"
+                          value={smsPhoneInput}
+                          onChange={(e) => setSmsPhoneInput(e.target.value)}
+                          placeholder="+15551234567"
+                          data-testid="input-sms-phone"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between" data-testid="row-pref-push">
@@ -1232,23 +1283,75 @@ export default function ProfilePage() {
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-teams">
-                    <div>
-                      <p className="text-sm font-medium">Microsoft Teams <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                      <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
+                  <div data-testid="row-pref-teams">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Microsoft Teams</p>
+                        <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
+                      </div>
+                      <Switch
+                        checked={channelPrefs.teamsEnabled}
+                        onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, teamsEnabled: checked }))}
+                        data-testid="switch-pref-teams"
+                      />
                     </div>
-                    <Switch checked={false} disabled data-testid="switch-pref-teams" />
+                    {channelPrefs.teamsEnabled && (
+                      <div className="mt-2 space-y-1">
+                        <Label htmlFor="teams-webhook-input" className="text-xs text-muted-foreground">Teams incoming webhook URL</Label>
+                        <Input
+                          id="teams-webhook-input"
+                          value={teamsWebhookInput}
+                          onChange={(e) => setTeamsWebhookInput(e.target.value)}
+                          placeholder="https://xxx.webhook.office.com/..."
+                          data-testid="input-teams-webhook"
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-slack">
-                    <div>
-                      <p className="text-sm font-medium">Slack <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                      <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
+                  <div data-testid="row-pref-slack">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Slack</p>
+                        <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
+                      </div>
+                      <Switch
+                        checked={channelPrefs.slackEnabled}
+                        onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, slackEnabled: checked }))}
+                        data-testid="switch-pref-slack"
+                      />
                     </div>
-                    <Switch checked={false} disabled data-testid="switch-pref-slack" />
+                    {channelPrefs.slackEnabled && (
+                      <div className="mt-2 space-y-1">
+                        <Label htmlFor="slack-webhook-input" className="text-xs text-muted-foreground">Slack incoming webhook URL</Label>
+                        <Input
+                          id="slack-webhook-input"
+                          value={slackWebhookInput}
+                          onChange={(e) => setSlackWebhookInput(e.target.value)}
+                          placeholder="https://hooks.slack.com/services/..."
+                          data-testid="input-slack-webhook"
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {(channelPrefs.smsEnabled || channelPrefs.teamsEnabled || channelPrefs.slackEnabled) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => saveWebhooksMutation.mutate()}
+                  disabled={saveWebhooksMutation.isPending}
+                  data-testid="button-save-connection-settings"
+                >
+                  {saveWebhooksMutation.isPending ? (
+                    <Fragment><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</Fragment>
+                  ) : (
+                    "Save Connection Settings"
+                  )}
+                </Button>
+              )}
 
               {channelPrefs.emailEnabled && (
                 <div>
