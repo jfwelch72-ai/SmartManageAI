@@ -557,16 +557,22 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         where: sql`${quantityCategories.id} = ANY(${categoryIds})`,
       });
 
-      // Resolve labor classification rate if provided
+      // Resolve labor classification rate if provided — scoped to org for tenant isolation
       let classificationRate: number | null = null;
       let classificationName: string | null = null;
       if (jobClassificationId) {
         const [classification] = await db
           .select({ id: jobClassifications.id, name: jobClassifications.name, defaultRegularRate: jobClassifications.defaultRegularRate })
           .from(jobClassifications)
-          .where(eq(jobClassifications.id, jobClassificationId))
+          .where(and(
+            eq(jobClassifications.id, jobClassificationId),
+            eq(jobClassifications.organizationId, req.user!.organizationId!)
+          ))
           .limit(1);
-        if (classification && classification.defaultRegularRate !== null) {
+        if (!classification) {
+          return res.status(400).json({ error: "Job classification not found or not accessible" });
+        }
+        if (classification.defaultRegularRate !== null) {
           classificationRate = Number(classification.defaultRegularRate);
           classificationName = classification.name;
         }
