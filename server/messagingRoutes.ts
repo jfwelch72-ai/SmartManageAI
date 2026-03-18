@@ -694,16 +694,29 @@ const messagingSetup = (async () => {
 
       // ── Server-side MIME detection: use actual file bytes rather than browser-supplied Content-Type ──
       const detectedType = await fileTypeFromBuffer(file.buffer);
-      // Reject if detected type clearly contradicts the browser-reported type category
-      // (e.g., browser says image/* but bytes are application/x-executable)
+      // Reject if detected type contradicts the browser-reported type.
+      // We compare exact MIME strings first; the only narrow exception is that some containers
+      // (e.g. "application/octet-stream" or legacy application/zip) are legitimately reported as
+      // application/* by browsers when the underlying format is a document type we still accept.
+      // Any file whose bytes detect as a category totally different from the declared category is rejected.
       if (detectedType) {
-        const browserCategory = file.mimetype.split("/")[0];
-        const detectedCategory = detectedType.mime.split("/")[0];
-        // Allow audio/video to be treated as application (some audio formats); reject obvious mismatches
-        if (browserCategory !== detectedCategory &&
-            !(browserCategory === "application" && ["audio", "video"].includes(detectedCategory)) &&
-            !(detectedCategory === "application" && ["audio", "video"].includes(browserCategory))) {
-          return res.status(415).json({ error: "File type does not match uploaded content." });
+        const clientMime = file.mimetype.toLowerCase();
+        const detectedMime = detectedType.mime.toLowerCase();
+        if (detectedMime !== clientMime) {
+          // Allow only if both agree on the top-level category AND client declared application/octet-stream
+          // (generic binary); otherwise reject as a mismatch.
+          const clientCategory = clientMime.split("/")[0];
+          const detectedCategory = detectedMime.split("/")[0];
+          const isGenericBinary = clientMime === "application/octet-stream";
+          const categoryMatch = clientCategory === detectedCategory;
+          if (!isGenericBinary && !categoryMatch) {
+            return res.status(415).json({ error: "File type does not match uploaded content." });
+          }
+          if (!isGenericBinary && categoryMatch) {
+            // Same category but different sub-type (e.g. image/png vs image/jpeg) — reject
+            return res.status(415).json({ error: "Declared MIME type does not match the actual file content." });
+          }
+          // isGenericBinary: allow and canonicalise to detected type below
         }
       }
       // Use server-detected MIME type as the canonical stored type (falls back to browser-reported if undetectable)
@@ -773,10 +786,27 @@ const messagingSetup = (async () => {
 
       // ── MIME detection: verify uploaded bytes are audio, not a disguised non-audio file ──
       const detectedVoiceType = await fileTypeFromBuffer(file.buffer);
-      // WebM/Opus audio is typically detected as audio/webm or video/webm (both are acceptable for voice)
-      const ALLOWED_AUDIO_CATEGORIES = ["audio", "video"];
-      if (detectedVoiceType && !ALLOWED_AUDIO_CATEGORIES.includes(detectedVoiceType.mime.split("/")[0])) {
-        return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
+      // Allowlist: valid audio containers we accept for voice messages.
+      // WebM/Opus from MediaRecorder is detected as video/webm or audio/webm; both are valid.
+      const ALLOWED_AUDIO_CATEGORIES = ["audio", "video"] as const;
+      if (detectedVoiceType) {
+        const detectedCategory = detectedVoiceType.mime.split("/")[0];
+        // Reject anything that doesn't detect as audio or video
+        if (!ALLOWED_AUDIO_CATEGORIES.includes(detectedCategory as typeof ALLOWED_AUDIO_CATEGORIES[number])) {
+          return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
+        }
+        // Also reject if client-reported MIME disagrees with detected category (spoofing guard)
+        const clientMime = (file.mimetype || "").toLowerCase();
+        const clientCategory = clientMime.split("/")[0];
+        if (clientMime && clientCategory !== detectedCategory) {
+          return res.status(415).json({ error: "Declared MIME type does not match the actual audio content." });
+        }
+      } else {
+        // File type undetectable — only allow if client reported an audio or video MIME
+        const clientCategory = (file.mimetype || "").split("/")[0];
+        if (!ALLOWED_AUDIO_CATEGORIES.includes(clientCategory as typeof ALLOWED_AUDIO_CATEGORIES[number])) {
+          return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
+        }
       }
       const canonicalVoiceMime = detectedVoiceType ? detectedVoiceType.mime : (file.mimetype || "audio/webm");
 
