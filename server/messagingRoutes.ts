@@ -1322,6 +1322,11 @@ const messagingSetup = (async () => {
         .select({ id: messages.id, conversationId: messages.conversationId, isDeleted: messages.isDeleted })
         .from(messages).where(eq(messages.id, msgId)).limit(1);
       if (!msg) return res.status(404).json({ error: "Message not found" });
+      if (msg.isDeleted) return res.status(400).json({ error: "Cannot remove reaction from a deleted message" });
+
+      // Verify caller is a participant
+      const isMember = await ensureParticipant(msg.conversationId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a participant of this conversation" });
 
       await db.delete(messageReactions).where(
         and(eq(messageReactions.messageId, msgId), eq(messageReactions.userId, userId), eq(messageReactions.emoji, emoji))
