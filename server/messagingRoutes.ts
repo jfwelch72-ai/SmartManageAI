@@ -503,7 +503,7 @@ const messagingSetup = (async () => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
-      const { content, attachmentUrl, attachmentName, attachmentType, voiceUrl, voiceDurationSeconds, mentionedTaskIds } = req.body;
+      const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl, voiceDurationSeconds, mentionedTaskIds } = req.body;
 
       if (!content?.trim() && !attachmentUrl && !voiceUrl) {
         res.status(400).json({ error: "Message content or attachment is required" });
@@ -527,6 +527,7 @@ const messagingSetup = (async () => {
           attachmentUrl: attachmentUrl || null,
           attachmentName: attachmentName || null,
           attachmentType: attachmentType || null,
+          attachmentSize: attachmentSize ? Number(attachmentSize) : null,
           voiceUrl: voiceUrl || null,
           voiceDurationSeconds: voiceDurationSeconds ? Number(voiceDurationSeconds) : null,
           mentionedTaskIds: mentionedTaskIds || null,
@@ -765,8 +766,8 @@ const messagingSetup = (async () => {
         .where(and(...taskConditions))
         .limit(8);
 
-      // Query AI tasks joined with project name
-      const aiConditions: any[] = [];
+      // Query AI tasks — must be scoped to org via project join (innerJoin enforces org isolation)
+      const aiConditions: any[] = [eq(projectsTable.gcOrganizationId, orgId)];
       if (q.trim()) aiConditions.push(ilike(aiTasks.title, `%${q}%`));
       if (scopedProjectId) aiConditions.push(eq(aiTasks.projectId, scopedProjectId));
 
@@ -777,8 +778,8 @@ const messagingSetup = (async () => {
           projectName: projectsTable.name,
         })
         .from(aiTasks)
-        .leftJoin(projectsTable, eq(aiTasks.projectId, projectsTable.id))
-        .where(aiConditions.length > 0 ? and(...aiConditions) : undefined)
+        .innerJoin(projectsTable, eq(aiTasks.projectId, projectsTable.id))
+        .where(and(...aiConditions))
         .limit(5);
 
       // Merge and de-duplicate by id, cap at 10 total

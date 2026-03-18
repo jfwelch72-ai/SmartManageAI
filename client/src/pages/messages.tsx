@@ -98,6 +98,7 @@ interface Message {
   attachmentUrl: string | null;
   attachmentName: string | null;
   attachmentType: string | null;
+  attachmentSize: number | null;
   voiceUrl: string | null;
   voiceDurationSeconds: number | null;
   mentionedTaskIds: string[] | null;
@@ -364,6 +365,7 @@ export function TeamMessagesContent() {
       attachmentUrl?: string;
       attachmentName?: string;
       attachmentType?: string;
+      attachmentSize?: number;
       voiceUrl?: string;
       voiceDurationSeconds?: number;
       mentionedTaskIds?: string[];
@@ -569,6 +571,7 @@ export function TeamMessagesContent() {
         attachmentUrl: data.url,
         attachmentName: data.name,
         attachmentType: data.type,
+        attachmentSize: data.size ?? fileSize,
       });
     } catch (err) {
       console.error("File upload failed:", err);
@@ -577,7 +580,6 @@ export function TeamMessagesContent() {
       setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
-    void fileSize; // reference kept for future size storage
   };
 
   const MAX_VOICE_SECONDS = 120;
@@ -1083,6 +1085,7 @@ export function TeamMessagesContent() {
                                           url={message.attachmentUrl}
                                           name={message.attachmentName}
                                           type={message.attachmentType}
+                                          size={message.attachmentSize}
                                         />
                                       )}
                                     </div>

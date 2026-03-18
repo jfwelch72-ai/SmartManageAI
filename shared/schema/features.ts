@@ -1441,6 +1441,7 @@ export const messages = pgTable("messages", {
   attachmentUrl: text("attachment_url"),
   attachmentName: text("attachment_name"),
   attachmentType: text("attachment_type"),
+  attachmentSize: integer("attachment_size"),
   voiceUrl: text("voice_url"),
   voiceDurationSeconds: integer("voice_duration_seconds"),
   mentionedTaskIds: text("mentioned_task_ids").array(),

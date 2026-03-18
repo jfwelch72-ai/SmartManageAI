@@ -296,6 +296,23 @@ router.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (re
       skillIds: skillIds || [],
     }, req);
 
+    // Auto-join the crew's messaging channel when a member is added
+    try {
+      const [crewChannel] = await db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(eq(conversations.crewId, id))
+        .limit(1);
+      if (crewChannel) {
+        await db
+          .insert(conversationParticipants)
+          .values({ conversationId: crewChannel.id, userId, isAdmin: false })
+          .onConflictDoNothing();
+      }
+    } catch (channelErr) {
+      console.warn("Could not auto-join crew channel for new member:", channelErr);
+    }
+
     res.status(201).json(newMember);
   } catch (error: any) {
     console.error("Error adding crew member:", error);

@@ -811,11 +811,18 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
               userId: req.user!.id,
               isAdmin: true,
             });
-            // Add all active org members (managers, admins) as participants
+            // Add project-relevant roles (ADMIN, MANAGER, PROJECT_MANAGER, ESTIMATOR) as participants
+            const projectRoles = ["ADMIN", "MANAGER", "PROJECT_MANAGER", "ESTIMATOR"];
             const orgMembers = await db
               .select({ id: users.id })
               .from(users)
-              .where(and(eq(users.organizationId, projOrgId), eq(users.isActive, true)));
+              .where(
+                and(
+                  eq(users.organizationId, projOrgId),
+                  eq(users.isActive, true),
+                  inArray(users.role, projectRoles as any[])
+                )
+              );
             const toAdd = orgMembers
               .filter(m => m.id !== req.user!.id)
               .map(m => ({ conversationId: channel.id, userId: m.id, isAdmin: false }));
