@@ -786,25 +786,36 @@ const messagingSetup = (async () => {
 
       // ── MIME detection: verify uploaded bytes are audio, not a disguised non-audio file ──
       const detectedVoiceType = await fileTypeFromBuffer(file.buffer);
-      // Allowlist: valid audio containers we accept for voice messages.
-      // WebM/Opus from MediaRecorder is detected as video/webm or audio/webm; both are valid.
-      const ALLOWED_AUDIO_CATEGORIES = ["audio", "video"] as const;
+      // Allowlist of accepted MIME types for voice messages.
+      // MediaRecorder in Chrome/Firefox typically produces audio/webm (Opus), but file-type
+      // often detects WebM containers as video/webm regardless of codec — both are valid voice.
+      const ACCEPTED_VOICE_MIMES = new Set([
+        "audio/webm", "video/webm",
+        "audio/ogg", "video/ogg",
+        "audio/mp4", "video/mp4",
+        "audio/mpeg", "audio/wav", "audio/flac", "audio/aac",
+        "audio/x-m4a",
+      ]);
       if (detectedVoiceType) {
-        const detectedCategory = detectedVoiceType.mime.split("/")[0];
-        // Reject anything that doesn't detect as audio or video
-        if (!ALLOWED_AUDIO_CATEGORIES.includes(detectedCategory as typeof ALLOWED_AUDIO_CATEGORIES[number])) {
+        // Reject if detected bytes are clearly not audio/video
+        if (!ACCEPTED_VOICE_MIMES.has(detectedVoiceType.mime)) {
           return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
         }
-        // Also reject if client-reported MIME disagrees with detected category (spoofing guard)
+        // Verify client-reported MIME is also audio/video (spoofing guard).
+        // Special case: audio/webm ↔ video/webm are the same WebM container — treat as equivalent.
         const clientMime = (file.mimetype || "").toLowerCase();
-        const clientCategory = clientMime.split("/")[0];
-        if (clientMime && clientCategory !== detectedCategory) {
-          return res.status(415).json({ error: "Declared MIME type does not match the actual audio content." });
+        if (clientMime) {
+          const isWebmEquivalent =
+            (clientMime === "audio/webm" && detectedVoiceType.mime === "video/webm") ||
+            (clientMime === "video/webm" && detectedVoiceType.mime === "audio/webm");
+          if (!isWebmEquivalent && !ACCEPTED_VOICE_MIMES.has(clientMime)) {
+            return res.status(415).json({ error: "Declared MIME type does not match the actual audio content." });
+          }
         }
       } else {
-        // File type undetectable — only allow if client reported an audio or video MIME
-        const clientCategory = (file.mimetype || "").split("/")[0];
-        if (!ALLOWED_AUDIO_CATEGORIES.includes(clientCategory as typeof ALLOWED_AUDIO_CATEGORIES[number])) {
+        // File type undetectable — only allow if client reported an accepted audio/video MIME
+        const clientMime = (file.mimetype || "").toLowerCase();
+        if (!ACCEPTED_VOICE_MIMES.has(clientMime)) {
           return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
         }
       }
