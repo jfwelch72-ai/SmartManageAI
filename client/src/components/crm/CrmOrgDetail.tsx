@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -400,12 +400,25 @@ export function CrmOrgDetail({
   }
   interface CommunicationsPagination { page: number; pageSize: number; total: number; hasMore: boolean; }
   interface CommunicationsData { emails: CommEmail[]; upcomingEvents: CommEvent[]; pagination: CommunicationsPagination; }
+  const [activeOrgTab, setActiveOrgTab] = useState("info");
   const [commsPage, setCommsPage] = useState(1);
   const [accumulatedEmails, setAccumulatedEmails] = useState<CommEmail[]>([]);
   useEffect(() => {
+    setActiveOrgTab("info");
     setCommsPage(1);
     setAccumulatedEmails([]);
   }, [selectedOrg?.id]);
+
+  useEffect(() => {
+    const conditionalTabs = [
+      !showPricingTab && "pricing",
+      !showRentalTab && "rental",
+      !showPortalTab && "portal",
+    ].filter(Boolean) as string[];
+    if (conditionalTabs.includes(activeOrgTab)) {
+      setActiveOrgTab("info");
+    }
+  }, [showPricingTab, showRentalTab, showPortalTab, activeOrgTab]);
   const { data: commsData, isLoading: commsLoading } = useQuery<CommunicationsData>({
     queryKey: [`/api/crm/organisations/${selectedOrg?.id}/communications`, { page: commsPage }],
     queryFn: async () => {
@@ -463,38 +476,39 @@ export function CrmOrgDetail({
             </div>
           </DialogHeader>
 
-          <Tabs defaultValue="info" className="mt-4">
-            <TabsList className="flex flex-wrap">
-              <TabsTrigger value="info">Organization Info</TabsTrigger>
-              <TabsTrigger value="contacts">
-                Contacts ({orgDetail?.contacts?.length || 0})
-              </TabsTrigger>
-              <TabsTrigger value="activity" data-testid="tab-activity">
-                Activity ({orgNotes.length})
-              </TabsTrigger>
-              {showPricingTab && (
-                <TabsTrigger value="pricing" data-testid="tab-pricing">
-                  <DollarSign className="w-3 h-3 mr-1" />
-                  Pricing ({vendorPricing.length})
-                </TabsTrigger>
-              )}
-              {showRentalTab && (
-                <TabsTrigger value="rental" data-testid="tab-rental">
-                  <Truck className="w-3 h-3 mr-1" />
-                  Rentals ({rentalCatalog.length})
-                </TabsTrigger>
-              )}
-              {showPortalTab && (
-                <TabsTrigger value="portal" data-testid="tab-portal">
-                  <Link2 className="w-3 h-3 mr-1" />
-                  Portal Access
-                </TabsTrigger>
-              )}
-              <TabsTrigger value="communications" data-testid="tab-communications">
-                <Mail className="w-3 h-3 mr-1" />
-                Communications
-              </TabsTrigger>
-            </TabsList>
+          <Tabs value={activeOrgTab} onValueChange={setActiveOrgTab} className="mt-4">
+            <Select value={activeOrgTab} onValueChange={setActiveOrgTab} data-testid="select-org-tab">
+              <SelectTrigger className="w-full sm:w-64" data-testid="trigger-org-tab">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="info">Organization Info</SelectItem>
+                <SelectItem value="contacts">
+                  Contacts ({orgDetail?.contacts?.length || 0})
+                </SelectItem>
+                <SelectItem value="activity" data-testid="tab-activity">
+                  Activity ({orgNotes.length})
+                </SelectItem>
+                {showPricingTab && (
+                  <SelectItem value="pricing" data-testid="tab-pricing">
+                    Pricing ({vendorPricing.length})
+                  </SelectItem>
+                )}
+                {showRentalTab && (
+                  <SelectItem value="rental" data-testid="tab-rental">
+                    Rentals ({rentalCatalog.length})
+                  </SelectItem>
+                )}
+                {showPortalTab && (
+                  <SelectItem value="portal" data-testid="tab-portal">
+                    Portal Access
+                  </SelectItem>
+                )}
+                <SelectItem value="communications" data-testid="tab-communications">
+                  Communications
+                </SelectItem>
+              </SelectContent>
+            </Select>
 
             <TabsContent value="info" className="space-y-4 mt-4">
               <div className="grid grid-cols-2 gap-4">
