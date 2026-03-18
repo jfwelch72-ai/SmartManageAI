@@ -159,10 +159,14 @@ const messagingSetup = (async () => {
       const organizationId = req.user!.organizationId;
       if (!organizationId) return res.status(400).json({ error: "Organization required" });
 
-      const { name, description, topic } = req.body;
+      const { name, description, topic, slug: rawSlug } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "Channel name is required" });
 
-      const slug = name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+      // Allow explicit slug; fall back to deriving from name
+      const slug = rawSlug
+        ? rawSlug.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 80)
+        : name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 80);
+      if (!slug) return res.status(400).json({ error: "Channel slug could not be derived from the given name" });
 
       // Check for duplicate slug
       const [existing] = await db
@@ -685,8 +689,15 @@ const messagingSetup = (async () => {
   router.get("/api/conversations/:id/files/:filename", requireAuth, async (req: AuthRequest, res) => {
     try {
       const orgId = req.user!.organizationId;
+      const userId = req.user!.id;
       const conversationId = req.params.id;
       const filename = req.params.filename;
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) {
+        res.status(403).json({ error: "Not a participant of this conversation" });
+        return;
+      }
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
@@ -709,8 +720,15 @@ const messagingSetup = (async () => {
   router.get("/api/conversations/:id/voice/:filename", requireAuth, async (req: AuthRequest, res) => {
     try {
       const orgId = req.user!.organizationId;
+      const userId = req.user!.id;
       const conversationId = req.params.id;
       const filename = req.params.filename;
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) {
+        res.status(403).json({ error: "Not a participant of this conversation" });
+        return;
+      }
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();

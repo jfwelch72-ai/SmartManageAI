@@ -275,6 +275,7 @@ export function TeamMessagesContent() {
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelDescription, setNewChannelDescription] = useState("");
   const [newChannelTopic, setNewChannelTopic] = useState("");
+  const [newChannelSlug, setNewChannelSlug] = useState("");
 
   // DM dialog
   const [newDmOpen, setNewDmOpen] = useState(false);
@@ -796,6 +797,19 @@ export function TeamMessagesContent() {
                                 </div>
                               </div>
                               <div>
+                                <Label>Slug <span className="text-muted-foreground font-normal">(optional — auto-derived from name)</span></Label>
+                                <div className="flex items-center mt-1">
+                                  <span className="text-muted-foreground px-2 border rounded-l-md h-9 flex items-center bg-muted text-sm">#</span>
+                                  <Input
+                                    placeholder={newChannelName ? newChannelName.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") : "channel-slug"}
+                                    value={newChannelSlug}
+                                    onChange={e => setNewChannelSlug(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""))}
+                                    className="rounded-l-none"
+                                    data-testid="input-channel-slug"
+                                  />
+                                </div>
+                              </div>
+                              <div>
                                 <Label>Description <span className="text-muted-foreground font-normal">(optional)</span></Label>
                                 <Input
                                   placeholder="What's this channel about?"
@@ -817,7 +831,7 @@ export function TeamMessagesContent() {
                               </div>
                               <Button
                                 className="w-full"
-                                onClick={() => createChannelMutation.mutate({ name: newChannelName, description: newChannelDescription, topic: newChannelTopic })}
+                                onClick={() => createChannelMutation.mutate({ name: newChannelName, description: newChannelDescription, topic: newChannelTopic, slug: newChannelSlug || undefined })}
                                 disabled={!newChannelName.trim() || createChannelMutation.isPending}
                                 data-testid="button-create-channel"
                               >
@@ -863,7 +877,7 @@ export function TeamMessagesContent() {
 
                     {/* Project Channels — joined + discoverable unjoined */}
                     {projectChannels.length > 0 && (
-                      <SidebarSection label="Projects">
+                      <SidebarSection label="Project Channels">
                         {projectChannels.filter(c => filterName(getConversationName(c))).map(c => {
                           const unjoined = (c as any)._unjoined === true;
                           return (
@@ -893,7 +907,7 @@ export function TeamMessagesContent() {
 
                     {/* Crew Channels — joined + discoverable unjoined */}
                     {crewChannels.length > 0 && (
-                      <SidebarSection label="Crews">
+                      <SidebarSection label="Crew Channels">
                         {crewChannels.filter(c => filterName(getConversationName(c))).map(c => {
                           const unjoined = (c as any)._unjoined === true;
                           return (
