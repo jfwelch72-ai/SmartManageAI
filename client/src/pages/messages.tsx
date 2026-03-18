@@ -272,10 +272,19 @@ export function TeamMessagesContent() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   // ── SSE real-time — handled by dedicated hook ──
   const { sseLive, typingNames } = useMessagingEvents(selectedConversationId);
   const lastTypingSignalRef = useRef<number>(0);
+
+  // ── Pagination state ──
+  const [olderMessages, setOlderMessages] = useState<Message[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Once we've loaded all history, don't let refetches re-enable the sentinel
+  const hasLoadedAllRef = useRef(false);
 
   useEffect(() => {
     const checkMobile = () => setIsMobileView(window.innerWidth < 768);
@@ -303,7 +312,15 @@ export function TeamMessagesContent() {
     queryKey: ["/api/messaging/users"],
   });
 
-  const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
+  // Reset pagination whenever the active conversation changes
+  useEffect(() => {
+    setOlderMessages([]);
+    setHasMore(false);
+    setIsLoadingMore(false);
+    hasLoadedAllRef.current = false;
+  }, [selectedConversationId]);
+
+  const { data: latestMessages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/conversations", selectedConversationId, "messages"],
     enabled: !!selectedConversationId,
     // When SSE is live, disable polling; fall back to 10s when SSE drops
@@ -312,9 +329,17 @@ export function TeamMessagesContent() {
       if (!selectedConversationId) return [];
       const res = await fetch(`/api/conversations/${selectedConversationId}/messages`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch messages");
-      return res.json();
+      const data = await res.json() as { messages: Message[]; hasMore: boolean };
+      // Only update hasMore if the user hasn't already loaded all history
+      if (!hasLoadedAllRef.current) {
+        setHasMore(data.hasMore);
+      }
+      return data.messages;
     },
   });
+
+  // Combined view: older (paginated) prepended before the latest page
+  const messages = [...olderMessages, ...latestMessages];
 
   // Task mention search — scoped to conversation
   const { data: mentionResults = [] } = useQuery<TaskMention[]>({
@@ -410,10 +435,67 @@ export function TeamMessagesContent() {
     },
   });
 
-  // Scroll to bottom
+  // ── Load earlier messages (cursor-based) ──
+  const loadMoreMessages = async () => {
+    if (!selectedConversationId || isLoadingMore || !hasMore) return;
+
+    // Cursor = the oldest message we currently have
+    const oldest = olderMessages.length > 0 ? olderMessages[0] : latestMessages[0];
+    if (!oldest) return;
+
+    // Preserve scroll position: capture scrollHeight before prepend
+    const container = scrollContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+
+    setIsLoadingMore(true);
+    try {
+      const res = await fetch(
+        `/api/conversations/${selectedConversationId}/messages?before=${oldest.id}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) throw new Error("Failed to load earlier messages");
+      const data = await res.json() as { messages: Message[]; hasMore: boolean };
+
+      setOlderMessages(prev => [...data.messages, ...prev]);
+      setHasMore(data.hasMore);
+      if (!data.hasMore) hasLoadedAllRef.current = true;
+
+      // Restore scroll position so the user's reading position doesn't jump
+      if (container) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight - prevScrollHeight;
+        });
+      }
+    } catch (err) {
+      console.error("Load more messages error:", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Stable ref so the intersection observer callback always calls the latest version
+  const loadMoreRef = useRef(loadMoreMessages);
+  useEffect(() => { loadMoreRef.current = loadMoreMessages; });
+
+  // ── Intersection observer: trigger load-more when sentinel enters view ──
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    const container = scrollContainerRef.current;
+    if (!sentinel || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) loadMoreRef.current(); },
+      { root: container, threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, selectedConversationId]);
+
+  // Scroll to bottom only when latest messages change (new messages or conversation switch)
+  // NOT when older messages are prepended (handled by scroll preservation above)
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [latestMessages]);
 
   // Auto-select company channel on load
   useEffect(() => {
@@ -1040,8 +1122,11 @@ export function TeamMessagesContent() {
                       )}
                     </div>
 
-                    {/* Messages Area */}
-                    <ScrollArea className="flex-1 px-4 py-3">
+                    {/* Messages Area — plain div so we can control scrollTop directly */}
+                    <div
+                      ref={scrollContainerRef}
+                      className="flex-1 overflow-y-auto px-4 py-3"
+                    >
                       {messagesLoading ? (
                         <div className="flex items-center justify-center h-full">
                           <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -1058,6 +1143,26 @@ export function TeamMessagesContent() {
                         </div>
                       ) : (
                         <div className="space-y-3">
+                          {/* ── Load-earlier sentinel & spinner (top of list) ── */}
+                          {hasMore && (
+                            <div
+                              ref={sentinelRef}
+                              className="flex justify-center py-2"
+                              data-testid="load-more-sentinel"
+                            >
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                {isLoadingMore ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Loading earlier messages…</span>
+                                  </>
+                                ) : (
+                                  <span className="opacity-50">Scroll up for earlier messages</span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {messages.map((message) => {
                             const isOwn = message.senderId === user?.id;
                             return (
@@ -1108,7 +1213,7 @@ export function TeamMessagesContent() {
                           <div ref={messagesEndRef} />
                         </div>
                       )}
-                    </ScrollArea>
+                    </div>
 
                     {/* Message Input */}
                     <div className="p-3 border-t shrink-0">

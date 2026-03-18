@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { users, projects as projectsTable, aiTasks } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, desc, sql, and, inArray, or, isNotNull, ilike, isNull, type SQL } from "drizzle-orm";
+import { eq, desc, sql, and, lt, inArray, or, isNotNull, ilike, isNull, type SQL } from "drizzle-orm";
 import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
@@ -462,12 +462,16 @@ const messagingSetup = (async () => {
     }
   });
 
-  // Get messages for a conversation
+  // Get messages for a conversation (cursor-based pagination)
+  // Query params:
+  //   before=<messageId> — return the PAGE_SIZE messages immediately preceding this message
+  // Response: { messages: Message[], hasMore: boolean }
   router.get("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
-      const limit = parseInt(req.query.limit as string) || 50;
+      const PAGE_SIZE = 50;
+      const before = (req.query.before as string) || undefined;
 
       const isParticipant = await ensureParticipant(conversationId, userId);
       if (!isParticipant) {
@@ -475,6 +479,23 @@ const messagingSetup = (async () => {
         return;
       }
 
+      // Build where clause — add cursor condition when `before` is provided
+      let whereClause: SQL<unknown> = eq(messages.conversationId, conversationId);
+      if (before) {
+        const cursorRows = await db
+          .select({ createdAt: messages.createdAt })
+          .from(messages)
+          .where(eq(messages.id, before))
+          .limit(1);
+        if (cursorRows[0]) {
+          whereClause = and(
+            eq(messages.conversationId, conversationId),
+            lt(messages.createdAt, cursorRows[0].createdAt)
+          ) as SQL<unknown>;
+        }
+      }
+
+      // Fetch PAGE_SIZE + 1 to detect whether older messages exist
       const messageResults = await db
         .select({
           message: messages,
@@ -487,16 +508,17 @@ const messagingSetup = (async () => {
         })
         .from(messages)
         .innerJoin(users, eq(messages.senderId, users.id))
-        .where(eq(messages.conversationId, conversationId))
+        .where(whereClause)
         .orderBy(desc(messages.createdAt))
-        .limit(limit);
+        .limit(PAGE_SIZE + 1);
 
-      const messagesWithSenders = messageResults.reverse().map(m => ({
-        ...m.message,
-        sender: m.sender,
-      }));
+      const hasMore = messageResults.length > PAGE_SIZE;
+      const messagesWithSenders = messageResults
+        .slice(0, PAGE_SIZE)
+        .reverse()
+        .map(m => ({ ...m.message, sender: m.sender }));
 
-      res.json(messagesWithSenders);
+      res.json({ messages: messagesWithSenders, hasMore });
     } catch (error) {
       console.error("Get messages error:", error);
       res.status(500).json({ error: "Internal server error" });
