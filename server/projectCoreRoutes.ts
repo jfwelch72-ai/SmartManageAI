@@ -14,6 +14,7 @@ import {
   calendarEvents, media, planDocuments, projectNotes,
   dailyScopeProgress, conversations, conversationParticipants,
   crewProjectAssignments, crewMembers,
+  userRoleEnum,
 } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -827,7 +828,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
                 and(
                   eq(users.organizationId, projOrgId),
                   eq(users.isActive, true),
-                  inArray(users.role, ["ADMIN", "MANAGER"] as any[])
+                  inArray(users.role, ["ADMIN", "MANAGER"] satisfies (typeof userRoleEnum.enumValues)[number][])
                 )
               );
             adminMgrs.forEach(m => memberIdSet.add(m.id));

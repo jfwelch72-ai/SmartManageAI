@@ -29,8 +29,6 @@ import {
   Paperclip,
   Mic,
   MicOff,
-  Play,
-  Pause,
   FileText,
   Image as ImageIcon,
   Download,
@@ -90,6 +88,8 @@ interface Conversation {
   unreadCount: number;
 }
 
+type ChannelRow = Conversation & { _unjoined?: boolean };
+
 interface Message {
   id: string;
   conversationId: string;
@@ -118,42 +118,13 @@ function getInitials(firstName: string, lastName: string) {
 
 // ── Voice Message Player ──
 function VoicePlayer({ url, durationSeconds }: { url: string; durationSeconds: number | null }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(durationSeconds || 0);
-
-  const toggle = () => {
-    if (!audioRef.current) return;
-    if (playing) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
-    }
-    setPlaying(!playing);
-  };
-
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-
+  const label = durationSeconds
+    ? `Voice message (${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, "0")})`
+    : "Voice message";
   return (
-    <div className="flex items-center gap-2 bg-background/50 rounded-full px-3 py-1.5 min-w-[160px]">
-      <audio
-        ref={audioRef}
-        src={url}
-        onEnded={() => setPlaying(false)}
-        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
-        onLoadedMetadata={() => setDuration(audioRef.current?.duration || durationSeconds || 0)}
-      />
-      <button onClick={toggle} className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-        {playing ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 ml-0.5" />}
-      </button>
-      <div className="flex-1 h-1 bg-muted rounded-full relative">
-        <div
-          className="h-full bg-primary rounded-full"
-          style={{ width: duration > 0 ? `${(currentTime / duration) * 100}%` : "0%" }}
-        />
-      </div>
-      <span className="text-xs text-muted-foreground whitespace-nowrap">{fmt(currentTime)} / {fmt(duration)}</span>
+    <div className="mt-1">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <audio controls src={url} className="max-w-xs h-8" data-testid="audio-voice-message" />
     </div>
   );
 }
@@ -656,7 +627,9 @@ export function TeamMessagesContent() {
   const selectedConversation = conversations.find(c => c.id === selectedConversationId);
 
   const companyConversation = conversations.find(c => c.isCompanyChannel);
-  const namedChannels = conversations.filter(c => c.channelSlug && !c.projectId && !c.crewId && !c.isCompanyChannel);
+  const namedChannels = conversations
+    .filter(c => c.channelSlug && !c.projectId && !c.crewId && !c.isCompanyChannel)
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   const joinedProjectIds = new Set(conversations.filter(c => !!c.projectId).map(c => c.id));
   const joinedCrewIds = new Set(conversations.filter(c => !!c.crewId).map(c => c.id));
   // Joined project/crew channels from conversations list
@@ -666,8 +639,14 @@ export function TeamMessagesContent() {
   const projectChannelsUnjoinedRaw = allChannels.filter(ch => !!ch.projectId && !joinedProjectIds.has(ch.id));
   const crewChannelsUnjoinedRaw = allChannels.filter(ch => !!ch.crewId && !joinedCrewIds.has(ch.id));
   // Combined for display
-  const projectChannels = [...projectChannelsJoined, ...projectChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true } as Conversation & { _unjoined?: boolean }))];
-  const crewChannels = [...crewChannelsJoined, ...crewChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true } as Conversation & { _unjoined?: boolean }))];
+  const projectChannels: ChannelRow[] = [
+    ...projectChannelsJoined,
+    ...projectChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true as const })),
+  ].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  const crewChannels: ChannelRow[] = [
+    ...crewChannelsJoined,
+    ...crewChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true as const })),
+  ].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   const directMessages = conversations.filter(c => c.type === "DIRECT");
 
   // Named channels the user hasn't joined yet
@@ -879,7 +858,7 @@ export function TeamMessagesContent() {
                     {projectChannels.length > 0 && (
                       <SidebarSection label="Project Channels">
                         {projectChannels.filter(c => filterName(getConversationName(c))).map(c => {
-                          const unjoined = (c as any)._unjoined === true;
+                          const unjoined = c._unjoined === true;
                           return (
                             <button
                               key={c.id}
@@ -893,11 +872,11 @@ export function TeamMessagesContent() {
                             >
                               <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
                               <span className="flex-1 truncate">
-                                {(c as any).channelSlug ? (c as any).channelSlug : c.name}
+                                {c.channelSlug ?? c.name}
                               </span>
                               {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
-                              {!unjoined && (c as Conversation).unreadCount > 0 && (
-                                <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
+                              {!unjoined && c.unreadCount > 0 && (
+                                <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
                               )}
                             </button>
                           );
@@ -909,7 +888,7 @@ export function TeamMessagesContent() {
                     {crewChannels.length > 0 && (
                       <SidebarSection label="Crew Channels">
                         {crewChannels.filter(c => filterName(getConversationName(c))).map(c => {
-                          const unjoined = (c as any)._unjoined === true;
+                          const unjoined = c._unjoined === true;
                           return (
                             <button
                               key={c.id}
@@ -923,11 +902,11 @@ export function TeamMessagesContent() {
                             >
                               <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
                               <span className="flex-1 truncate">
-                                {(c as any).channelSlug ? (c as any).channelSlug : c.name}
+                                {c.channelSlug ?? c.name}
                               </span>
                               {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
-                              {!unjoined && (c as Conversation).unreadCount > 0 && (
-                                <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
+                              {!unjoined && c.unreadCount > 0 && (
+                                <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
                               )}
                             </button>
                           );
