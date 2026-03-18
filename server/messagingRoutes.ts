@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { users, projects as projectsTable, aiTasks } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, desc, sql, and, inArray, or, isNotNull, ilike, isNull } from "drizzle-orm";
+import { eq, desc, sql, and, inArray, or, isNotNull, ilike, isNull, type SQL } from "drizzle-orm";
 import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
@@ -769,7 +769,7 @@ const messagingSetup = (async () => {
       const scopedProjectId = conv?.projectId;
 
       // Query project tasks joined with project name
-      const taskConditions: any[] = [eq(tasks.organizationId, orgId)];
+      const taskConditions: SQL<unknown>[] = [eq(tasks.organizationId, orgId)];
       if (q.trim()) taskConditions.push(ilike(tasks.title, `%${q}%`));
       if (scopedProjectId) taskConditions.push(eq(tasks.projectId, scopedProjectId));
 
@@ -785,7 +785,7 @@ const messagingSetup = (async () => {
         .limit(8);
 
       // Query AI tasks — must be scoped to org via project join (innerJoin enforces org isolation)
-      const aiConditions: any[] = [eq(projectsTable.gcOrganizationId, orgId)];
+      const aiConditions: SQL<unknown>[] = [eq(projectsTable.gcOrganizationId, orgId)];
       if (q.trim()) aiConditions.push(ilike(aiTasks.title, `%${q}%`));
       if (scopedProjectId) aiConditions.push(eq(aiTasks.projectId, scopedProjectId));
 

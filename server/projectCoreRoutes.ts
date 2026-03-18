@@ -13,8 +13,6 @@ import {
   estimates, estimateLineItems, timeEntries,
   calendarEvents, media, planDocuments, projectNotes,
   dailyScopeProgress, conversations, conversationParticipants,
-  crewProjectAssignments, crewMembers,
-  userRoleEnum,
 } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -813,42 +811,20 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
               userId: req.user!.id,
               isAdmin: true,
             });
-            // Gather actual project members:
-            // 1) Project manager (if set)
-            // 2) Org ADMIN / MANAGER roles
-            // 3) Crew members assigned to this project via crewProjectAssignments
-            const memberIdSet = new Set<string>();
-
-            if (newProject.projectManagerId) memberIdSet.add(newProject.projectManagerId);
-
-            const adminMgrs = await db
+            // Add all active org members to the project channel so no one is excluded.
+            // Creator is already added as admin above; use onConflictDoNothing for safety.
+            const orgMembers = await db
               .select({ id: users.id })
               .from(users)
               .where(
                 and(
                   eq(users.organizationId, projOrgId),
-                  eq(users.isActive, true),
-                  inArray(users.role, ["ADMIN", "MANAGER"] satisfies (typeof userRoleEnum.enumValues)[number][])
+                  eq(users.isActive, true)
                 )
               );
-            adminMgrs.forEach(m => memberIdSet.add(m.id));
-
-            // Crew members whose crew is assigned to this project
-            const crewAssignments = await db
-              .select({ userId: crewMembers.userId })
-              .from(crewMembers)
-              .innerJoin(crewProjectAssignments, eq(crewMembers.crewId, crewProjectAssignments.crewId))
-              .where(eq(crewProjectAssignments.projectId, newProject.id));
-            crewAssignments.forEach(m => memberIdSet.add(m.userId));
-
-            // Exclude creator (already added as admin)
-            memberIdSet.delete(req.user!.id);
-
-            const toAdd = Array.from(memberIdSet).map(userId => ({
-              conversationId: channel.id,
-              userId,
-              isAdmin: false,
-            }));
+            const toAdd = orgMembers
+              .filter(m => m.id !== req.user!.id)
+              .map(m => ({ conversationId: channel.id, userId: m.id, isAdmin: false }));
             if (toAdd.length > 0) {
               await db.insert(conversationParticipants).values(toAdd).onConflictDoNothing();
             }
