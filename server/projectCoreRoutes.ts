@@ -899,7 +899,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
             projectId: newProject.id,
             projectCode: newProject.code,
             name: newProject.name,
-            clientName: newProject.clientName,
+            projectType: newProject.status,
           },
         });
 

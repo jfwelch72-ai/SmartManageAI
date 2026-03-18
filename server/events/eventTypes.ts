@@ -10,7 +10,7 @@ export interface ProjectCreatedEvent extends EventEnvelope {
     projectId: string;
     projectCode: string;
     name: string;
-    clientName: string;
+    projectType: string;
   };
 }
 

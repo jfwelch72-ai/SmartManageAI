@@ -42,7 +42,12 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
   "CLOCK_IN", "CLOCK_OUT", "ADJUST",
   "REVOKE_TOKENS", "CREATE_BID_QUOTE", "UPDATE_BID_QUOTE", "DELETE_BID_QUOTE",
-  "CREATE_BID_MATERIAL_QUOTE", "UPDATE_BID_MATERIAL_QUOTE", "DELETE_BID_MATERIAL_QUOTE"
+  "CREATE_BID_MATERIAL_QUOTE", "UPDATE_BID_MATERIAL_QUOTE", "DELETE_BID_MATERIAL_QUOTE",
+  "project.created", "project.status_changed",
+  "bid.submitted", "bid.converted_to_project",
+  "change_order.approved", "change_order.rejected",
+  "timeclock.checked_in", "timeclock.checked_out",
+  "payroll.run.completed"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);
