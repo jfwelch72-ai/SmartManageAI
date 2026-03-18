@@ -2,6 +2,7 @@ import { db } from "../db";
 import { users, notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "./emailService";
+import { sendPushToUser } from "./pushService";
 import { logError } from "../utils/logger";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
@@ -219,8 +220,15 @@ function deliverSms(_userPhone: string | null, _notification: NotificationRecord
   // SMS delivery — stub, implemented in Task #51
 }
 
-function deliverPush(_userId: string, _notification: NotificationRecord): void {
-  // Web Push delivery — implemented in Task #50
+async function deliverPush(userId: string, notification: NotificationRecord): Promise<void> {
+  const baseUrl = process.env.APP_BASE_URL || "";
+  const { actionUrl } = composeEmailContent(notification);
+  const url = actionUrl || baseUrl || "/";
+  await sendPushToUser(userId, {
+    title: notification.title,
+    body: notification.message,
+    url,
+  });
 }
 
 function deliverTeams(_userId: string, _notification: NotificationRecord): void {
@@ -252,7 +260,7 @@ export async function deliverNotification(notification: NotificationRecord): Pro
       deliverSms(userRow.phone ?? null, notification);
     }
     if (prefs.pushEnabled) {
-      deliverPush(notification.userId, notification);
+      tasks.push(deliverPush(notification.userId, notification));
     }
     if (prefs.teamsEnabled) {
       deliverTeams(notification.userId, notification);

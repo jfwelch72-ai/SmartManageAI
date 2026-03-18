@@ -267,6 +267,91 @@ export default function ProfilePage() {
 
   const [typeEmailOverrides, setTypeEmailOverrides] = useState<Record<string, boolean>>({});
 
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>("default");
+  const [pushSubscribing, setPushSubscribing] = useState(false);
+
+  useEffect(() => {
+    if ("Notification" in window) {
+      setPushPermission(Notification.permission);
+    }
+  }, []);
+
+  async function requestPushSubscription(): Promise<boolean> {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      toast({ title: "Push not supported", description: "Your browser does not support push notifications.", variant: "destructive" });
+      return false;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission);
+      if (permission !== "granted") {
+        toast({ title: "Permission denied", description: "Please allow notifications in your browser settings.", variant: "destructive" });
+        return false;
+      }
+      const vapidRes = await apiRequest("GET", "/api/push/vapid-public-key");
+      const { vapidPublicKey } = await vapidRes.json();
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) await existing.unsubscribe();
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      });
+      const json = sub.toJSON();
+      await apiRequest("POST", "/api/push/subscribe", {
+        endpoint: json.endpoint,
+        p256dh: json.keys?.p256dh,
+        auth: json.keys?.auth,
+      });
+      return true;
+    } catch (err: unknown) {
+      toast({ title: "Push setup failed", description: String(err), variant: "destructive" });
+      return false;
+    }
+  }
+
+  async function removePushSubscription(): Promise<void> {
+    try {
+      if ("serviceWorker" in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          await apiRequest("POST", "/api/push/unsubscribe", { endpoint: sub.endpoint });
+          await sub.unsubscribe();
+        }
+      }
+    } catch {
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(base64);
+    const output = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) {
+      output[i] = raw.charCodeAt(i);
+    }
+    return output;
+  }
+
+  async function handlePushToggle(enabled: boolean) {
+    setPushSubscribing(true);
+    try {
+      if (enabled) {
+        const success = await requestPushSubscription();
+        if (success) {
+          setChannelPrefs(p => ({ ...p, pushEnabled: true }));
+        }
+      } else {
+        await removePushSubscription();
+        setChannelPrefs(p => ({ ...p, pushEnabled: false }));
+      }
+    } finally {
+      setPushSubscribing(false);
+    }
+  }
+
   useEffect(() => {
     if (notifPrefs?.channel) {
       setChannelPrefs({
@@ -1116,12 +1201,22 @@ export default function ProfilePage() {
                     <Switch checked={false} disabled data-testid="switch-pref-sms" />
                   </div>
 
-                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-push">
+                  <div className="flex items-center justify-between" data-testid="row-pref-push">
                     <div>
-                      <p className="text-sm font-medium">Push Notifications <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                      <p className="text-xs text-muted-foreground">Browser and mobile push alerts</p>
+                      <p className="text-sm font-medium">Push Notifications</p>
+                      <p className="text-xs text-muted-foreground">
+                        Browser and mobile push alerts
+                        {pushPermission === "denied" && (
+                          <span className="ml-1 text-destructive">(blocked in browser settings)</span>
+                        )}
+                      </p>
                     </div>
-                    <Switch checked={false} disabled data-testid="switch-pref-push" />
+                    <Switch
+                      checked={channelPrefs.pushEnabled}
+                      onCheckedChange={handlePushToggle}
+                      disabled={pushSubscribing || pushPermission === "denied"}
+                      data-testid="switch-pref-push"
+                    />
                   </div>
 
                   <div className="flex items-center justify-between opacity-60" data-testid="row-pref-teams">

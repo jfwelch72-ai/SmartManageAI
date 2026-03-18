@@ -21,7 +21,7 @@ if (currentPath.includes('%3F') || currentPath.includes('%2F')) {
 
 createRoot(document.getElementById("root")!).render(<App />);
 
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {
