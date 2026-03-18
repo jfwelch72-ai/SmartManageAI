@@ -9,12 +9,22 @@ import multer from "multer";
 import { randomUUID } from "crypto";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping } from "./messagingEvents";
+import { fileTypeFromBuffer } from "file-type";
 
 const router = Router();
 
+// ── Max voice payload: 2 min × 128 kbps / 8 = 1,920,000 bytes ≈ 2 MB ──
+// This is a conservative upper-bound for WebM/Opus compressed audio at 2 minutes.
+const MAX_VOICE_BYTES = 2 * 1024 * 1024;
+
 const msgUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit for files/voice
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit for regular files
+});
+
+const voiceUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_VOICE_BYTES }, // ~2 min of compressed audio
 });
 
 const messagingSetup = (async () => {
@@ -682,12 +692,30 @@ const messagingSetup = (async () => {
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file provided" });
 
+      // ── Server-side MIME detection: use actual file bytes rather than browser-supplied Content-Type ──
+      const detectedType = await fileTypeFromBuffer(file.buffer);
+      // Reject if detected type clearly contradicts the browser-reported type category
+      // (e.g., browser says image/* but bytes are application/x-executable)
+      if (detectedType) {
+        const browserCategory = file.mimetype.split("/")[0];
+        const detectedCategory = detectedType.mime.split("/")[0];
+        // Allow audio/video to be treated as application (some audio formats); reject obvious mismatches
+        if (browserCategory !== detectedCategory &&
+            !(browserCategory === "application" && ["audio", "video"].includes(detectedCategory)) &&
+            !(detectedCategory === "application" && ["audio", "video"].includes(browserCategory))) {
+          return res.status(415).json({ error: "File type does not match uploaded content." });
+        }
+      }
+      // Use server-detected MIME type as the canonical stored type (falls back to browser-reported if undetectable)
+      const canonicalMime = detectedType ? detectedType.mime : file.mimetype;
+      // Use server-detected extension if available to keep the filename consistent with the actual content
+      const ext = detectedType ? detectedType.ext : (file.originalname.split(".").pop() || "bin");
+
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
       if (publicPaths.length === 0) return res.status(500).json({ error: "Object storage not configured" });
 
       const basePath = publicPaths[0];
-      const ext = file.originalname.split(".").pop() || "bin";
       const uniqueId = randomUUID();
       const fileName = `messaging/${orgId}/${conversationId}/${uniqueId}.${ext}`;
       const fullPath = `${basePath}/${fileName}`;
@@ -700,7 +728,7 @@ const messagingSetup = (async () => {
 
       await blob.save(file.buffer, {
         metadata: {
-          contentType: file.mimetype,
+          contentType: canonicalMime,
           metadata: { originalName: file.originalname, source: "messaging" },
         },
       });
@@ -709,7 +737,7 @@ const messagingSetup = (async () => {
       res.json({
         url: proxyUrl,
         name: file.originalname,
-        type: file.mimetype,
+        type: canonicalMime,
         size: file.size,
       });
     } catch (error) {
@@ -719,7 +747,16 @@ const messagingSetup = (async () => {
   });
 
   // ── VOICE MESSAGE UPLOAD — uploads audio and creates the message in one step ──
-  router.post("/api/conversations/:id/voice", requireAuth, msgUpload.single("audio"), async (req: AuthRequest, res) => {
+  // Uses voiceUpload (2 MB limit) so oversized payloads are rejected by multer before business logic runs.
+  router.post("/api/conversations/:id/voice", requireAuth, (req, res, next) => {
+    voiceUpload.single("audio")(req, res, (err) => {
+      if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+        res.status(413).json({ error: "Voice message exceeds the 2-minute limit. Please record a shorter message." });
+        return;
+      }
+      next(err);
+    });
+  }, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
@@ -733,6 +770,15 @@ const messagingSetup = (async () => {
 
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No audio file provided" });
+
+      // ── MIME detection: verify uploaded bytes are audio, not a disguised non-audio file ──
+      const detectedVoiceType = await fileTypeFromBuffer(file.buffer);
+      // WebM/Opus audio is typically detected as audio/webm or video/webm (both are acceptable for voice)
+      const ALLOWED_AUDIO_CATEGORIES = ["audio", "video"];
+      if (detectedVoiceType && !ALLOWED_AUDIO_CATEGORIES.includes(detectedVoiceType.mime.split("/")[0])) {
+        return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
+      }
+      const canonicalVoiceMime = detectedVoiceType ? detectedVoiceType.mime : (file.mimetype || "audio/webm");
 
       const objectStorage = new ObjectStorageService();
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
@@ -751,7 +797,7 @@ const messagingSetup = (async () => {
 
       await blob.save(file.buffer, {
         metadata: {
-          contentType: file.mimetype || "audio/webm",
+          contentType: canonicalVoiceMime,
           metadata: { source: "messaging-voice" },
         },
       });

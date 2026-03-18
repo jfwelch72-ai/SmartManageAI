@@ -13,6 +13,7 @@ import {
   estimates, estimateLineItems, timeEntries,
   calendarEvents, media, planDocuments, projectNotes,
   dailyScopeProgress, conversations, conversationParticipants,
+  crewMembers, crewProjectAssignments,
 } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -811,20 +812,54 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
               userId: req.user!.id,
               isAdmin: true,
             });
-            // Add all active org members to the project channel so no one is excluded.
+            // Add targeted members to the project channel instead of the entire org.
+            // Included: project manager, privileged roles, and crew members from
+            // crews currently assigned to this project.
             // Creator is already added as admin above; use onConflictDoNothing for safety.
-            const orgMembers = await db
+            const PRIVILEGED_ROLES = ["ADMIN", "MANAGER", "PROJECT_MANAGER", "SUPERINTENDENT", "ESTIMATOR"] as const;
+
+            // Privileged users + project manager from the org
+            const privilegedUsers = await db
               .select({ id: users.id })
               .from(users)
               .where(
                 and(
                   eq(users.organizationId, projOrgId),
-                  eq(users.isActive, true)
+                  eq(users.isActive, true),
+                  inArray(users.role, PRIVILEGED_ROLES as unknown as string[])
                 )
               );
-            const toAdd = orgMembers
-              .filter(m => m.id !== req.user!.id)
-              .map(m => ({ conversationId: channel.id, userId: m.id, isAdmin: false }));
+
+            // Project manager (may not be in privileged list if their stored role differs)
+            const pmId = newProject.projectManagerId;
+
+            // Crew members from crews assigned to this project
+            const crewAssignments = await db
+              .select({ crewId: crewProjectAssignments.crewId })
+              .from(crewProjectAssignments)
+              .where(eq(crewProjectAssignments.projectId, newProject.id));
+            const assignedCrewIds = crewAssignments.map(a => a.crewId);
+
+            let crewUserIds: { id: string }[] = [];
+            if (assignedCrewIds.length > 0) {
+              crewUserIds = await db
+                .select({ id: crewMembers.userId })
+                .from(crewMembers)
+                .where(inArray(crewMembers.crewId, assignedCrewIds));
+            }
+
+            // Collect unique user IDs, excluding the creator (already added as admin)
+            const creatorId = req.user!.id;
+            const memberSet = new Set<string>();
+            for (const u of privilegedUsers) { if (u.id !== creatorId) memberSet.add(u.id); }
+            if (pmId && pmId !== creatorId) memberSet.add(pmId);
+            for (const u of crewUserIds) { if (u.id !== creatorId) memberSet.add(u.id); }
+
+            const toAdd = Array.from(memberSet).map(userId => ({
+              conversationId: channel.id,
+              userId,
+              isAdmin: false,
+            }));
             if (toAdd.length > 0) {
               await db.insert(conversationParticipants).values(toAdd).onConflictDoNothing();
             }

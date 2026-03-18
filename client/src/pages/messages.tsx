@@ -7,7 +7,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMessagingEvents } from "@/hooks/use-messaging-events";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -15,11 +14,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   MessageSquare,
   Plus,
-  Send,
   Users,
   Building2,
   Search,
@@ -27,229 +25,25 @@ import {
   Hash,
   FolderOpen,
   HardHat,
-  Paperclip,
-  Mic,
-  MicOff,
-  FileText,
-  Image as ImageIcon,
-  Download,
-  AtSign,
-  X,
-  ChevronDown,
-  ChevronRight,
   Loader2,
-  Edit2,
-  Trash2,
-  Smile,
-  Check,
 } from "lucide-react";
 
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
-const CURATED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"] as const;
-
-interface User {
-  id: string;
-  firstName: string;
-  lastName: string;
-  role: string;
-}
-
-interface Channel {
-  id: string;
-  name: string | null;
-  description: string | null;
-  topic: string | null;
-  channelSlug: string | null;
-  projectId: string | null;
-  crewId: string | null;
-  type: string;
-  isCompanyChannel: boolean;
-}
-
-interface Conversation {
-  id: string;
-  type: "DIRECT" | "GROUP" | "COMPANY";
-  name: string | null;
-  description: string | null;
-  topic: string | null;
-  channelSlug: string | null;
-  projectId: string | null;
-  crewId: string | null;
-  isCompanyChannel: boolean;
-  isArchived: boolean;
-  createdAt: string;
-  updatedAt: string;
-  participants: {
-    id: string;
-    userId: string;
-    isAdmin: boolean;
-    user: User;
-  }[];
-  lastMessage: {
-    id: string;
-    content: string;
-    createdAt: string;
-    sender: User;
-  } | null;
-  unreadCount: number;
-}
-
-type ChannelRow = Conversation & { _unjoined?: boolean };
-
-interface MessageReaction {
-  emoji: string;
-  count: number;
-  userIds: string[];
-}
-
-interface Message {
-  id: string;
-  conversationId: string;
-  senderId: string;
-  content: string;
-  attachmentUrl: string | null;
-  attachmentName: string | null;
-  attachmentType: string | null;
-  attachmentSize: number | null;
-  voiceUrl: string | null;
-  voiceDurationSeconds: number | null;
-  mentionedTaskIds: string[] | null;
-  isEdited: boolean;
-  editedAt: string | null;
-  isDeleted: boolean;
-  reactions: MessageReaction[];
-  createdAt: string;
-  sender: User;
-}
-
-interface TaskMention {
-  id: string;
-  title: string;
-  projectName: string | null;
-}
-
-function getInitials(firstName: string, lastName: string) {
-  return `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.toUpperCase();
-}
-
-// ── Voice Message Player ──
-function VoicePlayer({ url, durationSeconds }: { url: string; durationSeconds: number | null }) {
-  const label = durationSeconds
-    ? `Voice message (${Math.floor(durationSeconds / 60)}:${String(durationSeconds % 60).padStart(2, "0")})`
-    : "Voice message";
-  return (
-    <div className="mt-1">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <audio controls src={url} className="max-w-xs h-8" data-testid="audio-voice-message" />
-    </div>
-  );
-}
-
-function fmtBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-// ── Attachment Renderer — lightbox for images, file size for documents ──
-function AttachmentRenderer({
-  url, name, type, size,
-}: {
-  url: string;
-  name: string | null;
-  type: string | null;
-  size?: number | null;
-}) {
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const isImage = type?.startsWith("image/");
-  return (
-    <div className="mt-1.5">
-      {isImage ? (
-        <>
-          <button
-            onClick={() => setLightboxOpen(true)}
-            className="focus:outline-none rounded-lg overflow-hidden"
-            data-testid="button-attachment-image-expand"
-          >
-            <img
-              src={url}
-              alt={name || "attachment"}
-              className="max-w-[200px] max-h-[160px] rounded-lg object-cover border hover:opacity-90 transition-opacity cursor-zoom-in"
-            />
-          </button>
-          <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-            <DialogContent className="max-w-3xl p-2 bg-black/90">
-              <DialogHeader className="sr-only">
-                <DialogTitle>{name || "Image preview"}</DialogTitle>
-              </DialogHeader>
-              <img
-                src={url}
-                alt={name || "attachment"}
-                className="max-h-[80vh] w-full object-contain rounded"
-              />
-              <div className="flex justify-between items-center mt-2 px-2">
-                <span className="text-sm text-white/70 truncate">{name}</span>
-                <a
-                  href={url}
-                  download={name || "image"}
-                  className="text-sm text-white/70 hover:text-white flex items-center gap-1"
-                  data-testid="button-attachment-download"
-                >
-                  <Download className="w-4 h-4" /> Download
-                </a>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </>
-      ) : (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 bg-background/50 border rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors"
-          data-testid="button-attachment-download"
-        >
-          <FileText className="w-4 h-4 text-primary shrink-0" />
-          <span className="truncate max-w-[140px]">{name || "File"}</span>
-          {size != null && <span className="text-xs text-muted-foreground whitespace-nowrap">{fmtBytes(size)}</span>}
-          <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-        </a>
-      )}
-    </div>
-  );
-}
-
-// ── Sidebar section collapse ──
-function SidebarSection({
-  label,
-  children,
-  defaultOpen = true,
-  action,
-}: {
-  label: string;
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-  action?: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="mb-1">
-      <div className="flex items-center px-2 py-1">
-        <button
-          onClick={() => setOpen(!open)}
-          className="flex items-center gap-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors flex-1 text-left"
-        >
-          {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
-          <span>{label}</span>
-        </button>
-        {action && <div className="shrink-0">{action}</div>}
-      </div>
-      {open && <div>{children}</div>}
-    </div>
-  );
-}
+import { SidebarSection } from "@/components/messaging/SidebarSection";
+import { MessageBubble } from "@/components/messaging/MessageBubble";
+import { MessageComposer } from "@/components/messaging/MessageComposer";
+import {
+  getInitials,
+  type User,
+  type Channel,
+  type Conversation,
+  type ChannelRow,
+  type Message,
+  type MessageReaction,
+  type TaskMention,
+} from "@/components/messaging/types";
 
 export function TeamMessagesContent() {
   const { user } = useAuth();
@@ -270,7 +64,6 @@ export function TeamMessagesContent() {
   const [newDmOpen, setNewDmOpen] = useState(false);
 
   // File upload
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
@@ -299,8 +92,6 @@ export function TeamMessagesContent() {
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   // ── Stable updater passed to the SSE hook so it can update olderMessages ──
-  // Edits/deletes/reactions from OTHER users arrive via SSE and need to update
-  // both the query cache (latestMessages) AND the local olderMessages state.
   const updateOlderMessage = useCallback(
     (messageId: string, updater: (m: Message) => Message) => {
       setOlderMessages(prev => prev.map(m => m.id === messageId ? updater(m) : m));
@@ -316,10 +107,7 @@ export function TeamMessagesContent() {
   const [olderMessages, setOlderMessages] = useState<Message[]>([]);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  // Once we've loaded all history, don't let refetches re-enable the sentinel
   const hasLoadedAllRef = useRef(false);
-  // Tracks the latest scrollTop from a scroll event listener; starts at Infinity
-  // so the intersection observer cannot fire until the user has scrolled intentionally
   const scrollTopRef = useRef<number>(Infinity);
 
   useEffect(() => {
@@ -354,30 +142,27 @@ export function TeamMessagesContent() {
     setHasMore(false);
     setIsLoadingMore(false);
     hasLoadedAllRef.current = false;
-    scrollTopRef.current = Infinity; // block observer until user scrolls
+    scrollTopRef.current = Infinity;
   }, [selectedConversationId]);
 
-  // Sync scrollTopRef from native scroll events so the load-more guard stays current
+  // Sync scrollTopRef from native scroll events
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     const onScroll = () => { scrollTopRef.current = container.scrollTop; };
     container.addEventListener("scroll", onScroll, { passive: true });
     return () => container.removeEventListener("scroll", onScroll);
-  // Re-attach when conversation changes (container DOM is stable but content changes)
   }, [selectedConversationId]);
 
   const { data: latestMessages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/conversations", selectedConversationId, "messages"],
     enabled: !!selectedConversationId,
-    // When SSE is live, disable polling; fall back to 10s when SSE drops
     refetchInterval: sseLive ? false : 10_000,
     queryFn: async () => {
       if (!selectedConversationId) return [];
       const res = await fetch(`/api/conversations/${selectedConversationId}/messages`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch messages");
       const data = await res.json() as { messages: Message[]; hasMore: boolean };
-      // Only update hasMore if the user hasn't already loaded all history
       if (!hasLoadedAllRef.current) {
         setHasMore(data.hasMore);
       }
@@ -403,7 +188,6 @@ export function TeamMessagesContent() {
     },
   });
 
-  // Selected index in mention dropdown
   const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
   useEffect(() => setMentionSelectedIdx(0), [mentionResults]);
 
@@ -505,7 +289,6 @@ export function TeamMessagesContent() {
       return response.json() as Promise<Message>;
     },
     onSuccess: (deletedMsg: Message) => {
-      // Deleted messages show no reactions — clear them along with content
       const applyDelete = (m: Message) =>
         m.id === deletedMsg.id ? { ...m, ...deletedMsg, reactions: [] } : m;
       queryClient.setQueryData<Message[]>(
@@ -536,17 +319,11 @@ export function TeamMessagesContent() {
   // ── Load earlier messages (cursor-based) ──
   const loadMoreMessages = async () => {
     if (!selectedConversationId || isLoadingMore || !hasMore) return;
-
-    // Guard: only load earlier messages when the user has intentionally scrolled
-    // near the top. `scrollTopRef` starts at Infinity and is updated by the scroll
-    // listener, so this blocks the observer from auto-firing on initial page load.
     if (scrollTopRef.current > 50) return;
 
-    // Cursor = the oldest message we currently have
     const oldest = olderMessages.length > 0 ? olderMessages[0] : latestMessages[0];
     if (!oldest) return;
 
-    // Capture both scrollHeight AND scrollTop before prepend for precise restoration
     const container = scrollContainerRef.current;
     const prevScrollHeight = container?.scrollHeight ?? 0;
     const prevScrollTop = container?.scrollTop ?? 0;
@@ -564,8 +341,6 @@ export function TeamMessagesContent() {
       setHasMore(data.hasMore);
       if (!data.hasMore) hasLoadedAllRef.current = true;
 
-      // Restore scroll position: add any new height above the previous top
-      // so the user stays visually at the same message they were reading.
       if (container) {
         requestAnimationFrame(() => {
           container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
@@ -578,7 +353,6 @@ export function TeamMessagesContent() {
     }
   };
 
-  // Stable ref so the intersection observer callback always calls the latest version
   const loadMoreRef = useRef(loadMoreMessages);
   useEffect(() => { loadMoreRef.current = loadMoreMessages; });
 
@@ -596,8 +370,7 @@ export function TeamMessagesContent() {
     return () => observer.disconnect();
   }, [hasMore, selectedConversationId]);
 
-  // Scroll to bottom only when latest messages change (new messages or conversation switch)
-  // NOT when older messages are prepended (handled by scroll preservation above)
+  // Scroll to bottom only when latest messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [latestMessages]);
@@ -631,11 +404,12 @@ export function TeamMessagesContent() {
   };
 
   // ── Message input with @ mention ──
+  const MAX_VOICE_SECONDS = 120;
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setMessageInput(val);
 
-    // Fire typing signal (rate-limited to once per 2 s via server + local ref)
     if (selectedConversationId) {
       const now = Date.now();
       if (now - lastTypingSignalRef.current > 2_000) {
@@ -647,7 +421,6 @@ export function TeamMessagesContent() {
       }
     }
 
-    // Detect @ trigger
     const cursor = e.target.selectionStart || val.length;
     const textBefore = val.slice(0, cursor);
     const atIdx = textBefore.lastIndexOf("@");
@@ -723,8 +496,7 @@ export function TeamMessagesContent() {
       const formData = new FormData();
       formData.append("file", file);
 
-      // Use XHR for upload progress
-      const data = await new Promise<{ url: string; name: string; type: string }>((resolve, reject) => {
+      const data = await new Promise<{ url: string; name: string; type: string; size?: number }>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open("POST", `/api/conversations/${selectedConversationId}/upload`);
         xhr.withCredentials = true;
@@ -755,11 +527,8 @@ export function TeamMessagesContent() {
     } finally {
       setUploadingFile(false);
       setUploadProgress(0);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
-
-  const MAX_VOICE_SECONDS = 120;
 
   // ── Voice recording ──
   const startRecording = async () => {
@@ -775,7 +544,6 @@ export function TeamMessagesContent() {
       recordingTimerRef.current = window.setInterval(() => {
         setRecordingSeconds(s => {
           if (s + 1 >= MAX_VOICE_SECONDS) {
-            // Auto-stop at max duration
             stopRecording();
             return MAX_VOICE_SECONDS;
           }
@@ -811,7 +579,6 @@ export function TeamMessagesContent() {
           });
           if (!res.ok) throw new Error("Voice upload failed");
           const savedMsg = await res.json();
-          // Server already saved the message — append it directly to cache
           queryClient.setQueryData<Message[]>(
             ["/api/conversations", selectedConversationId, "messages"],
             (prev = []) => [...prev, savedMsg]
@@ -837,13 +604,10 @@ export function TeamMessagesContent() {
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   const joinedProjectIds = new Set(conversations.filter(c => !!c.projectId).map(c => c.id));
   const joinedCrewIds = new Set(conversations.filter(c => !!c.crewId).map(c => c.id));
-  // Joined project/crew channels from conversations list
   const projectChannelsJoined = conversations.filter(c => !!c.projectId);
   const crewChannelsJoined = conversations.filter(c => !!c.crewId);
-  // Non-joined project/crew channels discoverable from allChannels
   const projectChannelsUnjoinedRaw = allChannels.filter(ch => !!ch.projectId && !joinedProjectIds.has(ch.id));
   const crewChannelsUnjoinedRaw = allChannels.filter(ch => !!ch.crewId && !joinedCrewIds.has(ch.id));
-  // Combined for display
   const projectChannels: ChannelRow[] = [
     ...projectChannelsJoined,
     ...projectChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true as const })),
@@ -854,7 +618,6 @@ export function TeamMessagesContent() {
   ].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
   const directMessages = conversations.filter(c => c.type === "DIRECT");
 
-  // Named channels the user hasn't joined yet
   const joinableChannels = allChannels.filter(ch => !ch.projectId && !ch.crewId && !conversations.find(c => c.id === ch.id));
 
   const filterName = (name: string) => name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -862,9 +625,6 @@ export function TeamMessagesContent() {
   const showConversationList = !isMobileView || !selectedConversationId;
   const showMessages = !isMobileView || !!selectedConversationId;
 
-  const fmtSeconds = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-
-  // Render content for selected conversation header
   const getConvSubtitle = (c: Conversation) => {
     if (c.isCompanyChannel) return "Company-wide channel";
     if (c.channelSlug) return c.topic || `#${c.channelSlug}`;
@@ -885,7 +645,7 @@ export function TeamMessagesContent() {
     return <MessageSquare className="w-4 h-4" />;
   };
 
-  // Render mention-highlighted message content; @[Title](taskId) is clickable
+  // Render mention-highlighted message content
   const renderContent = (content: string) => {
     const parts = content.split(/(@\[[^\]]*\]\([^)]+\))/g);
     return parts.map((part, i) => {
@@ -1015,7 +775,7 @@ export function TeamMessagesContent() {
                               </div>
                               <Button
                                 className="w-full"
-                                onClick={() => createChannelMutation.mutate({ name: newChannelName, description: newChannelDescription, topic: newChannelTopic, slug: newChannelSlug || undefined })}
+                                onClick={() => createChannelMutation.mutate({ name: newChannelName, description: newChannelDescription, topic: newChannelTopic, slug: newChannelSlug || undefined } as { name: string; description?: string; topic?: string })}
                                 disabled={!newChannelName.trim() || createChannelMutation.isPending}
                                 data-testid="button-create-channel"
                               >
@@ -1227,7 +987,7 @@ export function TeamMessagesContent() {
                       )}
                     </div>
 
-                    {/* Messages Area — plain div so we can control scrollTop directly */}
+                    {/* Messages Area */}
                     <div
                       ref={scrollContainerRef}
                       className="flex-1 overflow-y-auto px-4 py-3"
@@ -1272,201 +1032,27 @@ export function TeamMessagesContent() {
                             const isOwn = message.senderId === user?.id;
                             const currentParticipant = selectedConversation?.participants.find(p => p.userId === user?.id);
                             const isAdmin = currentParticipant?.isAdmin === true;
-                            const isEditing = editingMessageId === message.id;
-                            const isPickerOpen = popoverMsgId === message.id;
-                            const canEdit = isOwn && !message.isDeleted && !message.voiceUrl;
-                            const canDelete = (isOwn || isAdmin) && !message.isDeleted;
 
                             return (
-                              <div
+                              <MessageBubble
                                 key={message.id}
-                                className={cn("flex gap-2.5 group relative", isOwn && "flex-row-reverse")}
-                                data-testid={`message-${message.id}`}
-                              >
-                                <Avatar className="h-7 w-7 shrink-0 mt-0.5">
-                                  <AvatarFallback className="text-[10px]">
-                                    {getInitials(message.sender.firstName, message.sender.lastName)}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className={cn("max-w-[72%]", isOwn && "text-right")}>
-                                  <div className={cn("flex items-center gap-1.5 mb-0.5", isOwn && "flex-row-reverse")}>
-                                    <span className="text-xs font-semibold">
-                                      {isOwn ? "You" : `${message.sender.firstName} ${message.sender.lastName}`}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground">
-                                      {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
-                                    </span>
-                                  </div>
-
-                                  {/* Deleted placeholder */}
-                                  {message.isDeleted ? (
-                                    <p className="text-xs italic text-muted-foreground px-1">This message was deleted.</p>
-                                  ) : isEditing ? (
-                                    /* ── Inline edit mode ── */
-                                    <div className="flex flex-col gap-1 min-w-[180px]">
-                                      <Textarea
-                                        value={editContent}
-                                        onChange={e => setEditContent(e.target.value)}
-                                        className="resize-none text-sm min-h-[60px]"
-                                        autoFocus
-                                        onKeyDown={e => {
-                                          if (e.key === "Enter" && !e.shiftKey) {
-                                            e.preventDefault();
-                                            if (editContent.trim()) editMessageMutation.mutate({ messageId: message.id, content: editContent });
-                                          }
-                                          if (e.key === "Escape") { setEditingMessageId(null); setEditContent(""); }
-                                        }}
-                                        data-testid={`input-edit-message-${message.id}`}
-                                      />
-                                      <div className="flex gap-1 justify-end">
-                                        <Button size="sm" variant="ghost" className="h-6 text-xs px-2"
-                                          onClick={() => { setEditingMessageId(null); setEditContent(""); }}
-                                          data-testid={`button-cancel-edit-${message.id}`}
-                                        >
-                                          Cancel
-                                        </Button>
-                                        <Button size="sm" className="h-6 text-xs px-2"
-                                          onClick={() => { if (editContent.trim()) editMessageMutation.mutate({ messageId: message.id, content: editContent }); }}
-                                          disabled={!editContent.trim() || editMessageMutation.isPending}
-                                          data-testid={`button-save-edit-${message.id}`}
-                                        >
-                                          {editMessageMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                                          Save
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    /* ── Normal bubble ── */
-                                    <>
-                                      {message.voiceUrl ? (
-                                        <div className={cn(isOwn && "flex justify-end")}>
-                                          <VoicePlayer url={message.voiceUrl} durationSeconds={message.voiceDurationSeconds} />
-                                        </div>
-                                      ) : (
-                                        <div className={cn(
-                                          "rounded-2xl px-3 py-2 text-sm inline-block text-left",
-                                          isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
-                                        )}>
-                                          {renderContent(message.content)}
-                                          {message.attachmentUrl && (
-                                            <AttachmentRenderer
-                                              url={message.attachmentUrl}
-                                              name={message.attachmentName}
-                                              type={message.attachmentType}
-                                              size={message.attachmentSize}
-                                            />
-                                          )}
-                                        </div>
-                                      )}
-                                      {/* Edited label with timestamp */}
-                                      {message.isEdited && (
-                                        <p className="text-[10px] text-muted-foreground mt-0.5 px-1">
-                                          (edited{message.editedAt ? ` · ${formatDistanceToNow(new Date(message.editedAt), { addSuffix: true })}` : ""})
-                                        </p>
-                                      )}
-                                    </>
-                                  )}
-
-                                  {/* ── Reactions row ── */}
-                                  {(message.reactions?.length ?? 0) > 0 && (
-                                    <div className={cn("flex flex-wrap gap-1 mt-1", isOwn && "justify-end")}>
-                                      {message.reactions.map(r => {
-                                        const iMine = r.userIds.includes(user?.id ?? "");
-                                        return (
-                                          <button
-                                            key={r.emoji}
-                                            onClick={() => reactMutation.mutate({ messageId: message.id, emoji: r.emoji })}
-                                            className={cn(
-                                              "inline-flex items-center gap-0.5 text-xs rounded-full px-1.5 py-0.5 border transition-colors",
-                                              iMine ? "bg-primary/10 border-primary/40 text-primary" : "bg-muted border-transparent hover:border-border"
-                                            )}
-                                            data-testid={`button-reaction-${message.id}-${r.emoji}`}
-                                          >
-                                            <span>{r.emoji}</span>
-                                            <span className="tabular-nums">{r.count}</span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* ── Hover action toolbar ── */}
-                                {!isEditing && (
-                                  <div className={cn(
-                                    "self-start mt-1 shrink-0 relative",
-                                    isOwn ? "order-first" : ""
-                                  )}>
-                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-                                      {/* React button */}
-                                      {!message.isDeleted && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <button
-                                              onClick={() => setPopoverMsgId(prev => prev === message.id ? null : message.id)}
-                                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                                              data-testid={`button-react-${message.id}`}
-                                            >
-                                              <Smile className="w-3.5 h-3.5" />
-                                            </button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>React</TooltipContent>
-                                        </Tooltip>
-                                      )}
-                                      {/* Edit button */}
-                                      {canEdit && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <button
-                                              onClick={() => { setEditingMessageId(message.id); setEditContent(message.content); setPopoverMsgId(null); }}
-                                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                                              data-testid={`button-edit-${message.id}`}
-                                            >
-                                              <Edit2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>Edit</TooltipContent>
-                                        </Tooltip>
-                                      )}
-                                      {/* Delete button */}
-                                      {canDelete && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <button
-                                              onClick={() => deleteMessageMutation.mutate(message.id)}
-                                              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-                                              data-testid={`button-delete-${message.id}`}
-                                            >
-                                              <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                          </TooltipTrigger>
-                                          <TooltipContent>Delete</TooltipContent>
-                                        </Tooltip>
-                                      )}
-                                    </div>
-                                    {/* Emoji picker popover */}
-                                    {isPickerOpen && (
-                                      <div className={cn(
-                                        "absolute top-full mt-1 bg-popover border rounded-xl shadow-lg p-1.5 flex gap-1 z-50",
-                                        isOwn ? "right-0" : "left-0"
-                                      )}
-                                        data-testid={`emoji-picker-${message.id}`}
-                                      >
-                                        {CURATED_EMOJIS.map(emoji => (
-                                          <button
-                                            key={emoji}
-                                            onClick={() => reactMutation.mutate({ messageId: message.id, emoji })}
-                                            className="text-xl hover:scale-125 transition-transform p-0.5 rounded"
-                                            data-testid={`button-emoji-${message.id}-${emoji}`}
-                                          >
-                                            {emoji}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
+                                message={message}
+                                isOwn={isOwn}
+                                isAdmin={isAdmin}
+                                currentUserId={user?.id ?? ""}
+                                editingMessageId={editingMessageId}
+                                editContent={editContent}
+                                popoverMsgId={popoverMsgId}
+                                editPending={editMessageMutation.isPending}
+                                onEditStart={(id, content) => { setEditingMessageId(id); setEditContent(content); setPopoverMsgId(null); }}
+                                onEditCancel={() => { setEditingMessageId(null); setEditContent(""); }}
+                                onEditSave={(id, content) => editMessageMutation.mutate({ messageId: id, content })}
+                                onEditContentChange={setEditContent}
+                                onDelete={(id) => deleteMessageMutation.mutate(id)}
+                                onPickerToggle={(id) => setPopoverMsgId(prev => prev === id ? null : id)}
+                                onReact={(messageId, emoji) => reactMutation.mutate({ messageId, emoji })}
+                                renderContent={renderContent}
+                              />
                             );
                           })}
                           <div ref={messagesEndRef} />
@@ -1474,159 +1060,30 @@ export function TeamMessagesContent() {
                       )}
                     </div>
 
-                    {/* Message Input */}
-                    <div className="p-3 border-t shrink-0">
-                      {/* File upload progress bar */}
-                      {uploadingFile && uploadProgress > 0 && uploadProgress < 100 && (
-                        <div className="mb-2">
-                          <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                            <span>Uploading file...</span>
-                            <span>{uploadProgress}%</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-primary rounded-full transition-all duration-150"
-                              style={{ width: `${uploadProgress}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
-                      {/* Task mention dropdown — keyboard-navigable */}
-                      {mentionQuery !== null && mentionResults.length > 0 && (
-                        <div className="mb-2 bg-popover border rounded-lg shadow-lg overflow-hidden" role="listbox" aria-label="Task mentions">
-                          {mentionResults.map((t, idx) => (
-                            <button
-                              key={t.id}
-                              onClick={() => insertTaskMention(t)}
-                              className={cn(
-                                "w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors",
-                                idx === mentionSelectedIdx ? "bg-accent" : "hover:bg-accent/50"
-                              )}
-                              data-testid={`button-mention-task-${t.id}`}
-                              role="option"
-                              aria-selected={idx === mentionSelectedIdx}
-                            >
-                              <AtSign className="w-3.5 h-3.5 text-primary shrink-0" />
-                              <span className="flex-1 truncate">{t.title}</span>
-                              {t.projectName && <span className="text-xs text-muted-foreground truncate max-w-[80px]">{t.projectName}</span>}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Pending task mentions */}
-                      {pendingTaskIds.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {pendingTaskIds.map(tid => (
-                            <Badge key={tid} variant="secondary" className="gap-1 text-xs">
-                              <AtSign className="w-2.5 h-2.5" />
-                              Task
-                              <button onClick={() => setPendingTaskIds(prev => prev.filter(id => id !== tid))}>
-                                <X className="w-2.5 h-2.5" />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Typing indicator */}
-                      {Object.keys(typingNames).length > 0 && (
-                        <div className="flex items-center gap-1.5 mb-1.5 px-1 text-xs text-muted-foreground" data-testid="typing-indicator">
-                          <span className="inline-flex items-end gap-0.5">
-                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
-                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
-                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
-                          </span>
-                          <span>
-                            {Object.values(typingNames).join(", ")}{" "}
-                            {Object.values(typingNames).length === 1 ? "is" : "are"} typing…
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Recording indicator */}
-                      {isRecording && (
-                        <div className="flex items-center gap-2 mb-2 px-3 py-1.5 bg-destructive/10 rounded-lg text-destructive text-sm">
-                          <span className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-                          Recording {fmtSeconds(recordingSeconds)}
-                          <Button size="sm" variant="ghost" className="ml-auto h-6 text-xs" onClick={stopRecording}>
-                            Stop & Send
-                          </Button>
-                        </div>
-                      )}
-
-                      <div className="flex items-end gap-2">
-                        {/* File attachment */}
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          className="hidden"
-                          onChange={handleFileSelect}
-                          data-testid="input-file-upload"
-                        />
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant="ghost"
-                              className="h-9 w-9 shrink-0"
-                              onClick={() => fileInputRef.current?.click()}
-                              disabled={uploadingFile || isRecording}
-                              data-testid="button-attach-file"
-                            >
-                              {uploadingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Attach file</TooltipContent>
-                        </Tooltip>
-
-                        {/* Voice message */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              size="icon"
-                              variant={isRecording ? "destructive" : "ghost"}
-                              className="h-9 w-9 shrink-0"
-                              onClick={isRecording ? stopRecording : startRecording}
-                              disabled={uploadingVoice || uploadingFile}
-                              data-testid="button-voice-record"
-                            >
-                              {uploadingVoice ? <Loader2 className="w-4 h-4 animate-spin" /> : isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>{isRecording ? "Stop recording" : "Record voice message"}</TooltipContent>
-                        </Tooltip>
-
-                        {/* Text input */}
-                        <div className="flex-1 relative">
-                          <Textarea
-                            ref={textareaRef}
-                            placeholder="Type a message… (@ to mention a task)"
-                            value={messageInput}
-                            onChange={handleInputChange}
-                            onKeyDown={handleKeyDown}
-                            className="resize-none min-h-[36px] max-h-32 py-2 pr-10 text-sm"
-                            rows={1}
-                            disabled={isRecording}
-                            data-testid="input-message"
-                          />
-                        </div>
-
-                        {/* Send */}
-                        <Button
-                          type="submit"
-                          size="icon"
-                          className="h-9 w-9 shrink-0"
-                          onClick={() => handleSendMessage()}
-                          disabled={(!messageInput.trim()) || sendMessageMutation.isPending || isRecording}
-                          data-testid="button-send-message"
-                        >
-                          {sendMessageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                    </div>
+                    {/* Message Composer */}
+                    <MessageComposer
+                      messageInput={messageInput}
+                      isRecording={isRecording}
+                      recordingSeconds={recordingSeconds}
+                      uploadingFile={uploadingFile}
+                      uploadingVoice={uploadingVoice}
+                      uploadProgress={uploadProgress}
+                      pendingTaskIds={pendingTaskIds}
+                      mentionQuery={mentionQuery}
+                      mentionResults={mentionResults}
+                      mentionSelectedIdx={mentionSelectedIdx}
+                      typingNames={typingNames}
+                      sendPending={sendMessageMutation.isPending}
+                      onInputChange={handleInputChange}
+                      onKeyDown={handleKeyDown}
+                      onSend={handleSendMessage}
+                      onFileSelect={handleFileSelect}
+                      onStartRecording={startRecording}
+                      onStopRecording={stopRecording}
+                      onMentionSelect={insertTaskMention}
+                      onRemovePendingTask={(id) => setPendingTaskIds(prev => prev.filter(tid => tid !== id))}
+                      textareaRef={textareaRef}
+                    />
                   </>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-center p-8">
