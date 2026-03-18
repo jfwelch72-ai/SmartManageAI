@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users } from "@shared/schema";
+import { users, projects as projectsTable, aiTasks } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, inArray, or, isNotNull, ilike, isNull } from "drizzle-orm";
 import { sanitizeText } from "./sanitization";
@@ -209,7 +209,7 @@ const messagingSetup = (async () => {
 
       if (!orgId) return res.status(400).json({ error: "Organization required" });
 
-      // Verify channel belongs to user's organization and is a joinable channel
+      // Verify target is a real channel (not a DM), belongs to this org, and is not archived
       const [channel] = await db
         .select()
         .from(conversations)
@@ -217,7 +217,13 @@ const messagingSetup = (async () => {
           and(
             eq(conversations.id, conversationId),
             eq(conversations.organizationId, orgId),
-            eq(conversations.isArchived, false)
+            eq(conversations.isArchived, false),
+            // Must be an actual channel (named, project, or crew) — not a DM
+            or(
+              isNotNull(conversations.channelSlug),
+              isNotNull(conversations.projectId),
+              isNotNull(conversations.crewId)
+            )
           )
         )
         .limit(1);
@@ -722,6 +728,7 @@ const messagingSetup = (async () => {
   });
 
   // ── TASK MENTION SEARCH — scoped to conversation (and its linked project if any) ──
+  // Returns { id, title, projectName } for both project tasks and AI tasks
   router.get("/api/conversations/:id/mention-search", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
@@ -735,25 +742,57 @@ const messagingSetup = (async () => {
       const q = (req.query.q as string) || "";
 
       // Optionally narrow to the conversation's linked project
-      const [conv] = await db.select({ projectId: conversations.projectId }).from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-      const projectId = conv?.projectId;
+      const [conv] = await db
+        .select({ projectId: conversations.projectId })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .limit(1);
+      const scopedProjectId = conv?.projectId;
 
-      const conditions: any[] = [eq(tasks.organizationId, orgId)];
-      if (q.trim()) conditions.push(ilike(tasks.title, `%${q}%`));
-      if (projectId) conditions.push(eq(tasks.projectId, projectId));
+      // Query project tasks joined with project name
+      const taskConditions: any[] = [eq(tasks.organizationId, orgId)];
+      if (q.trim()) taskConditions.push(ilike(tasks.title, `%${q}%`));
+      if (scopedProjectId) taskConditions.push(eq(tasks.projectId, scopedProjectId));
 
-      const results = await db
+      const taskResults = await db
         .select({
           id: tasks.id,
           title: tasks.title,
-          status: tasks.status,
-          projectId: tasks.projectId,
+          projectName: projectsTable.name,
         })
         .from(tasks)
-        .where(and(...conditions))
-        .limit(10);
+        .leftJoin(projectsTable, eq(tasks.projectId, projectsTable.id))
+        .where(and(...taskConditions))
+        .limit(8);
 
-      res.json(results);
+      // Query AI tasks joined with project name
+      const aiConditions: any[] = [];
+      if (q.trim()) aiConditions.push(ilike(aiTasks.title, `%${q}%`));
+      if (scopedProjectId) aiConditions.push(eq(aiTasks.projectId, scopedProjectId));
+
+      const aiTaskResults = await db
+        .select({
+          id: aiTasks.id,
+          title: aiTasks.title,
+          projectName: projectsTable.name,
+        })
+        .from(aiTasks)
+        .leftJoin(projectsTable, eq(aiTasks.projectId, projectsTable.id))
+        .where(aiConditions.length > 0 ? and(...aiConditions) : undefined)
+        .limit(5);
+
+      // Merge and de-duplicate by id, cap at 10 total
+      const seen = new Set<string>();
+      const combined: { id: string; title: string; projectName: string | null }[] = [];
+      for (const r of [...taskResults, ...aiTaskResults]) {
+        if (!seen.has(r.id)) {
+          seen.add(r.id);
+          combined.push(r);
+          if (combined.length >= 10) break;
+        }
+      }
+
+      res.json(combined);
     } catch (error) {
       console.error("Task mention search error:", error);
       res.status(500).json({ error: "Internal server error" });

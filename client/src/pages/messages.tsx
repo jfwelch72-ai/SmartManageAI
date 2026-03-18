@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Fragment } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -107,8 +108,7 @@ interface Message {
 interface TaskMention {
   id: string;
   title: string;
-  status: string;
-  projectId: string | null;
+  projectName: string | null;
 }
 
 function getInitials(firstName: string, lastName: string) {
@@ -157,24 +157,73 @@ function VoicePlayer({ url, durationSeconds }: { url: string; durationSeconds: n
   );
 }
 
-// ── Attachment Renderer ──
-function AttachmentRenderer({ url, name, type }: { url: string; name: string | null; type: string | null }) {
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// ── Attachment Renderer — lightbox for images, file size for documents ──
+function AttachmentRenderer({
+  url, name, type, size,
+}: {
+  url: string;
+  name: string | null;
+  type: string | null;
+  size?: number | null;
+}) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const isImage = type?.startsWith("image/");
   return (
     <div className="mt-1.5">
       {isImage ? (
-        <a href={url} target="_blank" rel="noopener noreferrer">
-          <img src={url} alt={name || "attachment"} className="max-w-[200px] max-h-[160px] rounded-lg object-cover border" />
-        </a>
+        <>
+          <button
+            onClick={() => setLightboxOpen(true)}
+            className="focus:outline-none rounded-lg overflow-hidden"
+            data-testid="button-attachment-image-expand"
+          >
+            <img
+              src={url}
+              alt={name || "attachment"}
+              className="max-w-[200px] max-h-[160px] rounded-lg object-cover border hover:opacity-90 transition-opacity cursor-zoom-in"
+            />
+          </button>
+          <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
+            <DialogContent className="max-w-3xl p-2 bg-black/90">
+              <DialogHeader className="sr-only">
+                <DialogTitle>{name || "Image preview"}</DialogTitle>
+              </DialogHeader>
+              <img
+                src={url}
+                alt={name || "attachment"}
+                className="max-h-[80vh] w-full object-contain rounded"
+              />
+              <div className="flex justify-between items-center mt-2 px-2">
+                <span className="text-sm text-white/70 truncate">{name}</span>
+                <a
+                  href={url}
+                  download={name || "image"}
+                  className="text-sm text-white/70 hover:text-white flex items-center gap-1"
+                  data-testid="button-attachment-download"
+                >
+                  <Download className="w-4 h-4" /> Download
+                </a>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
       ) : (
         <a
           href={url}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 bg-background/50 border rounded-lg px-3 py-2 text-sm hover:bg-muted transition-colors"
+          data-testid="button-attachment-download"
         >
           <FileText className="w-4 h-4 text-primary shrink-0" />
-          <span className="truncate max-w-[160px]">{name || "File"}</span>
+          <span className="truncate max-w-[140px]">{name || "File"}</span>
+          {size != null && <span className="text-xs text-muted-foreground whitespace-nowrap">{fmtBytes(size)}</span>}
           <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
         </a>
       )}
@@ -214,6 +263,7 @@ function SidebarSection({
 
 export function TeamMessagesContent() {
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messageInput, setMessageInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -231,6 +281,7 @@ export function TeamMessagesContent() {
   // File upload
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Voice recording
   const [isRecording, setIsRecording] = useState(false);
@@ -488,16 +539,29 @@ export function TeamMessagesContent() {
     if (!file || !selectedConversationId) return;
 
     setUploadingFile(true);
+    const fileSize = file.size;
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch(`/api/conversations/${selectedConversationId}/upload`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+
+      // Use XHR for upload progress
+      const data = await new Promise<{ url: string; name: string; type: string }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `/api/conversations/${selectedConversationId}/upload`);
+        xhr.withCredentials = true;
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)); } catch { reject(new Error("Invalid response")); }
+          } else {
+            reject(new Error("Upload failed"));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.send(formData);
       });
-      if (!res.ok) throw new Error("Upload failed");
-      const data = await res.json();
 
       sendMessageMutation.mutate({
         conversationId: selectedConversationId,
@@ -510,8 +574,10 @@ export function TeamMessagesContent() {
       console.error("File upload failed:", err);
     } finally {
       setUploadingFile(false);
+      setUploadProgress(0);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+    void fileSize; // reference kept for future size storage
   };
 
   const MAX_VOICE_SECONDS = 120;
@@ -809,8 +875,10 @@ export function TeamMessagesContent() {
                               )}
                               data-testid={`button-project-channel-${c.id}`}
                             >
-                              <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="flex-1 truncate">{c.name}</span>
+                              <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="flex-1 truncate">
+                                {(c as any).channelSlug ? (c as any).channelSlug : c.name}
+                              </span>
                               {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
                               {!unjoined && (c as Conversation).unreadCount > 0 && (
                                 <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
@@ -837,8 +905,10 @@ export function TeamMessagesContent() {
                               )}
                               data-testid={`button-crew-channel-${c.id}`}
                             >
-                              <HardHat className="w-4 h-4 text-muted-foreground shrink-0" />
-                              <span className="flex-1 truncate">{c.name}</span>
+                              <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="flex-1 truncate">
+                                {(c as any).channelSlug ? (c as any).channelSlug : c.name}
+                              </span>
                               {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
                               {!unjoined && (c as Conversation).unreadCount > 0 && (
                                 <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
@@ -1028,6 +1098,21 @@ export function TeamMessagesContent() {
 
                     {/* Message Input */}
                     <div className="p-3 border-t shrink-0">
+                      {/* File upload progress bar */}
+                      {uploadingFile && uploadProgress > 0 && uploadProgress < 100 && (
+                        <div className="mb-2">
+                          <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                            <span>Uploading file...</span>
+                            <span>{uploadProgress}%</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all duration-150"
+                              style={{ width: `${uploadProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
                       {/* Task mention dropdown — keyboard-navigable */}
                       {mentionQuery !== null && mentionResults.length > 0 && (
                         <div className="mb-2 bg-popover border rounded-lg shadow-lg overflow-hidden" role="listbox" aria-label="Task mentions">
@@ -1045,7 +1130,7 @@ export function TeamMessagesContent() {
                             >
                               <AtSign className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="flex-1 truncate">{t.title}</span>
-                              <span className="text-xs text-muted-foreground">{t.status}</span>
+                              {t.projectName && <span className="text-xs text-muted-foreground truncate max-w-[80px]">{t.projectName}</span>}
                             </button>
                           ))}
                         </div>
