@@ -887,6 +887,7 @@ export default function BidDetailPage() {
                 estimate={estimate}
                 estimateLoading={estimateLoading}
                 canEdit={canEdit}
+                bidId={bid.id}
                 bidCode={bidCode}
                 createEstimatePending={
                   mutations.createEstimateMutation.isPending

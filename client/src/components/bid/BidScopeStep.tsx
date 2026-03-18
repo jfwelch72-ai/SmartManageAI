@@ -2,13 +2,22 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info } from "lucide-react";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2 } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+
+interface TakeoffCategory {
+  id: string;
+  name: string;
+}
 
 interface BidScopeStepProps {
   estimate: (Estimate & { lineItems: EstimateLineItem[]; totals: any }) | null;
   estimateLoading: boolean;
   canEdit: boolean;
+  bidId: string;
   bidCode: string;
   createEstimatePending: boolean;
   onCreateEstimate: () => void;
@@ -21,6 +30,7 @@ export default function BidScopeStep({
   estimate,
   estimateLoading,
   canEdit,
+  bidId,
   bidCode,
   createEstimatePending,
   onCreateEstimate,
@@ -28,6 +38,74 @@ export default function BidScopeStep({
   onPrevStep,
   onNextStep,
 }: BidScopeStepProps) {
+  const { toast } = useToast();
+
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<TakeoffCategory[]>({
+    queryKey: ["/api/bids", bidId, "takeoff", "categories"],
+    queryFn: async () => {
+      const res = await fetch(`/api/bids/${bidId}/takeoff/categories`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch takeoff categories");
+      return res.json();
+    },
+    enabled: !!bidId,
+  });
+
+  const createAndImportMutation = useMutation({
+    mutationFn: async () => {
+      const createRes = await apiRequest("POST", `/api/bids/${bidId}/estimate`, {});
+      const newEstimate = await createRes.json();
+      const categoryIds = categories.map((c) => c.id);
+      const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
+        estimateId: newEstimate.id,
+        categoryIds,
+      });
+      if (!importRes.ok) {
+        const err = await importRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || "Import failed");
+      }
+      return importRes.json() as Promise<{ count: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      toast({
+        title: "Estimate created",
+        description: `${data.count} line item${data.count === 1 ? "" : "s"} imported from your takeoff measurements.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const importOnlyMutation = useMutation({
+    mutationFn: async () => {
+      if (!estimate) throw new Error("No estimate to import into");
+      const categoryIds = categories.map((c) => c.id);
+      const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
+        estimateId: estimate.id,
+        categoryIds,
+      });
+      if (!importRes.ok) {
+        const err = await importRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || "Import failed");
+      }
+      return importRes.json() as Promise<{ count: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      toast({
+        title: "Import complete",
+        description: `${data.count} line item${data.count === 1 ? "" : "s"} added from your takeoff measurements.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const hasTakeoffData = !categoriesLoading && categories.length > 0;
+
   return (
     <Card data-testid="card-bid-estimate">
       <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
@@ -39,7 +117,7 @@ export default function BidScopeStep({
           <CardDescription className="text-xs sm:text-sm">Start by defining the work scope - this will auto-populate material, equipment, and subcontractor requirements</CardDescription>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          {!estimate && canEdit && (
+          {!estimate && canEdit && !hasTakeoffData && (
             <Button
               onClick={onCreateEstimate}
               disabled={createEstimatePending}
@@ -67,24 +145,110 @@ export default function BidScopeStep({
         {estimateLoading ? (
           <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
         ) : !estimate ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Calculator className="h-12 w-12 mx-auto mb-4 opacity-40" />
-            <p className="font-medium mb-1">No estimate created yet</p>
-            <p className="text-sm mb-4">Create an estimate to define scope quantities and track labor costs</p>
-            {canEdit && (
-              <Button
-                onClick={onCreateEstimate}
-                disabled={createEstimatePending}
-                variant="outline"
-                data-testid="button-create-first-estimate"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create Estimate
-              </Button>
+          <div className="space-y-4">
+            {hasTakeoffData && canEdit && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-4" data-testid="callout-takeoff-ready">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 p-1.5 shrink-0 mt-0.5">
+                    <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+                      {categories.length} takeoff {categories.length === 1 ? "category" : "categories"} ready to import
+                    </p>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+                      Your Step 1 measurements can be pulled in as estimate line items in one click — no manual entry needed.
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {categories.slice(0, 5).map((cat) => (
+                        <Badge key={cat.id} variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
+                          {cat.name}
+                        </Badge>
+                      ))}
+                      {categories.length > 5 && (
+                        <Badge variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
+                          +{categories.length - 5} more
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2 mt-3">
+                  <Button
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    size="sm"
+                    onClick={() => createAndImportMutation.mutate()}
+                    disabled={createAndImportMutation.isPending}
+                    data-testid="button-create-and-import-takeoff"
+                  >
+                    {createAndImportMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <ArrowDownToLine className="w-4 h-4 mr-2" />
+                    )}
+                    {createAndImportMutation.isPending ? "Creating & Importing..." : "Create Estimate & Import from Takeoff"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onCreateEstimate}
+                    disabled={createEstimatePending || createAndImportMutation.isPending}
+                    data-testid="button-create-estimate-only"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Create Empty
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!hasTakeoffData && (
+              <div className="text-center py-12 text-muted-foreground">
+                <Calculator className="h-12 w-12 mx-auto mb-4 opacity-40" />
+                <p className="font-medium mb-1">No estimate created yet</p>
+                <p className="text-sm mb-4">Create an estimate to define scope quantities and track labor costs</p>
+                {canEdit && (
+                  <Button
+                    onClick={onCreateEstimate}
+                    disabled={createEstimatePending}
+                    variant="outline"
+                    data-testid="button-create-first-estimate"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create Estimate
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         ) : (
           <div className="space-y-4">
+            {hasTakeoffData && canEdit && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="callout-import-takeoff">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 shrink-0"
+                  onClick={() => importOnlyMutation.mutate()}
+                  disabled={importOnlyMutation.isPending}
+                  data-testid="button-import-takeoff-only"
+                >
+                  {importOnlyMutation.isPending ? (
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <ArrowDownToLine className="w-3.5 h-3.5 mr-1.5" />
+                  )}
+                  {importOnlyMutation.isPending ? "Importing..." : "Import from Takeoff"}
+                </Button>
+              </div>
+            )}
+
             <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
               <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
               <AlertDescription className="text-xs text-blue-700 dark:text-blue-300">
