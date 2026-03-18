@@ -61,10 +61,6 @@ export default function BidScopeStep({
         estimateId: newEstimate.id,
         categoryIds,
       });
-      if (!importRes.ok) {
-        const err = await importRes.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || "Import failed");
-      }
       return importRes.json() as Promise<{ count: number }>;
     },
     onSuccess: (data) => {
@@ -89,10 +85,6 @@ export default function BidScopeStep({
         estimateId: estimate.id,
         categoryIds,
       });
-      if (!importRes.ok) {
-        const err = await importRes.json().catch(() => ({}));
-        throw new Error((err as { error?: string }).error || "Import failed");
-      }
       return importRes.json() as Promise<{ count: number }>;
     },
     onSuccess: (data) => {
