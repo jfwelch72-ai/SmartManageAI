@@ -137,15 +137,17 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || '5000', 10);
+
+  // Initialize the internal domain event bus before listening to eliminate any
+  // theoretical startup race where a request could arrive before listeners are wired.
+  initializeEventBus();
+
   server.listen({
     port,
     host: "0.0.0.0",
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
-
-    // Initialize the internal domain event bus (always-on, all environments)
-    initializeEventBus();
     
     // AI Schedulers only run in production mode
     const isProduction = process.env.NODE_ENV === 'production';
