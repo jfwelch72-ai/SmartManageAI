@@ -1,9 +1,15 @@
 import { logError, logInfo } from "../utils/logger";
 
-const TEAMS_HOST_PATTERN = /^https:\/\/[a-zA-Z0-9._-]+\.webhook\.office\.com\//;
+// Teams incoming webhooks may come from either hooks.teams.microsoft.com (newer)
+// or *.webhook.office.com (older / Power Automate connectors)
+const TEAMS_HOST_PATTERNS = [
+  /^https:\/\/[a-zA-Z0-9._-]+\.webhook\.office\.com\//,
+  /^https:\/\/[a-zA-Z0-9._-]+\.hooks\.teams\.microsoft\.com\//,
+  /^https:\/\/hooks\.teams\.microsoft\.com\//,
+];
 
 export function isValidTeamsWebhookUrl(url: string): boolean {
-  return TEAMS_HOST_PATTERN.test(url);
+  return TEAMS_HOST_PATTERNS.some((pattern) => pattern.test(url));
 }
 
 export async function sendTeamsMessage(

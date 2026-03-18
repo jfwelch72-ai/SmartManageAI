@@ -939,9 +939,10 @@ export default function ProfilePage() {
               id="phone"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="111-111-111"
+              placeholder="+15551234567"
               data-testid="input-phone"
             />
+            <p className="text-xs text-muted-foreground mt-1">E.164 format required for SMS alerts (e.g. +15551234567)</p>
           </div>
         </div>
 

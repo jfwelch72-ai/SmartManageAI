@@ -444,7 +444,10 @@ const upload = multer({
       const profileSchema = z.object({
         firstName: z.string().min(1).max(100).optional(),
         lastName: z.string().min(1).max(100).optional(),
-        phone: z.string().max(30).optional().nullable(),
+        phone: z.string().max(30).optional().nullable().refine(
+          (v) => !v || /^\+[1-9]\d{1,14}$/.test(v),
+          { message: "Phone number must be in E.164 format (e.g. +15551234567)" }
+        ),
         birthdate: z.string().max(20).optional().nullable(),
         timezone: z.string().max(100).optional().nullable(),
         profileDescription: z.string().max(2000).optional().nullable(),
