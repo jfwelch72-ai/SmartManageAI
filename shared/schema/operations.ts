@@ -2230,3 +2230,27 @@ export const insertNotificationTypePrefsSchema = createInsertSchema(notification
 export type InsertNotificationTypePrefs = z.infer<typeof insertNotificationTypePrefsSchema>;
 export type NotificationTypePrefs = typeof notificationTypePrefs.$inferSelect;
 
+export const uploadIntents = pgTable("upload_intents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  objectKey: text("object_key").notNull(),
+  contentType: text("content_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  resumableUri: text("resumable_uri"),
+  chunkSize: integer("chunk_size"),
+  confirmedAt: timestamp("confirmed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  organizationIdIdx: index("upload_intents_organization_id_idx").on(table.organizationId),
+  createdAtIdx: index("upload_intents_created_at_idx").on(table.createdAt),
+}));
+
+export const insertUploadIntentSchema = createInsertSchema(uploadIntents).omit({
+  id: true,
+  confirmedAt: true,
+  createdAt: true,
+});
+export type InsertUploadIntent = z.infer<typeof insertUploadIntentSchema>;
+export type UploadIntent = typeof uploadIntents.$inferSelect;
+

@@ -1,0 +1,1 @@
+ALTER TABLE upload_intents ADD COLUMN IF NOT EXISTS chunk_size INTEGER;

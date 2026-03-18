@@ -472,20 +472,6 @@ export default function BidDetailPage() {
     if (cost > 0) equipmentForm.setValue("estimatedCost", cost.toFixed(2));
   };
 
-  const onGetUploadParameters = async () => {
-    try {
-      const res = await apiRequest("POST", "/api/objects/upload");
-      const data = await res.json();
-      return { method: "PUT" as const, url: data.uploadURL };
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to get upload URL",
-        variant: "destructive",
-      });
-      throw error;
-    }
-  };
 
   const processUpload = (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>,
@@ -1017,7 +1003,6 @@ export default function BidDetailPage() {
         isUploadingFile={isUploadingFile}
         uploadedFileData={uploadedFileData}
         onSetUploadedFileData={setUploadedFileData}
-        onGetUploadParameters={onGetUploadParameters}
         onFileUploadComplete={(r) => {
           setIsUploadingFile(true);
           processUpload(
@@ -1044,7 +1029,6 @@ export default function BidDetailPage() {
         isUploadingFile={isUploadingMaterialFile}
         uploadedFileData={uploadedMaterialFileData}
         onSetUploadedFileData={setUploadedMaterialFileData}
-        onGetUploadParameters={onGetUploadParameters}
         onFileUploadComplete={(r) => {
           setIsUploadingMaterialFile(true);
           processUpload(

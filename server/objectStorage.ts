@@ -119,7 +119,7 @@ export class ObjectStorageService {
     }
   }
 
-  async getObjectEntityUploadURL(organizationId: string): Promise<string> {
+  async getObjectEntityUploadURL(organizationId: string): Promise<{ uploadURL: string; objectKey: string }> {
     if (!organizationId) {
       throw new Error("organizationId is required for file uploads");
     }
@@ -138,12 +138,34 @@ export class ObjectStorageService {
 
     const { bucketName, objectName } = parseObjectPath(fullPath);
 
-    return signObjectURL({
+    const uploadURL = await signObjectURL({
       bucketName,
       objectName,
       method: "PUT",
       ttlSec: 900,
     });
+
+    return { uploadURL, objectKey: fullPath };
+  }
+
+  async initiateResumableUpload(organizationId: string, contentType: string): Promise<{ resumableUri: string; objectKey: string }> {
+    if (!organizationId) {
+      throw new Error("organizationId is required for file uploads");
+    }
+
+    const privateObjectDir = this.getPrivateObjectDir();
+    const objectId = randomUUID();
+    const fullPath = `${privateObjectDir}/${organizationId}/uploads/${objectId}`;
+    const { bucketName, objectName } = parseObjectPath(fullPath);
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+
+    const [resumableUri] = await file.createResumableUpload({
+      metadata: { contentType },
+    });
+
+    return { resumableUri, objectKey: fullPath };
   }
 
   async getObjectEntityFile(objectPath: string): Promise<File> {
@@ -173,24 +195,27 @@ export class ObjectStorageService {
   }
 
   normalizeObjectEntityPath(rawPath: string): string {
-    if (!rawPath.startsWith("https://storage.googleapis.com/")) {
-      return rawPath;
-    }
-
-    const url = new URL(rawPath);
-    const rawObjectPath = url.pathname;
-
     let objectEntityDir = this.getPrivateObjectDir();
     if (!objectEntityDir.endsWith("/")) {
       objectEntityDir = `${objectEntityDir}/`;
     }
 
-    if (!rawObjectPath.startsWith(objectEntityDir)) {
-      return rawObjectPath;
+    if (rawPath.startsWith("https://storage.googleapis.com/")) {
+      const url = new URL(rawPath);
+      const rawObjectPath = url.pathname;
+      if (!rawObjectPath.startsWith(objectEntityDir)) {
+        return rawObjectPath;
+      }
+      const entityId = rawObjectPath.slice(objectEntityDir.length);
+      return `/objects/${entityId}`;
     }
 
-    const entityId = rawObjectPath.slice(objectEntityDir.length);
-    return `/objects/${entityId}`;
+    if (rawPath.startsWith(objectEntityDir)) {
+      const entityId = rawPath.slice(objectEntityDir.length);
+      return `/objects/${entityId}`;
+    }
+
+    return rawPath;
   }
 
   async trySetObjectEntityAclPolicy(
@@ -210,6 +235,30 @@ export class ObjectStorageService {
     const objectFile = await this.getObjectEntityFile(normalizedPath);
     await setObjectAclPolicy(objectFile, aclPolicy);
     return normalizedPath;
+  }
+
+  /**
+   * Set ACL policy directly using a raw bucket-prefixed object key (e.g. /bucket/org/uploads/uuid).
+   * Used by the confirm endpoint which stores the raw objectKey in upload_intents.
+   */
+  async setAclPolicyForObjectKey(
+    objectKey: string,
+    aclPolicy: ObjectAclPolicy
+  ): Promise<void> {
+    if (!aclPolicy.organizationId) {
+      throw new Error("organizationId is required in ACL policy");
+    }
+    const { bucketName, objectName } = parseObjectPath(objectKey);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    await setObjectAclPolicy(file, aclPolicy);
+  }
+
+  async deleteObjectByKey(objectKey: string): Promise<void> {
+    const { bucketName, objectName } = parseObjectPath(objectKey);
+    const bucket = objectStorageClient.bucket(bucketName);
+    const file = bucket.file(objectName);
+    await file.delete({ ignoreNotFound: true });
   }
 
   async getSignedDownloadUrl(file: File, ttlSec: number = 300): Promise<string> {

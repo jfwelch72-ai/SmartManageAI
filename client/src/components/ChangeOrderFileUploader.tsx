@@ -21,20 +21,6 @@ export function ChangeOrderFileUploader({
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
 
-  const getUploadParameters = async () => {
-    const response = await fetch("/api/objects/upload", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to get upload URL");
-    }
-
-    const data = await response.json();
-    return { method: "PUT" as const, url: data.uploadURL };
-  };
 
   const handleComplete = async (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>
@@ -102,7 +88,7 @@ export function ChangeOrderFileUploader({
         ".dwg",
         ".dxf",
       ]}
-      onGetUploadParameters={getUploadParameters}
+      fileType="DOCUMENT"
       onComplete={handleComplete}
       buttonVariant={variant}
       buttonClassName={className}

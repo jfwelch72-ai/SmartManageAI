@@ -163,19 +163,6 @@ export default function BidWizardPage() {
     },
   });
 
-  const onGetUploadParameters = async () => {
-    try {
-      const response = await apiRequest("POST", "/api/objects/upload");
-      const data = await response.json();
-      return {
-        method: "PUT" as const,
-        url: data.uploadURL,
-      };
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
-      throw error;
-    }
-  };
 
   const handleUploadComplete = useCallback((result: any) => {
     if (!result.successful || result.successful.length === 0) return;
@@ -503,7 +490,7 @@ export default function BidWizardPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <ObjectUploader
-                onGetUploadParameters={onGetUploadParameters}
+                fileType="DOCUMENT"
                 onComplete={handleUploadComplete}
                 allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx"]}
                 maxNumberOfFiles={10}

@@ -9,6 +9,7 @@ import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
+import { startJobRunner } from "./jobs";
 
 const app = express();
 
@@ -172,6 +173,13 @@ app.use((req, res, next) => {
         startOrphanScanScheduler();
       } catch (error) {
         console.error('Failed to start Storage Orphan Scan Scheduler:', error);
+      }
+
+      // Start background job runner (outbox, retention, orphan uploads, etc.)
+      try {
+        startJobRunner();
+      } catch (error) {
+        console.error('Failed to start background job runner:', error);
       }
       
       console.log('AI auto-scan schedulers ENABLED (production mode)');

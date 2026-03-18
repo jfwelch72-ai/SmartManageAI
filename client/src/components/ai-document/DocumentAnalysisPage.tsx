@@ -691,19 +691,6 @@ export function UploadDialog({
   onUploadComplete: (result: any) => void;
   renderExtras?: () => ReactNode;
 }) {
-  const { toast } = useToast();
-
-  const onGetUploadParameters = async () => {
-    try {
-      const response = await apiRequest("POST", "/api/objects/upload");
-      const data = await response.json();
-      return { method: "PUT" as const, url: data.uploadURL };
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
-      throw error;
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
@@ -735,7 +722,7 @@ export function UploadDialog({
             <div className="space-y-2">
               <label className="text-sm font-medium">Upload Document</label>
               <ObjectUploader
-                onGetUploadParameters={onGetUploadParameters}
+                fileType="DOCUMENT"
                 onComplete={onUploadComplete}
                 allowedFileTypes={["application/pdf", "image/*"]}
                 maxFileSize={50 * 1024 * 1024}

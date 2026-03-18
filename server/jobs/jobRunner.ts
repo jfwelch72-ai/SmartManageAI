@@ -5,8 +5,8 @@ import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, type InsertNotification } from "@shared/schema";
-import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc } from "drizzle-orm";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, type InsertNotification } from "@shared/schema";
+import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 import { publishToPlatform } from "../social/publishService";
@@ -21,6 +21,7 @@ let tokenExpiryTask: ReturnType<typeof cron.schedule> | null = null;
 let complianceCheckTask: ReturnType<typeof cron.schedule> | null = null;
 let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
 let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
+let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -89,7 +90,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, and idle opportunity schedulers)");
+  orphanUploadTask = cron.schedule("*/30 * * * *", async () => {
+    try {
+      await processOrphanUploads();
+    } catch (err) {
+      logError("Orphan upload cleanup failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, and orphan upload schedulers)");
 }
 
 export function stopJobRunner() {
@@ -124,6 +133,10 @@ export function stopJobRunner() {
   if (idleOpportunityTask) {
     idleOpportunityTask.stop();
     idleOpportunityTask = null;
+  }
+  if (orphanUploadTask) {
+    orphanUploadTask.stop();
+    orphanUploadTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -898,4 +911,72 @@ async function processIdleOpportunities() {
   } else {
     logInfo("Idle opportunity check: all assignees already notified today or in-app disabled");
   }
+}
+
+async function processOrphanUploads() {
+  const ORPHAN_CUTOFF_MINUTES = 30;
+  const cutoff = new Date(Date.now() - ORPHAN_CUTOFF_MINUTES * 60 * 1000);
+
+  const orphans = await db
+    .select()
+    .from(uploadIntents)
+    .where(
+      and(
+        isNull(uploadIntents.confirmedAt),
+        lt(uploadIntents.createdAt, cutoff)
+      )
+    )
+    .limit(50);
+
+  if (orphans.length === 0) return;
+
+  logInfo("Processing orphan uploads", { count: orphans.length });
+
+  const { ObjectStorageService } = await import("../objectStorage");
+  const objectStorageService = new ObjectStorageService();
+
+  let deleted = 0;
+  let failed = 0;
+
+  const { objectStorageClient } = await import("../objectStorage");
+
+  for (const orphan of orphans) {
+    try {
+      const { bucketName, objectName } = parseBucketObjectPath(orphan.objectKey);
+
+      try {
+        const bucketRef = objectStorageClient.bucket(bucketName);
+        const fileRef = bucketRef.file(objectName);
+        const [exists] = await fileRef.exists();
+        if (exists) {
+          await fileRef.delete();
+          logInfo("Deleted orphan GCS object", { objectKey: orphan.objectKey });
+        }
+      } catch (gcsErr) {
+        logError("Failed to delete orphan GCS object", { objectKey: orphan.objectKey, error: String(gcsErr) });
+        failed++;
+        continue;
+      }
+
+      await db.delete(uploadIntents).where(eq(uploadIntents.id, orphan.id));
+      deleted++;
+    } catch (err) {
+      logError("Error processing orphan upload", { intentId: orphan.id, error: String(err) });
+      failed++;
+    }
+  }
+
+  logInfo("Orphan upload cleanup complete", { deleted, failed });
+}
+
+function parseBucketObjectPath(fullPath: string): { bucketName: string; objectName: string } {
+  const path = fullPath.startsWith("/") ? fullPath : `/${fullPath}`;
+  const parts = path.split("/");
+  if (parts.length < 3) {
+    throw new Error(`Invalid path: ${fullPath}`);
+  }
+  return {
+    bucketName: parts[1],
+    objectName: parts.slice(2).join("/"),
+  };
 }

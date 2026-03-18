@@ -33,19 +33,6 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
   const [receiptCostCode, setReceiptCostCode] = useState("");
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
-  const onGetUploadParameters = async () => {
-    try {
-      const response = await apiRequest("POST", "/api/objects/upload");
-      const data = await response.json();
-      return {
-        method: "PUT" as const,
-        url: data.uploadURL,
-      };
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
-      throw error;
-    }
-  };
 
   const handleReceiptUploadComplete = async (result: any) => {
     if (!result.successful || result.successful.length === 0) {
@@ -194,7 +181,7 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
                 maxNumberOfFiles={1}
                 maxFileSize={104857600}
                 allowedFileTypes={["image/*", "application/pdf"]}
-                onGetUploadParameters={onGetUploadParameters}
+                fileType="RECEIPT"
                 onComplete={(result) => {
                   setIsUploadingReceipt(true);
                   handleReceiptUploadComplete(result);

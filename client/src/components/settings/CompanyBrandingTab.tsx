@@ -55,16 +55,6 @@ export function DocumentUploadDialog({ open, onOpenChange, selectedDocType, type
     }
   });
 
-  const onGetUploadParameters = async () => {
-    try {
-      const response = await apiRequest("POST", "/api/objects/upload");
-      const data = await response.json();
-      return { method: "PUT" as const, url: data.uploadURL };
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
-      throw error;
-    }
-  };
 
   const handleUploadComplete = async (result: any) => {
     if (!result.successful || result.successful.length === 0) {
@@ -163,7 +153,7 @@ export function DocumentUploadDialog({ open, onOpenChange, selectedDocType, type
               maxNumberOfFiles={1}
               maxFileSize={52428800}
               allowedFileTypes={selectedDocType.includes("LOGO") ? ["image/png", "image/jpeg", "image/svg+xml", "image/webp"] : ["image/png", "image/jpeg", "application/pdf"]}
-              onGetUploadParameters={onGetUploadParameters}
+              fileType={selectedDocType.includes("LOGO") ? "MEDIA" : "DOCUMENT"}
               onComplete={handleUploadComplete}
               buttonVariant="default"
               buttonClassName="w-full"

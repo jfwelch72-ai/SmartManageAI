@@ -103,11 +103,6 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
     },
   });
 
-  const onGetUploadParameters = async () => {
-    const res = await apiRequest("POST", "/api/objects/upload");
-    const data = await res.json();
-    return { method: "PUT" as const, url: data.uploadURL };
-  };
 
   const handleUploadComplete = (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => {
     if (!result.successful?.length) {
@@ -183,7 +178,7 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
                 maxNumberOfFiles={1}
                 maxFileSize={104857600}
                 allowedFileTypes={[".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
-                onGetUploadParameters={onGetUploadParameters}
+                fileType="DOCUMENT"
                 onComplete={handleUploadComplete}
                 testId="button-upload-plan"
               >

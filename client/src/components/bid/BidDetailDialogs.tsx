@@ -217,7 +217,6 @@ interface SubcontractorQuoteDialogProps {
   isUploadingFile: boolean;
   uploadedFileData: { fileUrl: string; fileName: string; fileSize: number; mimeType: string } | null;
   onSetUploadedFileData: (data: { fileUrl: string; fileName: string; fileSize: number; mimeType: string } | null) => void;
-  onGetUploadParameters: () => Promise<{ method: "PUT"; url: string }>;
   onFileUploadComplete: (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => void;
   estimateData: { estimate: (Estimate & { lineItems: EstimateLineItem[]; totals: any }) | null } | undefined;
   scopeSelectionData: ScopeSelectionData | undefined;
@@ -237,7 +236,6 @@ export function SubcontractorQuoteDialog({
   isUploadingFile,
   uploadedFileData,
   onSetUploadedFileData,
-  onGetUploadParameters,
   onFileUploadComplete,
   estimateData,
   scopeSelectionData,
@@ -410,7 +408,7 @@ export function SubcontractorQuoteDialog({
                 </div>
               ) : (
                 <ObjectUploader
-                  onGetUploadParameters={onGetUploadParameters}
+                  fileType="DOCUMENT"
                   onComplete={onFileUploadComplete}
                   allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
                   maxFileSize={10 * 1024 * 1024}
@@ -445,7 +443,6 @@ interface MaterialQuoteDialogProps {
   isUploadingFile: boolean;
   uploadedFileData: { fileUrl: string; fileName: string; fileSize: number; mimeType: string } | null;
   onSetUploadedFileData: (data: { fileUrl: string; fileName: string; fileSize: number; mimeType: string } | null) => void;
-  onGetUploadParameters: () => Promise<{ method: "PUT"; url: string }>;
   onFileUploadComplete: (result: UploadResult<Record<string, unknown>, Record<string, unknown>>) => void;
   supplierContactId: string | undefined;
   onSupplierContactIdChange: (id: string | undefined) => void;
@@ -462,7 +459,6 @@ export function MaterialQuoteDialog({
   isUploadingFile,
   uploadedFileData,
   onSetUploadedFileData,
-  onGetUploadParameters,
   onFileUploadComplete,
   supplierContactId,
   onSupplierContactIdChange,
@@ -627,7 +623,7 @@ export function MaterialQuoteDialog({
                 </div>
               ) : (
                 <ObjectUploader
-                  onGetUploadParameters={onGetUploadParameters}
+                  fileType="DOCUMENT"
                   onComplete={onFileUploadComplete}
                   allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
                   maxFileSize={10 * 1024 * 1024}

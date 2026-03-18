@@ -4,15 +4,23 @@ import Uppy from "@uppy/core";
 import DashboardModal from "@uppy/react/dashboard-modal";
 import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult } from "@uppy/core";
+import { apiRequest } from "@/lib/queryClient";
+
+export const MULTIPART_THRESHOLD = 10 * 1024 * 1024;
+
+interface UploadParams {
+  method: "PUT";
+  url: string;
+  intentId?: string;
+  objectKey?: string;
+}
 
 interface ObjectUploaderProps {
   maxNumberOfFiles?: number;
   maxFileSize?: number;
   allowedFileTypes?: string[];
-  onGetUploadParameters: () => Promise<{
-    method: "PUT";
-    url: string;
-  }>;
+  fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT";
+  onGetUploadParameters?: (file: { name: string; type: string; size: number }) => Promise<UploadParams>;
   onComplete?: (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>
   ) => void;
@@ -22,10 +30,42 @@ interface ObjectUploaderProps {
   testId?: string;
 }
 
+async function confirmIntent(intentId: string): Promise<string> {
+  const res = await apiRequest("POST", "/api/objects/confirm", { intentId });
+  const data = (await res.json()) as { objectPath: string; intentId: string };
+  return data.objectPath;
+}
+
+async function confirmIntents(intentIds: string[]): Promise<string[]> {
+  return Promise.all(intentIds.map((id) => confirmIntent(id)));
+}
+
+async function getDefaultUploadParameters(
+  file: { name: string; type: string; size: number },
+  fileType?: string
+): Promise<UploadParams> {
+  const contentType = file.type || "application/octet-stream";
+  const fileSize = file.size || 0;
+
+  const res = await apiRequest("POST", "/api/objects/upload", {
+    contentType,
+    fileSize,
+    fileType: fileType ?? "DOCUMENT",
+  });
+  const data = (await res.json()) as { uploadURL: string; intentId: string; objectKey: string };
+  return {
+    method: "PUT" as const,
+    url: data.uploadURL,
+    intentId: data.intentId,
+    objectKey: data.objectKey,
+  };
+}
+
 export function ObjectUploader({
   maxNumberOfFiles = 1,
   maxFileSize = 104857600,
   allowedFileTypes,
+  fileType,
   onGetUploadParameters,
   onComplete,
   children,
@@ -35,44 +75,137 @@ export function ObjectUploader({
   const [isDragging, setIsDragging] = useState(false);
   const dragCounter = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const [uppy] = useState(() =>
-    new Uppy({
+  const intentMapRef = useRef<Map<string, string>>(new Map());
+  const resolvedFileType = fileType ?? "DOCUMENT";
+
+  const [uppy] = useState(() => {
+    const instance = new Uppy({
       restrictions: {
         maxNumberOfFiles,
         maxFileSize,
         allowedFileTypes,
       },
       autoProceed: false,
-    })
-      .use(AwsS3, {
-        shouldUseMultipart: false,
-        getUploadParameters: onGetUploadParameters,
-      })
-      .on("complete", (result) => {
-        onComplete?.(result);
-        setShowModal(false);
-      })
-  );
+    });
 
-  const addFilesToUppy = useCallback((files: FileList | File[]) => {
-    const fileArray = Array.from(files);
-    fileArray.forEach((file) => {
-      try {
-        uppy.addFile({
-          name: file.name,
-          type: file.type,
-          data: file,
-          source: "local",
+    instance.use(AwsS3, {
+      shouldUseMultipart: (file) => !onGetUploadParameters && (file.size ?? 0) > MULTIPART_THRESHOLD,
+
+      getUploadParameters: async (file) => {
+        const fileInfo = {
+          name: file.name ?? "",
+          type: file.type ?? "application/octet-stream",
+          size: file.size ?? 0,
+        };
+
+        let params: UploadParams;
+        if (onGetUploadParameters) {
+          params = await onGetUploadParameters(fileInfo);
+        } else {
+          params = await getDefaultUploadParameters(fileInfo, resolvedFileType);
+        }
+
+        if (params.intentId && file.id) {
+          intentMapRef.current.set(file.id, params.intentId);
+        }
+
+        return params;
+      },
+
+      createMultipartUpload: async (file) => {
+        const res = await apiRequest("POST", "/api/objects/multipart", {
+          contentType: file.type ?? "application/octet-stream",
+          fileSize: file.size ?? 0,
+          fileType: resolvedFileType,
         });
-      } catch (error) {
-        console.warn("File add error:", error);
+        const data = (await res.json()) as { uploadId: string; key: string };
+        return { uploadId: data.uploadId, key: data.key };
+      },
+
+      listParts: async (_file, { uploadId }) => {
+        const res = await apiRequest("GET", `/api/objects/multipart/${uploadId}`, undefined);
+        const data = (await res.json()) as { parts: Array<{ PartNumber: number; ETag: string; Size: number }> };
+        return data.parts;
+      },
+
+      signPart: async (_file, { uploadId, partNumber, body }) => {
+        const qs = body ? `?chunkSize=${body.size}` : "";
+        const res = await apiRequest("GET", `/api/objects/multipart/${uploadId}/${partNumber}${qs}`, undefined);
+        const data = (await res.json()) as { url: string; headers?: Record<string, string> };
+        return { url: data.url, headers: data.headers };
+      },
+
+      completeMultipartUpload: async (_file, { uploadId }) => {
+        const res = await apiRequest("POST", `/api/objects/multipart/${uploadId}/complete`, {});
+        const data = (await res.json()) as { location: string };
+        return { location: data.location };
+      },
+
+      abortMultipartUpload: async (_file, { uploadId }) => {
+        await apiRequest("DELETE", `/api/objects/multipart/${uploadId}`, undefined).catch(() => {});
+      },
+    });
+
+    instance.on("complete", async (result) => {
+      const intentIds = (result.successful ?? [])
+        .map((f) => intentMapRef.current.get(f.id))
+        .filter((id): id is string => !!id);
+
+      intentMapRef.current.clear();
+
+      try {
+        let objectPaths: string[] = [];
+        if (intentIds.length > 0) {
+          objectPaths = await confirmIntents(intentIds);
+        }
+
+        let pathIdx = 0;
+        const enrichedResult: UploadResult<Record<string, unknown>, Record<string, unknown>> = {
+          ...result,
+          successful: (result.successful ?? []).map((f) => ({
+            ...f,
+            uploadURL: objectPaths[pathIdx++] ?? f.uploadURL,
+          })),
+        };
+        onComplete?.(enrichedResult);
+      } catch (err) {
+        console.error("Upload confirm failed:", err);
+        onComplete?.({
+          ...result,
+          successful: [],
+          failed: [...(result.failed ?? []), ...(result.successful ?? [])],
+        });
+      } finally {
+        setShowModal(false);
       }
     });
-    if (fileArray.length > 0) {
-      setShowModal(true);
-    }
-  }, [uppy]);
+
+    return instance;
+  });
+
+  const addFilesToUppy = useCallback(
+    (files: FileList | File[]) => {
+      const fileArray = Array.from(files);
+
+      fileArray.forEach((file) => {
+        try {
+          uppy.addFile({
+            name: file.name,
+            type: file.type,
+            data: file,
+            source: "local",
+          });
+        } catch (error) {
+          console.warn("File add error:", error);
+        }
+      });
+
+      if (fileArray.length > 0) {
+        setShowModal(true);
+      }
+    },
+    [uppy]
+  );
 
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -97,27 +230,32 @@ export function ObjectUploader({
     e.stopPropagation();
   }, []);
 
-  const handleDrop = useCallback((e: DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    dragCounter.current = 0;
-    
-    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-      addFilesToUppy(e.dataTransfer.files);
-    }
-  }, [addFilesToUppy]);
+  const handleDrop = useCallback(
+    (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(false);
+      dragCounter.current = 0;
+      if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+        addFilesToUppy(e.dataTransfer.files);
+      }
+    },
+    [addFilesToUppy]
+  );
 
   const handleClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      addFilesToUppy(e.target.files);
-      e.target.value = "";
-    }
-  }, [addFilesToUppy]);
+  const handleFileInput = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files && e.target.files.length > 0) {
+        addFilesToUppy(e.target.files);
+        e.target.value = "";
+      }
+    },
+    [addFilesToUppy]
+  );
 
   return (
     <div>

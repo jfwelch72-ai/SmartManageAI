@@ -219,11 +219,6 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
   const selectedDoc = documents.find((d) => d.id === selectedDocId);
 
-  const onGetUploadParameters = async () => {
-    const response = await apiRequest("POST", "/api/objects/upload");
-    const data = await response.json();
-    return { method: "PUT" as const, url: data.uploadURL };
-  };
 
   const handleUploadComplete = (result: any) => {
     if (!result.successful?.length) {
@@ -336,7 +331,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     maxNumberOfFiles={1}
                     maxFileSize={104857600}
                     allowedFileTypes={[".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
-                    onGetUploadParameters={onGetUploadParameters}
+                    fileType="DOCUMENT"
                     onComplete={handleUploadComplete}
                     testId="button-upload-bid-plan"
                   >

@@ -95,14 +95,6 @@ export default function DocumentAttachments({
     },
   });
 
-  const onGetUploadParameters = useCallback(async () => {
-    const response = await apiRequest("POST", "/api/objects/upload");
-    const data = await response.json();
-    return {
-      method: "PUT" as const,
-      url: data.uploadURL,
-    };
-  }, []);
 
   const handleUploadComplete = useCallback((result: any) => {
     if (result.successful && result.successful.length > 0) {
@@ -135,7 +127,7 @@ export default function DocumentAttachments({
             <ObjectUploader
               maxNumberOfFiles={5}
               maxFileSize={52428800}
-              onGetUploadParameters={onGetUploadParameters}
+              fileType="DOCUMENT"
               onComplete={handleUploadComplete}
               testId={`button-upload-${entityType}-file`}
             >
@@ -222,7 +214,7 @@ export default function DocumentAttachments({
           <ObjectUploader
             maxNumberOfFiles={5}
             maxFileSize={52428800}
-            onGetUploadParameters={onGetUploadParameters}
+            fileType="DOCUMENT"
             onComplete={handleUploadComplete}
             testId={`button-upload-${entityType}-file`}
           >

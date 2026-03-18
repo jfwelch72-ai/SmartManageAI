@@ -50,7 +50,7 @@ type DocumentType = "PLANS" | "SPECS" | "TAKEOFF" | "OTHER";
 interface UploadSourcePickerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onGetUploadParameters: () => Promise<{ method: "PUT"; url: string }>;
+  fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT";
   onComplete?: (result: any) => void;
   projectId: number | string;
 }
@@ -114,7 +114,7 @@ const SOURCE_OPTIONS = [
 export function UploadSourcePicker({
   open,
   onOpenChange,
-  onGetUploadParameters,
+  fileType = "DOCUMENT",
   onComplete,
   projectId,
 }: UploadSourcePickerProps) {
@@ -429,7 +429,7 @@ export function UploadSourcePicker({
               <ObjectUploader
                 maxNumberOfFiles={1}
                 maxFileSize={104857600}
-                onGetUploadParameters={onGetUploadParameters}
+                fileType={fileType}
                 onComplete={handleLocalFileComplete}
                 buttonVariant="default"
                 testId="button-select-local-file"

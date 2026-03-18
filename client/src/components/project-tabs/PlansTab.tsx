@@ -178,16 +178,6 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
 
   const selectedDoc = documents.find((d: any) => d.id === selectedDocId);
 
-  const onGetUploadParameters = async () => {
-    try {
-      const response = await apiRequest("POST", "/api/objects/upload");
-      const data = await response.json();
-      return { method: "PUT" as const, url: data.uploadURL };
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to get upload URL", variant: "destructive" });
-      throw error;
-    }
-  };
 
   const handleDocumentUploadComplete = async (result: any) => {
     if (!result.successful || result.successful.length === 0) {
@@ -345,7 +335,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   <UploadSourcePicker
                     open={showDocumentDialog}
                     onOpenChange={setShowDocumentDialog}
-                    onGetUploadParameters={onGetUploadParameters}
+                    fileType="DOCUMENT"
                     onComplete={(result) => {
                       setIsUploadingDocument(true);
                       handleDocumentUploadComplete(result);

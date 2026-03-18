@@ -736,10 +736,16 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
     if (!file) return;
     setIsUploadingInvoiceFile(true);
     try {
-      const res = await apiRequest("POST", "/api/objects/upload");
-      const { uploadURL } = await res.json();
+      const res = await apiRequest("POST", "/api/objects/upload", {
+        contentType: file.type || "application/octet-stream",
+        fileSize: file.size,
+        fileType: "DOCUMENT",
+      });
+      const { uploadURL, intentId } = await res.json();
       await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      const fileUrl = uploadURL.split("?")[0];
+      const confirmRes = await apiRequest("POST", "/api/objects/confirm", { intentId });
+      const { objectPath } = await confirmRes.json();
+      const fileUrl = objectPath || uploadURL.split("?")[0];
       setInvoiceForm(prev => ({ ...prev, fileUrl }));
       toast({ title: "File uploaded successfully" });
     } catch {
@@ -1407,10 +1413,16 @@ function ProjectInvoicesTab({ projectId }: { projectId: string }) {
     if (!file) return;
     setIsUploading(true);
     try {
-      const res = await apiRequest("POST", "/api/objects/upload");
-      const { uploadURL } = await res.json();
+      const res = await apiRequest("POST", "/api/objects/upload", {
+        contentType: file.type || "application/octet-stream",
+        fileSize: file.size,
+        fileType: "DOCUMENT",
+      });
+      const { uploadURL, intentId } = await res.json();
       await fetch(uploadURL, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
-      const fileUrl = uploadURL.split("?")[0];
+      const confirmRes = await apiRequest("POST", "/api/objects/confirm", { intentId });
+      const { objectPath } = await confirmRes.json();
+      const fileUrl = objectPath || uploadURL.split("?")[0];
       setEditInvForm(prev => ({ ...prev, fileUrl }));
       toast({ title: "File uploaded successfully" });
     } catch {

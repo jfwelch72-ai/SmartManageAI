@@ -412,7 +412,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
 
-    const signedUploadUrl = await objectStorageService.getObjectEntityUploadURL(req.user!.organizationId!);
+    const { uploadURL: signedUploadUrl, objectKey: rawObjectKey } = await objectStorageService.getObjectEntityUploadURL(req.user!.organizationId!);
 
     const uploadResponse = await fetch(signedUploadUrl, {
       method: "PUT",
@@ -428,16 +428,16 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
       return;
     }
 
-    const uploadedUrl = signedUploadUrl.split("?")[0];
-
     const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
-      uploadedUrl,
+      rawObjectKey,
       {
         owner: req.user!.id,
         organizationId: req.user!.organizationId!,
         visibility: "private",
       }
     );
+
+    const uploadedUrl = objectKey;
 
     const ext = parsedUrl.pathname.split("/").pop()?.split(".").pop() || "";
     const fileName = title + (ext ? `.${ext}` : "");
