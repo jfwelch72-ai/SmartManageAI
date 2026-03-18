@@ -65,12 +65,15 @@ async function loadEffectivePrefs(userId: string, notifType: NotificationType | 
 
   if (!typeRow) return base;
 
+  // Merge type-level overrides onto base channel prefs field-by-field.
+  // This ensures a per-type row only overrides the channels explicitly stored in it,
+  // and future partial-row scenarios are handled gracefully.
   return {
-    emailEnabled: typeRow.emailEnabled,
-    smsEnabled: typeRow.smsEnabled,
-    pushEnabled: typeRow.pushEnabled,
-    teamsEnabled: typeRow.teamsEnabled,
-    slackEnabled: typeRow.slackEnabled,
+    emailEnabled: typeRow.emailEnabled ?? base.emailEnabled,
+    smsEnabled: typeRow.smsEnabled ?? base.smsEnabled,
+    pushEnabled: typeRow.pushEnabled ?? base.pushEnabled,
+    teamsEnabled: typeRow.teamsEnabled ?? base.teamsEnabled,
+    slackEnabled: typeRow.slackEnabled ?? base.slackEnabled,
   };
 }
 

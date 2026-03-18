@@ -1,13 +1,16 @@
 import { db } from "../db";
-import { notifications, users } from "@shared/schema";
+import { notifications, users, notificationTypeEnum } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
-import { deliverNotifications } from "./notificationDelivery";
+import { deliverNotifications, type NotificationRecord } from "./notificationDelivery";
 
 const APPROVER_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
+type ApproverRole = typeof APPROVER_ROLES[number];
+
+type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
 interface NotificationParams {
-  type: string;
+  type: NotificationType;
   title: string;
   message: string;
   relatedEntityId: string;
@@ -23,7 +26,7 @@ export async function notifyUsers(
   try {
     const records = userIds.map(userId => ({
       userId,
-      type: params.type as any,
+      type: params.type,
       title: params.title,
       message: params.message,
       relatedEntityId: params.relatedEntityId,
@@ -36,8 +39,17 @@ export async function notifyUsers(
       recipientCount: userIds.length,
       entityId: params.relatedEntityId,
     });
+    const deliveryRecords: NotificationRecord[] = inserted.map(n => ({
+      id: n.id,
+      userId: n.userId,
+      type: n.type as NotificationType | null,
+      title: n.title,
+      message: n.message,
+      relatedEntityId: n.relatedEntityId,
+      relatedEntityType: n.relatedEntityType,
+    }));
     setImmediate(() => {
-      deliverNotifications(inserted as Parameters<typeof deliverNotifications>[0]).catch(() => undefined);
+      deliverNotifications(deliveryRecords).catch(() => undefined);
     });
   } catch (error) {
     logError("Failed to create approval notifications", { error: String(error), type: params.type });
@@ -57,7 +69,7 @@ export async function getApproverUserIds(
         and(
           eq(users.organizationId, organizationId),
           eq(users.isActive, true),
-          inArray(users.role, roles as any)
+          inArray(users.role, [...roles])
         )
       );
 
