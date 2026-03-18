@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { eventBus } from "./events";
 import { db } from "./db";
 import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals } from "@shared/schema";
 import { eq, and, desc, sql, max } from "drizzle-orm";
@@ -420,6 +421,19 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       console.error("Failed to create CO approval billing notification:", notifError);
     }
 
+    eventBus.emit({
+      type: "change_order.approved",
+      orgId: project?.gcOrganizationId || req.user!.organizationId || "",
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: {
+        changeOrderId: updatedOrder.id,
+        projectId: updatedOrder.projectId,
+        amount: Number(updatedOrder.amount || 0),
+        approvedBy: req.user!.id,
+      },
+    });
+
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Approve change order error:", error);
@@ -506,6 +520,19 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       `Change order ${updatedOrder.changeOrderNumber} has been rejected: ${rejectionReason}`,
       true
     );
+
+    eventBus.emit({
+      type: "change_order.rejected",
+      orgId: project?.gcOrganizationId || req.user!.organizationId || "",
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: {
+        changeOrderId: updatedOrder.id,
+        projectId: updatedOrder.projectId,
+        reason: rejectionReason,
+        rejectedBy: req.user!.id,
+      },
+    });
 
     res.json(updatedOrder);
   } catch (error: any) {

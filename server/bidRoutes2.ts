@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { eventBus } from "./events";
 import {
   bids, estimates, estimateLineItems, projects, users,
   insertBidSchema, scopeItems,
@@ -255,6 +256,22 @@ router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR
           code: nextCode,
           gcOrganizationId: userOrgId || validationResult.data.gcOrganizationId,
         }).returning();
+
+        if (newBid.status === "SUBMITTED") {
+          eventBus.emit({
+            type: "bid.submitted",
+            orgId: newBid.gcOrganizationId || userOrgId || "",
+            actorId: req.user!.id,
+            timestamp: new Date(),
+            payload: {
+              bidId: newBid.id,
+              bidCode: newBid.code,
+              title: newBid.name,
+              clientName: newBid.clientName || "",
+            },
+          });
+        }
+
         res.status(201).json(newBid);
         return;
       } catch (insertError: any) {
@@ -908,6 +925,19 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       entityId: newProject.id,
       newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} selected subcontractor quotes, ${matQuotes.length} selected material quotes, and ${bidEquipSelections.length} equipment plans`,
     }, req);
+
+    eventBus.emit({
+      type: "bid.converted_to_project",
+      orgId: newProject.gcOrganizationId || req.user!.organizationId || "",
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: {
+        bidId: bid.id,
+        bidCode: bid.code,
+        projectId: newProject.id,
+        projectCode: newProject.code,
+      },
+    });
 
     res.status(201).json(newProject);
   } catch (error: any) {

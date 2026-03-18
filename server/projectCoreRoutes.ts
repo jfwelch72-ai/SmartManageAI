@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { eventBus } from "./events";
 import {
   projects, users, scopeItems, changeOrders,
   projectLaborRates, projectEmployeeRates,
@@ -889,6 +890,19 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
           }
         }
 
+        eventBus.emit({
+          type: "project.created",
+          orgId: newProject.gcOrganizationId || userOrgId || "",
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          payload: {
+            projectId: newProject.id,
+            projectCode: newProject.code,
+            name: newProject.name,
+            clientName: newProject.clientName,
+          },
+        });
+
         res.status(201).json(newProject);
         return;
       } catch (insertError: any) {
@@ -973,6 +987,21 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
     if (!updatedProject) {
       res.status(404).json({ error: "Project not found" });
       return;
+    }
+
+    if (validationResult.data.status !== undefined && validationResult.data.status !== existingProject.status) {
+      eventBus.emit({
+        type: "project.status_changed",
+        orgId: updatedProject.gcOrganizationId || req.user!.organizationId || "",
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        payload: {
+          projectId: updatedProject.id,
+          projectCode: updatedProject.code,
+          oldStatus: existingProject.status,
+          newStatus: updatedProject.status,
+        },
+      });
     }
 
     res.json(updatedProject);

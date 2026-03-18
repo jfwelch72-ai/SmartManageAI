@@ -7,6 +7,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
+import { initializeEventBus } from "./events";
 
 const app = express();
 
@@ -142,6 +143,9 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+
+    // Initialize the internal domain event bus (always-on, all environments)
+    initializeEventBus();
     
     // AI Schedulers only run in production mode
     const isProduction = process.env.NODE_ENV === 'production';

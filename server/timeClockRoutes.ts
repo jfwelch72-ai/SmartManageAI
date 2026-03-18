@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { eventBus } from "./events";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
   kpiAssignments, kpiTemplates, kpiEntries
@@ -161,6 +162,20 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       newValue: JSON.stringify({ projectId: data.projectId, location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null }),
     }, req);
 
+    eventBus.emit({
+      type: "timeclock.checked_in",
+      orgId: req.user!.organizationId || "",
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: {
+        shiftId: newShift.id,
+        userId: req.user!.id,
+        projectId: data.projectId || null,
+        latitude: data.latitude || null,
+        longitude: data.longitude || null,
+      },
+    });
+
     res.status(201).json({ ...newShift, geofenceWarning });
   } catch (error) {
     console.error("Clock-in error:", error);
@@ -232,6 +247,19 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       oldValue: JSON.stringify({ clockIn: activeShift.clockIn }),
       newValue: JSON.stringify({ clockOut: now, totalHours }),
     }, req);
+
+    eventBus.emit({
+      type: "timeclock.checked_out",
+      orgId: req.user!.organizationId || "",
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: {
+        shiftId: activeShift.id,
+        userId: req.user!.id,
+        totalHours,
+        projectId: activeShift.projectId || null,
+      },
+    });
 
     res.json(updatedShift);
   } catch (error) {

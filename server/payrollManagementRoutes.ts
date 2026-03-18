@@ -1,5 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
+import { eventBus } from "./events";
 import {
   payRuns, payRunLineItems, timeEntries, users, projects,
   organizationPayrollSettings, insertPayRunSchema,
@@ -472,6 +473,32 @@ const payRunStatusHandler = async (req: any, res: Response) => {
       oldValue: JSON.stringify({ status: existing.status }),
       newValue: JSON.stringify({ status }),
     });
+
+    if (status === "PAID") {
+      const lineItemCount = await db
+        .select({ userId: payRunLineItems.userId })
+        .from(payRunLineItems)
+        .where(eq(payRunLineItems.payRunId, updated.id));
+      const uniqueEmployeeCount = new Set(lineItemCount.map((r) => r.userId)).size;
+
+      eventBus.emit({
+        type: "payroll.run.completed",
+        orgId: orgId,
+        actorId: authReq.user!.id,
+        timestamp: new Date(),
+        payload: {
+          payRunId: updated.id,
+          periodStart: updated.payPeriodStart instanceof Date
+            ? updated.payPeriodStart.toISOString().split("T")[0]
+            : String(updated.payPeriodStart),
+          periodEnd: updated.payPeriodEnd instanceof Date
+            ? updated.payPeriodEnd.toISOString().split("T")[0]
+            : String(updated.payPeriodEnd),
+          totalGross: Number(updated.totalGrossAmount || 0),
+          employeeCount: uniqueEmployeeCount,
+        },
+      });
+    }
 
     res.json(updated);
   } catch (error) {
