@@ -791,23 +791,37 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
           gcOrganizationId: validationResult.data.gcOrganizationId || userOrgId,
         }).returning();
 
-        // Auto-create a project channel
+        // Auto-create a project channel with slug and add all project-org members
         const projOrgId = newProject.gcOrganizationId;
         if (projOrgId) {
           try {
+            const slug = `project-${newProject.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 40)}`;
             const [channel] = await db.insert(conversations).values({
               type: "GROUP",
               name: newProject.name,
-              description: `Project channel for ${newProject.name}`,
+              description: `Project channel for ${newProject.name} (${newProject.code})`,
+              channelSlug: slug,
               projectId: newProject.id,
               organizationId: projOrgId,
               createdById: req.user!.id,
             }).returning();
+            // Add creator as admin
             await db.insert(conversationParticipants).values({
               conversationId: channel.id,
               userId: req.user!.id,
               isAdmin: true,
             });
+            // Add all active org members (managers, admins) as participants
+            const orgMembers = await db
+              .select({ id: users.id })
+              .from(users)
+              .where(and(eq(users.organizationId, projOrgId), eq(users.isActive, true)));
+            const toAdd = orgMembers
+              .filter(m => m.id !== req.user!.id)
+              .map(m => ({ conversationId: channel.id, userId: m.id, isAdmin: false }));
+            if (toAdd.length > 0) {
+              await db.insert(conversationParticipants).values(toAdd).onConflictDoNothing();
+            }
           } catch (channelErr) {
             console.warn("Could not auto-create project channel:", channelErr);
           }

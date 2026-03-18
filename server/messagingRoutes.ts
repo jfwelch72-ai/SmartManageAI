@@ -13,7 +13,7 @@ const router = Router();
 
 const msgUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for files/voice
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit for files/voice
 });
 
 const messagingSetup = (async () => {
@@ -204,7 +204,25 @@ const messagingSetup = (async () => {
   router.post("/api/channels/:id/join", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
       const conversationId = req.params.id;
+
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      // Verify channel belongs to user's organization and is a joinable channel
+      const [channel] = await db
+        .select()
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.id, conversationId),
+            eq(conversations.organizationId, orgId),
+            eq(conversations.isArchived, false)
+          )
+        )
+        .limit(1);
+
+      if (!channel) return res.status(404).json({ error: "Channel not found or not accessible" });
 
       await db
         .insert(conversationParticipants)
@@ -588,12 +606,13 @@ const messagingSetup = (async () => {
     }
   });
 
-  // ── VOICE MESSAGE UPLOAD ──
+  // ── VOICE MESSAGE UPLOAD — uploads audio and creates the message in one step ──
   router.post("/api/conversations/:id/voice", requireAuth, msgUpload.single("audio"), async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
       const conversationId = req.params.id;
+      const durationSeconds = req.body.duration ? Math.min(Number(req.body.duration), 120) : null;
 
       if (!orgId) return res.status(400).json({ error: "Organization required" });
 
@@ -626,7 +645,29 @@ const messagingSetup = (async () => {
       });
 
       const proxyUrl = `/api/conversations/${conversationId}/voice/${uniqueId}.webm`;
-      res.json({ url: proxyUrl });
+
+      // Save and return the message immediately
+      const [newMessage] = await db
+        .insert(messages)
+        .values({
+          conversationId: conversationId as string,
+          senderId: userId,
+          content: "[Voice message]",
+          voiceUrl: proxyUrl,
+          voiceDurationSeconds: durationSeconds,
+        })
+        .returning();
+
+      await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, conversationId));
+      await db.insert(messageReadReceipts).values({ messageId: newMessage.id, userId }).onConflictDoNothing();
+
+      const [sender] = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      res.status(201).json({ ...newMessage, sender });
     } catch (error) {
       console.error("Voice upload error:", error);
       res.status(500).json({ error: "Failed to upload voice message" });
@@ -680,14 +721,22 @@ const messagingSetup = (async () => {
     }
   });
 
-  // ── TASK MENTION SEARCH ──
-  router.get("/api/tasks/mention-search", requireAuth, async (req: AuthRequest, res) => {
+  // ── TASK MENTION SEARCH — scoped to conversation (and its linked project if any) ──
+  router.get("/api/conversations/:id/mention-search", requireAuth, async (req: AuthRequest, res) => {
     try {
+      const userId = req.user!.id;
       const orgId = req.user!.organizationId;
+      const conversationId = req.params.id;
       if (!orgId) return res.status(400).json({ error: "Organization required" });
 
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
+
       const q = (req.query.q as string) || "";
-      const projectId = req.query.projectId as string | undefined;
+
+      // Optionally narrow to the conversation's linked project
+      const [conv] = await db.select({ projectId: conversations.projectId }).from(conversations).where(eq(conversations.id, conversationId)).limit(1);
+      const projectId = conv?.projectId;
 
       const conditions: any[] = [eq(tasks.organizationId, orgId)];
       if (q.trim()) conditions.push(ilike(tasks.title, `%${q}%`));

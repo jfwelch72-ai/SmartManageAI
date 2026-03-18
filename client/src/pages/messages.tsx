@@ -286,16 +286,24 @@ export function TeamMessagesContent() {
     },
   });
 
-  // Task mention search
+  // Task mention search — scoped to conversation
   const { data: mentionResults = [] } = useQuery<TaskMention[]>({
-    queryKey: ["/api/tasks/mention-search", mentionQuery],
-    enabled: mentionQuery !== null && mentionQuery.length >= 0,
+    queryKey: ["/api/conversations", selectedConversationId, "mention-search", mentionQuery],
+    enabled: mentionQuery !== null && !!selectedConversationId,
     queryFn: async () => {
-      const res = await fetch(`/api/tasks/mention-search?q=${encodeURIComponent(mentionQuery || "")}`, { credentials: "include" });
+      if (!selectedConversationId) return [];
+      const res = await fetch(
+        `/api/conversations/${selectedConversationId}/mention-search?q=${encodeURIComponent(mentionQuery || "")}`,
+        { credentials: "include" }
+      );
       if (!res.ok) return [];
       return res.json();
     },
   });
+
+  // Selected index in mention dropdown
+  const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
+  useEffect(() => setMentionSelectedIdx(0), [mentionResults]);
 
   // ── Mutations ──
   const sendMessageMutation = useMutation({
@@ -424,10 +432,11 @@ export function TeamMessagesContent() {
     setMentionQuery(null);
   };
 
-  const insertTaskMention = (task: TaskMention) => {
+  const insertTaskMention = (task: TaskMention | null = mentionResults[mentionSelectedIdx]) => {
+    if (!task) return;
     const before = messageInput.slice(0, mentionAnchor);
     const after = messageInput.slice(mentionAnchor + 1 + (mentionQuery?.length || 0));
-    const mention = `@[${task.title}]`;
+    const mention = `@[${task.title}](${task.id})`;
     setMessageInput(before + mention + after);
     setPendingTaskIds(prev => [...prev, task.id]);
     setMentionQuery(null);
@@ -447,7 +456,25 @@ export function TeamMessagesContent() {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (mentionQuery !== null && mentionResults.length > 0) {
-      if (e.key === "Escape") { setMentionQuery(null); return; }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setMentionSelectedIdx(i => Math.min(i + 1, mentionResults.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionSelectedIdx(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertTaskMention();
+        return;
+      }
+      if (e.key === "Escape") {
+        setMentionQuery(null);
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -487,6 +514,8 @@ export function TeamMessagesContent() {
     }
   };
 
+  const MAX_VOICE_SECONDS = 120;
+
   // ── Voice recording ──
   const startRecording = async () => {
     try {
@@ -498,7 +527,16 @@ export function TeamMessagesContent() {
       mediaRecorderRef.current = mr;
       setIsRecording(true);
       setRecordingSeconds(0);
-      recordingTimerRef.current = window.setInterval(() => setRecordingSeconds(s => s + 1), 1000);
+      recordingTimerRef.current = window.setInterval(() => {
+        setRecordingSeconds(s => {
+          if (s + 1 >= MAX_VOICE_SECONDS) {
+            // Auto-stop at max duration
+            stopRecording();
+            return MAX_VOICE_SECONDS;
+          }
+          return s + 1;
+        });
+      }, 1000);
     } catch (err) {
       console.error("Microphone access denied:", err);
     }
@@ -506,6 +544,10 @@ export function TeamMessagesContent() {
 
   const stopRecording = async () => {
     if (!mediaRecorderRef.current || !selectedConversationId) return;
+    if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
+    if (mediaRecorderRef.current.state === "inactive") return;
+
+    const durationSnap = recordingSeconds;
 
     return new Promise<void>((resolve) => {
       mediaRecorderRef.current!.onstop = async () => {
@@ -516,20 +558,19 @@ export function TeamMessagesContent() {
         try {
           const formData = new FormData();
           formData.append("audio", blob, "voice.webm");
+          formData.append("duration", String(Math.min(durationSnap, MAX_VOICE_SECONDS)));
           const res = await fetch(`/api/conversations/${selectedConversationId}/voice`, {
             method: "POST",
             body: formData,
             credentials: "include",
           });
           if (!res.ok) throw new Error("Voice upload failed");
-          const data = await res.json();
-
-          sendMessageMutation.mutate({
-            conversationId: selectedConversationId,
-            content: "",
-            voiceUrl: data.url,
-            voiceDurationSeconds: recordingSeconds,
-          });
+          const savedMsg = await res.json();
+          // Server already saved the message — append it directly to cache
+          queryClient.setQueryData<Message[]>(
+            ["/api/conversations", selectedConversationId, "messages"],
+            (prev = []) => [...prev, savedMsg]
+          );
         } catch (err) {
           console.error("Voice upload failed:", err);
         } finally {
@@ -538,7 +579,6 @@ export function TeamMessagesContent() {
         resolve();
       };
       mediaRecorderRef.current!.stop();
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       setIsRecording(false);
     });
   };
@@ -548,12 +588,21 @@ export function TeamMessagesContent() {
 
   const companyConversation = conversations.find(c => c.isCompanyChannel);
   const namedChannels = conversations.filter(c => c.channelSlug && !c.projectId && !c.crewId && !c.isCompanyChannel);
-  const projectChannels = conversations.filter(c => !!c.projectId);
-  const crewChannels = conversations.filter(c => !!c.crewId);
+  const joinedProjectIds = new Set(conversations.filter(c => !!c.projectId).map(c => c.id));
+  const joinedCrewIds = new Set(conversations.filter(c => !!c.crewId).map(c => c.id));
+  // Joined project/crew channels from conversations list
+  const projectChannelsJoined = conversations.filter(c => !!c.projectId);
+  const crewChannelsJoined = conversations.filter(c => !!c.crewId);
+  // Non-joined project/crew channels discoverable from allChannels
+  const projectChannelsUnjoinedRaw = allChannels.filter(ch => !!ch.projectId && !joinedProjectIds.has(ch.id));
+  const crewChannelsUnjoinedRaw = allChannels.filter(ch => !!ch.crewId && !joinedCrewIds.has(ch.id));
+  // Combined for display
+  const projectChannels = [...projectChannelsJoined, ...projectChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true } as Conversation & { _unjoined?: boolean }))];
+  const crewChannels = [...crewChannelsJoined, ...crewChannelsUnjoinedRaw.map(ch => ({ ...ch, _unjoined: true } as Conversation & { _unjoined?: boolean }))];
   const directMessages = conversations.filter(c => c.type === "DIRECT");
 
-  // Channels the user hasn't joined yet
-  const joinableChannels = allChannels.filter(ch => !conversations.find(c => c.id === ch.id));
+  // Named channels the user hasn't joined yet
+  const joinableChannels = allChannels.filter(ch => !ch.projectId && !ch.crewId && !conversations.find(c => c.id === ch.id));
 
   const filterName = (name: string) => name.toLowerCase().includes(searchQuery.toLowerCase());
 
@@ -583,15 +632,22 @@ export function TeamMessagesContent() {
     return <MessageSquare className="w-4 h-4" />;
   };
 
-  // Render a mention-highlighted message content
+  // Render mention-highlighted message content; @[Title](taskId) is clickable
   const renderContent = (content: string) => {
-    const parts = content.split(/(@\[[^\]]+\])/g);
+    const parts = content.split(/(@\[[^\]]*\]\([^)]+\))/g);
     return parts.map((part, i) => {
-      if (part.startsWith("@[") && part.endsWith("]")) {
+      const mentionMatch = part.match(/^@\[([^\]]*)\]\(([^)]+)\)$/);
+      if (mentionMatch) {
+        const [, title, taskId] = mentionMatch;
         return (
-          <span key={i} className="text-primary font-medium">
-            {part.slice(2, -1)}
-          </span>
+          <a
+            key={i}
+            href={`/projects?taskId=${taskId}`}
+            className="text-primary font-medium hover:underline cursor-pointer"
+            onClick={e => { e.preventDefault(); setLocation(`/projects?taskId=${taskId}`); }}
+          >
+            @{title}
+          </a>
         );
       }
       return <Fragment key={i}>{part}</Fragment>;
@@ -737,49 +793,59 @@ export function TeamMessagesContent() {
                       ))}
                     </SidebarSection>
 
-                    {/* Project Channels */}
+                    {/* Project Channels — joined + discoverable unjoined */}
                     {projectChannels.length > 0 && (
                       <SidebarSection label="Projects">
-                        {projectChannels.filter(c => filterName(getConversationName(c))).map(c => (
-                          <button
-                            key={c.id}
-                            onClick={() => setSelectedConversationId(c.id)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent transition-colors",
-                              selectedConversationId === c.id && "bg-accent font-medium"
-                            )}
-                            data-testid={`button-project-channel-${c.id}`}
-                          >
-                            <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
-                            <span className="flex-1 truncate">{c.name}</span>
-                            {c.unreadCount > 0 && (
-                              <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
-                            )}
-                          </button>
-                        ))}
+                        {projectChannels.filter(c => filterName(getConversationName(c))).map(c => {
+                          const unjoined = (c as any)._unjoined === true;
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => unjoined ? joinChannelMutation.mutate(c.id) : setSelectedConversationId(c.id)}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent transition-colors",
+                                !unjoined && selectedConversationId === c.id && "bg-accent font-medium",
+                                unjoined && "opacity-60"
+                              )}
+                              data-testid={`button-project-channel-${c.id}`}
+                            >
+                              <FolderOpen className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="flex-1 truncate">{c.name}</span>
+                              {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
+                              {!unjoined && (c as Conversation).unreadCount > 0 && (
+                                <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
+                              )}
+                            </button>
+                          );
+                        })}
                       </SidebarSection>
                     )}
 
-                    {/* Crew Channels */}
+                    {/* Crew Channels — joined + discoverable unjoined */}
                     {crewChannels.length > 0 && (
                       <SidebarSection label="Crews">
-                        {crewChannels.filter(c => filterName(getConversationName(c))).map(c => (
-                          <button
-                            key={c.id}
-                            onClick={() => setSelectedConversationId(c.id)}
-                            className={cn(
-                              "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent transition-colors",
-                              selectedConversationId === c.id && "bg-accent font-medium"
-                            )}
-                            data-testid={`button-crew-channel-${c.id}`}
-                          >
-                            <HardHat className="w-4 h-4 text-muted-foreground shrink-0" />
-                            <span className="flex-1 truncate">{c.name}</span>
-                            {c.unreadCount > 0 && (
-                              <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
-                            )}
-                          </button>
-                        ))}
+                        {crewChannels.filter(c => filterName(getConversationName(c))).map(c => {
+                          const unjoined = (c as any)._unjoined === true;
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => unjoined ? joinChannelMutation.mutate(c.id) : setSelectedConversationId(c.id)}
+                              className={cn(
+                                "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-accent transition-colors",
+                                !unjoined && selectedConversationId === c.id && "bg-accent font-medium",
+                                unjoined && "opacity-60"
+                              )}
+                              data-testid={`button-crew-channel-${c.id}`}
+                            >
+                              <HardHat className="w-4 h-4 text-muted-foreground shrink-0" />
+                              <span className="flex-1 truncate">{c.name}</span>
+                              {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
+                              {!unjoined && (c as Conversation).unreadCount > 0 && (
+                                <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
+                              )}
+                            </button>
+                          );
+                        })}
                       </SidebarSection>
                     )}
 
@@ -962,15 +1028,20 @@ export function TeamMessagesContent() {
 
                     {/* Message Input */}
                     <div className="p-3 border-t shrink-0">
-                      {/* Task mention dropdown */}
+                      {/* Task mention dropdown — keyboard-navigable */}
                       {mentionQuery !== null && mentionResults.length > 0 && (
-                        <div className="mb-2 bg-popover border rounded-lg shadow-lg overflow-hidden">
-                          {mentionResults.map(t => (
+                        <div className="mb-2 bg-popover border rounded-lg shadow-lg overflow-hidden" role="listbox" aria-label="Task mentions">
+                          {mentionResults.map((t, idx) => (
                             <button
                               key={t.id}
                               onClick={() => insertTaskMention(t)}
-                              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent text-left"
+                              className={cn(
+                                "w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors",
+                                idx === mentionSelectedIdx ? "bg-accent" : "hover:bg-accent/50"
+                              )}
                               data-testid={`button-mention-task-${t.id}`}
+                              role="option"
+                              aria-selected={idx === mentionSelectedIdx}
                             >
                               <AtSign className="w-3.5 h-3.5 text-primary shrink-0" />
                               <span className="flex-1 truncate">{t.title}</span>

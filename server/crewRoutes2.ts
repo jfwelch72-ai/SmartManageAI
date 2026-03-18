@@ -102,23 +102,38 @@ router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthReque
       leadId: newCrew.leadId,
     }, req);
 
-    // Auto-create a crew channel
+    // Auto-create a crew channel and add all current crew members
     if (newCrew.organizationId) {
       try {
+        const slug = `crew-${newCrew.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").slice(0, 40)}`;
         const [channel] = await db.insert(conversations).values({
           type: "GROUP",
           name: `${newCrew.name} Crew`,
           description: `Team channel for ${newCrew.name}`,
+          channelSlug: slug,
           crewId: newCrew.id,
           organizationId: newCrew.organizationId,
           createdById: req.user!.id,
         }).returning();
-        // Add creator as participant
+        // Add creator as admin participant
         await db.insert(conversationParticipants).values({
           conversationId: channel.id,
           userId: req.user!.id,
           isAdmin: true,
         });
+        // Add existing crew members
+        const members = await db
+          .select({ userId: crewMembers.userId })
+          .from(crewMembers)
+          .where(eq(crewMembers.crewId, newCrew.id));
+        if (members.length > 0) {
+          const toAdd = members
+            .filter(m => m.userId !== req.user!.id)
+            .map(m => ({ conversationId: channel.id, userId: m.userId, isAdmin: false }));
+          if (toAdd.length > 0) {
+            await db.insert(conversationParticipants).values(toAdd).onConflictDoNothing();
+          }
+        }
       } catch (channelErr) {
         console.warn("Could not auto-create crew channel:", channelErr);
       }
