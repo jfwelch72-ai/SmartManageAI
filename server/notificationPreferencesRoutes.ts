@@ -174,7 +174,7 @@ router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: A
       return res.status(400).json({ error: "Phone number must be in E.164 format (e.g. +15551234567)" });
     }
     if (teamsWebhookUrl && !isValidTeamsWebhookUrl(teamsWebhookUrl)) {
-      return res.status(400).json({ error: "Teams webhook URL must start with https://*.webhook.office.com/" });
+      return res.status(400).json({ error: "Teams webhook URL must start with https://hooks.teams.microsoft.com/ or https://*.webhook.office.com/" });
     }
     if (slackWebhookUrl && !isValidSlackWebhookUrl(slackWebhookUrl)) {
       return res.status(400).json({ error: "Slack webhook URL must start with https://hooks.slack.com/" });

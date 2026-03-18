@@ -260,9 +260,11 @@ async function deliverPush(userId: string, notification: NotificationRecord): Pr
 
 function deliverTeams(webhookUrl: string | null, notification: NotificationRecord): void {
   if (!webhookUrl) return;
+  const baseUrl = process.env.APP_BASE_URL || "";
   const { actionUrl } = composeEmailContent(notification);
+  const url = actionUrl || baseUrl || undefined;
   setImmediate(() => {
-    sendTeamsMessage(webhookUrl, notification.title, notification.message, actionUrl).catch((err) =>
+    sendTeamsMessage(webhookUrl, notification.title, notification.message, url).catch((err) =>
       logError("notificationDelivery: Teams failed", { userId: notification.userId, error: String(err) })
     );
   });
@@ -270,9 +272,11 @@ function deliverTeams(webhookUrl: string | null, notification: NotificationRecor
 
 function deliverSlack(webhookUrl: string | null, notification: NotificationRecord): void {
   if (!webhookUrl) return;
+  const baseUrl = process.env.APP_BASE_URL || "";
   const { actionUrl } = composeEmailContent(notification);
+  const url = actionUrl || baseUrl || undefined;
   setImmediate(() => {
-    sendSlackMessage(webhookUrl, notification.title, notification.message, actionUrl).catch((err) =>
+    sendSlackMessage(webhookUrl, notification.title, notification.message, url).catch((err) =>
       logError("notificationDelivery: Slack failed", { userId: notification.userId, error: String(err) })
     );
   });
