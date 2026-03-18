@@ -1,6 +1,7 @@
 import { sendEmail } from "./email";
 import { db } from "./db";
 import { users, organizations, organizationNetworkSettings, notifications } from "@shared/schema";
+import { insertNotification } from "./services/notificationService";
 import { eq, and, or } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
 
@@ -497,7 +498,7 @@ export async function createBidNetworkInAppNotification(
     if (admins.length === 0) return;
 
     for (const admin of admins) {
-      await db.insert(notifications).values({
+      await insertNotification({
         userId: admin.id,
         type,
         title,

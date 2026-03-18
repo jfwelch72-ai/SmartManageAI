@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { db } from "./db";
+import { insertNotifications } from "./services/notificationService";
 import { portalChatThreads, portalChatMessages, subcontractorPortalTokens, clientPortalAccess, projects, users, notifications } from "@shared/schema";
 import { eq, and, desc, sql, inArray, asc, gt, or } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -20,7 +21,7 @@ export async function notifyChatTeamMembers(orgId: string, projectId: string, se
       ));
 
     if (teamMembers.length > 0) {
-      await db.insert(notifications).values(teamMembers.map(m => ({
+      await insertNotifications(teamMembers.map(m => ({
         userId: m.id,
         type: "PORTAL_CHAT_MESSAGE" as const,
         title: "New Portal Chat Message",

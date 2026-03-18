@@ -164,6 +164,7 @@ import projectContentRoutes from "./projectContentRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
 import notificationRoutes2 from "./notificationRoutes2";
 import notificationPreferencesRoutes from "./notificationPreferencesRoutes";
+import { insertNotification } from "./services/notificationService";
 import auditBillingStorageRoutes from "./auditBillingStorageRoutes";
 import crewRoutes2 from "./crewRoutes2";
 import skillRoutes from "./skillRoutes";
@@ -592,7 +593,7 @@ async function checkCertificationExpiry() {
         .set({ expiryNotified30Days: true, updatedAt: now })
         .where(eq(userCertifications.id, cert.id));
 
-      await db.insert(notifications).values({
+      await insertNotification({
         userId: cert.userId,
         type: "GENERAL",
         title: "Certification Expiring Soon",
@@ -605,7 +606,7 @@ async function checkCertificationExpiry() {
         .set({ expiryNotified5Days: true, updatedAt: now })
         .where(eq(userCertifications.id, cert.id));
 
-      await db.insert(notifications).values({
+      await insertNotification({
         userId: cert.userId,
         type: "GENERAL",
         title: "Certification Expiring Very Soon",

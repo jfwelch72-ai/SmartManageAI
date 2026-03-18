@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { db } from "./db";
+import { insertNotifications } from "./services/notificationService";
 import {
   subcontractorPortalTokens, portalActivityLog,
   projects, users, crmOrganisations,
@@ -53,7 +54,7 @@ export async function notifyGcTeamOfPortalActivity(
       relatedEntityType: "project",
     }));
 
-    await db.insert(notifications).values(notificationValues);
+    await insertNotifications(notificationValues);
   } catch (error) {
     console.error("Failed to create portal activity notifications:", error);
   }

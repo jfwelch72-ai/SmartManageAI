@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { insertNotification } from "./services/notificationService";
 import { 
   timeClockShifts, users, notifications,
   dailyScopeProgress, scopeItems, projectEmployeeRates, 
@@ -338,7 +339,7 @@ export async function checkAndNotifyWeeklyReport(
         ));
 
       for (const admin of adminUsers) {
-        await db.insert(notifications).values({
+        await insertNotification({
           userId: admin.id,
           type: "GENERAL",
           title: "Weekly Payroll Report Ready",

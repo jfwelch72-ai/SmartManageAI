@@ -1,5 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
+import { insertNotification } from "./services/notificationService";
 import { 
   organizationPayrollSettings, weeklyPayrollReports, users, timeClockShifts, 
   notifications
@@ -324,7 +325,7 @@ router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADM
         ));
 
       for (const admin of adminUsers) {
-        await db.insert(notifications).values({
+        await insertNotification({
           userId: admin.id,
           type: "GENERAL",
           title: "Weekly Payroll Report Generated",

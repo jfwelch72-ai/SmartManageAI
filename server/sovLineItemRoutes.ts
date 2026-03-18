@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import { insertNotifications } from "./services/notificationService";
 import { z } from "zod";
 import { db } from "./db";
 import { 
@@ -332,7 +333,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
               relatedEntityId: project.id,
               relatedEntityType: "project" as const,
             }));
-            await db.insert(notifications).values(sovNotifs);
+            await insertNotifications(sovNotifs);
           }
         }
       } catch (notifError) {

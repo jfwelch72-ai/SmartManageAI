@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { insertNotification } from "./services/notificationService";
 import {
   crmOpportunities,
   crmOpportunityActivities,
@@ -286,7 +287,7 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
           .limit(1);
         const inAppEnabled = orgSetting?.notifyInApp ?? true;
         if (inAppEnabled) {
-          await db.insert(notifications).values({
+          await insertNotification({
             userId: assigneeId,
             type: "CRM_STAGE_CHANGE",
             title: "Pipeline stage updated",

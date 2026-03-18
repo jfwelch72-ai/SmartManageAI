@@ -6,6 +6,7 @@ import { eq, and, desc, sql, max } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
+import { insertNotifications } from "./services/notificationService";
 import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
 import { createApprovalRequest } from "./services/approvalService";
@@ -414,7 +415,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
             relatedEntityId: updatedOrder.projectId,
             relatedEntityType: "project" as const,
           }));
-          await db.insert(notifications).values(coNotifs);
+          await insertNotifications(coNotifs);
         }
       }
     } catch (notifError) {

@@ -15,6 +15,7 @@ import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./a
 import { getOrgIdForFilter } from "./orgFilter";
 import { logAudit, logCreate, logUpdate, logDelete } from "./auditLogger";
 import { notifySubmitter } from "./services/approvalNotificationService";
+import { insertNotifications } from "./services/notificationService";
 
 const router = Router();
 
@@ -97,7 +98,7 @@ async function sendPayableNotifications(
       }));
 
     if (notificationRecords.length > 0) {
-      await db.insert(notifications).values(notificationRecords);
+      await insertNotifications(notificationRecords);
     }
   } catch (error) {
     console.error("Error sending payable notifications:", error);

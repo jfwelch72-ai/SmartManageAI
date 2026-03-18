@@ -3,6 +3,7 @@ import { db } from "../db";
 import { aiSettings, changeOrders, projects, users, notifications } from "@shared/schema";
 import { runAIAnalysis } from "./orchestrator";
 import { sql, eq } from 'drizzle-orm';
+import { insertNotifications } from "../services/notificationService";
 
 let scheduledTask: cron.ScheduledTask | null = null;
 let weeklyAlertTask: cron.ScheduledTask | null = null;
@@ -194,7 +195,7 @@ async function checkStaleChangeOrders() {
   
   if (notificationsToCreate.length > 0) {
     try {
-      await db.insert(notifications).values(notificationsToCreate);
+      await insertNotifications(notificationsToCreate);
       console.log(`📋 Created ${notificationsToCreate.length} weekly CO alert notification(s)`);
     } catch (insertError) {
       console.error('❌ Failed to insert weekly CO alert notifications:', insertError);

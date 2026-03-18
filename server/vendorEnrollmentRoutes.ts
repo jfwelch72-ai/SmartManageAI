@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { insertNotification } from "./services/notificationService";
 import {
   crmOrganisations,
   vendorEnrollments,
@@ -650,7 +651,7 @@ router.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (re
         insertedItems.push(inserted);
 
         if (enrollment.notifyOnPriceUpdate && enrollment.invitedByUserId) {
-          await db.insert(notifications).values({
+          await insertNotification({
             userId: enrollment.invitedByUserId,
             type: "GENERAL",
             title: "New Vendor Pricing Submitted",

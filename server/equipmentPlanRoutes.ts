@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { insertNotification } from "./services/notificationService";
 import {
   equipment, equipmentAssignments,
   equipmentRateProfiles,
@@ -992,7 +993,7 @@ Please provide:
       const uniqueRecipientIds = Array.from(new Set(allRecipients.map(r => r.id)));
       
       for (const recipientId of uniqueRecipientIds) {
-        await db.insert(notifications).values({
+        await insertNotification({
           userId: recipientId,
           type: type === 'REPAIR' ? 'REPAIR_REQUEST' : 'MAINTENANCE_REQUEST',
           title: type === 'REPAIR' ? 'New Repair Request' : 'Maintenance Required',

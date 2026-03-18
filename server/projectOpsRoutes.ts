@@ -11,6 +11,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logDelete } from "./auditLogger";
+import { insertNotification, insertNotifications } from "./services/notificationService";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
 
@@ -845,7 +846,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
     }));
 
     if (notificationsToCreate.length > 0) {
-      await db.insert(notifications).values(notificationsToCreate);
+      await insertNotifications(notificationsToCreate);
     }
 
     res.status(201).json(newOrder);
@@ -1171,7 +1172,7 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =
       }));
 
       if (notificationsToCreate.length > 0) {
-        await db.insert(notifications).values(notificationsToCreate);
+        await insertNotifications(notificationsToCreate);
       }
     }
 
@@ -1200,14 +1201,14 @@ router.post("/api/calendar/events/:id/approve", requireAuth, requireRole("ADMIN"
     }
 
     if (event.userId) {
-      await db.insert(notifications).values([{
+      await insertNotification({
         userId: event.userId,
         type: "GENERAL",
         title: "Time Off Approved",
         message: `Your time off request has been approved: ${event.title}`,
         relatedEntityId: event.id,
         relatedEntityType: "calendarEvent",
-      }]);
+      });
     }
 
     res.json(event);

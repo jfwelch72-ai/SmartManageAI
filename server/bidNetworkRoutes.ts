@@ -14,6 +14,7 @@ import {
 import { eq, and, or, desc, sql, isNull, ne, inArray, like } from "drizzle-orm";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
+import { insertNotifications } from "./services/notificationService";
 import { 
   sendBidInvitationNotification, 
   sendBidResponseNotification,
@@ -1076,7 +1077,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
             relatedEntityType: "bid_request",
           }));
 
-          await db.insert(notifications).values(notificationValues);
+          await insertNotifications(notificationValues);
         }
       } catch (notifError) {
         console.error("Failed to create bid award notifications:", notifError);

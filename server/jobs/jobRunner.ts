@@ -3,6 +3,7 @@ import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError } from "../utils/logger";
+import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, type InsertNotification } from "@shared/schema";
 import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc } from "drizzle-orm";
@@ -454,7 +455,7 @@ async function notifyPostOwnerOfFailure(
     if (!post.createdById) return;
     const postLabel = post.title || post.content.substring(0, 50);
     const platformLabel = post.platform || "Unknown";
-    await db.insert(notifications).values({
+    await insertNotification({
       userId: post.createdById,
       type: "GENERAL",
       title: `Scheduled post failed: ${platformLabel}`,
@@ -650,7 +651,7 @@ async function processComplianceExpirations() {
     const deduped = notificationValues.filter(n => !existingKeys.has(`${n.userId}:${n.relatedEntityId}:${n.title}`));
 
     if (deduped.length > 0) {
-      await db.insert(notifications).values(deduped);
+      await insertNotifications(deduped);
       logInfo("Compliance notifications created", { count: deduped.length });
     } else {
       logInfo("Compliance check: all notifications already exist (unread)");
@@ -779,7 +780,7 @@ async function processProfitabilityMonitor() {
   }
 
   if (notificationValues.length > 0) {
-    await db.insert(notifications).values(notificationValues as any);
+    await insertNotifications(notificationValues as InsertNotification[]);
     logInfo("Profitability alert notifications sent", { count: notificationValues.length });
   }
 
@@ -892,7 +893,7 @@ async function processIdleOpportunities() {
   }
 
   if (toInsert.length > 0) {
-    await db.insert(notifications).values(toInsert);
+    await insertNotifications(toInsert);
     logInfo("Idle opportunity notifications sent", { count: toInsert.length });
   } else {
     logInfo("Idle opportunity check: all assignees already notified today or in-app disabled");

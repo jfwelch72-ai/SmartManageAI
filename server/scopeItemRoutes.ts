@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { insertNotifications } from "./services/notificationService";
 import { db } from "./db";
 import {
   projects, users, scopeItems, estimates, estimateLineItems,
@@ -238,7 +239,7 @@ router.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER"
       }));
 
       if (notificationsToCreate.length > 0) {
-        await db.insert(notifications).values(notificationsToCreate);
+        await insertNotifications(notificationsToCreate);
       }
     }
 
@@ -385,7 +386,7 @@ router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN",
       }));
 
       if (notificationsToCreate.length > 0) {
-        await db.insert(notifications).values(notificationsToCreate);
+        await insertNotifications(notificationsToCreate);
       }
     }
 
@@ -572,7 +573,7 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
                 relatedEntityType: "project" as const,
               }))
             );
-            await db.insert(notifications).values(milestoneNotifs);
+            await insertNotifications(milestoneNotifs);
           }
 
           const dailyNotifs = officeManagers.map((mgr) => ({
@@ -583,7 +584,7 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
             relatedEntityId: project.id,
             relatedEntityType: "project" as const,
           }));
-          await db.insert(notifications).values(dailyNotifs);
+          await insertNotifications(dailyNotifs);
         }
       }
     } catch (notifError) {
@@ -690,7 +691,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
               relatedEntityType: "daily_scope_progress" as const,
             }));
             
-            await db.insert(notifications).values(notificationValues);
+            await insertNotifications(notificationValues);
           }
         }
       } catch (notificationError) {

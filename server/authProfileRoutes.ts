@@ -20,6 +20,7 @@ import { logUpdate, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { emailVerificationTokens } from "@shared/schema";
 import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from "./email";
+import { insertNotification } from "./services/notificationService";
 
 const router = Router();
 
@@ -854,7 +855,7 @@ const upload = multer({
         }).returning();
         createdRequests.push(request);
 
-        await db.insert(notifications).values({
+        await insertNotification({
           userId: manager.id,
           type: "GENERAL",
           title: "Skill Verification Request",
@@ -968,7 +969,7 @@ const upload = multer({
         .where(eq(userSkills.id, request.userSkillId)).limit(1);
 
       const verifierName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim();
-      await db.insert(notifications).values({
+      await insertNotification({
         userId: request.requestedByUserId,
         type: "GENERAL",
         title: `Skill Verification ${parsed.data.action === "approve" ? "Approved" : "Rejected"}`,

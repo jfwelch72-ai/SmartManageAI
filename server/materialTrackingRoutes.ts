@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
+import { insertNotification } from "./services/notificationService";
 import {
   projects, users, scopeItems,
   projectMaterialBudgets, notifications,
@@ -180,7 +181,7 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
               const managers = await db.select().from(users).where(and(...mgrConditions));
               
               for (const manager of managers) {
-                await db.insert(notifications).values({
+                await insertNotification({
                   userId: manager.id,
                   type: "MATERIAL_OVERAGE",
                   title: "Material Budget Alert",
