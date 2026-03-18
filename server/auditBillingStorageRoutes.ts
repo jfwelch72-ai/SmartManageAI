@@ -131,6 +131,7 @@ const objectStoragePromise = import("./objectStorage").then(m => ({
 }));
 const objectAclPromise = import("./objectAcl").then(m => ({
   ObjectPermission: m.ObjectPermission,
+  getObjectAclPolicy: m.getObjectAclPolicy,
 }));
 
 router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) => {
@@ -156,8 +157,6 @@ router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res)
     const { ObjectPermission } = await objectAclPromise;
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(req.path);
-    
-    const [metadata] = await objectFile.getMetadata();
     const objectKey = objectFile.name;
 
     const { resolveObjectKeyToFile } = await import("./fileAccessHelpers");
@@ -168,6 +167,9 @@ router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res)
       return;
     }
 
+    const { getObjectAclPolicy } = await objectAclPromise;
+    const aclPolicy = await getObjectAclPolicy(objectFile);
+
     const canAccess = await objectStorageService.canAccessObjectEntity({
       objectFile,
       userId: req.user!.id,
@@ -176,10 +178,17 @@ router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res)
       requestedPermission: ObjectPermission.READ,
       fileId: resolvedFile.fileId,
       fileType: resolvedFile.fileType,
+      aclPolicy,
     });
 
     if (!canAccess) {
       res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (aclPolicy?.visibility === "public") {
+      const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 300);
+      res.redirect(302, signedUrl);
       return;
     }
 

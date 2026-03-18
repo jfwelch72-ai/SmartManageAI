@@ -112,6 +112,7 @@ export async function canAccessObject({
   userRole,
   fileId,
   fileType,
+  aclPolicy: preloadedAclPolicy,
 }: {
   userId?: string;
   userOrganizationId?: string;
@@ -120,8 +121,9 @@ export async function canAccessObject({
   userRole?: string;
   fileId?: string;
   fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT";
+  aclPolicy?: ObjectAclPolicy | null;
 }): Promise<boolean> {
-  const aclPolicy = await getObjectAclPolicy(objectFile);
+  const aclPolicy = preloadedAclPolicy !== undefined ? preloadedAclPolicy : await getObjectAclPolicy(objectFile);
   if (!aclPolicy) {
     return false;
   }

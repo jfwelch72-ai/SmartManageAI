@@ -12,15 +12,18 @@ interface ResolvedFile {
 
 /**
  * Resolve objectKey to {fileType, fileId, record}
- * Queries all three file tables to find which one contains this objectKey
+ * Runs all three table queries in parallel to minimize latency.
  */
 export async function resolveObjectKeyToFile(objectKey: string): Promise<ResolvedFile | null> {
-  // Try to find in media table
-  const [mediaRecord] = await db
-    .select()
-    .from(media)
-    .where(eq(media.objectKey, objectKey))
-    .limit(1);
+  const [
+    [mediaRecord],
+    [documentRecord],
+    [receiptRecord],
+  ] = await Promise.all([
+    db.select().from(media).where(eq(media.objectKey, objectKey)).limit(1),
+    db.select().from(planDocuments).where(eq(planDocuments.objectKey, objectKey)).limit(1),
+    db.select().from(receipts).where(eq(receipts.objectKey, objectKey)).limit(1),
+  ]);
 
   if (mediaRecord) {
     return {
@@ -30,13 +33,6 @@ export async function resolveObjectKeyToFile(objectKey: string): Promise<Resolve
     };
   }
 
-  // Try to find in planDocuments table
-  const [documentRecord] = await db
-    .select()
-    .from(planDocuments)
-    .where(eq(planDocuments.objectKey, objectKey))
-    .limit(1);
-
   if (documentRecord) {
     return {
       fileType: "DOCUMENT",
@@ -44,13 +40,6 @@ export async function resolveObjectKeyToFile(objectKey: string): Promise<Resolve
       record: documentRecord,
     };
   }
-
-  // Try to find in receipts table
-  const [receiptRecord] = await db
-    .select()
-    .from(receipts)
-    .where(eq(receipts.objectKey, objectKey))
-    .limit(1);
 
   if (receiptRecord) {
     return {

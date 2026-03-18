@@ -212,6 +212,11 @@ export class ObjectStorageService {
     return normalizedPath;
   }
 
+  async getSignedDownloadUrl(file: File, ttlSec: number = 300): Promise<string> {
+    const { bucketName, objectName } = parseObjectPath(`/${file.bucket.name}/${file.name}`);
+    return signObjectURL({ bucketName, objectName, method: "GET", ttlSec });
+  }
+
   async canAccessObjectEntity({
     userId,
     userOrganizationId,
@@ -220,6 +225,7 @@ export class ObjectStorageService {
     userRole,
     fileId,
     fileType,
+    aclPolicy,
   }: {
     userId?: string;
     userOrganizationId?: string;
@@ -228,6 +234,7 @@ export class ObjectStorageService {
     userRole?: string;
     fileId?: string;
     fileType?: "MEDIA" | "DOCUMENT" | "RECEIPT";
+    aclPolicy?: import("./objectAcl").ObjectAclPolicy | null;
   }): Promise<boolean> {
     return canAccessObject({
       userId,
@@ -237,6 +244,7 @@ export class ObjectStorageService {
       userRole,
       fileId,
       fileType,
+      aclPolicy,
     });
   }
 }
