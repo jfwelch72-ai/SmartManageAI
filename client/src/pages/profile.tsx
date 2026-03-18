@@ -288,8 +288,11 @@ export default function ProfilePage() {
         toast({ title: "Permission denied", description: "Please allow notifications in your browser settings.", variant: "destructive" });
         return false;
       }
-      const vapidRes = await apiRequest("GET", "/api/push/vapid-public-key");
-      const { vapidPublicKey } = await vapidRes.json();
+      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
+      if (!vapidPublicKey) {
+        toast({ title: "Push not configured", description: "Server-side push is not set up.", variant: "destructive" });
+        return false;
+      }
       const reg = await navigator.serviceWorker.ready;
       const existing = await reg.pushManager.getSubscription();
       if (existing) await existing.unsubscribe();
@@ -298,10 +301,11 @@ export default function ProfilePage() {
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
       });
       const json = sub.toJSON();
-      await apiRequest("POST", "/api/push/subscribe", {
+      await apiRequest("POST", "/api/notifications/push-subscribe", {
         endpoint: json.endpoint,
         p256dh: json.keys?.p256dh,
         auth: json.keys?.auth,
+        userAgent: navigator.userAgent,
       });
       return true;
     } catch (err: unknown) {
@@ -316,7 +320,7 @@ export default function ProfilePage() {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
-          await apiRequest("POST", "/api/push/unsubscribe", { endpoint: sub.endpoint });
+          await apiRequest("DELETE", "/api/notifications/push-unsubscribe", { endpoint: sub.endpoint });
           await sub.unsubscribe();
         }
       }

@@ -11,6 +11,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
+import PushNotificationBanner from "@/components/PushNotificationBanner";
 import NotFound from "@/pages/not-found";
 const LandingPage = lazy(() => import("@/pages/landing"));
 import LoginPage from "@/pages/login";
@@ -370,6 +371,7 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </SidebarInset>
+      <PushNotificationBanner />
     </SidebarProvider>
   );
 }
