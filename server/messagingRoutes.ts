@@ -633,21 +633,26 @@ const messagingSetup = (async () => {
       }
 
       // ── Mention notifications — notify each task's assigned user ──
-      if (Array.isArray(mentionedTaskIds) && mentionedTaskIds.length > 0) {
+      // Constrained to caller's org to prevent cross-tenant notification injection.
+      if (Array.isArray(mentionedTaskIds) && mentionedTaskIds.length > 0 && orgId) {
         const mentionedTasks = await db
           .select({ id: tasks.id, assignedToId: tasks.assignedToId, title: tasks.title, projectId: tasks.projectId })
           .from(tasks)
-          .where(inArray(tasks.id, mentionedTaskIds));
+          .where(and(
+            inArray(tasks.id, mentionedTaskIds),
+            eq(tasks.organizationId, orgId),
+          ));
 
         const notifiedUsers = new Set<string>();
         for (const t of mentionedTasks) {
           if (t.assignedToId && t.assignedToId !== userId && !notifiedUsers.has(t.assignedToId)) {
             notifiedUsers.add(t.assignedToId);
+            // Link target: /projects?taskId=<id> — encoded in relatedEntityType/Id for notification routing
             await db.insert(notifications).values({
               userId: t.assignedToId,
               type: "TASK_MENTIONED",
-              title: "You were mentioned",
-              message: `Someone referenced your task "${t.title}" in a message.`,
+              title: "You were mentioned in a message",
+              message: `Someone referenced your task "${t.title}" in a conversation.`,
               relatedEntityId: t.id,
               relatedEntityType: "task",
             });
@@ -1212,14 +1217,24 @@ const messagingSetup = (async () => {
         if (!admin) return res.status(403).json({ error: "Only the sender or a channel admin can delete messages" });
       }
 
-      await db.update(messages).set({ isDeleted: true, content: "" }).where(eq(messages.id, msgId));
+      const [deleted] = await db
+        .update(messages)
+        .set({ isDeleted: true, content: "" })
+        .where(eq(messages.id, msgId))
+        .returning();
+
+      const [sender] = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+        .from(users).where(eq(users.id, deleted.senderId)).limit(1);
+
+      const deletedMsg = { ...deleted, sender, reactions: [] };
 
       if (orgId) {
         const participantUserIds = await fetchParticipantIds(msg.conversationId);
         emitMessageDeleted(orgId, msg.conversationId, participantUserIds, msgId);
       }
 
-      res.json({ success: true, messageId: msgId });
+      res.json(deletedMsg);
     } catch (error) {
       console.error("Delete message error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -1274,6 +1289,43 @@ const messagingSetup = (async () => {
       res.json({ reactions });
     } catch (error) {
       console.error("Toggle reaction error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── REMOVE REACTION (explicit DELETE) — DELETE /api/messages/:msgId/reactions/:emoji ──
+  // Removes the caller's specific emoji reaction. Returns updated reaction counts.
+  router.delete("/api/messages/:msgId/reactions/:emoji", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      const { msgId, emoji } = req.params;
+
+      const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"];
+      if (!ALLOWED_EMOJIS.includes(emoji)) {
+        return res.status(400).json({ error: "Invalid emoji" });
+      }
+
+      const [msg] = await db
+        .select({ id: messages.id, conversationId: messages.conversationId, isDeleted: messages.isDeleted })
+        .from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+
+      await db.delete(messageReactions).where(
+        and(eq(messageReactions.messageId, msgId), eq(messageReactions.userId, userId), eq(messageReactions.emoji, emoji))
+      );
+
+      const reactionMap = await loadReactions([msgId]);
+      const reactions = reactionMap.get(msgId) ?? [];
+
+      if (orgId) {
+        const participantUserIds = await fetchParticipantIds(msg.conversationId);
+        emitMessageReaction(orgId, msg.conversationId, participantUserIds, msgId, reactions);
+      }
+
+      res.json({ reactions });
+    } catch (error) {
+      console.error("Remove reaction error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

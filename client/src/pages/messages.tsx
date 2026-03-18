@@ -490,12 +490,12 @@ export function TeamMessagesContent() {
   const deleteMessageMutation = useMutation({
     mutationFn: async (messageId: string) => {
       const response = await apiRequest("DELETE", `/api/messages/${messageId}`);
-      return response.json();
+      return response.json() as Promise<Message>;
     },
-    onSuccess: (_data, messageId) => {
+    onSuccess: (deletedMsg: Message) => {
       queryClient.setQueryData<Message[]>(
         ["/api/conversations", selectedConversationId, "messages"],
-        (prev = []) => prev.map(m => m.id === messageId ? { ...m, isDeleted: true, content: "" } : m)
+        (prev = []) => prev.map(m => m.id === deletedMsg.id ? { ...m, ...deletedMsg } : m)
       );
     },
   });
@@ -1339,9 +1339,11 @@ export function TeamMessagesContent() {
                                           )}
                                         </div>
                                       )}
-                                      {/* Edited label */}
+                                      {/* Edited label with timestamp */}
                                       {message.isEdited && (
-                                        <p className="text-[10px] text-muted-foreground mt-0.5 px-1">(edited)</p>
+                                        <p className="text-[10px] text-muted-foreground mt-0.5 px-1">
+                                          (edited{message.editedAt ? ` · ${formatDistanceToNow(new Date(message.editedAt), { addSuffix: true })}` : ""})
+                                        </p>
                                       )}
                                     </>
                                   )}
