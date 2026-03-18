@@ -1402,12 +1402,20 @@ export const conversations = pgTable("conversations", {
   name: text("name"), // null for direct messages, required for groups/company
   description: text("description"),
   isCompanyChannel: boolean("is_company_channel").notNull().default(false), // The main company-wide channel
+  channelSlug: text("channel_slug"), // non-null means this is a named Slack-style channel
+  topic: text("topic"), // optional channel topic/purpose
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }), // links to a project
+  crewId: varchar("crew_id").references(() => crews.id, { onDelete: "cascade" }), // links to a crew
+  isArchived: boolean("is_archived").notNull().default(false),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   typeIdx: index("conversations_type_idx").on(table.type),
   orgIdx: index("conversations_org_idx").on(table.organizationId),
+  channelSlugIdx: index("conversations_channel_slug_idx").on(table.channelSlug),
+  projectIdIdx: index("conversations_project_id_idx").on(table.projectId),
+  crewIdIdx: index("conversations_crew_id_idx").on(table.crewId),
 }));
 
 // Conversation Participants table
@@ -1433,6 +1441,9 @@ export const messages = pgTable("messages", {
   attachmentUrl: text("attachment_url"),
   attachmentName: text("attachment_name"),
   attachmentType: text("attachment_type"),
+  voiceUrl: text("voice_url"),
+  voiceDurationSeconds: integer("voice_duration_seconds"),
+  mentionedTaskIds: text("mentioned_task_ids").array(),
   isEdited: boolean("is_edited").notNull().default(false),
   editedAt: timestamp("edited_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

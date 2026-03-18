@@ -2,11 +2,19 @@ import { Router } from "express";
 import { db } from "./db";
 import { users } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, desc, sql, and, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, inArray, or, isNotNull, ilike, isNull } from "drizzle-orm";
 import { sanitizeText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
+import multer from "multer";
+import { randomUUID } from "crypto";
+import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
 
 const router = Router();
+
+const msgUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for files/voice
+});
 
 const messagingSetup = (async () => {
   const {
@@ -14,17 +22,25 @@ const messagingSetup = (async () => {
     conversationParticipants,
     messages,
     messageReadReceipts,
-    insertConversationSchema,
-    insertMessageSchema,
-    organizations
+    organizations,
+    tasks,
   } = await import("@shared/schema");
+
+  // ── Helper: ensure user is a participant (or auto-join for org channels) ──
+  async function ensureParticipant(conversationId: string, userId: string): Promise<boolean> {
+    const [p] = await db
+      .select()
+      .from(conversationParticipants)
+      .where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, userId)))
+      .limit(1);
+    return !!p;
+  }
 
   // Get all conversations for current user
   router.get("/api/conversations", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
 
-      // Get all conversations the user participates in
       const userConversations = await db
         .select({
           conversation: conversations,
@@ -35,10 +51,8 @@ const messagingSetup = (async () => {
         .where(eq(conversationParticipants.userId, userId))
         .orderBy(desc(conversations.updatedAt));
 
-      // For each conversation, get participants and last message
       const conversationsWithDetails = await Promise.all(
         userConversations.map(async ({ conversation, participant }) => {
-          // Get all participants
           const participants = await db
             .select({
               participant: conversationParticipants,
@@ -53,7 +67,6 @@ const messagingSetup = (async () => {
             .innerJoin(users, eq(conversationParticipants.userId, users.id))
             .where(eq(conversationParticipants.conversationId, conversation.id));
 
-          // Get last message
           const [lastMessage] = await db
             .select({
               message: messages,
@@ -69,7 +82,6 @@ const messagingSetup = (async () => {
             .orderBy(desc(messages.createdAt))
             .limit(1);
 
-          // Get unread count for this user
           const unreadMessages = await db
             .select({ count: sql<number>`count(*)` })
             .from(messages)
@@ -111,6 +123,123 @@ const messagingSetup = (async () => {
     }
   });
 
+  // ── CHANNELS: list all org channels (named, project, crew) ──
+  router.get("/api/channels", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) return res.status(400).json({ error: "Organization required" });
+
+      const orgChannels = await db
+        .select()
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.organizationId, organizationId),
+            eq(conversations.isArchived, false),
+            or(
+              isNotNull(conversations.channelSlug),
+              isNotNull(conversations.projectId),
+              isNotNull(conversations.crewId)
+            )
+          )
+        )
+        .orderBy(conversations.name);
+
+      res.json(orgChannels);
+    } catch (error) {
+      console.error("Get channels error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── CHANNELS: create a named channel ──
+  router.post("/api/channels", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) return res.status(400).json({ error: "Organization required" });
+
+      const { name, description, topic } = req.body;
+      if (!name?.trim()) return res.status(400).json({ error: "Channel name is required" });
+
+      const slug = name.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+
+      // Check for duplicate slug
+      const [existing] = await db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(and(eq(conversations.organizationId, organizationId), eq(conversations.channelSlug, slug)))
+        .limit(1);
+      if (existing) return res.status(409).json({ error: "A channel with that name already exists" });
+
+      const [newChannel] = await db
+        .insert(conversations)
+        .values({
+          type: "GROUP",
+          name: name.trim(),
+          description: description || null,
+          topic: topic || null,
+          channelSlug: slug,
+          isCompanyChannel: false,
+          organizationId,
+          createdById: userId,
+        })
+        .returning();
+
+      // Add creator
+      await db.insert(conversationParticipants).values({
+        conversationId: newChannel.id,
+        userId,
+        isAdmin: true,
+      });
+
+      res.status(201).json(newChannel);
+    } catch (error) {
+      console.error("Create channel error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── CHANNELS: self-join a channel ──
+  router.post("/api/channels/:id/join", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const conversationId = req.params.id;
+
+      await db
+        .insert(conversationParticipants)
+        .values({ conversationId, userId, isAdmin: false })
+        .onConflictDoNothing();
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Join channel error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── CHANNELS: archive a channel (admin only) ──
+  router.patch("/api/channels/:id/archive", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const conversationId = req.params.id;
+
+      const [p] = await db
+        .select()
+        .from(conversationParticipants)
+        .where(and(eq(conversationParticipants.conversationId, conversationId), eq(conversationParticipants.userId, userId), eq(conversationParticipants.isAdmin, true)))
+        .limit(1);
+
+      if (!p) return res.status(403).json({ error: "Only channel admins can archive channels" });
+
+      await db.update(conversations).set({ isArchived: true }).where(eq(conversations.id, conversationId));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Archive channel error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get or create company-wide channel (scoped to organization)
   router.get("/api/conversations/company-channel", requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -122,7 +251,6 @@ const messagingSetup = (async () => {
         return;
       }
 
-      // Find existing company channel for this organization
       let [companyChannel] = await db
         .select()
         .from(conversations)
@@ -134,15 +262,13 @@ const messagingSetup = (async () => {
         )
         .limit(1);
 
-      // Create if doesn't exist for this organization
       if (!companyChannel) {
-        // Get organization name for channel title
         const [org] = await db
           .select({ name: organizations.name })
           .from(organizations)
           .where(eq(organizations.id, organizationId))
           .limit(1);
-        
+
         const orgName = org?.name || "Company";
 
         [companyChannel] = await db
@@ -157,7 +283,6 @@ const messagingSetup = (async () => {
           })
           .returning();
 
-        // Add all active users from this organization as participants
         const orgUsers = await db
           .select({ id: users.id })
           .from(users)
@@ -178,7 +303,6 @@ const messagingSetup = (async () => {
           );
         }
       } else {
-        // Ensure current user is a participant
         const [existingParticipant] = await db
           .select()
           .from(conversationParticipants)
@@ -206,7 +330,7 @@ const messagingSetup = (async () => {
     }
   });
 
-  // Create a new conversation (direct message or group) - scoped to organization
+  // Create a new conversation (direct message or group)
   router.post("/api/conversations", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
@@ -218,13 +342,11 @@ const messagingSetup = (async () => {
         return;
       }
 
-      // Validate type
       if (!["DIRECT", "GROUP"].includes(type)) {
         res.status(400).json({ error: "Invalid conversation type" });
         return;
       }
 
-      // Validate that all participants are from the same organization
       if (participantIds && participantIds.length > 0) {
         const participantUsers = await db
           .select({ id: users.id, organizationId: users.organizationId })
@@ -238,11 +360,9 @@ const messagingSetup = (async () => {
         }
       }
 
-      // For direct messages, check if conversation already exists
       if (type === "DIRECT" && participantIds?.length === 1) {
         const otherUserId = participantIds[0];
-        
-        // Find existing direct conversation between these two users
+
         const existingConversations = await db
           .select({ conversationId: conversationParticipants.conversationId })
           .from(conversationParticipants)
@@ -267,7 +387,6 @@ const messagingSetup = (async () => {
             .limit(1);
 
           if (otherParticipant) {
-            // Return existing conversation
             const [existingConv] = await db
               .select()
               .from(conversations)
@@ -279,7 +398,6 @@ const messagingSetup = (async () => {
         }
       }
 
-      // Create new conversation with organization scope
       const [newConversation] = await db
         .insert(conversations)
         .values({
@@ -292,14 +410,12 @@ const messagingSetup = (async () => {
         })
         .returning();
 
-      // Add creator as participant
       await db.insert(conversationParticipants).values({
         conversationId: newConversation.id,
         userId: userId,
         isAdmin: true,
       });
 
-      // Add other participants
       if (participantIds && participantIds.length > 0) {
         await db.insert(conversationParticipants).values(
           participantIds.map((pId: string) => ({
@@ -323,27 +439,14 @@ const messagingSetup = (async () => {
       const userId = req.user!.id;
       const conversationId = req.params.id;
       const limit = parseInt(req.query.limit as string) || 50;
-      const before = req.query.before as string | undefined;
 
-      // Verify user is a participant
-      const [participant] = await db
-        .select()
-        .from(conversationParticipants)
-        .where(
-          and(
-            eq(conversationParticipants.conversationId, conversationId),
-            eq(conversationParticipants.userId, userId)
-          )
-        )
-        .limit(1);
-
-      if (!participant) {
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) {
         res.status(403).json({ error: "Not a participant of this conversation" });
         return;
       }
 
-      // Build query for messages
-      let query = db
+      const messageResults = await db
         .select({
           message: messages,
           sender: {
@@ -359,9 +462,6 @@ const messagingSetup = (async () => {
         .orderBy(desc(messages.createdAt))
         .limit(limit);
 
-      const messageResults = await query;
-
-      // Reverse to get chronological order
       const messagesWithSenders = messageResults.reverse().map(m => ({
         ...m.message,
         sender: m.sender,
@@ -374,67 +474,51 @@ const messagingSetup = (async () => {
     }
   });
 
-  // Send a message
+  // Send a message (supports file attachments, voice, and task mentions)
   router.post("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
       const conversationId = req.params.id;
-      const { content, attachmentUrl, attachmentName, attachmentType } = req.body;
+      const { content, attachmentUrl, attachmentName, attachmentType, voiceUrl, voiceDurationSeconds, mentionedTaskIds } = req.body;
 
-      if (!content?.trim()) {
-        res.status(400).json({ error: "Message content is required" });
+      if (!content?.trim() && !attachmentUrl && !voiceUrl) {
+        res.status(400).json({ error: "Message content or attachment is required" });
         return;
       }
 
-      // Verify user is a participant
-      const [participant] = await db
-        .select()
-        .from(conversationParticipants)
-        .where(
-          and(
-            eq(conversationParticipants.conversationId, conversationId),
-            eq(conversationParticipants.userId, userId)
-          )
-        )
-        .limit(1);
-
-      if (!participant) {
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) {
         res.status(403).json({ error: "Not a participant of this conversation" });
         return;
       }
 
-      // Create message
-      const sanitizedContent = sanitizeText(content);
-      if (!sanitizedContent) {
-        res.status(400).json({ error: "Message content is required" });
-        return;
-      }
-      
+      const sanitizedContent = content ? sanitizeText(content) : "";
+
       const [newMessage] = await db
         .insert(messages)
         .values({
           conversationId: conversationId as string,
           senderId: userId,
-          content: sanitizedContent,
+          content: sanitizedContent || (voiceUrl ? "[Voice message]" : "[Attachment]"),
           attachmentUrl: attachmentUrl || null,
           attachmentName: attachmentName || null,
           attachmentType: attachmentType || null,
+          voiceUrl: voiceUrl || null,
+          voiceDurationSeconds: voiceDurationSeconds ? Number(voiceDurationSeconds) : null,
+          mentionedTaskIds: mentionedTaskIds || null,
         })
         .returning();
 
-      // Update conversation timestamp
       await db
         .update(conversations)
         .set({ updatedAt: new Date() })
         .where(eq(conversations.id, conversationId));
 
-      // Mark as read for sender
       await db.insert(messageReadReceipts).values({
         messageId: newMessage.id,
         userId: userId,
       }).onConflictDoNothing();
 
-      // Get sender info
       const [sender] = await db
         .select({
           id: users.id,
@@ -446,12 +530,183 @@ const messagingSetup = (async () => {
         .where(eq(users.id, userId))
         .limit(1);
 
-      res.status(201).json({
-        ...newMessage,
-        sender,
-      });
+      res.status(201).json({ ...newMessage, sender });
     } catch (error) {
       console.error("Send message error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── FILE UPLOAD for messaging ──
+  router.post("/api/conversations/:id/upload", requireAuth, msgUpload.single("file"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      const conversationId = req.params.id;
+
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "No file provided" });
+
+      const objectStorage = new ObjectStorageService();
+      const publicPaths = objectStorage.getPublicObjectSearchPaths();
+      if (publicPaths.length === 0) return res.status(500).json({ error: "Object storage not configured" });
+
+      const basePath = publicPaths[0];
+      const ext = file.originalname.split(".").pop() || "bin";
+      const uniqueId = randomUUID();
+      const fileName = `messaging/${orgId}/${conversationId}/${uniqueId}.${ext}`;
+      const fullPath = `${basePath}/${fileName}`;
+      const pathParts = fullPath.split("/").filter(p => p.length > 0);
+      const bucketName = pathParts[0];
+      const objectName = pathParts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const blob = bucket.file(objectName);
+
+      await blob.save(file.buffer, {
+        metadata: {
+          contentType: file.mimetype,
+          metadata: { originalName: file.originalname, source: "messaging" },
+        },
+      });
+
+      const proxyUrl = `/api/conversations/${conversationId}/files/${uniqueId}.${ext}`;
+      res.json({
+        url: proxyUrl,
+        name: file.originalname,
+        type: file.mimetype,
+        size: file.size,
+      });
+    } catch (error) {
+      console.error("File upload error:", error);
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
+
+  // ── VOICE MESSAGE UPLOAD ──
+  router.post("/api/conversations/:id/voice", requireAuth, msgUpload.single("audio"), async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      const conversationId = req.params.id;
+
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "No audio file provided" });
+
+      const objectStorage = new ObjectStorageService();
+      const publicPaths = objectStorage.getPublicObjectSearchPaths();
+      if (publicPaths.length === 0) return res.status(500).json({ error: "Object storage not configured" });
+
+      const basePath = publicPaths[0];
+      const uniqueId = randomUUID();
+      const fileName = `messaging/${orgId}/${conversationId}/voice-${uniqueId}.webm`;
+      const fullPath = `${basePath}/${fileName}`;
+      const pathParts = fullPath.split("/").filter(p => p.length > 0);
+      const bucketName = pathParts[0];
+      const objectName = pathParts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const blob = bucket.file(objectName);
+
+      await blob.save(file.buffer, {
+        metadata: {
+          contentType: file.mimetype || "audio/webm",
+          metadata: { source: "messaging-voice" },
+        },
+      });
+
+      const proxyUrl = `/api/conversations/${conversationId}/voice/${uniqueId}.webm`;
+      res.json({ url: proxyUrl });
+    } catch (error) {
+      console.error("Voice upload error:", error);
+      res.status(500).json({ error: "Failed to upload voice message" });
+    }
+  });
+
+  // ── SERVE FILES from object storage ──
+  router.get("/api/conversations/:id/files/:filename", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = req.user!.organizationId;
+      const conversationId = req.params.id;
+      const filename = req.params.filename;
+
+      const objectStorage = new ObjectStorageService();
+      const publicPaths = objectStorage.getPublicObjectSearchPaths();
+      if (publicPaths.length === 0) return res.status(500).json({ error: "Storage not configured" });
+
+      const basePath = publicPaths[0];
+      const filePath = `messaging/${orgId}/${conversationId}/${filename}`;
+      const file = await objectStorage.searchPublicObject(filePath);
+      if (!file) return res.status(404).json({ error: "File not found" });
+
+      objectStorage.downloadObject(file, res, 86400);
+    } catch (error: any) {
+      console.error("Serve file error:", error);
+      if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
+      res.status(500).json({ error: "Failed to serve file" });
+    }
+  });
+
+  // ── SERVE VOICE from object storage ──
+  router.get("/api/conversations/:id/voice/:filename", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = req.user!.organizationId;
+      const conversationId = req.params.id;
+      const filename = req.params.filename;
+
+      const objectStorage = new ObjectStorageService();
+      const publicPaths = objectStorage.getPublicObjectSearchPaths();
+      if (publicPaths.length === 0) return res.status(500).json({ error: "Storage not configured" });
+
+      const filePath = `messaging/${orgId}/${conversationId}/${filename}`;
+      const file = await objectStorage.searchPublicObject(filePath);
+      if (!file) return res.status(404).json({ error: "Voice file not found" });
+
+      objectStorage.downloadObject(file, res, 86400);
+    } catch (error: any) {
+      console.error("Serve voice error:", error);
+      if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
+      res.status(500).json({ error: "Failed to serve voice file" });
+    }
+  });
+
+  // ── TASK MENTION SEARCH ──
+  router.get("/api/tasks/mention-search", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      const q = (req.query.q as string) || "";
+      const projectId = req.query.projectId as string | undefined;
+
+      const conditions: any[] = [eq(tasks.organizationId, orgId)];
+      if (q.trim()) conditions.push(ilike(tasks.title, `%${q}%`));
+      if (projectId) conditions.push(eq(tasks.projectId, projectId));
+
+      const results = await db
+        .select({
+          id: tasks.id,
+          title: tasks.title,
+          status: tasks.status,
+          projectId: tasks.projectId,
+        })
+        .from(tasks)
+        .where(and(...conditions))
+        .limit(10);
+
+      res.json(results);
+    } catch (error) {
+      console.error("Task mention search error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -462,7 +717,6 @@ const messagingSetup = (async () => {
       const userId = req.user!.id;
       const conversationId = req.params.id;
 
-      // Verify user is a participant
       const [participant] = await db
         .select()
         .from(conversationParticipants)
@@ -479,7 +733,6 @@ const messagingSetup = (async () => {
         return;
       }
 
-      // Get all unread messages in this conversation
       const unreadMessages = await db
         .select({ id: messages.id })
         .from(messages)
@@ -497,7 +750,6 @@ const messagingSetup = (async () => {
           )
         );
 
-      // Mark all as read
       if (unreadMessages.length > 0) {
         await db.insert(messageReadReceipts).values(
           unreadMessages.map(m => ({
@@ -507,7 +759,6 @@ const messagingSetup = (async () => {
         ).onConflictDoNothing();
       }
 
-      // Update last read timestamp
       await db
         .update(conversationParticipants)
         .set({ lastReadAt: new Date() })
@@ -530,7 +781,6 @@ const messagingSetup = (async () => {
     try {
       const userId = req.user!.id;
 
-      // Get all conversations user participates in
       const userConversationIds = await db
         .select({ conversationId: conversationParticipants.conversationId })
         .from(conversationParticipants)
@@ -543,7 +793,6 @@ const messagingSetup = (async () => {
 
       const convIds = userConversationIds.map(c => c.conversationId);
 
-      // Count unread messages across all conversations
       const unreadCount = await db
         .select({ count: sql<number>`count(*)` })
         .from(messages)
@@ -569,16 +818,13 @@ const messagingSetup = (async () => {
     }
   });
 
-  // Get users available for messaging (for starting new conversations)
+  // Get users available for messaging
   router.get("/api/messaging/users", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
-      
-      // Organization filtering: Only show users from same organization for messaging
-      // SUPER_ADMIN can message anyone
+
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-      
-      // SECURITY: Users without org can't see any messaging users
+
       if (mustDenyAccess) {
         return res.json([]);
       }
@@ -587,8 +833,7 @@ const messagingSetup = (async () => {
         eq(users.isActive, true),
         sql`${users.id} != ${userId}`
       ];
-      
-      // Non-SUPER_ADMIN can only message users in their organization
+
       if (shouldFilter && orgId) {
         conditions.push(eq(users.organizationId, orgId));
       }

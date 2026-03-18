@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "./db";
 import {
   users, crews, crewMembers, userSkills, projects,
-  insertCrewSchema,
+  insertCrewSchema, conversations, conversationParticipants,
 } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, ne, inArray } from "drizzle-orm";
@@ -101,6 +101,28 @@ router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthReque
       name: newCrew.name,
       leadId: newCrew.leadId,
     }, req);
+
+    // Auto-create a crew channel
+    if (newCrew.organizationId) {
+      try {
+        const [channel] = await db.insert(conversations).values({
+          type: "GROUP",
+          name: `${newCrew.name} Crew`,
+          description: `Team channel for ${newCrew.name}`,
+          crewId: newCrew.id,
+          organizationId: newCrew.organizationId,
+          createdById: req.user!.id,
+        }).returning();
+        // Add creator as participant
+        await db.insert(conversationParticipants).values({
+          conversationId: channel.id,
+          userId: req.user!.id,
+          isAdmin: true,
+        });
+      } catch (channelErr) {
+        console.warn("Could not auto-create crew channel:", channelErr);
+      }
+    }
 
     res.status(201).json(newCrew);
   } catch (error) {

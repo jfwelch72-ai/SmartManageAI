@@ -12,7 +12,7 @@ import {
   handoffPackets,
   estimates, estimateLineItems, timeEntries,
   calendarEvents, media, planDocuments, projectNotes,
-  dailyScopeProgress,
+  dailyScopeProgress, conversations, conversationParticipants,
 } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -790,6 +790,29 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
           code: nextCode,
           gcOrganizationId: validationResult.data.gcOrganizationId || userOrgId,
         }).returning();
+
+        // Auto-create a project channel
+        const projOrgId = newProject.gcOrganizationId;
+        if (projOrgId) {
+          try {
+            const [channel] = await db.insert(conversations).values({
+              type: "GROUP",
+              name: newProject.name,
+              description: `Project channel for ${newProject.name}`,
+              projectId: newProject.id,
+              organizationId: projOrgId,
+              createdById: req.user!.id,
+            }).returning();
+            await db.insert(conversationParticipants).values({
+              conversationId: channel.id,
+              userId: req.user!.id,
+              isAdmin: true,
+            });
+          } catch (channelErr) {
+            console.warn("Could not auto-create project channel:", channelErr);
+          }
+        }
+
         res.status(201).json(newProject);
         return;
       } catch (insertError: any) {
