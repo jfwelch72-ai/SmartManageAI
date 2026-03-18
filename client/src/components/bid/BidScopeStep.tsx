@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2 } from "lucide-react";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2 } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
@@ -39,6 +40,7 @@ export default function BidScopeStep({
   onNextStep,
 }: BidScopeStepProps) {
   const { toast } = useToast();
+  const [lastImportCount, setLastImportCount] = useState<number | null>(null);
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<TakeoffCategory[]>({
     queryKey: ["/api/bids", bidId, "takeoff", "categories"],
@@ -66,6 +68,7 @@ export default function BidScopeStep({
       return importRes.json() as Promise<{ count: number }>;
     },
     onSuccess: (data) => {
+      setLastImportCount(data.count);
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
       toast({
@@ -93,7 +96,9 @@ export default function BidScopeStep({
       return importRes.json() as Promise<{ count: number }>;
     },
     onSuccess: (data) => {
+      setLastImportCount(data.count);
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
       toast({
         title: "Import complete",
         description: `${data.count} line item${data.count === 1 ? "" : "s"} added from your takeoff measurements.`,
@@ -105,6 +110,81 @@ export default function BidScopeStep({
   });
 
   const hasTakeoffData = !categoriesLoading && categories.length > 0;
+
+  const renderTakeoffReadyCallout = () => {
+    if (!hasTakeoffData) return null;
+
+    if (lastImportCount !== null) {
+      return (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-3" data-testid="callout-import-success">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <p className="text-sm text-emerald-800 dark:text-emerald-300">
+            <span className="font-semibold">{lastImportCount} line item{lastImportCount === 1 ? "" : "s"}</span> successfully imported from your takeoff measurements.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-4" data-testid="callout-takeoff-ready">
+        <div className="flex items-start gap-3">
+          <div className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 p-1.5 shrink-0 mt-0.5">
+            <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
+              {categories.length} takeoff {categories.length === 1 ? "category" : "categories"} ready to import
+            </p>
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
+              {canEdit
+                ? "Your Step 1 measurements can be pulled in as estimate line items in one click — no manual entry needed."
+                : "Step 1 takeoff measurements are available for this bid."}
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {categories.slice(0, 5).map((cat) => (
+                <Badge key={cat.id} variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
+                  {cat.name}
+                </Badge>
+              ))}
+              {categories.length > 5 && (
+                <Badge variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
+                  +{categories.length - 5} more
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+        {canEdit && (
+          <div className="flex flex-col sm:flex-row gap-2 mt-3">
+            <Button
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+              size="sm"
+              onClick={() => createAndImportMutation.mutate()}
+              disabled={createAndImportMutation.isPending}
+              data-testid="button-create-and-import-takeoff"
+            >
+              {createAndImportMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <ArrowDownToLine className="w-4 h-4 mr-2" />
+              )}
+              {createAndImportMutation.isPending ? "Creating & Importing..." : "Create Estimate & Import from Takeoff"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onCreateEstimate}
+              disabled={createEstimatePending || createAndImportMutation.isPending}
+              data-testid="button-create-estimate-only"
+            >
+              <Plus className="w-4 h-4 mr-1" />
+              Create Empty
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <Card data-testid="card-bid-estimate">
@@ -146,63 +226,9 @@ export default function BidScopeStep({
           <div className="text-center py-8 text-muted-foreground">Loading estimate...</div>
         ) : !estimate ? (
           <div className="space-y-4">
-            {hasTakeoffData && canEdit && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-4" data-testid="callout-takeoff-ready">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-emerald-100 dark:bg-emerald-900/40 p-1.5 shrink-0 mt-0.5">
-                    <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-                      {categories.length} takeoff {categories.length === 1 ? "category" : "categories"} ready to import
-                    </p>
-                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
-                      Your Step 1 measurements can be pulled in as estimate line items in one click — no manual entry needed.
-                    </p>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {categories.slice(0, 5).map((cat) => (
-                        <Badge key={cat.id} variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
-                          {cat.name}
-                        </Badge>
-                      ))}
-                      {categories.length > 5 && (
-                        <Badge variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
-                          +{categories.length - 5} more
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2 mt-3">
-                  <Button
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                    size="sm"
-                    onClick={() => createAndImportMutation.mutate()}
-                    disabled={createAndImportMutation.isPending}
-                    data-testid="button-create-and-import-takeoff"
-                  >
-                    {createAndImportMutation.isPending ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : (
-                      <ArrowDownToLine className="w-4 h-4 mr-2" />
-                    )}
-                    {createAndImportMutation.isPending ? "Creating & Importing..." : "Create Estimate & Import from Takeoff"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onCreateEstimate}
-                    disabled={createEstimatePending || createAndImportMutation.isPending}
-                    data-testid="button-create-estimate-only"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Create Empty
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {!hasTakeoffData && (
+            {hasTakeoffData ? (
+              renderTakeoffReadyCallout()
+            ) : (
               <div className="text-center py-12 text-muted-foreground">
                 <Calculator className="h-12 w-12 mx-auto mb-4 opacity-40" />
                 <p className="font-medium mb-1">No estimate created yet</p>
@@ -223,30 +249,46 @@ export default function BidScopeStep({
           </div>
         ) : (
           <div className="space-y-4">
-            {hasTakeoffData && canEdit && (
-              <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="callout-import-takeoff">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                  <p className="text-xs text-blue-700 dark:text-blue-300">
-                    <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
+            {hasTakeoffData && (
+              lastImportCount !== null ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-3" data-testid="callout-import-success">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <p className="text-sm text-emerald-800 dark:text-emerald-300">
+                    <span className="font-semibold">{lastImportCount} line item{lastImportCount === 1 ? "" : "s"}</span> successfully imported from your takeoff measurements.
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 shrink-0"
-                  onClick={() => importOnlyMutation.mutate()}
-                  disabled={importOnlyMutation.isPending}
-                  data-testid="button-import-takeoff-only"
-                >
-                  {importOnlyMutation.isPending ? (
-                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                  ) : (
-                    <ArrowDownToLine className="w-3.5 h-3.5 mr-1.5" />
-                  )}
-                  {importOnlyMutation.isPending ? "Importing..." : "Import from Takeoff"}
-                </Button>
-              </div>
+              ) : canEdit ? (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="callout-import-takeoff">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                    <p className="text-xs text-blue-700 dark:text-blue-300">
+                      <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 shrink-0"
+                    onClick={() => importOnlyMutation.mutate()}
+                    disabled={importOnlyMutation.isPending}
+                    data-testid="button-import-takeoff-only"
+                  >
+                    {importOnlyMutation.isPending ? (
+                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <ArrowDownToLine className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    {importOnlyMutation.isPending ? "Importing..." : "Import from Takeoff"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-2" data-testid="callout-takeoff-info">
+                  <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                    <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 are associated with this bid.
+                  </p>
+                </div>
+              )
             )}
 
             <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800">
