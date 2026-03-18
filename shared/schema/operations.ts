@@ -2187,7 +2187,7 @@ export const notificationTypePrefs = pgTable("notification_type_prefs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   notificationType: notificationTypeEnum("notification_type").notNull(),
-  emailEnabled: boolean("email_enabled").notNull().default(true),
+  emailEnabled: boolean("email_enabled").notNull().default(false),
   smsEnabled: boolean("sms_enabled").notNull().default(false),
   pushEnabled: boolean("push_enabled").notNull().default(false),
   teamsEnabled: boolean("teams_enabled").notNull().default(false),
