@@ -248,17 +248,24 @@ export default function ProfilePage() {
     slackEnabled: boolean;
   }
 
-  const { data: notifPrefs, isLoading: loadingNotifPrefs } = useQuery<{ channel: ChannelPrefsData; typeOverrides: unknown[] }>({
+  interface TypeOverride {
+    notificationType: string;
+    emailEnabled: boolean;
+  }
+
+  const { data: notifPrefs, isLoading: loadingNotifPrefs } = useQuery<{ channel: ChannelPrefsData; typeOverrides: TypeOverride[] }>({
     queryKey: ["/api/notifications/preferences"],
   });
 
   const [channelPrefs, setChannelPrefs] = useState<ChannelPrefsData>({
-    emailEnabled: true,
+    emailEnabled: false,
     smsEnabled: false,
     pushEnabled: false,
     teamsEnabled: false,
     slackEnabled: false,
   });
+
+  const [typeEmailOverrides, setTypeEmailOverrides] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (notifPrefs?.channel) {
@@ -270,11 +277,63 @@ export default function ProfilePage() {
         slackEnabled: notifPrefs.channel.slackEnabled,
       });
     }
+    if (notifPrefs?.typeOverrides) {
+      const overrides: Record<string, boolean> = {};
+      for (const o of notifPrefs.typeOverrides) {
+        overrides[o.notificationType] = o.emailEnabled;
+      }
+      setTypeEmailOverrides(overrides);
+    }
   }, [notifPrefs]);
 
-  const updateChannelPrefsMutation = useMutation({
-    mutationFn: async (prefs: ChannelPrefsData) => {
-      return await apiRequest("PUT", "/api/notifications/preferences/channel", prefs);
+  const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
+    {
+      label: "Approvals & Change Orders",
+      types: [
+        "CHANGE_ORDER_PENDING", "CHANGE_ORDER_APPROVED", "CHANGE_ORDER_REJECTED",
+        "APPROVAL_REQUEST_NEW", "APPROVAL_REQUEST_APPROVED", "APPROVAL_REQUEST_REJECTED",
+        "OVERTIME_REQUESTED", "OVERTIME_APPROVED", "OVERTIME_REJECTED",
+        "TM_TICKET_SUBMITTED", "TM_TICKET_APPROVED", "TM_TICKET_REJECTED",
+        "PAYABLE_SUBMITTED", "PAYABLE_CREATED", "PAYABLE_APPROVED", "PAYABLE_REJECTED",
+        "SUBMITTAL_SUBMITTED", "SUBMITTAL_APPROVED", "SUBMITTAL_REJECTED", "SUBMITTAL_REVISION_REQUESTED",
+      ],
+    },
+    {
+      label: "Projects & Bids",
+      types: [
+        "PROJECT_ASSIGNMENT", "BID_AWARDED", "BID_INVITATION_RECEIVED", "BID_RESPONSE_RECEIVED",
+        "BID_CLARIFICATION_NEW", "PROGRESS_MILESTONE", "DAILY_PROGRESS_LOGGED", "SOV_ITEM_COMPLETED",
+        "DEADLINE_WARNING", "REMINDER",
+      ],
+    },
+    {
+      label: "Payroll & Procurement",
+      types: [
+        "BILLING_READY",
+        "PROCUREMENT_PR_SUBMITTED", "PROCUREMENT_PR_APPROVED", "PROCUREMENT_PR_REJECTED",
+        "PROCUREMENT_PO_SUBMITTED", "PROCUREMENT_PO_APPROVED", "PROCUREMENT_PO_REJECTED",
+      ],
+    },
+    {
+      label: "CRM & Messaging",
+      types: ["CRM_STAGE_CHANGE", "CRM_IDLE_OPPORTUNITY", "TASK_MENTIONED", "PORTAL_CHAT_MESSAGE", "PORTAL_ACTIVITY"],
+    },
+    {
+      label: "General",
+      types: ["GENERAL", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "MATERIAL_OVERAGE"],
+    },
+  ];
+
+  const updatePrefsMutation = useMutation({
+    mutationFn: async () => {
+      const typeOverrides: Record<string, { emailEnabled: boolean }> = {};
+      for (const [type, emailEnabled] of Object.entries(typeEmailOverrides)) {
+        typeOverrides[type] = { emailEnabled };
+      }
+      return await apiRequest("PUT", "/api/notifications/preferences", {
+        channel: channelPrefs,
+        typeOverrides,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/preferences"] });
@@ -1033,73 +1092,97 @@ export default function ProfilePage() {
               <Skeleton className="h-8 w-full" />
             </div>
           ) : (
-            <div className="space-y-4 max-w-lg">
-              <div className="flex items-center justify-between" data-testid="row-pref-email">
-                <div>
-                  <p className="text-sm font-medium">Email</p>
-                  <p className="text-xs text-muted-foreground">Receive notifications via email</p>
+            <div className="space-y-6 max-w-2xl">
+              <div>
+                <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Delivery Channels</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between" data-testid="row-pref-email">
+                    <div>
+                      <p className="text-sm font-medium">Email</p>
+                      <p className="text-xs text-muted-foreground">Receive notifications via email</p>
+                    </div>
+                    <Switch
+                      checked={channelPrefs.emailEnabled}
+                      onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, emailEnabled: checked }))}
+                      data-testid="switch-pref-email"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-sms">
+                    <div>
+                      <p className="text-sm font-medium">SMS <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                      <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                    </div>
+                    <Switch checked={false} disabled data-testid="switch-pref-sms" />
+                  </div>
+
+                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-push">
+                    <div>
+                      <p className="text-sm font-medium">Push Notifications <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                      <p className="text-xs text-muted-foreground">Browser and mobile push alerts</p>
+                    </div>
+                    <Switch checked={false} disabled data-testid="switch-pref-push" />
+                  </div>
+
+                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-teams">
+                    <div>
+                      <p className="text-sm font-medium">Microsoft Teams <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                      <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
+                    </div>
+                    <Switch checked={false} disabled data-testid="switch-pref-teams" />
+                  </div>
+
+                  <div className="flex items-center justify-between opacity-60" data-testid="row-pref-slack">
+                    <div>
+                      <p className="text-sm font-medium">Slack <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
+                      <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
+                    </div>
+                    <Switch checked={false} disabled data-testid="switch-pref-slack" />
+                  </div>
                 </div>
-                <Switch
-                  checked={channelPrefs.emailEnabled}
-                  onCheckedChange={(checked) => setChannelPrefs(p => ({ ...p, emailEnabled: checked }))}
-                  data-testid="switch-pref-email"
-                />
               </div>
 
-              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-sms">
+              {channelPrefs.emailEnabled && (
                 <div>
-                  <p className="text-sm font-medium">SMS <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                  <p className="text-xs text-muted-foreground">Receive text messages for critical alerts</p>
+                  <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">Email Alerts by Type</h3>
+                  <p className="text-xs text-muted-foreground mb-3">Fine-tune which notifications arrive in your inbox. Inherits from the Email toggle above.</p>
+                  <div className="space-y-4" data-testid="section-type-email-prefs">
+                    {NOTIFICATION_TYPE_GROUPS.map((group) => (
+                      <div key={group.label}>
+                        <p className="text-xs font-semibold text-muted-foreground mb-2">{group.label}</p>
+                        <div className="space-y-2">
+                          {group.types.map((type) => {
+                            const label = type
+                              .replace(/_/g, " ")
+                              .toLowerCase()
+                              .replace(/\b\w/g, (c) => c.toUpperCase());
+                            const isEnabled = typeEmailOverrides[type] ?? channelPrefs.emailEnabled;
+                            return (
+                              <div key={type} className="flex items-center justify-between py-1" data-testid={`row-type-pref-${type}`}>
+                                <span className="text-sm">{label}</span>
+                                <Switch
+                                  checked={isEnabled}
+                                  onCheckedChange={(checked) =>
+                                    setTypeEmailOverrides(prev => ({ ...prev, [type]: checked }))
+                                  }
+                                  data-testid={`switch-type-pref-${type}`}
+                                />
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <Switch
-                  checked={channelPrefs.smsEnabled}
-                  disabled
-                  data-testid="switch-pref-sms"
-                />
-              </div>
-
-              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-push">
-                <div>
-                  <p className="text-sm font-medium">Push Notifications <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                  <p className="text-xs text-muted-foreground">Browser and mobile push alerts</p>
-                </div>
-                <Switch
-                  checked={channelPrefs.pushEnabled}
-                  disabled
-                  data-testid="switch-pref-push"
-                />
-              </div>
-
-              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-teams">
-                <div>
-                  <p className="text-sm font-medium">Microsoft Teams <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                  <p className="text-xs text-muted-foreground">Receive messages in your Teams workspace</p>
-                </div>
-                <Switch
-                  checked={channelPrefs.teamsEnabled}
-                  disabled
-                  data-testid="switch-pref-teams"
-                />
-              </div>
-
-              <div className="flex items-center justify-between opacity-60" data-testid="row-pref-slack">
-                <div>
-                  <p className="text-sm font-medium">Slack <span className="text-xs text-muted-foreground">(Coming soon)</span></p>
-                  <p className="text-xs text-muted-foreground">Receive messages in your Slack workspace</p>
-                </div>
-                <Switch
-                  checked={channelPrefs.slackEnabled}
-                  disabled
-                  data-testid="switch-pref-slack"
-                />
-              </div>
+              )}
 
               <Button
-                onClick={() => updateChannelPrefsMutation.mutate(channelPrefs)}
-                disabled={updateChannelPrefsMutation.isPending}
+                onClick={() => updatePrefsMutation.mutate()}
+                disabled={updatePrefsMutation.isPending}
                 data-testid="button-save-notification-prefs"
               >
-                {updateChannelPrefsMutation.isPending ? (
+                {updatePrefsMutation.isPending ? (
                   <Fragment><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving...</Fragment>
                 ) : (
                   <Fragment><Bell className="h-4 w-4 mr-2" />Save Preferences</Fragment>

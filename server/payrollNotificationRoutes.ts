@@ -5,6 +5,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
+import { deliverNotification, type NotificationRecord } from "./services/notificationDelivery";
 
 const router = Router();
 
@@ -109,14 +110,28 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
     }).returning();
 
     if (officeManagerId) {
-      await db.insert(notifications).values({
+      const [insertedNotif] = await db.insert(notifications).values({
         userId: officeManagerId,
         type: "GENERAL",
         title: "Payroll Ready for Processing",
         message: `Time entries for period ${data.periodStart} to ${data.periodEnd} have been approved and are ready for payroll processing.`,
         relatedEntityId: notification.id,
         relatedEntityType: "payrollNotification",
-      });
+      }).returning();
+      if (insertedNotif) {
+        const notifRecord: NotificationRecord = {
+          id: insertedNotif.id,
+          userId: insertedNotif.userId,
+          type: insertedNotif.type as NotificationRecord["type"],
+          title: insertedNotif.title,
+          message: insertedNotif.message,
+          relatedEntityId: insertedNotif.relatedEntityId,
+          relatedEntityType: insertedNotif.relatedEntityType,
+        };
+        setImmediate(() => {
+          deliverNotification(notifRecord).catch(() => undefined);
+        });
+      }
     }
 
     res.status(201).json(notification);

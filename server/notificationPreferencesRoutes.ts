@@ -3,8 +3,27 @@ import { db } from "./db";
 import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { eq, and } from "drizzle-orm";
+import { z } from "zod";
 
 const router = Router();
+
+const channelPrefsSchema = z.object({
+  emailEnabled: z.boolean(),
+  smsEnabled: z.boolean(),
+  pushEnabled: z.boolean(),
+  teamsEnabled: z.boolean(),
+  slackEnabled: z.boolean(),
+});
+
+const typePrefsSchema = z.record(
+  z.enum(notificationTypeEnum.enumValues),
+  channelPrefsSchema.partial()
+);
+
+const preferencesBodySchema = z.object({
+  channel: channelPrefsSchema,
+  typeOverrides: typePrefsSchema.optional(),
+});
 
 router.get("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -22,15 +41,29 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
       .where(eq(notificationTypePrefs.userId, userId));
 
     res.json({
-      channel: channelRow ?? {
-        userId,
-        emailEnabled: true,
-        smsEnabled: false,
-        pushEnabled: false,
-        teamsEnabled: false,
-        slackEnabled: false,
-      },
-      typeOverrides: typeRows,
+      channel: channelRow
+        ? {
+            emailEnabled: channelRow.emailEnabled,
+            smsEnabled: channelRow.smsEnabled,
+            pushEnabled: channelRow.pushEnabled,
+            teamsEnabled: channelRow.teamsEnabled,
+            slackEnabled: channelRow.slackEnabled,
+          }
+        : {
+            emailEnabled: false,
+            smsEnabled: false,
+            pushEnabled: false,
+            teamsEnabled: false,
+            slackEnabled: false,
+          },
+      typeOverrides: typeRows.map((r) => ({
+        notificationType: r.notificationType,
+        emailEnabled: r.emailEnabled,
+        smsEnabled: r.smsEnabled,
+        pushEnabled: r.pushEnabled,
+        teamsEnabled: r.teamsEnabled,
+        slackEnabled: r.slackEnabled,
+      })),
     });
   } catch (error) {
     console.error("Get notification preferences error:", error);
@@ -38,87 +71,75 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
   }
 });
 
-router.put("/api/notifications/preferences/channel", requireAuth, async (req: AuthRequest, res) => {
+router.put("/api/notifications/preferences", requireAuth, async (req: AuthRequest, res) => {
   try {
     const userId = req.user!.id;
-    const { emailEnabled, smsEnabled, pushEnabled, teamsEnabled, slackEnabled } = req.body;
 
-    const values = {
-      userId,
-      emailEnabled: emailEnabled !== undefined ? Boolean(emailEnabled) : true,
-      smsEnabled: Boolean(smsEnabled),
-      pushEnabled: Boolean(pushEnabled),
-      teamsEnabled: Boolean(teamsEnabled),
-      slackEnabled: Boolean(slackEnabled),
-      updatedAt: new Date(),
-    };
+    const parsed = preferencesBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid preferences data", details: parsed.error.flatten() });
+    }
 
-    const [upserted] = await db
+    const { channel, typeOverrides } = parsed.data;
+    const now = new Date();
+
+    // Upsert channel prefs
+    await db
       .insert(notificationChannelPrefs)
-      .values(values)
+      .values({
+        userId,
+        emailEnabled: channel.emailEnabled,
+        smsEnabled: channel.smsEnabled,
+        pushEnabled: channel.pushEnabled,
+        teamsEnabled: channel.teamsEnabled,
+        slackEnabled: channel.slackEnabled,
+        updatedAt: now,
+      })
       .onConflictDoUpdate({
         target: notificationChannelPrefs.userId,
         set: {
-          emailEnabled: values.emailEnabled,
-          smsEnabled: values.smsEnabled,
-          pushEnabled: values.pushEnabled,
-          teamsEnabled: values.teamsEnabled,
-          slackEnabled: values.slackEnabled,
-          updatedAt: values.updatedAt,
+          emailEnabled: channel.emailEnabled,
+          smsEnabled: channel.smsEnabled,
+          pushEnabled: channel.pushEnabled,
+          teamsEnabled: channel.teamsEnabled,
+          slackEnabled: channel.slackEnabled,
+          updatedAt: now,
         },
-      })
-      .returning();
+      });
 
-    res.json(upserted);
-  } catch (error) {
-    console.error("Update channel preferences error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.put("/api/notifications/preferences/type/:notificationType", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const { notificationType } = req.params;
-    const { emailEnabled, smsEnabled, pushEnabled, teamsEnabled, slackEnabled } = req.body;
-
-    const validTypes = notificationTypeEnum.enumValues as string[];
-    if (!validTypes.includes(notificationType)) {
-      return res.status(400).json({ error: "Invalid notification type" });
+    // Upsert per-type overrides if provided
+    if (typeOverrides) {
+      for (const [notifType, prefs] of Object.entries(typeOverrides)) {
+        const typedNotifType = notifType as (typeof notificationTypeEnum.enumValues)[number];
+        await db
+          .insert(notificationTypePrefs)
+          .values({
+            userId,
+            notificationType: typedNotifType,
+            emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
+            smsEnabled: prefs.smsEnabled ?? channel.smsEnabled,
+            pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
+            teamsEnabled: prefs.teamsEnabled ?? channel.teamsEnabled,
+            slackEnabled: prefs.slackEnabled ?? channel.slackEnabled,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+            set: {
+              emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
+              smsEnabled: prefs.smsEnabled ?? channel.smsEnabled,
+              pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
+              teamsEnabled: prefs.teamsEnabled ?? channel.teamsEnabled,
+              slackEnabled: prefs.slackEnabled ?? channel.slackEnabled,
+              updatedAt: now,
+            },
+          });
+      }
     }
 
-    const notifType = notificationType as (typeof notificationTypeEnum.enumValues)[number];
-
-    const values = {
-      userId,
-      notificationType: notifType,
-      emailEnabled: emailEnabled !== undefined ? Boolean(emailEnabled) : true,
-      smsEnabled: Boolean(smsEnabled),
-      pushEnabled: Boolean(pushEnabled),
-      teamsEnabled: Boolean(teamsEnabled),
-      slackEnabled: Boolean(slackEnabled),
-      updatedAt: new Date(),
-    };
-
-    const [upserted] = await db
-      .insert(notificationTypePrefs)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
-        set: {
-          emailEnabled: values.emailEnabled,
-          smsEnabled: values.smsEnabled,
-          pushEnabled: values.pushEnabled,
-          teamsEnabled: values.teamsEnabled,
-          slackEnabled: values.slackEnabled,
-          updatedAt: values.updatedAt,
-        },
-      })
-      .returning();
-
-    res.json(upserted);
+    res.json({ success: true });
   } catch (error) {
-    console.error("Update type preferences error:", error);
+    console.error("Update notification preferences error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

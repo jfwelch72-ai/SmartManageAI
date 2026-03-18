@@ -1,12 +1,12 @@
 import { db } from "../db";
-import { users, notificationChannelPrefs, notificationTypePrefs } from "@shared/schema";
+import { users, notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "./emailService";
-import { logError, logInfo } from "../utils/logger";
+import { logError } from "../utils/logger";
 
-type NotificationType = NonNullable<(typeof import("@shared/schema").notifications.$inferInsert)["type"]>;
+type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
-interface NotificationRecord {
+export interface NotificationRecord {
   id: string;
   userId: string;
   type: NotificationType | null;
@@ -24,8 +24,9 @@ interface ChannelPrefs {
   slackEnabled: boolean;
 }
 
+// All channels off by default — users must explicitly enable them
 const DEFAULT_PREFS: ChannelPrefs = {
-  emailEnabled: true,
+  emailEnabled: false,
   smsEnabled: false,
   pushEnabled: false,
   teamsEnabled: false,
@@ -73,13 +74,136 @@ async function loadEffectivePrefs(userId: string, notifType: NotificationType | 
   };
 }
 
+function composeEmailContent(notification: NotificationRecord): {
+  subject: string;
+  body: string;
+  actionUrl?: string;
+  actionText?: string;
+} {
+  const baseUrl = process.env.APP_BASE_URL || "";
+  const type = notification.type;
+
+  // Type-aware composition
+  if (type === "CHANGE_ORDER_APPROVED" || type === "CHANGE_ORDER_REJECTED") {
+    const status = type === "CHANGE_ORDER_APPROVED" ? "Approved" : "Rejected";
+    return {
+      subject: `Change Order ${status} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/change-orders/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Change Order",
+    };
+  }
+
+  if (type === "SUBMITTAL_SUBMITTED" || type === "SUBMITTAL_APPROVED" || type === "SUBMITTAL_REJECTED" || type === "SUBMITTAL_REVISION_REQUESTED") {
+    return {
+      subject: `Submittal Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/submittals/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Submittal",
+    };
+  }
+
+  if (type === "TM_TICKET_SUBMITTED" || type === "TM_TICKET_APPROVED" || type === "TM_TICKET_REJECTED") {
+    return {
+      subject: `T&M Ticket Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/tm-tickets/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View T&M Ticket",
+    };
+  }
+
+  if (type === "OVERTIME_REQUESTED" || type === "OVERTIME_APPROVED" || type === "OVERTIME_REJECTED") {
+    return {
+      subject: `Overtime Request Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/overtime-requests`,
+      actionText: "View Overtime Requests",
+    };
+  }
+
+  if (type === "BILLING_READY") {
+    return {
+      subject: `Payroll Ready — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/payroll`,
+      actionText: "View Payroll",
+    };
+  }
+
+  if (type === "PROJECT_ASSIGNMENT" || type === "BID_AWARDED") {
+    return {
+      subject: `${notification.title} — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/projects/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Project",
+    };
+  }
+
+  if (type === "APPROVAL_REQUEST_NEW" || type === "APPROVAL_REQUEST_APPROVED" || type === "APPROVAL_REQUEST_REJECTED") {
+    return {
+      subject: `Approval Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/approvals`,
+      actionText: "View Approvals",
+    };
+  }
+
+  if (type === "PROCUREMENT_PR_SUBMITTED" || type === "PROCUREMENT_PR_APPROVED" || type === "PROCUREMENT_PR_REJECTED" ||
+      type === "PROCUREMENT_PO_SUBMITTED" || type === "PROCUREMENT_PO_APPROVED" || type === "PROCUREMENT_PO_REJECTED") {
+    return {
+      subject: `Procurement Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/procurement`,
+      actionText: "View Procurement",
+    };
+  }
+
+  if (type === "CRM_STAGE_CHANGE" || type === "CRM_IDLE_OPPORTUNITY") {
+    return {
+      subject: `CRM Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/crm`,
+      actionText: "View CRM",
+    };
+  }
+
+  if (type === "TASK_MENTIONED") {
+    return {
+      subject: `You were mentioned — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/projects?taskId=${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Task",
+    };
+  }
+
+  if (type === "DEADLINE_WARNING" || type === "REMINDER") {
+    return {
+      subject: `${notification.title} — SmartManageAI`,
+      body: notification.message,
+    };
+  }
+
+  // Generic fallback
+  return {
+    subject: `${notification.title} — SmartManageAI`,
+    body: notification.message,
+  };
+}
+
 async function deliverEmail(userEmail: string, notification: NotificationRecord): Promise<void> {
   try {
-    await sendNotificationEmail(
-      userEmail,
-      notification.title,
-      notification.message
-    );
+    const { subject, body, actionUrl, actionText } = composeEmailContent(notification);
+    await sendNotificationEmail(userEmail, subject, body, actionUrl, actionText);
   } catch (err) {
     logError("notificationDelivery: email send failed", {
       userId: notification.userId,
