@@ -8,6 +8,7 @@ import { eq, desc, sql, and } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
+import { deliverNotifications, type NotificationRecord } from "./services/notificationDelivery";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { generateDelayNotificationPDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -200,7 +201,19 @@ async function notifyDelayStatusChange(
   }
 
   if (notificationsToCreate.length > 0) {
-    await dbClient.insert(notifications).values(notificationsToCreate);
+    const inserted = await dbClient.insert(notifications).values(notificationsToCreate).returning();
+    const records: NotificationRecord[] = inserted.map(n => ({
+      id: n.id,
+      userId: n.userId,
+      type: n.type as NotificationRecord["type"],
+      title: n.title,
+      message: n.message,
+      relatedEntityId: n.relatedEntityId,
+      relatedEntityType: n.relatedEntityType,
+    }));
+    setImmediate(() => {
+      deliverNotifications(records).catch(() => undefined);
+    });
   }
 }
 
