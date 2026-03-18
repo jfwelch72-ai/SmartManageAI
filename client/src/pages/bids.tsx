@@ -916,7 +916,7 @@ export default function BidsPage() {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="flex flex-col gap-4">
                     <div className="space-y-2">
                       <Label className="text-sm">GC / General Contractor</Label>
                       <CrmOrganizationSelector
