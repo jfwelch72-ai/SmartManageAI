@@ -8,6 +8,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
+import { registerSseClient, emitMessageNew, emitTyping } from "./messagingEvents";
 
 const router = Router();
 
@@ -506,6 +507,7 @@ const messagingSetup = (async () => {
   router.post("/api/conversations/:id/messages", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
       const conversationId = req.params.id;
       const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl, voiceDurationSeconds, mentionedTaskIds } = req.body;
 
@@ -559,7 +561,13 @@ const messagingSetup = (async () => {
         .where(eq(users.id, userId))
         .limit(1);
 
-      res.status(201).json({ ...newMessage, sender });
+      const fullMessage = { ...newMessage, sender };
+
+      if (orgId) {
+        emitMessageNew(orgId, conversationId, fullMessage);
+      }
+
+      res.status(201).json(fullMessage);
     } catch (error) {
       console.error("Send message error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -678,7 +686,13 @@ const messagingSetup = (async () => {
         .where(eq(users.id, userId))
         .limit(1);
 
-      res.status(201).json({ ...newMessage, sender });
+      const voiceMsg = { ...newMessage, sender };
+
+      if (orgId) {
+        emitMessageNew(orgId, conversationId, voiceMsg);
+      }
+
+      res.status(201).json(voiceMsg);
     } catch (error) {
       console.error("Voice upload error:", error);
       res.status(500).json({ error: "Failed to upload voice message" });
@@ -961,6 +975,77 @@ const messagingSetup = (async () => {
       console.error("Get messaging users error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
+  });
+
+  // ── SSE: real-time messaging events ──
+  // Streams `message_new` and `user_typing` events to authenticated clients.
+  // Scoped per organization to prevent cross-tenant leakage.
+  router.get("/api/messaging/events", requireAuth, (req: AuthRequest, res) => {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+
+    if (!orgId) {
+      res.status(400).json({ error: "Organization required" });
+      return;
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    // Send a heartbeat immediately so the client knows it connected
+    res.write("event: connected\ndata: {}\n\n");
+
+    const unregister = registerSseClient(userId, orgId, res);
+
+    // Keep-alive ping every 25 seconds (prevents proxy timeouts)
+    const pingInterval = setInterval(() => {
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        clearInterval(pingInterval);
+      }
+    }, 25_000);
+
+    req.on("close", () => {
+      clearInterval(pingInterval);
+      unregister();
+    });
+  });
+
+  // ── TYPING INDICATOR — clients POST here when the user is typing ──
+  // Rate-limited server-side: ignores requests fired within 2 s of the last one per user+conversation.
+  const typingLastSent = new Map<string, number>();
+
+  router.post("/api/conversations/:id/typing", requireAuth, (req: AuthRequest, res) => {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const conversationId = req.params.id;
+
+    if (!orgId) {
+      res.status(400).json({ error: "Organization required" });
+      return;
+    }
+
+    const key = `${userId}:${conversationId}`;
+    const now = Date.now();
+    const last = typingLastSent.get(key) ?? 0;
+
+    if (now - last < 2_000) {
+      res.status(204).end();
+      return;
+    }
+
+    typingLastSent.set(key, now);
+
+    // Fetch sender name from auth session (already loaded)
+    const firstName = req.user!.firstName ?? "";
+    const lastName = req.user!.lastName ?? "";
+
+    emitTyping(orgId, conversationId, userId, firstName, lastName);
+    res.status(204).end();
   });
 })();
 

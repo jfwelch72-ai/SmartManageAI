@@ -272,12 +272,97 @@ export function TeamMessagesContent() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // ── SSE real-time state ──
+  const [sseLive, setSseLive] = useState(false);
+  const sseRef = useRef<EventSource | null>(null);
+  const [typingNames, setTypingNames] = useState<Record<string, string>>({});
+  const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const lastTypingSignalRef = useRef<number>(0);
+  // Keep a stable ref to selectedConversationId for use inside SSE callbacks
+  const selectedConvIdRef = useRef<string | null>(selectedConversationId);
+
   useEffect(() => {
     const checkMobile = () => setIsMobileView(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  // Keep ref in sync so SSE callbacks always read the latest conversation
+  useEffect(() => {
+    selectedConvIdRef.current = selectedConversationId;
+    // Clear typing names when switching conversations
+    setTypingNames({});
+  }, [selectedConversationId]);
+
+  // ── SSE connection ──
+  useEffect(() => {
+    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
+    sseRef.current = es;
+
+    const handleConnected = () => setSseLive(true);
+
+    const handleMessageNew = (e: MessageEvent) => {
+      try {
+        const { conversationId: convId, message } = JSON.parse(e.data) as {
+          conversationId: string;
+          message: Message;
+        };
+        // Append to active conversation cache if it matches
+        if (convId === selectedConvIdRef.current) {
+          queryClient.setQueryData<Message[]>(
+            ["/api/conversations", convId, "messages"],
+            (prev = []) => {
+              const exists = prev.some(m => m.id === message.id);
+              return exists ? prev : [...prev, message];
+            }
+          );
+        }
+        // Refresh sidebar conversation list (unread counts, last message)
+        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      } catch {
+        // malformed event — ignore
+      }
+    };
+
+    const handleTyping = (e: MessageEvent) => {
+      try {
+        const { conversationId: convId, userId: uid, firstName, lastName } = JSON.parse(e.data) as {
+          conversationId: string;
+          userId: string;
+          firstName: string;
+          lastName: string;
+        };
+        if (convId !== selectedConvIdRef.current) return;
+        const name = `${firstName} ${lastName}`.trim();
+        setTypingNames(prev => ({ ...prev, [uid]: name }));
+        if (typingTimersRef.current[uid]) clearTimeout(typingTimersRef.current[uid]);
+        typingTimersRef.current[uid] = setTimeout(() => {
+          setTypingNames(prev => {
+            const next = { ...prev };
+            delete next[uid];
+            return next;
+          });
+        }, 3000);
+      } catch {
+        // malformed event — ignore
+      }
+    };
+
+    es.addEventListener("connected", handleConnected);
+    es.addEventListener("message_new", handleMessageNew);
+    es.addEventListener("user_typing", handleTyping);
+    es.onerror = () => setSseLive(false);
+
+    return () => {
+      es.removeEventListener("connected", handleConnected);
+      es.removeEventListener("message_new", handleMessageNew);
+      es.removeEventListener("user_typing", handleTyping);
+      es.close();
+      setSseLive(false);
+      sseRef.current = null;
+    };
+  }, []); // Mount once — stable callbacks via refs
 
   // ── Data queries ──
   const { data: conversations = [], isLoading: conversationsLoading } = useQuery<Conversation[]>({
@@ -301,7 +386,8 @@ export function TeamMessagesContent() {
   const { data: messages = [], isLoading: messagesLoading } = useQuery<Message[]>({
     queryKey: ["/api/conversations", selectedConversationId, "messages"],
     enabled: !!selectedConversationId,
-    refetchInterval: 5000,
+    // When SSE is live, disable polling; fall back to 10s when SSE drops
+    refetchInterval: sseLive ? false : 10_000,
     queryFn: async () => {
       if (!selectedConversationId) return [];
       const res = await fetch(`/api/conversations/${selectedConversationId}/messages`, { credentials: "include" });
@@ -441,6 +527,18 @@ export function TeamMessagesContent() {
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setMessageInput(val);
+
+    // Fire typing signal (rate-limited to once per 2 s via server + local ref)
+    if (selectedConversationId) {
+      const now = Date.now();
+      if (now - lastTypingSignalRef.current > 2_000) {
+        lastTypingSignalRef.current = now;
+        fetch(`/api/conversations/${selectedConversationId}/typing`, {
+          method: "POST",
+          credentials: "include",
+        }).catch(() => {});
+      }
+    }
 
     // Detect @ trigger
     const cursor = e.target.selectionStart || val.length;
@@ -1144,6 +1242,21 @@ export function TeamMessagesContent() {
                               </button>
                             </Badge>
                           ))}
+                        </div>
+                      )}
+
+                      {/* Typing indicator */}
+                      {Object.keys(typingNames).length > 0 && (
+                        <div className="flex items-center gap-1.5 mb-1.5 px-1 text-xs text-muted-foreground" data-testid="typing-indicator">
+                          <span className="inline-flex items-end gap-0.5">
+                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:0ms]" />
+                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:150ms]" />
+                            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce [animation-delay:300ms]" />
+                          </span>
+                          <span>
+                            {Object.values(typingNames).join(", ")}{" "}
+                            {Object.values(typingNames).length === 1 ? "is" : "are"} typing…
+                          </span>
                         </div>
                       )}
 
