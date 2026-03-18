@@ -226,7 +226,7 @@ async function deliverPush(userId: string, notification: NotificationRecord): Pr
   const url = actionUrl || baseUrl || "/";
   await sendPushToUser(userId, {
     title: notification.title,
-    body: notification.message,
+    message: notification.message,
     url,
   });
 }

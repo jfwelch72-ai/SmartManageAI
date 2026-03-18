@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format, parse } from "date-fns";
 import { CalendarIcon } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import {
   Camera,
@@ -1208,19 +1209,27 @@ export default function ProfilePage() {
                   <div className="flex items-center justify-between" data-testid="row-pref-push">
                     <div>
                       <p className="text-sm font-medium">Push Notifications</p>
-                      <p className="text-xs text-muted-foreground">
-                        Browser and mobile push alerts
-                        {pushPermission === "denied" && (
-                          <span className="ml-1 text-destructive">(blocked in browser settings)</span>
-                        )}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Browser and mobile push alerts</p>
                     </div>
-                    <Switch
-                      checked={channelPrefs.pushEnabled}
-                      onCheckedChange={handlePushToggle}
-                      disabled={pushSubscribing || pushPermission === "denied"}
-                      data-testid="switch-pref-push"
-                    />
+                    {pushPermission === "denied" ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span tabIndex={0} className="inline-flex">
+                            <Switch checked={false} disabled data-testid="switch-pref-push" />
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          Notifications are blocked in your browser settings. Allow them from the address bar or browser settings to enable push alerts.
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <Switch
+                        checked={channelPrefs.pushEnabled}
+                        onCheckedChange={handlePushToggle}
+                        disabled={pushSubscribing}
+                        data-testid="switch-pref-push"
+                      />
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between opacity-60" data-testid="row-pref-teams">

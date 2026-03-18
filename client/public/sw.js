@@ -98,18 +98,18 @@ self.addEventListener('message', (event) => {
 
 // Web Push: handle incoming push notifications
 self.addEventListener('push', (event) => {
-  let data = { title: 'SmartManageAI', body: 'You have a new notification.', url: '/' };
+  let data = { title: 'SmartManageAI', message: 'You have a new notification.', url: '/' };
 
   if (event.data) {
     try {
       data = event.data.json();
     } catch {
-      data.body = event.data.text();
+      data.message = event.data.text();
     }
   }
 
   const options = {
-    body: data.body,
+    body: data.message,
     icon: '/icons/icon-192x192.png',
     badge: '/icons/icon-192x192.png',
     data: { url: data.url || '/' },

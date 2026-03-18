@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const STORAGE_KEY = "push_banner_dismissed";
+const STORAGE_KEY = "push_banner_dismissed_v1";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -31,7 +31,7 @@ export default function PushNotificationBanner() {
       return;
     }
     if (Notification.permission !== "default") return;
-    const dismissed = sessionStorage.getItem(STORAGE_KEY);
+    const dismissed = localStorage.getItem(STORAGE_KEY);
     if (dismissed) return;
     const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
     if (!vapidPublicKey) return;
@@ -39,7 +39,7 @@ export default function PushNotificationBanner() {
   }, []);
 
   function dismiss() {
-    sessionStorage.setItem(STORAGE_KEY, "1");
+    localStorage.setItem(STORAGE_KEY, "1");
     setVisible(false);
   }
 
