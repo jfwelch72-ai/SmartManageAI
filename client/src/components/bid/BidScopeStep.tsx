@@ -3,7 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
@@ -12,6 +14,14 @@ import { useToast } from "@/hooks/use-toast";
 interface TakeoffCategory {
   id: string;
   name: string;
+}
+
+interface JobClassification {
+  id: string;
+  name: string;
+  code: string | null;
+  defaultRegularRate: string | null;
+  isActive: boolean;
 }
 
 interface BidScopeStepProps {
@@ -41,6 +51,9 @@ export default function BidScopeStep({
 }: BidScopeStepProps) {
   const { toast } = useToast();
   const [lastImportCount, setLastImportCount] = useState<number | null>(null);
+  const [lastLaborRateAppliedCount, setLastLaborRateAppliedCount] = useState<number | null>(null);
+  const [lastClassificationName, setLastClassificationName] = useState<string | null>(null);
+  const [selectedClassificationId, setSelectedClassificationId] = useState<string>("none");
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<TakeoffCategory[]>({
     queryKey: ["/api/bids", bidId, "takeoff", "categories"],
@@ -52,6 +65,29 @@ export default function BidScopeStep({
     enabled: !!bidId,
   });
 
+  const { data: classifications = [] } = useQuery<JobClassification[]>({
+    queryKey: ["/api/labor-rates/classifications"],
+    enabled: canEdit,
+  });
+
+  const activeClassifications = classifications.filter((c) => c.isActive && c.defaultRegularRate !== null && Number(c.defaultRegularRate) > 0);
+
+  const handleImportSuccess = (data: { count: number; laborRateAppliedCount?: number; classificationName?: string | null }) => {
+    setLastImportCount(data.count);
+    setLastLaborRateAppliedCount(data.laborRateAppliedCount ?? null);
+    setLastClassificationName(data.classificationName ?? null);
+    queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+    queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+  };
+
+  const buildImportDescription = (count: number, laborRateAppliedCount?: number | null, classificationName?: string | null) => {
+    const itemText = `${count} line item${count === 1 ? "" : "s"} imported from your takeoff measurements.`;
+    if (laborRateAppliedCount && laborRateAppliedCount > 0 && classificationName) {
+      return `${itemText} Labor rate from "${classificationName}" applied to ${laborRateAppliedCount} item${laborRateAppliedCount === 1 ? "" : "s"}.`;
+    }
+    return itemText;
+  };
+
   const createAndImportMutation = useMutation({
     mutationFn: async () => {
       const createRes = await apiRequest("POST", `/api/bids/${bidId}/estimate`, {});
@@ -60,16 +96,15 @@ export default function BidScopeStep({
       const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
         estimateId: newEstimate.id,
         categoryIds,
+        jobClassificationId: selectedClassificationId !== "none" ? selectedClassificationId : undefined,
       });
-      return importRes.json() as Promise<{ count: number }>;
+      return importRes.json() as Promise<{ count: number; laborRateAppliedCount?: number; classificationName?: string | null }>;
     },
     onSuccess: (data) => {
-      setLastImportCount(data.count);
-      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
-      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      handleImportSuccess(data);
       toast({
         title: "Estimate created",
-        description: `${data.count} line item${data.count === 1 ? "" : "s"} imported from your takeoff measurements.`,
+        description: buildImportDescription(data.count, data.laborRateAppliedCount, data.classificationName),
       });
     },
     onError: (error: Error) => {
@@ -84,16 +119,15 @@ export default function BidScopeStep({
       const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
         estimateId: estimate.id,
         categoryIds,
+        jobClassificationId: selectedClassificationId !== "none" ? selectedClassificationId : undefined,
       });
-      return importRes.json() as Promise<{ count: number }>;
+      return importRes.json() as Promise<{ count: number; laborRateAppliedCount?: number; classificationName?: string | null }>;
     },
     onSuccess: (data) => {
-      setLastImportCount(data.count);
-      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
-      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      handleImportSuccess(data);
       toast({
         title: "Import complete",
-        description: `${data.count} line item${data.count === 1 ? "" : "s"} added from your takeoff measurements.`,
+        description: buildImportDescription(data.count, data.laborRateAppliedCount, data.classificationName),
       });
     },
     onError: (error: Error) => {
@@ -103,18 +137,58 @@ export default function BidScopeStep({
 
   const hasTakeoffData = !categoriesLoading && categories.length > 0;
 
+  const renderLaborClassificationSelector = () => {
+    if (!canEdit || activeClassifications.length === 0) return null;
+    return (
+      <div className="flex flex-col gap-1 mt-3">
+        <Label htmlFor="import-classification" className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+          <HardHat className="w-3.5 h-3.5" />
+          Labor Classification <span className="text-emerald-500 dark:text-emerald-600 font-normal">(optional)</span>
+        </Label>
+        <Select value={selectedClassificationId} onValueChange={setSelectedClassificationId}>
+          <SelectTrigger id="import-classification" className="h-8 text-xs" data-testid="select-import-classification">
+            <SelectValue placeholder="None — import without labor rate" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">None — import without labor rate</SelectItem>
+            {activeClassifications.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name}{c.code ? ` (${c.code})` : ""} — ${Number(c.defaultRegularRate).toFixed(2)}/hr
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedClassificationId !== "none" && (
+          <p className="text-xs text-emerald-600 dark:text-emerald-500 mt-0.5">
+            Labor rate will be pre-filled on all imported line items. Hours are estimated from production history where available.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderImportSuccessBanner = () => (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-start gap-3" data-testid="callout-import-success">
+      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+      <div className="text-sm text-emerald-800 dark:text-emerald-300 space-y-0.5">
+        <p>
+          <span className="font-semibold">{lastImportCount} line item{lastImportCount === 1 ? "" : "s"}</span> successfully imported from your takeoff measurements.
+        </p>
+        {lastLaborRateAppliedCount !== null && lastLaborRateAppliedCount > 0 && lastClassificationName && (
+          <p className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+            <HardHat className="w-3 h-3 shrink-0" />
+            Labor rate from &ldquo;{lastClassificationName}&rdquo; applied to {lastLaborRateAppliedCount} item{lastLaborRateAppliedCount === 1 ? "" : "s"}.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
   const renderTakeoffReadyCallout = () => {
     if (!hasTakeoffData) return null;
 
     if (lastImportCount !== null) {
-      return (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-3" data-testid="callout-import-success">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-          <p className="text-sm text-emerald-800 dark:text-emerald-300">
-            <span className="font-semibold">{lastImportCount} line item{lastImportCount === 1 ? "" : "s"}</span> successfully imported from your takeoff measurements.
-          </p>
-        </div>
-      );
+      return renderImportSuccessBanner();
     }
 
     return (
@@ -144,6 +218,7 @@ export default function BidScopeStep({
                 </Badge>
               )}
             </div>
+            {renderLaborClassificationSelector()}
           </div>
         </div>
         {canEdit && (
@@ -243,35 +318,58 @@ export default function BidScopeStep({
           <div className="space-y-4">
             {hasTakeoffData && (
               lastImportCount !== null ? (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-3" data-testid="callout-import-success">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <p className="text-sm text-emerald-800 dark:text-emerald-300">
-                    <span className="font-semibold">{lastImportCount} line item{lastImportCount === 1 ? "" : "s"}</span> successfully imported from your takeoff measurements.
-                  </p>
-                </div>
+                renderImportSuccessBanner()
               ) : canEdit ? (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 flex flex-col sm:flex-row sm:items-center gap-3" data-testid="callout-import-takeoff">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <p className="text-xs text-blue-700 dark:text-blue-300">
-                      <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
-                    </p>
+                <div className="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 space-y-2" data-testid="callout-import-takeoff">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <p className="text-xs text-blue-700 dark:text-blue-300">
+                        <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 shrink-0"
+                      onClick={() => importOnlyMutation.mutate()}
+                      disabled={importOnlyMutation.isPending}
+                      data-testid="button-import-takeoff-only"
+                    >
+                      {importOnlyMutation.isPending ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                      ) : (
+                        <ArrowDownToLine className="w-3.5 h-3.5 mr-1.5" />
+                      )}
+                      {importOnlyMutation.isPending ? "Importing..." : "Import from Takeoff"}
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 shrink-0"
-                    onClick={() => importOnlyMutation.mutate()}
-                    disabled={importOnlyMutation.isPending}
-                    data-testid="button-import-takeoff-only"
-                  >
-                    {importOnlyMutation.isPending ? (
-                      <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                    ) : (
-                      <ArrowDownToLine className="w-3.5 h-3.5 mr-1.5" />
-                    )}
-                    {importOnlyMutation.isPending ? "Importing..." : "Import from Takeoff"}
-                  </Button>
+                  {activeClassifications.length > 0 && (
+                    <div className="flex flex-col gap-1 pt-1 border-t border-blue-200 dark:border-blue-800">
+                      <Label htmlFor="import-classification-existing" className="text-xs text-blue-700 dark:text-blue-400 flex items-center gap-1">
+                        <HardHat className="w-3.5 h-3.5" />
+                        Labor Classification <span className="text-blue-500 dark:text-blue-600 font-normal">(optional)</span>
+                      </Label>
+                      <Select value={selectedClassificationId} onValueChange={setSelectedClassificationId}>
+                        <SelectTrigger id="import-classification-existing" className="h-7 text-xs" data-testid="select-import-classification-existing">
+                          <SelectValue placeholder="None — import without labor rate" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None — import without labor rate</SelectItem>
+                          {activeClassifications.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}{c.code ? ` (${c.code})` : ""} — ${Number(c.defaultRegularRate).toFixed(2)}/hr
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {selectedClassificationId !== "none" && (
+                        <p className="text-xs text-blue-600 dark:text-blue-500">
+                          Labor rate will be pre-filled. Hours estimated from production history where available.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-2" data-testid="callout-takeoff-info">

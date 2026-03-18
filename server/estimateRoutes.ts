@@ -12,6 +12,7 @@ import {
   organizations,
   procurementItems,
   scopeItems,
+  jobClassifications,
   type EstimateLineItem,
 } from "@shared/schema";
 import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
@@ -530,7 +531,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { bidId } = req.params;
-      const { estimateId, categoryIds } = req.body as { estimateId: string, categoryIds: string[] };
+      const { estimateId, categoryIds, jobClassificationId } = req.body as {
+        estimateId: string;
+        categoryIds: string[];
+        jobClassificationId?: string;
+      };
 
       if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
@@ -552,7 +557,44 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         where: sql`${quantityCategories.id} = ANY(${categoryIds})`,
       });
 
-      const lineItemsToCreate = [];
+      // Resolve labor classification rate if provided
+      let classificationRate: number | null = null;
+      let classificationName: string | null = null;
+      if (jobClassificationId) {
+        const [classification] = await db
+          .select({ id: jobClassifications.id, name: jobClassifications.name, defaultRegularRate: jobClassifications.defaultRegularRate })
+          .from(jobClassifications)
+          .where(eq(jobClassifications.id, jobClassificationId))
+          .limit(1);
+        if (classification && classification.defaultRegularRate !== null) {
+          classificationRate = Number(classification.defaultRegularRate);
+          classificationName = classification.name;
+        }
+      }
+
+      const orgId = req.user!.organizationId;
+
+      const lineItemsToCreate: Array<{
+        estimateId: string;
+        category: "GENERAL";
+        description: string;
+        quantity: string;
+        unit: string;
+        source: "TAKEOFF";
+        sourceTakeoffCategoryId: string;
+        computedQuantity: string;
+        materialCost: string;
+        laborHours: string;
+        laborCost: string;
+        equipmentCost: string;
+        consumablesCost: string;
+        subcontractCost: string;
+        overheadAllocation: string;
+        profitAllocation: string;
+        totalCost: string;
+        jobClassificationId?: string;
+        laborRateUsed?: string;
+      }> = [];
 
       for (const category of categories) {
         const measurements = await db.query.takeoffMeasurements.findMany({
@@ -576,55 +618,65 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           }
         }
 
-        const zeroFields = {
-          materialCost: "0", laborHours: "0", laborCost: "0",
-          equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
-          overheadAllocation: "0", profitAllocation: "0", totalCost: "0",
+        const buildLineItem = async (description: string, qty: number, unit: string) => {
+          const base = {
+            estimateId, category: "GENERAL" as const, description,
+            quantity: qty.toString(), unit, source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: category.id, computedQuantity: qty.toString(),
+            materialCost: "0", equipmentCost: "0", consumablesCost: "0",
+            subcontractCost: "0", overheadAllocation: "0", profitAllocation: "0",
+          };
+
+          if (classificationRate !== null && classificationRate > 0 && orgId) {
+            let laborHours = 0;
+            try {
+              const laborEstimate = await estimateLaborHoursFromProductionRate(description, unit, qty, orgId);
+              if (laborEstimate.confidence !== "NONE") {
+                laborHours = laborEstimate.suggestedLaborHours;
+              }
+            } catch {
+              // production rate estimation failed — keep hours at 0
+            }
+            const laborCost = parseFloat((laborHours * classificationRate).toFixed(2));
+            const totalCost = laborCost; // material/equip are all 0 at import time
+            return {
+              ...base,
+              laborHours: laborHours.toFixed(2),
+              laborCost: laborCost.toFixed(2),
+              totalCost: totalCost.toFixed(2),
+              jobClassificationId,
+              laborRateUsed: classificationRate.toFixed(2),
+            };
+          }
+
+          return {
+            ...base,
+            laborHours: "0",
+            laborCost: "0",
+            totalCost: "0",
+          };
         };
 
         if (linearTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId, category: "GENERAL" as const,
-            description: `${category.name} - Linear`, quantity: linearTotal.toString(),
-            unit: "LF", source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id, computedQuantity: linearTotal.toString(),
-            ...zeroFields,
-          });
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Linear`, linearTotal, "LF"));
         }
         if (areaTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId, category: "GENERAL" as const,
-            description: `${category.name} - Area`, quantity: areaTotal.toString(),
-            unit: "SF", source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id, computedQuantity: areaTotal.toString(),
-            ...zeroFields,
-          });
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Area`, areaTotal, "SF"));
         }
         if (volumeTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId, category: "GENERAL" as const,
-            description: `${category.name} - Volume`, quantity: volumeTotal.toString(),
-            unit: "CY", source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id, computedQuantity: volumeTotal.toString(),
-            ...zeroFields,
-          });
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Volume`, volumeTotal, "CY"));
         }
         if (countTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId, category: "GENERAL" as const,
-            description: `${category.name} - Count`, quantity: countTotal.toString(),
-            unit: "EA", source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id, computedQuantity: countTotal.toString(),
-            ...zeroFields,
-          });
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Count`, countTotal, "EA"));
         }
       }
 
       if (lineItemsToCreate.length > 0) {
         const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
-        res.json({ lineItems: newLineItems, count: newLineItems.length });
+        const laborRateAppliedCount = newLineItems.filter((li) => li.laborRateUsed !== null && Number(li.laborRateUsed) > 0).length;
+        res.json({ lineItems: newLineItems, count: newLineItems.length, laborRateAppliedCount, classificationName });
       } else {
-        res.json({ lineItems: [], count: 0 });
+        res.json({ lineItems: [], count: 0, laborRateAppliedCount: 0, classificationName: null });
       }
     } catch (error) {
       console.error("Error importing bid takeoff:", error);
