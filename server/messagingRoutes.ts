@@ -796,19 +796,26 @@ const messagingSetup = (async () => {
         "audio/mpeg", "audio/wav", "audio/flac", "audio/aac",
         "audio/x-m4a",
       ]);
+      // Explicit equivalence pairs: these MIME strings refer to the same container/format
+      // and should be treated as matching each other (e.g. WebM container reported differently
+      // by browser vs file-type library).
+      const WEBM_PAIR: [string, string] = ["audio/webm", "video/webm"];
+      const isEquivalentPair = (a: string, b: string) =>
+        (a === WEBM_PAIR[0] && b === WEBM_PAIR[1]) ||
+        (a === WEBM_PAIR[1] && b === WEBM_PAIR[0]);
+
       if (detectedVoiceType) {
+        const detectedMime = detectedVoiceType.mime;
         // Reject if detected bytes are clearly not audio/video
-        if (!ACCEPTED_VOICE_MIMES.has(detectedVoiceType.mime)) {
+        if (!ACCEPTED_VOICE_MIMES.has(detectedMime)) {
           return res.status(415).json({ error: "Uploaded file is not a valid audio format." });
         }
-        // Verify client-reported MIME is also audio/video (spoofing guard).
-        // Special case: audio/webm ↔ video/webm are the same WebM container — treat as equivalent.
+        // Enforce client MIME matches detected MIME (spoofing guard).
+        // Only narrow equivalence exceptions are permitted.
         const clientMime = (file.mimetype || "").toLowerCase();
         if (clientMime) {
-          const isWebmEquivalent =
-            (clientMime === "audio/webm" && detectedVoiceType.mime === "video/webm") ||
-            (clientMime === "video/webm" && detectedVoiceType.mime === "audio/webm");
-          if (!isWebmEquivalent && !ACCEPTED_VOICE_MIMES.has(clientMime)) {
+          const exactMatch = clientMime === detectedMime;
+          if (!exactMatch && !isEquivalentPair(clientMime, detectedMime)) {
             return res.status(415).json({ error: "Declared MIME type does not match the actual audio content." });
           }
         }

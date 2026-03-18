@@ -833,7 +833,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
             // Project manager (may not be in privileged list if their stored role differs)
             const pmId = newProject.projectManagerId;
 
-            // Crew members from crews assigned to this project
+            // Crew members from crews assigned to this project — org-scoped for safety
             const crewAssignments = await db
               .select({ crewId: crewProjectAssignments.crewId })
               .from(crewProjectAssignments)
@@ -842,17 +842,38 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
 
             let crewUserIds: { id: string }[] = [];
             if (assignedCrewIds.length > 0) {
+              // Join with users table to enforce org membership (prevent cross-tenant injection)
               crewUserIds = await db
                 .select({ id: crewMembers.userId })
                 .from(crewMembers)
+                .innerJoin(users, and(
+                  eq(users.id, crewMembers.userId),
+                  eq(users.organizationId, projOrgId),
+                  eq(users.isActive, true),
+                ))
                 .where(inArray(crewMembers.crewId, assignedCrewIds));
+            }
+
+            // Validate PM is in the same org before including
+            let validatedPmId: string | null = null;
+            if (pmId) {
+              const pmCheck = await db
+                .select({ id: users.id })
+                .from(users)
+                .where(and(
+                  eq(users.id, pmId),
+                  eq(users.organizationId, projOrgId),
+                  eq(users.isActive, true),
+                ))
+                .limit(1);
+              if (pmCheck.length > 0) validatedPmId = pmId;
             }
 
             // Collect unique user IDs, excluding the creator (already added as admin)
             const creatorId = req.user!.id;
             const memberSet = new Set<string>();
             for (const u of privilegedUsers) { if (u.id !== creatorId) memberSet.add(u.id); }
-            if (pmId && pmId !== creatorId) memberSet.add(pmId);
+            if (validatedPmId && validatedPmId !== creatorId) memberSet.add(validatedPmId);
             for (const u of crewUserIds) { if (u.id !== creatorId) memberSet.add(u.id); }
 
             const toAdd = Array.from(memberSet).map(userId => ({
