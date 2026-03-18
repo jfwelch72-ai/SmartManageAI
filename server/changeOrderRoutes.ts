@@ -421,8 +421,9 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       console.error("Failed to create CO approval billing notification:", notifError);
     }
 
-    eventBus.emit({
+    await eventBus.emit({
       type: "change_order.approved",
+      version: 1,
       orgId: project?.gcOrganizationId || req.user!.organizationId || "",
       actorId: req.user!.id,
       timestamp: new Date(),
@@ -521,8 +522,9 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       true
     );
 
-    eventBus.emit({
+    await eventBus.emit({
       type: "change_order.rejected",
+      version: 1,
       orgId: project?.gcOrganizationId || req.user!.organizationId || "",
       actorId: req.user!.id,
       timestamp: new Date(),

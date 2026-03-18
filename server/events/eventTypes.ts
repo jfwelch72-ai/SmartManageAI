@@ -1,4 +1,5 @@
 export interface EventEnvelope {
+  version: number;
   orgId: string;
   actorId: string;
   timestamp: Date;
@@ -10,7 +11,7 @@ export interface ProjectCreatedEvent extends EventEnvelope {
     projectId: string;
     projectCode: string;
     name: string;
-    projectType: string;
+    projectStatus: string;
   };
 }
 

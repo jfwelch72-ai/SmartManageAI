@@ -481,8 +481,9 @@ const payRunStatusHandler = async (req: any, res: Response) => {
         .where(eq(payRunLineItems.payRunId, updated.id));
       const uniqueEmployeeCount = new Set(lineItemCount.map((r) => r.userId)).size;
 
-      eventBus.emit({
+      await eventBus.emit({
         type: "payroll.run.completed",
+        version: 1,
         orgId: orgId,
         actorId: authReq.user!.id,
         timestamp: new Date(),

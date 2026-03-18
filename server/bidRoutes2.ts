@@ -258,8 +258,9 @@ router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR
         }).returning();
 
         if (newBid.status === "SUBMITTED") {
-          eventBus.emit({
+          await eventBus.emit({
             type: "bid.submitted",
+            version: 1,
             orgId: newBid.gcOrganizationId || userOrgId || "",
             actorId: req.user!.id,
             timestamp: new Date(),
@@ -926,8 +927,9 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       newValue: `Converted bid ${bid.code} to project with ${bidEstimates.length} estimates, ${subQuotes.length} selected subcontractor quotes, ${matQuotes.length} selected material quotes, and ${bidEquipSelections.length} equipment plans`,
     }, req);
 
-    eventBus.emit({
+    await eventBus.emit({
       type: "bid.converted_to_project",
+      version: 1,
       orgId: newProject.gcOrganizationId || req.user!.organizationId || "",
       actorId: req.user!.id,
       timestamp: new Date(),

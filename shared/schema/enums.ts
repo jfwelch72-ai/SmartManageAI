@@ -38,6 +38,8 @@ export const notificationTypeEnum = pgEnum("notification_type", [
 export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);
 export const messageStatusEnum = pgEnum("message_status", ["SENT", "DELIVERED", "READ"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
+export const domainEventStatusEnum = pgEnum("domain_event_status", ["PENDING", "PROCESSED", "FAILED"]);
+
 export const auditActionEnum = pgEnum("audit_action", [
   "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT", 
   "CLOCK_IN", "CLOCK_OUT", "ADJUST",

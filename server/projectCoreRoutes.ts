@@ -890,8 +890,9 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
           }
         }
 
-        eventBus.emit({
+        await eventBus.emit({
           type: "project.created",
+          version: 1,
           orgId: newProject.gcOrganizationId || userOrgId || "",
           actorId: req.user!.id,
           timestamp: new Date(),
@@ -899,7 +900,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
             projectId: newProject.id,
             projectCode: newProject.code,
             name: newProject.name,
-            projectType: newProject.status,
+            projectStatus: newProject.status,
           },
         });
 
@@ -990,8 +991,9 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
     }
 
     if (validationResult.data.status !== undefined && validationResult.data.status !== existingProject.status) {
-      eventBus.emit({
+      await eventBus.emit({
         type: "project.status_changed",
+        version: 1,
         orgId: updatedProject.gcOrganizationId || req.user!.organizationId || "",
         actorId: req.user!.id,
         timestamp: new Date(),

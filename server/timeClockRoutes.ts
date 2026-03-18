@@ -162,8 +162,9 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       newValue: JSON.stringify({ projectId: data.projectId, location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null }),
     }, req);
 
-    eventBus.emit({
+    await eventBus.emit({
       type: "timeclock.checked_in",
+      version: 1,
       orgId: req.user!.organizationId || "",
       actorId: req.user!.id,
       timestamp: new Date(),
@@ -248,8 +249,9 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       newValue: JSON.stringify({ clockOut: now, totalHours }),
     }, req);
 
-    eventBus.emit({
+    await eventBus.emit({
       type: "timeclock.checked_out",
+      version: 1,
       orgId: req.user!.organizationId || "",
       actorId: req.user!.id,
       timestamp: new Date(),

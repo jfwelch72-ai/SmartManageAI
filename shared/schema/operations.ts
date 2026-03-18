@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, crmOrganisations, organizationSowItems, quantityCategories, scopeWorkTypes } from "./features";
 
@@ -2136,4 +2136,30 @@ export const budgetLineItems = pgTable("budget_line_items", {
 export const insertBudgetLineItemSchema = createInsertSchema(budgetLineItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertBudgetLineItem = z.infer<typeof insertBudgetLineItemSchema>;
 export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
+
+export const domainEvents = pgTable("domain_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  type: text("type").notNull(),
+  version: integer("version").notNull().default(1),
+  orgId: varchar("org_id").notNull(),
+  actorId: varchar("actor_id").notNull(),
+  payload: json("payload").notNull(),
+  status: domainEventStatusEnum("status").notNull().default("PENDING"),
+  processedAt: timestamp("processed_at"),
+  failureReason: text("failure_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("domain_events_status_idx").on(table.status),
+  index("domain_events_type_idx").on(table.type),
+  index("domain_events_created_at_idx").on(table.createdAt),
+]);
+
+export const insertDomainEventSchema = createInsertSchema(domainEvents).omit({
+  id: true,
+  processedAt: true,
+  failureReason: true,
+  createdAt: true,
+});
+export type InsertDomainEvent = z.infer<typeof insertDomainEventSchema>;
+export type DomainEventRecord = typeof domainEvents.$inferSelect;
 
