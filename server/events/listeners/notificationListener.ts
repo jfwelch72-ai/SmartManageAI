@@ -10,10 +10,14 @@ import type {
   BidConvertedToProjectEvent,
 } from "../eventTypes";
 
+type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
+
 const ADMIN_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
+type AdminRole = (typeof ADMIN_ROLES)[number];
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
   try {
+    const roles: AdminRole[] = [...ADMIN_ROLES];
     const rows = await db
       .select({ id: users.id })
       .from(users)
@@ -21,7 +25,7 @@ async function getAdminUserIds(orgId: string): Promise<string[]> {
         and(
           eq(users.organizationId, orgId),
           eq(users.isActive, true),
-          inArray(users.role, ADMIN_ROLES as unknown as string[])
+          inArray(users.role, roles as unknown as string[])
         )
       );
     return rows.map((r) => r.id);
@@ -32,7 +36,7 @@ async function getAdminUserIds(orgId: string): Promise<string[]> {
 
 async function insertNotifications(
   userIds: string[],
-  type: string,
+  type: NotificationType,
   title: string,
   message: string,
   relatedEntityId: string,
@@ -41,7 +45,7 @@ async function insertNotifications(
   if (userIds.length === 0) return;
   const records = userIds.map((userId) => ({
     userId,
-    type: type as any,
+    type,
     title,
     message,
     relatedEntityId,
@@ -88,7 +92,7 @@ export function registerNotificationListener(): void {
       const adminIds = await getAdminUserIds(event.orgId);
       await insertNotifications(
         adminIds,
-        "PAYROLL_RUN_COMPLETED",
+        "BILLING_READY",
         "Payroll Run Completed",
         `Pay run for ${event.payload.periodStart} – ${event.payload.periodEnd} has been marked PAID ($${event.payload.totalGross.toLocaleString("en-US", { minimumFractionDigits: 2 })} gross, ${event.payload.employeeCount} employees)`,
         event.payload.payRunId,
@@ -104,7 +108,7 @@ export function registerNotificationListener(): void {
       const adminIds = await getAdminUserIds(event.orgId);
       await insertNotifications(
         adminIds,
-        "PROJECT_CREATED",
+        "PROJECT_ASSIGNMENT",
         "Bid Converted to Project",
         `Bid ${event.payload.bidCode} has been converted to project ${event.payload.projectCode}`,
         event.payload.projectId,

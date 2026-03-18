@@ -70,8 +70,8 @@ export interface TimeclockCheckedInEvent extends EventEnvelope {
     shiftId: string;
     userId: string;
     projectId: string | null;
-    latitude: number | null;
-    longitude: number | null;
+    lat: number | null;
+    lng: number | null;
   };
 }
 
@@ -108,3 +108,15 @@ export type DomainEvent =
   | PayrollRunCompletedEvent;
 
 export type DomainEventType = DomainEvent["type"];
+
+export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
+  "project.created",
+  "project.status_changed",
+  "bid.submitted",
+  "bid.converted_to_project",
+  "change_order.approved",
+  "change_order.rejected",
+  "timeclock.checked_in",
+  "timeclock.checked_out",
+  "payroll.run.completed",
+];

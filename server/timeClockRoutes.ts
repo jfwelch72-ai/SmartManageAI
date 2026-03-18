@@ -171,8 +171,8 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
         shiftId: newShift.id,
         userId: req.user!.id,
         projectId: data.projectId || null,
-        latitude: data.latitude || null,
-        longitude: data.longitude || null,
+        lat: data.latitude || null,
+        lng: data.longitude || null,
       },
     });
 
