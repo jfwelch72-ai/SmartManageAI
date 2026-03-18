@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Fragment } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -298,8 +298,18 @@ export function TeamMessagesContent() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // ── Stable updater passed to the SSE hook so it can update olderMessages ──
+  // Edits/deletes/reactions from OTHER users arrive via SSE and need to update
+  // both the query cache (latestMessages) AND the local olderMessages state.
+  const updateOlderMessage = useCallback(
+    (messageId: string, updater: (m: Message) => Message) => {
+      setOlderMessages(prev => prev.map(m => m.id === messageId ? updater(m) : m));
+    },
+    []
+  );
+
   // ── SSE real-time — handled by dedicated hook ──
-  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId);
+  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage);
   const lastTypingSignalRef = useRef<number>(0);
 
   // ── Pagination state ──
@@ -475,13 +485,15 @@ export function TeamMessagesContent() {
   const editMessageMutation = useMutation({
     mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
       const response = await apiRequest("PATCH", `/api/messages/${messageId}`, { content });
-      return response.json();
+      return response.json() as Promise<Message>;
     },
     onSuccess: (updatedMsg: Message) => {
+      const applyEdit = (m: Message) => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m;
       queryClient.setQueryData<Message[]>(
         ["/api/conversations", selectedConversationId, "messages"],
-        (prev = []) => prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
+        (prev = []) => prev.map(applyEdit)
       );
+      updateOlderMessage(updatedMsg.id, applyEdit);
       setEditingMessageId(null);
       setEditContent("");
     },
@@ -493,10 +505,14 @@ export function TeamMessagesContent() {
       return response.json() as Promise<Message>;
     },
     onSuccess: (deletedMsg: Message) => {
+      // Deleted messages show no reactions — clear them along with content
+      const applyDelete = (m: Message) =>
+        m.id === deletedMsg.id ? { ...m, ...deletedMsg, reactions: [] } : m;
       queryClient.setQueryData<Message[]>(
         ["/api/conversations", selectedConversationId, "messages"],
-        (prev = []) => prev.map(m => m.id === deletedMsg.id ? { ...m, ...deletedMsg } : m)
+        (prev = []) => prev.map(applyDelete)
       );
+      updateOlderMessage(deletedMsg.id, applyDelete);
     },
   });
 
@@ -506,10 +522,13 @@ export function TeamMessagesContent() {
       return response.json() as Promise<{ reactions: MessageReaction[] }>;
     },
     onSuccess: (data, { messageId }) => {
+      const applyReaction = (m: Message) =>
+        m.id === messageId ? { ...m, reactions: data.reactions } : m;
       queryClient.setQueryData<Message[]>(
         ["/api/conversations", selectedConversationId, "messages"],
-        (prev = []) => prev.map(m => m.id === messageId ? { ...m, reactions: data.reactions } : m)
+        (prev = []) => prev.map(applyReaction)
       );
+      updateOlderMessage(messageId, applyReaction);
       setPopoverMsgId(null);
     },
   });

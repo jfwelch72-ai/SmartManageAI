@@ -60,30 +60,39 @@ interface MessageReactionEvent {
   reactions: MessageReaction[];
 }
 
+/** Called when a message in olderMessages needs updating (SSE events for historical messages). */
+export type OlderMessageUpdater = (messageId: string, updater: (m: Message) => Message) => void;
+
 /**
  * Opens a single SSE connection to /api/messaging/events and provides:
  * - `sseLive` — true when the SSE stream is connected
  * - `typingNames` — map of userId → display name for users currently typing in the active conversation
  *
  * Pass `activeConversationId` to scope typing and message updates to the open conversation.
+ * Pass `onUpdateOlderMessage` to propagate SSE-driven edits/deletes/reactions to olderMessages state.
  * New messages for any conversation will also invalidate the conversations sidebar query.
  */
-export function useMessagingEvents(activeConversationId: string | null): {
+export function useMessagingEvents(
+  activeConversationId: string | null,
+  onUpdateOlderMessage?: OlderMessageUpdater,
+): {
   sseLive: boolean;
   typingNames: Record<string, string>;
 } {
   const [sseLive, setSseLive] = useState(false);
   const [typingNames, setTypingNames] = useState<Record<string, string>>({});
 
-  // Keep a stable ref so SSE callbacks always read the latest active conversation
+  // Keep stable refs so SSE callbacks always read the latest values
   const activeConvIdRef = useRef<string | null>(activeConversationId);
+  const updaterRef = useRef<OlderMessageUpdater | undefined>(onUpdateOlderMessage);
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Sync ref and clear typing state on conversation switch
-  useEffect(() => {
-    activeConvIdRef.current = activeConversationId;
-    setTypingNames({});
-  }, [activeConversationId]);
+  // Sync refs on each render
+  useEffect(() => { activeConvIdRef.current = activeConversationId; }, [activeConversationId]);
+  useEffect(() => { updaterRef.current = onUpdateOlderMessage; }, [onUpdateOlderMessage]);
+
+  // Clear typing state on conversation switch
+  useEffect(() => { setTypingNames({}); }, [activeConversationId]);
 
   useEffect(() => {
     const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
@@ -117,10 +126,17 @@ export function useMessagingEvents(activeConversationId: string | null): {
         const { conversationId: convId, message } = JSON.parse(e.data) as MessageEditedEvent;
         if (convId !== activeConvIdRef.current) return;
 
+        const applyEdit = (m: Message) =>
+          m.id === message.id ? { ...m, ...message, reactions: message.reactions ?? m.reactions ?? [] } : m;
+
+        // Update latestMessages (TanStack Query cache)
         queryClient.setQueryData<Message[]>(
           ["/api/conversations", convId, "messages"],
-          (prev = []) => prev.map(m => m.id === message.id ? { ...m, ...message, reactions: m.reactions ?? [] } : m)
+          (prev = []) => prev.map(applyEdit)
         );
+
+        // Update olderMessages if provided
+        updaterRef.current?.(message.id, (m) => applyEdit(m));
       } catch {
         // malformed event — ignore
       }
@@ -131,10 +147,16 @@ export function useMessagingEvents(activeConversationId: string | null): {
         const { conversationId: convId, messageId } = JSON.parse(e.data) as MessageDeletedEvent;
         if (convId !== activeConvIdRef.current) return;
 
+        // Clear content, set deleted, and clear reactions (deleted messages show no reactions)
+        const applyDelete = (m: Message) =>
+          m.id === messageId ? { ...m, isDeleted: true, content: "", reactions: [] } : m;
+
         queryClient.setQueryData<Message[]>(
           ["/api/conversations", convId, "messages"],
-          (prev = []) => prev.map(m => m.id === messageId ? { ...m, isDeleted: true, content: "" } : m)
+          (prev = []) => prev.map(applyDelete)
         );
+
+        updaterRef.current?.(messageId, (m) => applyDelete(m));
       } catch {
         // malformed event — ignore
       }
@@ -145,10 +167,14 @@ export function useMessagingEvents(activeConversationId: string | null): {
         const { conversationId: convId, messageId, reactions } = JSON.parse(e.data) as MessageReactionEvent;
         if (convId !== activeConvIdRef.current) return;
 
+        const applyReaction = (m: Message) => m.id === messageId ? { ...m, reactions } : m;
+
         queryClient.setQueryData<Message[]>(
           ["/api/conversations", convId, "messages"],
-          (prev = []) => prev.map(m => m.id === messageId ? { ...m, reactions } : m)
+          (prev = []) => prev.map(applyReaction)
         );
+
+        updaterRef.current?.(messageId, (m) => applyReaction(m));
       } catch {
         // malformed event — ignore
       }

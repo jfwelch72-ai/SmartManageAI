@@ -1162,6 +1162,10 @@ const messagingSetup = (async () => {
       if (msg.isDeleted) return res.status(400).json({ error: "Cannot edit a deleted message" });
       if (msg.voiceUrl) return res.status(400).json({ error: "Voice messages cannot be edited" });
 
+      // Verify caller is a participant of this conversation (always required)
+      const isMember = await ensureParticipant(msg.conversationId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a participant of this conversation" });
+
       // Only sender (or channel admin) may edit
       if (msg.senderId !== userId) {
         const [admin] = await db
@@ -1182,7 +1186,11 @@ const messagingSetup = (async () => {
         .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
         .from(users).where(eq(users.id, updated.senderId)).limit(1);
 
-      const updatedMsg = { ...updated, sender, reactions: [] };
+      // Preserve existing reactions — do not wipe them on edit
+      const reactionMap = await loadReactions([msgId]);
+      const reactions = reactionMap.get(msgId) ?? [];
+
+      const updatedMsg = { ...updated, sender, reactions };
 
       if (orgId) {
         const participantUserIds = await fetchParticipantIds(msg.conversationId);
@@ -1206,6 +1214,10 @@ const messagingSetup = (async () => {
       const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
       if (!msg) return res.status(404).json({ error: "Message not found" });
       if (msg.isDeleted) return res.status(400).json({ error: "Message already deleted" });
+
+      // Verify caller is a participant of this conversation (always required)
+      const isMember = await ensureParticipant(msg.conversationId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a participant of this conversation" });
 
       // Only sender (or channel admin) may delete
       if (msg.senderId !== userId) {
