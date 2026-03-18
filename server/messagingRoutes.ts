@@ -479,23 +479,50 @@ const messagingSetup = (async () => {
         return;
       }
 
-      // Build where clause — add cursor condition when `before` is provided
+      // Build where clause — add cursor condition when `before` is provided.
+      // `before` may be a message ID (UUID) or an ISO 8601 timestamp string.
+      // For message-ID cursors a deterministic tie-breaker is added so pages
+      // never skip or repeat messages that share the same createdAt value.
       let whereClause: SQL<unknown> = eq(messages.conversationId, conversationId);
       if (before) {
-        const cursorRows = await db
-          .select({ createdAt: messages.createdAt })
-          .from(messages)
-          .where(eq(messages.id, before))
-          .limit(1);
-        if (cursorRows[0]) {
+        // Detect ISO timestamp: contains "T" and parses as a valid date
+        const asDate = new Date(before);
+        const isTimestamp = before.includes("T") && !isNaN(asDate.getTime());
+
+        if (isTimestamp) {
+          // Timestamp cursor — filter strictly before this date
           whereClause = and(
             eq(messages.conversationId, conversationId),
-            lt(messages.createdAt, cursorRows[0].createdAt)
+            lt(messages.createdAt, asDate)
           ) as SQL<unknown>;
+        } else {
+          // Message-ID cursor — resolve (createdAt, id) for stable pagination
+          const cursorRows = await db
+            .select({ id: messages.id, createdAt: messages.createdAt })
+            .from(messages)
+            .where(eq(messages.id, before))
+            .limit(1);
+
+          if (cursorRows[0]) {
+            const { id: cursorId, createdAt: cursorCreatedAt } = cursorRows[0];
+            // Tie-breaker: include messages at the same timestamp that sort
+            // before the cursor by ID, guaranteeing no gaps at page boundaries.
+            whereClause = and(
+              eq(messages.conversationId, conversationId),
+              or(
+                lt(messages.createdAt, cursorCreatedAt),
+                and(
+                  eq(messages.createdAt, cursorCreatedAt),
+                  lt(messages.id, cursorId)
+                )
+              )
+            ) as SQL<unknown>;
+          }
         }
       }
 
-      // Fetch PAGE_SIZE + 1 to detect whether older messages exist
+      // Fetch PAGE_SIZE + 1 to detect whether older messages exist.
+      // Secondary sort by id ensures a stable page order when createdAt ties.
       const messageResults = await db
         .select({
           message: messages,
@@ -509,7 +536,7 @@ const messagingSetup = (async () => {
         .from(messages)
         .innerJoin(users, eq(messages.senderId, users.id))
         .where(whereClause)
-        .orderBy(desc(messages.createdAt))
+        .orderBy(desc(messages.createdAt), desc(messages.id))
         .limit(PAGE_SIZE + 1);
 
       const hasMore = messageResults.length > PAGE_SIZE;
