@@ -74,9 +74,27 @@ export default function PushNotificationBanner() {
       });
       toast({ title: "Push notifications enabled", description: "You'll receive browser alerts for important events." });
       dismiss();
-    } catch (err) {
-      toast({ title: "Could not enable push", description: String(err), variant: "destructive" });
-      dismiss();
+    } catch (err: unknown) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "AbortError" || name === "NotSupportedError") {
+        // Push service temporarily unavailable (common in proxied/iframe environments).
+        // Don't permanently dismiss — just hide for now so the user can retry.
+        setVisible(false);
+        toast({
+          title: "Push notifications unavailable",
+          description: "Your browser's push service could not be reached. Try again later or use a different browser.",
+        });
+      } else if (name === "NotAllowedError") {
+        // Permission was denied — permanently dismiss.
+        dismiss();
+      } else {
+        // Unknown error — hide but don't permanently dismiss.
+        setVisible(false);
+        toast({
+          title: "Could not enable push notifications",
+          description: "Please try again from your notification settings.",
+        });
+      }
     } finally {
       setLoading(false);
     }

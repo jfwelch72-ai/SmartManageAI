@@ -320,7 +320,15 @@ export default function ProfilePage() {
       });
       return true;
     } catch (err: unknown) {
-      toast({ title: "Push setup failed", description: String(err), variant: "destructive" });
+      const name = err instanceof Error ? err.name : "";
+      if (name === "AbortError" || name === "NotSupportedError") {
+        toast({
+          title: "Push notifications unavailable",
+          description: "Your browser's push service could not be reached. Try again later or use a different browser.",
+        });
+      } else {
+        toast({ title: "Push setup failed", description: String(err), variant: "destructive" });
+      }
       return false;
     }
   }
