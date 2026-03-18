@@ -18,13 +18,59 @@ import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
-import { AlertTriangle, Package, Calendar as CalendarIcon, Clock, LayoutDashboard, ListChecks, FileEdit, Bot, NotebookPen, Camera, Calculator, ShoppingCart, Receipt, Info, Banknote, HardHat, CloudRain, CalendarCheck, Mail, Ruler, Truck, HelpCircle, Send, FileCheck, ExternalLink, Users, TrendingUp, DollarSign, BarChart3 } from "lucide-react";
+import {
+  AlertTriangle,
+  Package,
+  Calendar as CalendarIcon,
+  Clock,
+  LayoutDashboard,
+  ListChecks,
+  FileEdit,
+  Bot,
+  NotebookPen,
+  Camera,
+  Calculator,
+  ShoppingCart,
+  Receipt,
+  Info,
+  Banknote,
+  HardHat,
+  CloudRain,
+  CalendarCheck,
+  Mail,
+  Ruler,
+  Truck,
+  HelpCircle,
+  Send,
+  FileCheck,
+  ExternalLink,
+  Users,
+  TrendingUp,
+  DollarSign,
+  BarChart3,
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { FeaturePermissions, hasManagementAccess, hasFinancialAccess } from "@/lib/rbac";
-import { useProject, useScopeItems, useChangeOrders, useProjectNotes, useProjectEstimates } from "@/hooks/use-data";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  FeaturePermissions,
+  hasManagementAccess,
+  hasFinancialAccess,
+} from "@/lib/rbac";
+import {
+  useProject,
+  useScopeItems,
+  useChangeOrders,
+  useProjectNotes,
+  useProjectEstimates,
+} from "@/hooks/use-data";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
 import ChangeOrdersTab from "@/components/project-tabs/ChangeOrdersTab";
 import OverviewTab from "@/components/project-tabs/OverviewTab";
@@ -103,36 +149,150 @@ interface TabConfig {
   visible: boolean;
 }
 
-function buildTabConfigs(userRole: string | undefined, submittedCOCount: number): TabConfig[] {
+function buildTabConfigs(
+  userRole: string | undefined,
+  submittedCOCount: number,
+): TabConfig[] {
   return [
-    { value: "overview", label: "Overview", icon: LayoutDashboard, visible: true },
-    { value: "scope", label: "Scope & Progress", icon: ListChecks, visible: true },
+    {
+      value: "overview",
+      label: "Overview",
+      icon: LayoutDashboard,
+      visible: true,
+    },
+    {
+      value: "scope",
+      label: "Scope & Progress",
+      icon: ListChecks,
+      visible: true,
+    },
     { value: "materials", label: "Materials", icon: Package, visible: true },
-    { value: "change-orders", label: "Change Orders", icon: FileEdit, badge: submittedCOCount > 0 ? submittedCOCount : undefined, visible: true },
+    {
+      value: "change-orders",
+      label: "Change Orders",
+      icon: FileEdit,
+      badge: submittedCOCount > 0 ? submittedCOCount : undefined,
+      visible: true,
+    },
     { value: "schedule", label: "Schedule", icon: CalendarIcon, visible: true },
     { value: "delays", label: "Delays", icon: CloudRain, visible: true },
-    { value: "inspections", label: "Inspections", icon: CalendarCheck, visible: true },
-    { value: "jobsite-ai", label: "AI Jobsite", icon: Bot, visible: hasManagementAccess(userRole) },
-    { value: "email-communications", label: "Email", icon: Mail, visible: hasManagementAccess(userRole) },
-    { value: "daily-notes", label: "Daily Notes", icon: NotebookPen, visible: true },
+    {
+      value: "inspections",
+      label: "Inspections",
+      icon: CalendarCheck,
+      visible: true,
+    },
+    {
+      value: "jobsite-ai",
+      label: "AI Jobsite",
+      icon: Bot,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "email-communications",
+      label: "Email",
+      icon: Mail,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "daily-notes",
+      label: "Daily Notes",
+      icon: NotebookPen,
+      visible: true,
+    },
     { value: "media", label: "Photos & Videos", icon: Camera, visible: true },
-    { value: "estimate", label: "Estimate", icon: Calculator, visible: FeaturePermissions.VIEW_ESTIMATES_TAB(userRole) },
-    { value: "procurement", label: "Procurement", icon: ShoppingCart, visible: FeaturePermissions.VIEW_PROCUREMENT_TAB(userRole) },
+    {
+      value: "estimate",
+      label: "Estimate",
+      icon: Calculator,
+      visible: FeaturePermissions.VIEW_ESTIMATES_TAB(userRole),
+    },
+    {
+      value: "procurement",
+      label: "Procurement",
+      icon: ShoppingCart,
+      visible: FeaturePermissions.VIEW_PROCUREMENT_TAB(userRole),
+    },
     { value: "plans", label: "Plans & Takeoff", icon: Ruler, visible: true },
-    { value: "time", label: "Time & T&M", icon: Clock, visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole) },
-    { value: "labor", label: "Labor", icon: HardHat, visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole) },
-    { value: "receipts", label: "Receipts", icon: Receipt, visible: FeaturePermissions.VIEW_RECEIPTS_TAB(userRole) },
-    { value: "subcontractors", label: "Subcontractors", icon: Users, visible: FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(userRole) },
+    {
+      value: "time",
+      label: "Time & T&M",
+      icon: Clock,
+      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
+    },
+    {
+      value: "labor",
+      label: "Labor",
+      icon: HardHat,
+      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
+    },
+    {
+      value: "receipts",
+      label: "Receipts",
+      icon: Receipt,
+      visible: FeaturePermissions.VIEW_RECEIPTS_TAB(userRole),
+    },
+    {
+      value: "subcontractors",
+      label: "Subcontractors",
+      icon: Users,
+      visible: FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(userRole),
+    },
     { value: "job-info", label: "Job Info", icon: Info, visible: true },
-    { value: "payroll", label: "Payroll", icon: Banknote, visible: hasManagementAccess(userRole) },
-    { value: "equipment", label: "Equipment", icon: Truck, visible: FeaturePermissions.VIEW_EQUIPMENT(userRole) },
-    { value: "rfis", label: "RFIs", icon: HelpCircle, visible: hasManagementAccess(userRole) },
-    { value: "transmittals", label: "Transmittals", icon: Send, visible: hasManagementAccess(userRole) },
-    { value: "submittals", label: "Submittals", icon: FileCheck, visible: hasManagementAccess(userRole) },
-    { value: "portal-access", label: "Portal Access", icon: ExternalLink, visible: hasManagementAccess(userRole) },
-    { value: "budget", label: "Budget", icon: DollarSign, visible: FeaturePermissions.VIEW_BUDGET_TAB(userRole) },
-    { value: "cost-ledger", label: "Cost Ledger", icon: BarChart3, visible: hasFinancialAccess(userRole) },
-    { value: "financials", label: "Live Financials", icon: TrendingUp, visible: hasFinancialAccess(userRole) },
+    {
+      value: "payroll",
+      label: "Payroll",
+      icon: Banknote,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "equipment",
+      label: "Equipment",
+      icon: Truck,
+      visible: FeaturePermissions.VIEW_EQUIPMENT(userRole),
+    },
+    {
+      value: "rfis",
+      label: "RFIs",
+      icon: HelpCircle,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "transmittals",
+      label: "Transmittals",
+      icon: Send,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "submittals",
+      label: "Submittals",
+      icon: FileCheck,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "portal-access",
+      label: "Portal Access",
+      icon: ExternalLink,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "budget",
+      label: "Budget",
+      icon: DollarSign,
+      visible: FeaturePermissions.VIEW_BUDGET_TAB(userRole),
+    },
+    {
+      value: "cost-ledger",
+      label: "Cost Ledger",
+      icon: BarChart3,
+      visible: hasFinancialAccess(userRole),
+    },
+    {
+      value: "financials",
+      label: "Live Financials",
+      icon: TrendingUp,
+      visible: hasFinancialAccess(userRole),
+    },
   ];
 }
 
@@ -143,29 +303,37 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
 
   const searchParams = new URLSearchParams(window.location.search);
-  const fromCFO = searchParams.get('from') === 'cfo';
-  const backPath = fromCFO ? '/cfo' : '/projects';
-  const backLabel = fromCFO ? 'Back to CFO' : 'Back to Projects';
+  const fromCFO = searchParams.get("from") === "cfo";
+  const backPath = fromCFO ? "/cfo" : "/projects";
+  const backLabel = fromCFO ? "Back to CFO" : "Back to Projects";
 
   const projectCode = params?.code || "";
   const { data: project, isLoading: projectLoading } = useProject(projectCode);
-  const { data: scopeItems = [], isLoading: scopeLoading } = useScopeItems(projectCode);
-  const { data: changeOrders = [], isLoading: changeOrdersLoading } = useChangeOrders(projectCode);
-  const { data: projectNotes = [], isLoading: notesLoading } = useProjectNotes(projectCode);
-  const { data: estimates = [], isLoading: estimatesLoading } = useProjectEstimates(projectCode);
+  const { data: scopeItems = [], isLoading: scopeLoading } =
+    useScopeItems(projectCode);
+  const { data: changeOrders = [], isLoading: changeOrdersLoading } =
+    useChangeOrders(projectCode);
+  const { data: projectNotes = [], isLoading: notesLoading } =
+    useProjectNotes(projectCode);
+  const { data: estimates = [], isLoading: estimatesLoading } =
+    useProjectEstimates(projectCode);
 
-  const { data: financials, isLoading: financialsLoading } = useQuery<ProjectFinancials>({
-    queryKey: ["/api/projects", projectCode, "financials"],
-    enabled: !!projectCode && FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role),
-  });
+  const { data: financials, isLoading: financialsLoading } =
+    useQuery<ProjectFinancials>({
+      queryKey: ["/api/projects", projectCode, "financials"],
+      enabled:
+        !!projectCode && FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role),
+    });
 
-  const { data: allUsers = [] } = useQuery<Array<{
-    id: string;
-    firstName: string;
-    lastName: string;
-    role?: string;
-    costRateRegular?: string;
-  }>>({
+  const { data: allUsers = [] } = useQuery<
+    Array<{
+      id: string;
+      firstName: string;
+      lastName: string;
+      role?: string;
+      costRateRegular?: string;
+    }>
+  >({
     queryKey: ["/api/users"],
   });
 
@@ -174,9 +342,11 @@ export default function ProjectDetailPage() {
     enabled: !!project?.id,
   });
 
-  const submittedCOCount = changeOrders.filter(co => co.status === "SUBMITTED").length;
+  const submittedCOCount = changeOrders.filter(
+    (co) => co.status === "SUBMITTED",
+  ).length;
   const tabConfigs = buildTabConfigs(user?.role, submittedCOCount);
-  const visibleTabs = tabConfigs.filter(t => t.visible);
+  const visibleTabs = tabConfigs.filter((t) => t.visible);
 
   if (projectLoading) {
     return (
@@ -193,7 +363,10 @@ export default function ProjectDetailPage() {
       <div className="min-h-screen bg-background">
         <div className="flex flex-col items-center justify-center h-96">
           <p className="text-muted-foreground mb-4">Project not found</p>
-          <Button onClick={() => setLocation(backPath)} data-testid="button-back-to-projects">
+          <Button
+            onClick={() => setLocation(backPath)}
+            data-testid="button-back-to-projects"
+          >
             {backLabel}
           </Button>
         </div>
@@ -203,10 +376,14 @@ export default function ProjectDetailPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-full px-6 py-8">
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
-            <Button variant="ghost" onClick={() => setLocation(backPath)} data-testid="button-back">
+            <Button
+              variant="ghost"
+              onClick={() => setLocation(backPath)}
+              data-testid="button-back"
+            >
               ← {backLabel}
             </Button>
           </div>
@@ -218,39 +395,58 @@ export default function ProjectDetailPage() {
                 </Badge>
                 <StatusBadge status={project.status} type="project" />
               </div>
-              <h1 className="text-2xl font-bold text-foreground">{project.name}</h1>
+              <h1 className="text-2xl font-bold text-foreground">
+                {project.name}
+              </h1>
             </div>
           </div>
         </div>
 
-        {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) && (!project.budget || Number(project.budget) === 0) && (!project.contractAmount || Number(project.contractAmount) === 0) && (
-          <Alert variant="destructive" className="mb-6" data-testid="alert-missing-budget">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Missing Financial Data</AlertTitle>
-            <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
-              <span>This project is missing budget and contract information. Please update the financial data to enable accurate profitability tracking and AI analysis.</span>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setActiveTab("financials")}
-                data-testid="button-go-to-financials"
-              >
-                Set Up Financials
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
+        {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) &&
+          (!project.budget || Number(project.budget) === 0) &&
+          (!project.contractAmount || Number(project.contractAmount) === 0) && (
+            <Alert
+              variant="destructive"
+              className="mb-6"
+              data-testid="alert-missing-budget"
+            >
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Missing Financial Data</AlertTitle>
+              <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
+                <span>
+                  This project is missing budget and contract information.
+                  Please update the financial data to enable accurate
+                  profitability tracking and AI analysis.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActiveTab("financials")}
+                  data-testid="button-go-to-financials"
+                >
+                  Set Up Financials
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
 
         {materialBudgetSummary && materialBudgetSummary.alertsTriggered > 0 && (
-          <Alert variant="destructive" className="mb-6" data-testid="alert-material-budget">
+          <Alert
+            variant="destructive"
+            className="mb-6"
+            data-testid="alert-material-budget"
+          >
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Material Budget Alert</AlertTitle>
             <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
               <span>
-                {materialBudgetSummary.alertsTriggered} material{materialBudgetSummary.alertsTriggered > 1 ? "s" : ""} have reached 90%+ of budgeted quantity. Consider creating a change order to cover additional materials.
+                {materialBudgetSummary.alertsTriggered} material
+                {materialBudgetSummary.alertsTriggered > 1 ? "s" : ""} have
+                reached 90%+ of budgeted quantity. Consider creating a change
+                order to cover additional materials.
               </span>
-              <Button 
-                size="sm" 
+              <Button
+                size="sm"
                 variant="outline"
                 onClick={() => setActiveTab("materials")}
                 data-testid="button-view-materials-alert"
@@ -262,14 +458,18 @@ export default function ProjectDetailPage() {
           </Alert>
         )}
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="space-y-6"
+        >
           <div className="lg:hidden">
             <Select value={activeTab} onValueChange={setActiveTab}>
               <SelectTrigger className="w-full" data-testid="select-tab-mobile">
                 <SelectValue placeholder="Select tab" />
               </SelectTrigger>
               <SelectContent>
-                {visibleTabs.map(tab => (
+                {visibleTabs.map((tab) => (
                   <SelectItem key={tab.value} value={tab.value}>
                     {tab.label} {tab.badge ? `(${tab.badge})` : ""}
                   </SelectItem>
@@ -279,10 +479,14 @@ export default function ProjectDetailPage() {
           </div>
 
           <TabsList className="hidden lg:flex flex-wrap gap-1 h-auto w-full justify-start p-1">
-            {visibleTabs.map(tab => {
+            {visibleTabs.map((tab) => {
               const IconComp = tab.icon;
               return (
-                <TabsTrigger key={tab.value} value={tab.value} data-testid={`tab-${tab.value}`}>
+                <TabsTrigger
+                  key={tab.value}
+                  value={tab.value}
+                  data-testid={`tab-${tab.value}`}
+                >
                   <IconComp className="h-4 w-4 mr-1" />
                   {tab.label}
                   {tab.badge !== undefined && (
@@ -312,17 +516,25 @@ export default function ProjectDetailPage() {
                 <CardTitle>Scope of Work & Progress Tracking</CardTitle>
               </CardHeader>
               <CardContent>
-                <ScopeProgressTracker scopeItems={scopeItems} isLoading={scopeLoading} projectCode={projectCode} />
+                <ScopeProgressTracker
+                  scopeItems={scopeItems}
+                  isLoading={scopeLoading}
+                  projectCode={projectCode}
+                />
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="materials">
-            <MaterialBudgetTracker projectId={project.id} projectCode={projectCode} scopeItems={scopeItems} />
+            <MaterialBudgetTracker
+              projectId={project.id}
+              projectCode={projectCode}
+              scopeItems={scopeItems}
+            />
           </TabsContent>
 
           <TabsContent value="change-orders">
-            <ChangeOrdersTab 
+            <ChangeOrdersTab
               changeOrders={changeOrders}
               projectCode={projectCode}
               projectId={project.id}
@@ -333,7 +545,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="schedule">
-            <AiSchedulingPanel 
+            <AiSchedulingPanel
               projectId={project.id}
               projectCode={projectCode}
               projectName={project.name}
@@ -342,7 +554,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="delays">
-            <DelaysSection 
+            <DelaysSection
               projectId={project.id}
               projectCode={projectCode}
               userRole={user?.role || ""}
@@ -350,7 +562,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="inspections">
-            <InspectionsSection 
+            <InspectionsSection
               projectId={project.id}
               projectCode={projectCode}
               userRole={user?.role || ""}
@@ -358,14 +570,14 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="jobsite-ai">
-            <AiJobsiteAnalysis 
+            <AiJobsiteAnalysis
               projectId={project.id}
               projectName={project.name}
             />
           </TabsContent>
 
           <TabsContent value="email-communications">
-            <ProjectEmailTab 
+            <ProjectEmailTab
               projectId={project.id}
               projectCode={projectCode}
               userRole={user?.role || ""}
@@ -393,11 +605,19 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="time">
-            <TimeTab projectCode={projectCode} project={project} userRole={user?.role || ""} />
+            <TimeTab
+              projectCode={projectCode}
+              project={project}
+              userRole={user?.role || ""}
+            />
           </TabsContent>
 
           <TabsContent value="labor">
-            <LaborTab projectCode={projectCode} project={project} financials={financials} />
+            <LaborTab
+              projectCode={projectCode}
+              project={project}
+              financials={financials}
+            />
           </TabsContent>
 
           <TabsContent value="receipts">
@@ -417,28 +637,50 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="equipment">
-            <ProjectEquipmentTab projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            <ProjectEquipmentTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role || ""}
+            />
           </TabsContent>
 
           <TabsContent value="rfis">
-            <ProjectRFIs projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            <ProjectRFIs
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role || ""}
+            />
           </TabsContent>
 
           <TabsContent value="transmittals">
-            <ProjectTransmittals projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            <ProjectTransmittals
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role || ""}
+            />
           </TabsContent>
 
           <TabsContent value="submittals">
-            <ProjectSubmittals projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+            <ProjectSubmittals
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role || ""}
+            />
           </TabsContent>
 
           <TabsContent value="portal-access">
             <Tabs defaultValue="client-portal" className="space-y-4">
               <TabsList>
-                <TabsTrigger value="client-portal" data-testid="tab-portal-client">
+                <TabsTrigger
+                  value="client-portal"
+                  data-testid="tab-portal-client"
+                >
                   Client Portal
                 </TabsTrigger>
-                <TabsTrigger value="subcontractor-portal" data-testid="tab-portal-subcontractor">
+                <TabsTrigger
+                  value="subcontractor-portal"
+                  data-testid="tab-portal-subcontractor"
+                >
                   Subcontractor Portal
                 </TabsTrigger>
               </TabsList>
@@ -449,13 +691,23 @@ export default function ProjectDetailPage() {
                 />
               </TabsContent>
               <TabsContent value="subcontractor-portal">
-                <SubcontractorPortalManager projectId={project.id} projectCode={project.code} userRole={user?.role || ""} />
+                <SubcontractorPortalManager
+                  projectId={project.id}
+                  projectCode={project.code}
+                  userRole={user?.role || ""}
+                />
               </TabsContent>
             </Tabs>
           </TabsContent>
 
           <TabsContent value="budget">
-            <BudgetTab projectCode={projectCode} userRole={user?.role || ""} projectBudget={Number(project.budget || project.contractAmount || 0)} />
+            <BudgetTab
+              projectCode={projectCode}
+              userRole={user?.role || ""}
+              projectBudget={Number(
+                project.budget || project.contractAmount || 0,
+              )}
+            />
           </TabsContent>
 
           <TabsContent value="cost-ledger">
@@ -466,7 +718,6 @@ export default function ProjectDetailPage() {
             <ProfitabilityTab projectCode={project.code} />
           </TabsContent>
         </Tabs>
-
       </main>
     </div>
   );
