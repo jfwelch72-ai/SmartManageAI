@@ -564,7 +564,13 @@ const messagingSetup = (async () => {
       const fullMessage = { ...newMessage, sender };
 
       if (orgId) {
-        emitMessageNew(orgId, conversationId, fullMessage);
+        // Fetch participant IDs to scope SSE emission to conversation members only
+        const participants = await db
+          .select({ userId: conversationParticipants.userId })
+          .from(conversationParticipants)
+          .where(eq(conversationParticipants.conversationId, conversationId));
+        const participantUserIds = new Set(participants.map(p => p.userId));
+        emitMessageNew(orgId, conversationId, participantUserIds, fullMessage);
       }
 
       res.status(201).json(fullMessage);
@@ -689,7 +695,12 @@ const messagingSetup = (async () => {
       const voiceMsg = { ...newMessage, sender };
 
       if (orgId) {
-        emitMessageNew(orgId, conversationId, voiceMsg);
+        const participants = await db
+          .select({ userId: conversationParticipants.userId })
+          .from(conversationParticipants)
+          .where(eq(conversationParticipants.conversationId, conversationId));
+        const participantUserIds = new Set(participants.map(p => p.userId));
+        emitMessageNew(orgId, conversationId, participantUserIds, voiceMsg);
       }
 
       res.status(201).json(voiceMsg);
@@ -1019,7 +1030,7 @@ const messagingSetup = (async () => {
   // Rate-limited server-side: ignores requests fired within 2 s of the last one per user+conversation.
   const typingLastSent = new Map<string, number>();
 
-  router.post("/api/conversations/:id/typing", requireAuth, (req: AuthRequest, res) => {
+  router.post("/api/conversations/:id/typing", requireAuth, async (req: AuthRequest, res) => {
     const userId = req.user!.id;
     const orgId = req.user!.organizationId;
     const conversationId = req.params.id;
@@ -1038,13 +1049,26 @@ const messagingSetup = (async () => {
       return;
     }
 
+    // Verify the caller is a participant of this conversation before broadcasting
+    const isParticipant = await ensureParticipant(conversationId, userId);
+    if (!isParticipant) {
+      res.status(403).json({ error: "Not a participant of this conversation" });
+      return;
+    }
+
     typingLastSent.set(key, now);
 
-    // Fetch sender name from auth session (already loaded)
     const firstName = req.user!.firstName ?? "";
     const lastName = req.user!.lastName ?? "";
 
-    emitTyping(orgId, conversationId, userId, firstName, lastName);
+    // Fetch participant IDs to scope the typing event to conversation members only
+    const participants = await db
+      .select({ userId: conversationParticipants.userId })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
+    const participantUserIds = new Set(participants.map(p => p.userId));
+
+    emitTyping(orgId, conversationId, participantUserIds, userId, firstName, lastName);
     res.status(204).end();
   });
 })();
