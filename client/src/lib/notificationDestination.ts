@@ -96,6 +96,13 @@ export function getNotificationDestination(notification: {
     case "CRM_IDLE_OPPORTUNITY":
       return "/crm";
 
+    case "TASK_MENTIONED":
+      // Routes to /projects?taskId=<id> so the task detail panel opens in context
+      if (relatedEntityId) {
+        return `/projects?taskId=${relatedEntityId}`;
+      }
+      return "/projects";
+
     case "GENERAL":
     default:
       return null;
