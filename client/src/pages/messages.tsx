@@ -285,6 +285,9 @@ export function TeamMessagesContent() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   // Once we've loaded all history, don't let refetches re-enable the sentinel
   const hasLoadedAllRef = useRef(false);
+  // Tracks the latest scrollTop from a scroll event listener; starts at Infinity
+  // so the intersection observer cannot fire until the user has scrolled intentionally
+  const scrollTopRef = useRef<number>(Infinity);
 
   useEffect(() => {
     const checkMobile = () => setIsMobileView(window.innerWidth < 768);
@@ -318,6 +321,17 @@ export function TeamMessagesContent() {
     setHasMore(false);
     setIsLoadingMore(false);
     hasLoadedAllRef.current = false;
+    scrollTopRef.current = Infinity; // block observer until user scrolls
+  }, [selectedConversationId]);
+
+  // Sync scrollTopRef from native scroll events so the load-more guard stays current
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const onScroll = () => { scrollTopRef.current = container.scrollTop; };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+  // Re-attach when conversation changes (container DOM is stable but content changes)
   }, [selectedConversationId]);
 
   const { data: latestMessages = [], isLoading: messagesLoading } = useQuery<Message[]>({
@@ -439,13 +453,19 @@ export function TeamMessagesContent() {
   const loadMoreMessages = async () => {
     if (!selectedConversationId || isLoadingMore || !hasMore) return;
 
+    // Guard: only load earlier messages when the user has intentionally scrolled
+    // near the top. `scrollTopRef` starts at Infinity and is updated by the scroll
+    // listener, so this blocks the observer from auto-firing on initial page load.
+    if (scrollTopRef.current > 50) return;
+
     // Cursor = the oldest message we currently have
     const oldest = olderMessages.length > 0 ? olderMessages[0] : latestMessages[0];
     if (!oldest) return;
 
-    // Preserve scroll position: capture scrollHeight before prepend
+    // Capture both scrollHeight AND scrollTop before prepend for precise restoration
     const container = scrollContainerRef.current;
     const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
 
     setIsLoadingMore(true);
     try {
@@ -460,10 +480,11 @@ export function TeamMessagesContent() {
       setHasMore(data.hasMore);
       if (!data.hasMore) hasLoadedAllRef.current = true;
 
-      // Restore scroll position so the user's reading position doesn't jump
+      // Restore scroll position: add any new height above the previous top
+      // so the user stays visually at the same message they were reading.
       if (container) {
         requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight - prevScrollHeight;
+          container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
         });
       }
     } catch (err) {
