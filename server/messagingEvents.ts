@@ -53,6 +53,61 @@ export function emitMessageNew(
 }
 
 /**
+ * Emit a message edited event.
+ * Only delivered to participants of the conversation.
+ */
+export function emitMessageEdited(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  message: unknown,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_edited", { conversationId, message });
+    }
+  }
+}
+
+/**
+ * Emit a message deleted event.
+ * Only delivered to participants of the conversation.
+ */
+export function emitMessageDeleted(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  messageId: string,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_deleted", { conversationId, messageId });
+    }
+  }
+}
+
+/**
+ * Emit a reaction update event for a single message.
+ * Only delivered to participants of the conversation.
+ */
+export function emitMessageReaction(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  messageId: string,
+  reactions: unknown,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "message_reaction", { conversationId, messageId, reactions });
+    }
+  }
+}
+
+/**
  * Emit a typing indicator event.
  * Only delivered to other participants of the conversation (excludes the sender).
  * Caller must verify `senderUserId` is a participant before calling.

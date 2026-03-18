@@ -1447,11 +1447,24 @@ export const messages = pgTable("messages", {
   mentionedTaskIds: text("mentioned_task_ids").array(),
   isEdited: boolean("is_edited").notNull().default(false),
   editedAt: timestamp("edited_at"),
+  isDeleted: boolean("is_deleted").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   conversationIdx: index("messages_conversation_idx").on(table.conversationId),
   senderIdx: index("messages_sender_idx").on(table.senderId),
   createdAtIdx: index("messages_created_at_idx").on(table.createdAt),
+}));
+
+// Message Reactions (emoji reactions on messages)
+export const messageReactions = pgTable("message_reactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  messageId: varchar("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emoji: varchar("emoji", { length: 20 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  messageUserEmojiIdx: unique("message_reactions_unique").on(table.messageId, table.userId, table.emoji),
+  messageIdx: index("message_reactions_message_idx").on(table.messageId),
 }));
 
 // Message Read Receipts (for tracking who's read each message)
@@ -1480,6 +1493,10 @@ export type Message = typeof messages.$inferSelect;
 export const insertMessageReadReceiptSchema = createInsertSchema(messageReadReceipts).omit({ id: true, readAt: true });
 export type InsertMessageReadReceipt = z.infer<typeof insertMessageReadReceiptSchema>;
 export type MessageReadReceipt = typeof messageReadReceipts.$inferSelect;
+
+export const insertMessageReactionSchema = createInsertSchema(messageReactions).omit({ id: true, createdAt: true });
+export type InsertMessageReaction = z.infer<typeof insertMessageReactionSchema>;
+export type MessageReaction = typeof messageReactions.$inferSelect;
 
 // ============================================================
 // EQUIPMENT & TOOL MANAGEMENT SYSTEM

@@ -38,9 +38,16 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Edit2,
+  Trash2,
+  Smile,
+  Check,
 } from "lucide-react";
+
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+
+const CURATED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"] as const;
 
 interface User {
   id: string;
@@ -91,6 +98,12 @@ interface Conversation {
 
 type ChannelRow = Conversation & { _unjoined?: boolean };
 
+interface MessageReaction {
+  emoji: string;
+  count: number;
+  userIds: string[];
+}
+
 interface Message {
   id: string;
   conversationId: string;
@@ -103,6 +116,10 @@ interface Message {
   voiceUrl: string | null;
   voiceDurationSeconds: number | null;
   mentionedTaskIds: string[] | null;
+  isEdited: boolean;
+  editedAt: string | null;
+  isDeleted: boolean;
+  reactions: MessageReaction[];
   createdAt: string;
   sender: User;
 }
@@ -270,6 +287,12 @@ export function TeamMessagesContent() {
   const [mentionAnchor, setMentionAnchor] = useState<number>(0);
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Edit & delete state
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  // Emoji picker popover
+  const [popoverMsgId, setPopoverMsgId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -446,6 +469,48 @@ export function TeamMessagesContent() {
     onSuccess: (_data, channelId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       setSelectedConversationId(channelId);
+    },
+  });
+
+  const editMessageMutation = useMutation({
+    mutationFn: async ({ messageId, content }: { messageId: string; content: string }) => {
+      const response = await apiRequest("PATCH", `/api/messages/${messageId}`, { content });
+      return response.json();
+    },
+    onSuccess: (updatedMsg: Message) => {
+      queryClient.setQueryData<Message[]>(
+        ["/api/conversations", selectedConversationId, "messages"],
+        (prev = []) => prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg } : m)
+      );
+      setEditingMessageId(null);
+      setEditContent("");
+    },
+  });
+
+  const deleteMessageMutation = useMutation({
+    mutationFn: async (messageId: string) => {
+      const response = await apiRequest("DELETE", `/api/messages/${messageId}`);
+      return response.json();
+    },
+    onSuccess: (_data, messageId) => {
+      queryClient.setQueryData<Message[]>(
+        ["/api/conversations", selectedConversationId, "messages"],
+        (prev = []) => prev.map(m => m.id === messageId ? { ...m, isDeleted: true, content: "" } : m)
+      );
+    },
+  });
+
+  const reactMutation = useMutation({
+    mutationFn: async ({ messageId, emoji }: { messageId: string; emoji: string }) => {
+      const response = await apiRequest("POST", `/api/messages/${messageId}/reactions`, { emoji });
+      return response.json() as Promise<{ reactions: MessageReaction[] }>;
+    },
+    onSuccess: (data, { messageId }) => {
+      queryClient.setQueryData<Message[]>(
+        ["/api/conversations", selectedConversationId, "messages"],
+        (prev = []) => prev.map(m => m.id === messageId ? { ...m, reactions: data.reactions } : m)
+      );
+      setPopoverMsgId(null);
     },
   });
 
@@ -1186,10 +1251,17 @@ export function TeamMessagesContent() {
 
                           {messages.map((message) => {
                             const isOwn = message.senderId === user?.id;
+                            const currentParticipant = selectedConversation?.participants.find(p => p.userId === user?.id);
+                            const isAdmin = currentParticipant?.isAdmin === true;
+                            const isEditing = editingMessageId === message.id;
+                            const isPickerOpen = popoverMsgId === message.id;
+                            const canEdit = isOwn && !message.isDeleted && !message.voiceUrl;
+                            const canDelete = (isOwn || isAdmin) && !message.isDeleted;
+
                             return (
                               <div
                                 key={message.id}
-                                className={cn("flex gap-2.5", isOwn && "flex-row-reverse")}
+                                className={cn("flex gap-2.5 group relative", isOwn && "flex-row-reverse")}
                                 data-testid={`message-${message.id}`}
                               >
                                 <Avatar className="h-7 w-7 shrink-0 mt-0.5">
@@ -1206,28 +1278,173 @@ export function TeamMessagesContent() {
                                       {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
                                     </span>
                                   </div>
-                                  {/* Voice message */}
-                                  {message.voiceUrl ? (
-                                    <div className={cn(isOwn && "flex justify-end")}>
-                                      <VoicePlayer url={message.voiceUrl} durationSeconds={message.voiceDurationSeconds} />
+
+                                  {/* Deleted placeholder */}
+                                  {message.isDeleted ? (
+                                    <p className="text-xs italic text-muted-foreground px-1">This message was deleted.</p>
+                                  ) : isEditing ? (
+                                    /* ── Inline edit mode ── */
+                                    <div className="flex flex-col gap-1 min-w-[180px]">
+                                      <Textarea
+                                        value={editContent}
+                                        onChange={e => setEditContent(e.target.value)}
+                                        className="resize-none text-sm min-h-[60px]"
+                                        autoFocus
+                                        onKeyDown={e => {
+                                          if (e.key === "Enter" && !e.shiftKey) {
+                                            e.preventDefault();
+                                            if (editContent.trim()) editMessageMutation.mutate({ messageId: message.id, content: editContent });
+                                          }
+                                          if (e.key === "Escape") { setEditingMessageId(null); setEditContent(""); }
+                                        }}
+                                        data-testid={`input-edit-message-${message.id}`}
+                                      />
+                                      <div className="flex gap-1 justify-end">
+                                        <Button size="sm" variant="ghost" className="h-6 text-xs px-2"
+                                          onClick={() => { setEditingMessageId(null); setEditContent(""); }}
+                                          data-testid={`button-cancel-edit-${message.id}`}
+                                        >
+                                          Cancel
+                                        </Button>
+                                        <Button size="sm" className="h-6 text-xs px-2"
+                                          onClick={() => { if (editContent.trim()) editMessageMutation.mutate({ messageId: message.id, content: editContent }); }}
+                                          disabled={!editContent.trim() || editMessageMutation.isPending}
+                                          data-testid={`button-save-edit-${message.id}`}
+                                        >
+                                          {editMessageMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                          Save
+                                        </Button>
+                                      </div>
                                     </div>
                                   ) : (
-                                    <div className={cn(
-                                      "rounded-2xl px-3 py-2 text-sm inline-block text-left",
-                                      isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
-                                    )}>
-                                      {renderContent(message.content)}
-                                      {message.attachmentUrl && (
-                                        <AttachmentRenderer
-                                          url={message.attachmentUrl}
-                                          name={message.attachmentName}
-                                          type={message.attachmentType}
-                                          size={message.attachmentSize}
-                                        />
+                                    /* ── Normal bubble ── */
+                                    <>
+                                      {message.voiceUrl ? (
+                                        <div className={cn(isOwn && "flex justify-end")}>
+                                          <VoicePlayer url={message.voiceUrl} durationSeconds={message.voiceDurationSeconds} />
+                                        </div>
+                                      ) : (
+                                        <div className={cn(
+                                          "rounded-2xl px-3 py-2 text-sm inline-block text-left",
+                                          isOwn ? "bg-primary text-primary-foreground" : "bg-muted"
+                                        )}>
+                                          {renderContent(message.content)}
+                                          {message.attachmentUrl && (
+                                            <AttachmentRenderer
+                                              url={message.attachmentUrl}
+                                              name={message.attachmentName}
+                                              type={message.attachmentType}
+                                              size={message.attachmentSize}
+                                            />
+                                          )}
+                                        </div>
                                       )}
+                                      {/* Edited label */}
+                                      {message.isEdited && (
+                                        <p className="text-[10px] text-muted-foreground mt-0.5 px-1">(edited)</p>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {/* ── Reactions row ── */}
+                                  {(message.reactions?.length ?? 0) > 0 && (
+                                    <div className={cn("flex flex-wrap gap-1 mt-1", isOwn && "justify-end")}>
+                                      {message.reactions.map(r => {
+                                        const iMine = r.userIds.includes(user?.id ?? "");
+                                        return (
+                                          <button
+                                            key={r.emoji}
+                                            onClick={() => reactMutation.mutate({ messageId: message.id, emoji: r.emoji })}
+                                            className={cn(
+                                              "inline-flex items-center gap-0.5 text-xs rounded-full px-1.5 py-0.5 border transition-colors",
+                                              iMine ? "bg-primary/10 border-primary/40 text-primary" : "bg-muted border-transparent hover:border-border"
+                                            )}
+                                            data-testid={`button-reaction-${message.id}-${r.emoji}`}
+                                          >
+                                            <span>{r.emoji}</span>
+                                            <span className="tabular-nums">{r.count}</span>
+                                          </button>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
+
+                                {/* ── Hover action toolbar ── */}
+                                {!isEditing && (
+                                  <div className={cn(
+                                    "self-start mt-1 shrink-0 relative",
+                                    isOwn ? "order-first" : ""
+                                  )}>
+                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
+                                      {/* React button */}
+                                      {!message.isDeleted && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              onClick={() => setPopoverMsgId(prev => prev === message.id ? null : message.id)}
+                                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                              data-testid={`button-react-${message.id}`}
+                                            >
+                                              <Smile className="w-3.5 h-3.5" />
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>React</TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                      {/* Edit button */}
+                                      {canEdit && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              onClick={() => { setEditingMessageId(message.id); setEditContent(message.content); setPopoverMsgId(null); }}
+                                              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                                              data-testid={`button-edit-${message.id}`}
+                                            >
+                                              <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Edit</TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                      {/* Delete button */}
+                                      {canDelete && (
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button
+                                              onClick={() => deleteMessageMutation.mutate(message.id)}
+                                              className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                                              data-testid={`button-delete-${message.id}`}
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Delete</TooltipContent>
+                                        </Tooltip>
+                                      )}
+                                    </div>
+                                    {/* Emoji picker popover */}
+                                    {isPickerOpen && (
+                                      <div className={cn(
+                                        "absolute top-full mt-1 bg-popover border rounded-xl shadow-lg p-1.5 flex gap-1 z-50",
+                                        isOwn ? "right-0" : "left-0"
+                                      )}
+                                        data-testid={`emoji-picker-${message.id}`}
+                                      >
+                                        {CURATED_EMOJIS.map(emoji => (
+                                          <button
+                                            key={emoji}
+                                            onClick={() => reactMutation.mutate({ messageId: message.id, emoji })}
+                                            className="text-xl hover:scale-125 transition-transform p-0.5 rounded"
+                                            data-testid={`button-emoji-${message.id}-${emoji}`}
+                                          >
+                                            {emoji}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}

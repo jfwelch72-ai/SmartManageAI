@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
 
+export interface MessageReaction {
+  emoji: string;
+  count: number;
+  userIds: string[];
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -13,6 +19,10 @@ export interface Message {
   voiceUrl: string | null;
   voiceDurationSeconds: number | null;
   mentionedTaskIds: string[] | null;
+  isEdited: boolean;
+  editedAt: string | null;
+  isDeleted: boolean;
+  reactions: MessageReaction[];
   createdAt: string;
   sender: {
     id: string;
@@ -32,6 +42,22 @@ interface TypingEvent {
 interface MessageNewEvent {
   conversationId: string;
   message: Message;
+}
+
+interface MessageEditedEvent {
+  conversationId: string;
+  message: Message;
+}
+
+interface MessageDeletedEvent {
+  conversationId: string;
+  messageId: string;
+}
+
+interface MessageReactionEvent {
+  conversationId: string;
+  messageId: string;
+  reactions: MessageReaction[];
 }
 
 /**
@@ -74,13 +100,55 @@ export function useMessagingEvents(activeConversationId: string | null): {
             ["/api/conversations", convId, "messages"],
             (prev = []) => {
               const exists = prev.some(m => m.id === message.id);
-              return exists ? prev : [...prev, message];
+              return exists ? prev : [...prev, { ...message, reactions: message.reactions ?? [] }];
             }
           );
         }
 
         // Refresh sidebar conversation list (unread counts, last message preview)
         queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      } catch {
+        // malformed event — ignore
+      }
+    };
+
+    const handleMessageEdited = (e: MessageEvent) => {
+      try {
+        const { conversationId: convId, message } = JSON.parse(e.data) as MessageEditedEvent;
+        if (convId !== activeConvIdRef.current) return;
+
+        queryClient.setQueryData<Message[]>(
+          ["/api/conversations", convId, "messages"],
+          (prev = []) => prev.map(m => m.id === message.id ? { ...m, ...message, reactions: m.reactions ?? [] } : m)
+        );
+      } catch {
+        // malformed event — ignore
+      }
+    };
+
+    const handleMessageDeleted = (e: MessageEvent) => {
+      try {
+        const { conversationId: convId, messageId } = JSON.parse(e.data) as MessageDeletedEvent;
+        if (convId !== activeConvIdRef.current) return;
+
+        queryClient.setQueryData<Message[]>(
+          ["/api/conversations", convId, "messages"],
+          (prev = []) => prev.map(m => m.id === messageId ? { ...m, isDeleted: true, content: "" } : m)
+        );
+      } catch {
+        // malformed event — ignore
+      }
+    };
+
+    const handleMessageReaction = (e: MessageEvent) => {
+      try {
+        const { conversationId: convId, messageId, reactions } = JSON.parse(e.data) as MessageReactionEvent;
+        if (convId !== activeConvIdRef.current) return;
+
+        queryClient.setQueryData<Message[]>(
+          ["/api/conversations", convId, "messages"],
+          (prev = []) => prev.map(m => m.id === messageId ? { ...m, reactions } : m)
+        );
       } catch {
         // malformed event — ignore
       }
@@ -113,12 +181,18 @@ export function useMessagingEvents(activeConversationId: string | null): {
 
     es.addEventListener("connected", handleConnected);
     es.addEventListener("message_new", handleMessageNew);
+    es.addEventListener("message_edited", handleMessageEdited);
+    es.addEventListener("message_deleted", handleMessageDeleted);
+    es.addEventListener("message_reaction", handleMessageReaction);
     es.addEventListener("user_typing", handleTyping);
     es.onerror = () => setSseLive(false);
 
     return () => {
       es.removeEventListener("connected", handleConnected);
       es.removeEventListener("message_new", handleMessageNew);
+      es.removeEventListener("message_edited", handleMessageEdited);
+      es.removeEventListener("message_deleted", handleMessageDeleted);
+      es.removeEventListener("message_reaction", handleMessageReaction);
       es.removeEventListener("user_typing", handleTyping);
       es.close();
       setSseLive(false);

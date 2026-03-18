@@ -8,7 +8,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
-import { registerSseClient, emitMessageNew, emitTyping } from "./messagingEvents";
+import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping } from "./messagingEvents";
 
 const router = Router();
 
@@ -22,9 +22,11 @@ const messagingSetup = (async () => {
     conversations,
     conversationParticipants,
     messages,
+    messageReactions,
     messageReadReceipts,
     organizations,
     tasks,
+    notifications,
   } = await import("@shared/schema");
 
   // ── Helper: ensure user is a participant (or auto-join for org channels) ──
@@ -545,7 +547,15 @@ const messagingSetup = (async () => {
         .reverse()
         .map(m => ({ ...m.message, sender: m.sender }));
 
-      res.json({ messages: messagesWithSenders, hasMore });
+      // Attach reactions to each message
+      const messageIds = messagesWithSenders.map(m => m.id);
+      const reactionMap = await loadReactions(messageIds);
+      const messagesWithReactions = messagesWithSenders.map(m => ({
+        ...m,
+        reactions: reactionMap.get(m.id) ?? [],
+      }));
+
+      res.json({ messages: messagesWithReactions, hasMore });
     } catch (error) {
       console.error("Get messages error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -620,6 +630,29 @@ const messagingSetup = (async () => {
           .where(eq(conversationParticipants.conversationId, conversationId));
         const participantUserIds = new Set(participants.map(p => p.userId));
         emitMessageNew(orgId, conversationId, participantUserIds, fullMessage);
+      }
+
+      // ── Mention notifications — notify each task's assigned user ──
+      if (Array.isArray(mentionedTaskIds) && mentionedTaskIds.length > 0) {
+        const mentionedTasks = await db
+          .select({ id: tasks.id, assignedToId: tasks.assignedToId, title: tasks.title, projectId: tasks.projectId })
+          .from(tasks)
+          .where(inArray(tasks.id, mentionedTaskIds));
+
+        const notifiedUsers = new Set<string>();
+        for (const t of mentionedTasks) {
+          if (t.assignedToId && t.assignedToId !== userId && !notifiedUsers.has(t.assignedToId)) {
+            notifiedUsers.add(t.assignedToId);
+            await db.insert(notifications).values({
+              userId: t.assignedToId,
+              type: "TASK_MENTIONED",
+              title: "You were mentioned",
+              message: `Someone referenced your task "${t.title}" in a message.`,
+              relatedEntityId: t.id,
+              relatedEntityType: "task",
+            });
+          }
+        }
       }
 
       res.status(201).json(fullMessage);
@@ -1073,6 +1106,176 @@ const messagingSetup = (async () => {
       clearInterval(pingInterval);
       unregister();
     });
+  });
+
+  // ── Helper: load reactions for an array of message IDs ──
+  // Returns a map: messageId → { emoji, count, userIds }[]
+  async function loadReactions(messageIds: string[]): Promise<Map<string, { emoji: string; count: number; userIds: string[] }[]>> {
+    if (messageIds.length === 0) return new Map();
+    const rows = await db
+      .select({ messageId: messageReactions.messageId, userId: messageReactions.userId, emoji: messageReactions.emoji })
+      .from(messageReactions)
+      .where(inArray(messageReactions.messageId, messageIds));
+
+    const grouped = new Map<string, Map<string, string[]>>();
+    for (const row of rows) {
+      if (!grouped.has(row.messageId)) grouped.set(row.messageId, new Map());
+      const emojiMap = grouped.get(row.messageId)!;
+      if (!emojiMap.has(row.emoji)) emojiMap.set(row.emoji, []);
+      emojiMap.get(row.emoji)!.push(row.userId);
+    }
+
+    const result = new Map<string, { emoji: string; count: number; userIds: string[] }[]>();
+    for (const [msgId, emojiMap] of grouped) {
+      const reactions = Array.from(emojiMap.entries()).map(([emoji, userIds]) => ({ emoji, count: userIds.length, userIds }));
+      result.set(msgId, reactions);
+    }
+    return result;
+  }
+
+  // ── Helper: fetch participant IDs for SSE fan-out ──
+  async function fetchParticipantIds(conversationId: string): Promise<Set<string>> {
+    const rows = await db
+      .select({ userId: conversationParticipants.userId })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
+    return new Set(rows.map(r => r.userId));
+  }
+
+  // ── EDIT MESSAGE — sender or channel admin only ──
+  router.patch("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      const { msgId } = req.params;
+      const { content } = req.body;
+
+      if (!content?.trim()) return res.status(400).json({ error: "Content cannot be empty" });
+
+      const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+      if (msg.isDeleted) return res.status(400).json({ error: "Cannot edit a deleted message" });
+      if (msg.voiceUrl) return res.status(400).json({ error: "Voice messages cannot be edited" });
+
+      // Only sender (or channel admin) may edit
+      if (msg.senderId !== userId) {
+        const [admin] = await db
+          .select()
+          .from(conversationParticipants)
+          .where(and(eq(conversationParticipants.conversationId, msg.conversationId), eq(conversationParticipants.userId, userId), eq(conversationParticipants.isAdmin, true)))
+          .limit(1);
+        if (!admin) return res.status(403).json({ error: "Only the sender or a channel admin can edit messages" });
+      }
+
+      const [updated] = await db
+        .update(messages)
+        .set({ content: sanitizeText(content), isEdited: true, editedAt: new Date() })
+        .where(eq(messages.id, msgId))
+        .returning();
+
+      const [sender] = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+        .from(users).where(eq(users.id, updated.senderId)).limit(1);
+
+      const updatedMsg = { ...updated, sender, reactions: [] };
+
+      if (orgId) {
+        const participantUserIds = await fetchParticipantIds(msg.conversationId);
+        emitMessageEdited(orgId, msg.conversationId, participantUserIds, updatedMsg);
+      }
+
+      res.json(updatedMsg);
+    } catch (error) {
+      console.error("Edit message error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── DELETE MESSAGE (soft delete) — sender or channel admin only ──
+  router.delete("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      const { msgId } = req.params;
+
+      const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+      if (msg.isDeleted) return res.status(400).json({ error: "Message already deleted" });
+
+      // Only sender (or channel admin) may delete
+      if (msg.senderId !== userId) {
+        const [admin] = await db
+          .select()
+          .from(conversationParticipants)
+          .where(and(eq(conversationParticipants.conversationId, msg.conversationId), eq(conversationParticipants.userId, userId), eq(conversationParticipants.isAdmin, true)))
+          .limit(1);
+        if (!admin) return res.status(403).json({ error: "Only the sender or a channel admin can delete messages" });
+      }
+
+      await db.update(messages).set({ isDeleted: true, content: "" }).where(eq(messages.id, msgId));
+
+      if (orgId) {
+        const participantUserIds = await fetchParticipantIds(msg.conversationId);
+        emitMessageDeleted(orgId, msg.conversationId, participantUserIds, msgId);
+      }
+
+      res.json({ success: true, messageId: msgId });
+    } catch (error) {
+      console.error("Delete message error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── TOGGLE REACTION — POST /api/messages/:msgId/reactions { emoji } ──
+  // Adds the reaction if absent, removes it if already present (toggle).
+  // Returns updated reaction counts for the message.
+  router.post("/api/messages/:msgId/reactions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      const { msgId } = req.params;
+      const { emoji } = req.body;
+
+      const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"];
+      if (!emoji || !ALLOWED_EMOJIS.includes(emoji)) {
+        return res.status(400).json({ error: "Invalid emoji. Allowed: " + ALLOWED_EMOJIS.join(" ") });
+      }
+
+      const [msg] = await db.select({ id: messages.id, conversationId: messages.conversationId, isDeleted: messages.isDeleted })
+        .from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+      if (msg.isDeleted) return res.status(400).json({ error: "Cannot react to a deleted message" });
+
+      // Verify caller is a participant
+      const isParticipant = await ensureParticipant(msg.conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      // Toggle: check if reaction exists
+      const [existing] = await db
+        .select()
+        .from(messageReactions)
+        .where(and(eq(messageReactions.messageId, msgId), eq(messageReactions.userId, userId), eq(messageReactions.emoji, emoji)))
+        .limit(1);
+
+      if (existing) {
+        await db.delete(messageReactions).where(and(eq(messageReactions.messageId, msgId), eq(messageReactions.userId, userId), eq(messageReactions.emoji, emoji)));
+      } else {
+        await db.insert(messageReactions).values({ messageId: msgId, userId, emoji }).onConflictDoNothing();
+      }
+
+      const reactionMap = await loadReactions([msgId]);
+      const reactions = reactionMap.get(msgId) ?? [];
+
+      if (orgId) {
+        const participantUserIds = await fetchParticipantIds(msg.conversationId);
+        emitMessageReaction(orgId, msg.conversationId, participantUserIds, msgId, reactions);
+      }
+
+      res.json({ reactions });
+    } catch (error) {
+      console.error("Toggle reaction error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
   });
 
   // ── TYPING INDICATOR — clients POST here when the user is typing ──
