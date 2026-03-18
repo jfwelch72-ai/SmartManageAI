@@ -10,7 +10,7 @@ import { ALL_DOMAIN_EVENT_TYPES } from "./eventTypes";
 import type { DomainEvent, DomainEventType } from "./eventTypes";
 import { registerNotificationListener } from "./listeners/notificationListener";
 import { registerOutboxListener } from "./listeners/outboxListener";
-import { logError, logInfo, logWarn } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 
 let initialized = false;
 
@@ -21,10 +21,10 @@ export function initializeEventBus(): void {
   registerNotificationListener();
   registerOutboxListener();
 
-  // Startup health check: warn if any event type has no listeners registered.
+  // Startup health check: error if any event type has no listeners registered.
   for (const type of ALL_DOMAIN_EVENT_TYPES) {
     if (eventBus.getListenerCount(type) === 0) {
-      logWarn(`EventBus: no listeners registered for event type "${type}"`, {
+      logError(`EventBus: no listeners registered for event type "${type}"`, {
         eventType: type,
       });
     }

@@ -51,79 +51,83 @@ class TypedEventBus {
 
   /**
    * Internal: dispatch an event to all registered listeners, then mark the
-   * persisted domain_events row as PROCESSED (or log the error).
+   * persisted domain_events row PROCESSED when all listeners succeed, or
+   * FAILED (with a reason) if any listener rejects.
    */
   private async dispatch(rowId: string, event: DomainEvent): Promise<void> {
     const handlers = this.listeners.get(event.type) ?? [];
 
-    await Promise.allSettled(
-      handlers.map(handler =>
-        Promise.resolve()
-          .then(() => handler(event))
-          .catch(err => {
-            logError(`EventBus: listener error for "${event.type}"`, {
-              error: String(err),
-              eventType: event.type,
-              eventId: rowId,
-            });
-          })
-      )
+    // Run all handlers concurrently; collect results without swallowing rejections.
+    const results = await Promise.allSettled(
+      handlers.map(handler => Promise.resolve().then(() => handler(event)))
     );
 
-    await db
-      .update(domainEvents)
-      .set({ status: "PROCESSED", processedAt: new Date() })
-      .where(eq(domainEvents.id, rowId))
-      .catch(err =>
-        logError("EventBus: failed to mark event PROCESSED", {
-          error: String(err),
+    const failures = results.filter(
+      (r): r is PromiseRejectedResult => r.status === "rejected"
+    );
+
+    if (failures.length > 0) {
+      for (const f of failures) {
+        logError(`EventBus: listener error for "${event.type}"`, {
+          error: String(f.reason),
+          eventType: event.type,
           eventId: rowId,
-        })
-      );
+        });
+      }
+
+      const failureReason =
+        `${failures.length}/${results.length} listener(s) failed: ` +
+        failures.map(f => String(f.reason)).join("; ");
+
+      await db
+        .update(domainEvents)
+        .set({ status: "FAILED", failureReason })
+        .where(eq(domainEvents.id, rowId))
+        .catch(err =>
+          logError("EventBus: failed to mark event FAILED", {
+            error: String(err),
+            eventId: rowId,
+          })
+        );
+    } else {
+      await db
+        .update(domainEvents)
+        .set({ status: "PROCESSED", processedAt: new Date() })
+        .where(eq(domainEvents.id, rowId))
+        .catch(err =>
+          logError("EventBus: failed to mark event PROCESSED", {
+            error: String(err),
+            eventId: rowId,
+          })
+        );
+    }
   }
 
   /**
    * Persist the event to domain_events (PENDING) then fire-and-forget dispatch.
-   * Routes should `await` this so that durability is guaranteed before the
-   * HTTP response is sent, while listener execution remains non-blocking.
+   *
+   * Routes should `await` this so that durability is guaranteed before the HTTP
+   * response is sent, while listener execution remains non-blocking.
+   *
+   * If the DB insert fails the error propagates to the caller — durability is
+   * enforced strictly; no event is dispatched without a persisted row.
    */
   async emit(event: DomainEvent): Promise<void> {
-    let rowId: string;
+    // Persistence is mandatory: if this throws, the error propagates to the route.
+    const [row] = await db
+      .insert(domainEvents)
+      .values({
+        type: event.type,
+        version: event.version,
+        orgId: event.orgId,
+        actorId: event.actorId,
+        payload: event.payload as Record<string, unknown>,
+        status: "PENDING",
+      })
+      .returning({ id: domainEvents.id });
 
-    try {
-      const [row] = await db
-        .insert(domainEvents)
-        .values({
-          type: event.type,
-          version: event.version,
-          orgId: event.orgId,
-          actorId: event.actorId,
-          payload: event.payload as Record<string, unknown>,
-          status: "PENDING",
-        })
-        .returning({ id: domainEvents.id });
-      rowId = row.id;
-    } catch (err) {
-      // Persistence failed — still dispatch in-process so the app continues to function.
-      logError("EventBus: failed to persist domain event; dispatching in-process only", {
-        error: String(err),
-        eventType: event.type,
-      });
-      setImmediate(() => {
-        const handlers = this.listeners.get(event.type) ?? [];
-        handlers.forEach(handler =>
-          Promise.resolve()
-            .then(() => handler(event))
-            .catch(e =>
-              logError(`EventBus: listener error for "${event.type}"`, { error: String(e) })
-            )
-        );
-      });
-      return;
-    }
-
-    // Dispatch fire-and-forget; dispatch() marks the row PROCESSED when done.
-    setImmediate(() => { void this.dispatch(rowId, event); });
+    // Dispatch fire-and-forget; dispatch() marks the row PROCESSED or FAILED when done.
+    setImmediate(() => { void this.dispatch(row.id, event); });
   }
 
   /**
