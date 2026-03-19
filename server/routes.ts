@@ -183,6 +183,7 @@ import reportRoutes from "./reportRoutes";
 import safetyTrainingRoutes from "./safetyTrainingRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
+import hiringRoutes from "./hiringRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -366,6 +367,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(safetyTrainingRoutes);
   app.use(profitabilityAlertRoutes);
   app.use(costLedgerRoutes);
+
+  // Register Hiring Module routes
+  app.use("/api/hiring", hiringRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

@@ -540,3 +540,15 @@ export const deductionCalculationMethodEnum = pgEnum("deduction_calculation_meth
 ]);
 
 // Table: data_processing_records (ROPA - Record of Processing Activities)
+
+// ============================================
+// HIRING MODULE ENUMS
+// ============================================
+export const hiringJobStatusEnum = pgEnum("hiring_job_status", ["DRAFT", "PUBLISHED", "PAUSED", "ARCHIVED"]);
+export const hiringCandidateStageEnum = pgEnum("hiring_candidate_stage", ["APPLIED", "SCREENED", "REVIEW", "PHONE_SCREEN", "INTERVIEW", "FINAL_REVIEW", "OFFER", "HIRED", "REJECTED", "ARCHIVED"]);
+export const hiringEmploymentTypeEnum = pgEnum("hiring_employment_type", ["FULL_TIME", "PART_TIME", "SEASONAL", "SUBCONTRACTOR", "INTERN", "TEMPORARY"]);
+export const hiringCompensationTypeEnum = pgEnum("hiring_compensation_type", ["SALARY", "HOURLY", "PREVAILING_WAGE", "BONUS_ELIGIBLE"]);
+export const hiringInterviewStatusEnum = pgEnum("hiring_interview_status", ["SCHEDULED", "COMPLETED", "CANCELLED", "RESCHEDULED"]);
+export const hiringSyncStatusEnum = pgEnum("hiring_sync_status", ["PENDING", "RUNNING", "COMPLETED", "FAILED"]);
+export const atsProviderEnum = pgEnum("ats_provider", ["WORKABLE", "GREENHOUSE", "LEVER"]);
+export const hiringActivityTypeEnum = pgEnum("hiring_activity_type", ["JOB_CREATED", "JOB_PUBLISHED", "JOB_ARCHIVED", "CANDIDATE_APPLIED", "CANDIDATE_STAGE_CHANGED", "CANDIDATE_HIRED", "CANDIDATE_REJECTED", "NOTE_ADDED", "INTERVIEW_SCHEDULED", "INTEGRATION_CONNECTED", "AI_REVIEW_GENERATED"]);
