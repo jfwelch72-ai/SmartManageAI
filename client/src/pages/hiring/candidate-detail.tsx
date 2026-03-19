@@ -6,7 +6,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -17,8 +16,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Mail, Phone, Link2, FileText, ChevronRight, Star, MessageSquare } from "lucide-react";
-import type { HiringCandidate, HiringActivityLog } from "@/types/hiring";
+import { ArrowLeft, Mail, Phone, FileText, ChevronRight, Star, MessageSquare } from "lucide-react";
+import type { HiringCandidate, HiringActivityLog, HiringCandidateNote } from "@/types/hiring";
 import { format, formatDistanceToNow } from "date-fns";
 
 const STAGE_OPTIONS = [
@@ -74,6 +73,11 @@ export default function CandidateDetailPage() {
     enabled: !!candidateId,
   });
 
+  const { data: notes = [] } = useQuery<HiringCandidateNote[]>({
+    queryKey: ["/api/hiring/candidates", candidateId, "notes"],
+    enabled: !!candidateId,
+  });
+
   const stageMutation = useMutation({
     mutationFn: async (stage: string) => {
       const res = await apiRequest("PUT", `/api/hiring/candidates/${candidateId}/stage`, { stage });
@@ -89,12 +93,12 @@ export default function CandidateDetailPage() {
   });
 
   const noteMutation = useMutation({
-    mutationFn: async (note: string) => {
-      const res = await apiRequest("POST", `/api/hiring/candidates/${candidateId}/notes`, { note });
+    mutationFn: async (body: string) => {
+      const res = await apiRequest("POST", `/api/hiring/candidates/${candidateId}/notes`, { body });
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hiring/candidates", candidateId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/candidates", candidateId, "notes"] });
       toast({ title: "Note added" });
       setNewNote("");
     },
@@ -108,6 +112,11 @@ export default function CandidateDetailPage() {
     } else {
       stageMutation.mutate(stage);
     }
+  }
+
+  function parseApplicationAnswers(json: string | null): Record<string, unknown> | null {
+    if (!json) return null;
+    try { return JSON.parse(json); } catch { return null; }
   }
 
   if (isLoading) {
@@ -133,6 +142,11 @@ export default function CandidateDetailPage() {
     );
   }
 
+  const applicationAnswers = parseApplicationAnswers(candidate.applicationAnswersJson);
+  const stageHistory = activity.filter((a) =>
+    a.activityType === "CANDIDATE_STAGE_CHANGED" || a.activityType === "CANDIDATE_APPLIED"
+  );
+
   return (
     <div className="p-6 space-y-5">
       <div className="flex items-start justify-between gap-4">
@@ -146,14 +160,14 @@ export default function CandidateDetailPage() {
             </Avatar>
             <div>
               <h1 className="text-2xl font-bold" data-testid="heading-candidate-name">{candidate.fullName}</h1>
-              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[candidate.stage] ?? ""}`}>
-                {STAGE_LABELS[candidate.stage] ?? candidate.stage}
+              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[candidate.currentStage] ?? ""}`}>
+                {STAGE_LABELS[candidate.currentStage] ?? candidate.currentStage}
               </span>
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Select value={candidate.stage} onValueChange={handleStageChange}>
+          <Select value={candidate.currentStage} onValueChange={handleStageChange}>
             <SelectTrigger className="w-48" data-testid="select-candidate-stage">
               <SelectValue />
             </SelectTrigger>
@@ -184,10 +198,9 @@ export default function CandidateDetailPage() {
                   <a href={`tel:${candidate.phone}`} className="hover:underline" data-testid="link-candidate-phone">{candidate.phone}</a>
                 </div>
               )}
-              {candidate.linkedinUrl && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Link2 className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <a href={candidate.linkedinUrl} target="_blank" rel="noopener noreferrer" className="hover:underline truncate" data-testid="link-candidate-linkedin">LinkedIn</a>
+              {(candidate.city || candidate.state) && (
+                <div className="text-sm text-muted-foreground">
+                  {[candidate.city, candidate.state].filter(Boolean).join(", ")}
                 </div>
               )}
               <Separator />
@@ -216,11 +229,11 @@ export default function CandidateDetailPage() {
           <Card>
             <CardHeader><CardTitle className="text-base">Stage History</CardTitle></CardHeader>
             <CardContent>
-              {activity.length === 0 ? (
+              {stageHistory.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No stage history yet</p>
               ) : (
                 <ol className="relative border-l border-border ml-2 space-y-4">
-                  {activity.filter((a) => a.activityType === "CANDIDATE_STAGE_CHANGED" || a.activityType === "CANDIDATE_APPLIED").map((log) => {
+                  {stageHistory.map((log) => {
                     const meta = log.metadata as { toStage?: string } | null;
                     return (
                       <li key={log.id} className="ml-4" data-testid={`stage-history-${log.id}`}>
@@ -241,8 +254,15 @@ export default function CandidateDetailPage() {
           <Card>
             <CardHeader><CardTitle className="text-base flex items-center gap-2"><MessageSquare className="w-4 h-4" />Notes</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              {candidate.notes && (
-                <p className="text-sm whitespace-pre-line border-b pb-3">{candidate.notes}</p>
+              {notes.length > 0 && (
+                <div className="space-y-2 border-b pb-3">
+                  {notes.map((note) => (
+                    <div key={note.id} className="text-sm border rounded p-2">
+                      <p className="whitespace-pre-line">{note.body}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{note.authorName} · {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</p>
+                    </div>
+                  ))}
+                </div>
               )}
               <Textarea
                 placeholder="Add a note..."
@@ -265,7 +285,7 @@ export default function CandidateDetailPage() {
 
         {/* Right column */}
         <div className="lg:col-span-2 space-y-5">
-          {candidate.resumeUrl && (
+          {candidate.resumeStorageKey && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -273,31 +293,33 @@ export default function CandidateDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {candidate.resumeUrl.match(/\.(pdf)$/i) ? (
-                  <object data={candidate.resumeUrl} type="application/pdf" className="w-full h-96 rounded border">
-                    <a href={candidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline" data-testid="link-resume-download">
-                      Download Resume
-                    </a>
-                  </object>
-                ) : (
-                  <a href={candidate.resumeUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1" data-testid="link-resume-download">
-                    <FileText className="w-4 h-4" />View Resume
-                  </a>
-                )}
+                <p className="text-sm text-muted-foreground">
+                  Resume file on record.{" "}
+                  <span className="text-xs font-mono bg-muted px-1 rounded">{candidate.resumeStorageKey}</span>
+                </p>
               </CardContent>
             </Card>
           )}
 
-          {candidate.applicationAnswers && Object.keys(candidate.applicationAnswers).length > 0 && (
+          {applicationAnswers && Object.keys(applicationAnswers).length > 0 && (
             <Card>
               <CardHeader><CardTitle className="text-base">Application Answers</CardTitle></CardHeader>
               <CardContent className="space-y-3">
-                {Object.entries(candidate.applicationAnswers).map(([q, a]) => (
+                {Object.entries(applicationAnswers).map(([q, a]) => (
                   <div key={q} className="border-b pb-3 last:border-0 last:pb-0">
                     <p className="text-sm font-medium text-muted-foreground">{q}</p>
                     <p className="text-sm mt-1">{String(a)}</p>
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {candidate.aiRecommendation && (
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500" />AI Recommendation</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-sm whitespace-pre-line">{candidate.aiRecommendation}</p>
               </CardContent>
             </Card>
           )}

@@ -779,6 +779,32 @@ router.delete(
 // CANDIDATE NOTES
 // ============================================
 
+router.get(
+  "/candidates/:id/notes",
+  requireAuth,
+  requireRole(...HIRING_REVIEW),
+  async (req: AuthRequest, res) => {
+    try {
+      const [candidate] = await db
+        .select({ id: hiringCandidates.id })
+        .from(hiringCandidates)
+        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+        .limit(1);
+      if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+
+      const notes = await db
+        .select()
+        .from(hiringCandidateNotes)
+        .where(and(eq(hiringCandidateNotes.candidateId, req.params.id), eq(hiringCandidateNotes.organizationId, orgId(req))))
+        .orderBy(desc(hiringCandidateNotes.createdAt));
+      res.json(notes);
+    } catch (err) {
+      logError("GET /api/hiring/candidates/:id/notes", { error: String(err) });
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  },
+);
+
 router.post(
   "/candidates/:id/notes",
   requireAuth,

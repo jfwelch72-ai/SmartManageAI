@@ -30,7 +30,7 @@ const SYNC_STATUS_CONFIG: Record<string, { label: string; icon: React.ComponentT
 };
 
 interface ATSConnectForm {
-  provider: string;
+  providerName: string;
   apiToken: string;
   subdomain: string;
 }
@@ -39,7 +39,7 @@ export default function HiringSettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const [connectForm, setConnectForm] = useState<ATSConnectForm>({ provider: "WORKABLE", apiToken: "", subdomain: "" });
+  const [connectForm, setConnectForm] = useState<ATSConnectForm>({ providerName: "WORKABLE", apiToken: "", subdomain: "" });
   const [showConnect, setShowConnect] = useState(false);
   const [aiScoringEnabled, setAiScoringEnabled] = useState(false);
   const [autoTasksEnabled, setAutoTasksEnabled] = useState(false);
@@ -59,14 +59,19 @@ export default function HiringSettingsPage() {
 
   const connectMutation = useMutation({
     mutationFn: async (data: ATSConnectForm) => {
-      const res = await apiRequest("POST", "/api/hiring/integrations", data);
+      const credentials: Record<string, string> = { apiToken: data.apiToken };
+      if (data.subdomain) credentials.subdomain = data.subdomain;
+      const res = await apiRequest("POST", "/api/hiring/integrations", {
+        providerName: data.providerName,
+        credentials,
+      });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/hiring/integrations"] });
       toast({ title: "ATS Integration connected" });
       setShowConnect(false);
-      setConnectForm({ provider: "WORKABLE", apiToken: "", subdomain: "" });
+      setConnectForm({ providerName: "WORKABLE", apiToken: "", subdomain: "" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -101,13 +106,15 @@ export default function HiringSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/hiring/integrations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/hiring/integrations/sync-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/sync-logs"] });
       toast({ title: "Sync started" });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const activeIntegration = integrations[0];
+  const integrationStatusVariant = (status: string) =>
+    status === "connected" ? "default" : "destructive";
 
   return (
     <div className="p-6 space-y-6 max-w-3xl">
@@ -130,14 +137,14 @@ export default function HiringSettingsPage() {
             <div className="border rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium">{activeIntegration.provider}</p>
+                  <p className="font-medium">{activeIntegration.providerName}</p>
                   <p className="text-sm text-muted-foreground">
-                    {activeIntegration.lastSyncedAt
-                      ? `Last synced: ${format(new Date(activeIntegration.lastSyncedAt), "MMM d, h:mm a")}`
+                    {activeIntegration.lastSyncAt
+                      ? `Last synced: ${format(new Date(activeIntegration.lastSyncAt), "MMM d, h:mm a")}`
                       : "Never synced"}
                   </p>
                 </div>
-                <Badge variant={activeIntegration.status === "CONNECTED" ? "default" : "destructive"}>
+                <Badge variant={integrationStatusVariant(activeIntegration.status)}>
                   {activeIntegration.status}
                 </Badge>
               </div>
@@ -178,7 +185,7 @@ export default function HiringSettingsPage() {
             <div className="border rounded-lg p-4 space-y-4">
               <div className="space-y-1">
                 <Label>Provider</Label>
-                <Select value={connectForm.provider} onValueChange={(v) => setConnectForm((f) => ({ ...f, provider: v }))}>
+                <Select value={connectForm.providerName} onValueChange={(v) => setConnectForm((f) => ({ ...f, providerName: v }))}>
                   <SelectTrigger data-testid="select-ats-provider">
                     <SelectValue />
                   </SelectTrigger>
@@ -199,7 +206,7 @@ export default function HiringSettingsPage() {
                   data-testid="input-ats-token"
                 />
               </div>
-              {connectForm.provider === "WORKABLE" && (
+              {connectForm.providerName === "WORKABLE" && (
                 <div className="space-y-1">
                   <Label>Subdomain</Label>
                   <Input
@@ -243,8 +250,8 @@ export default function HiringSettingsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Status</TableHead>
-                    <TableHead>Jobs</TableHead>
-                    <TableHead>Candidates</TableHead>
+                    <TableHead>Processed</TableHead>
+                    <TableHead>Failed</TableHead>
                     <TableHead>Started</TableHead>
                     <TableHead>Completed</TableHead>
                   </TableRow>
@@ -261,8 +268,8 @@ export default function HiringSettingsPage() {
                             {cfg.label}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm">{log.jobsSynced ?? "—"}</TableCell>
-                        <TableCell className="text-sm">{log.candidatesSynced ?? "—"}</TableCell>
+                        <TableCell className="text-sm">{log.recordsProcessed}</TableCell>
+                        <TableCell className="text-sm">{log.recordsFailed}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {format(new Date(log.startedAt), "MMM d, h:mm a")}
                         </TableCell>

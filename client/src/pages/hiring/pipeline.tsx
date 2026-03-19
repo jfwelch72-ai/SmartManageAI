@@ -3,8 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -26,7 +25,10 @@ const STAGES = [
   { key: "OFFER_EXTENDED", label: "Offer Extended", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" },
   { key: "HIRED", label: "Hired", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
   { key: "REJECTED", label: "Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
+  { key: "ARCHIVED", label: "Archived", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 ];
+
+const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.key, s.label]));
 
 const DESTRUCTIVE_STAGES = new Set(["REJECTED", "ARCHIVED"]);
 
@@ -81,7 +83,7 @@ export default function HiringPipelinePage() {
     const cId = dragCandidateId.current;
     if (!cId) return;
     const candidate = candidates.find((c) => c.id === cId);
-    if (!candidate || candidate.stage === toStage) return;
+    if (!candidate || candidate.currentStage === toStage) return;
     if (DESTRUCTIVE_STAGES.has(toStage)) {
       setConfirmMove({ candidateId: cId, toStage });
     } else {
@@ -90,7 +92,7 @@ export default function HiringPipelinePage() {
     dragCandidateId.current = null;
   }
 
-  const byStage = (stageKey: string) => candidates.filter((c) => c.stage === stageKey);
+  const byStage = (stageKey: string) => candidates.filter((c) => c.currentStage === stageKey);
 
   if (isLoading) {
     return (
@@ -186,7 +188,7 @@ export default function HiringPipelinePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Move</AlertDialogTitle>
             <AlertDialogDescription>
-              Moving a candidate to <strong>{confirmMove?.toStage}</strong> is a significant action and may be difficult to undo. Continue?
+              Moving a candidate to <strong>{confirmMove?.toStage ? STAGE_LABELS[confirmMove.toStage] : ""}</strong> is a significant action and may be difficult to undo. Continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

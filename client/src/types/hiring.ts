@@ -55,20 +55,24 @@ export interface HiringCandidate {
   id: string;
   organizationId: string;
   jobId: string | null;
+  firstName: string;
+  lastName: string;
   fullName: string;
   email: string | null;
   phone: string | null;
-  stage: HiringCandidateStage;
-  source: HiringCandidateSource | null;
-  applicationAnswers: Record<string, unknown> | null;
-  resumeUrl: string | null;
-  linkedinUrl: string | null;
-  aiScore: number | null;
-  aiScoreSummary: string | null;
-  reviewerUserId: string | null;
-  notes: string | null;
-  externalCandidateId: string | null;
+  city: string | null;
+  state: string | null;
+  source: string | null;
+  currentStage: HiringCandidateStage;
   appliedAt: string;
+  reviewerUserId: string | null;
+  aiScore: number | null;
+  aiRecommendation: string | null;
+  status: string;
+  resumeStorageKey: string | null;
+  applicationAnswersJson: string | null;
+  externalCandidateId: string | null;
+  externalProvider: ATSProvider | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,25 +80,27 @@ export interface HiringCandidate {
 export interface HiringIntegration {
   id: string;
   organizationId: string;
-  provider: ATSProvider;
-  status: "CONNECTED" | "DISCONNECTED" | "ERROR";
-  lastSyncedAt: string | null;
-  syncStatus: HiringSyncStatus | null;
-  syncErrorMessage: string | null;
+  providerName: ATSProvider;
+  status: string;
+  lastSyncAt: string | null;
+  lastTestAt: string | null;
+  defaultConfigJson: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface HiringSyncLog {
   id: string;
-  integrationId: string;
+  organizationId: string;
+  integrationId: string | null;
+  provider: ATSProvider | null;
   status: HiringSyncStatus;
-  jobsSynced: number | null;
-  candidatesSynced: number | null;
-  errorMessage: string | null;
+  entityType: string | null;
+  recordsProcessed: number;
+  recordsFailed: number;
+  errorSummary: string | null;
   startedAt: string;
   completedAt: string | null;
-  createdAt: string;
 }
 
 export interface HiringInterview {
@@ -123,6 +129,16 @@ export interface HiringActivityLog {
   entityId: string | null;
   entityName: string | null;
   metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface HiringCandidateNote {
+  id: string;
+  organizationId: string;
+  candidateId: string;
+  authorUserId: string | null;
+  authorName: string;
+  body: string;
   createdAt: string;
 }
 

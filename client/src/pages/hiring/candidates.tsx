@@ -70,7 +70,7 @@ export default function HiringCandidatesPage() {
 
   const filtered = candidates.filter((c) => {
     const matchSearch = !search || c.fullName.toLowerCase().includes(search.toLowerCase()) || (c.email ?? "").toLowerCase().includes(search.toLowerCase());
-    const matchStage = stageFilter === "ALL" || c.stage === stageFilter;
+    const matchStage = stageFilter === "ALL" || c.currentStage === stageFilter;
     const matchSource = sourceFilter === "ALL" || c.source === sourceFilter;
     return matchSearch && matchStage && matchSource;
   });
@@ -152,8 +152,8 @@ export default function HiringCandidatesPage() {
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[c.stage] ?? ""}`}>
-                        {STAGE_LABELS[c.stage] ?? c.stage}
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[c.currentStage] ?? ""}`}>
+                        {STAGE_LABELS[c.currentStage] ?? c.currentStage}
                       </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground text-sm">
