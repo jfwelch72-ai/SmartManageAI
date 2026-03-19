@@ -26,6 +26,14 @@ import { format } from "date-fns";
 import type { RFI, ActivityEntry, ChangeOrder, RFIEditForm } from "@/hooks/useRfiMutations";
 import { getStatusBadge, getPriorityBadge, DEFAULT_EDIT_FORM } from "@/hooks/useRfiMutations";
 
+interface TMTicket {
+  id: string;
+  ticketNumber: string;
+  workDate: string;
+  status: string;
+  description: string | null;
+}
+
 interface RfiDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,7 +48,7 @@ interface RfiDetailDialogProps {
     deleteMutation: { mutate: (id: string) => void; isPending: boolean };
     updateMutation: { mutate: (args: { id: string; data: Record<string, unknown> }) => void; isPending: boolean };
     linkCOMutation: { mutate: (args: { id: string; changeOrderId: string }) => void; isPending: boolean };
-    linkTMMutation: { mutate: (id: string) => void; isPending: boolean };
+    linkTMMutation: { mutate: (args: { id: string; tmTicketId: string }) => void; isPending: boolean };
     addCommentMutation: { mutate: (args: { id: string; comment: string }) => void; isPending: boolean };
   };
   testIdPrefix?: string;
@@ -61,6 +69,8 @@ export default function RfiDetailDialog({
   const [commentText, setCommentText] = useState("");
   const [showLinkCODialog, setShowLinkCODialog] = useState(false);
   const [selectedCOId, setSelectedCOId] = useState("");
+  const [showLinkTMDialog, setShowLinkTMDialog] = useState(false);
+  const [selectedTMId, setSelectedTMId] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<RFIEditForm>({ ...DEFAULT_EDIT_FORM });
 
@@ -79,6 +89,11 @@ export default function RfiDetailDialog({
   const { data: changeOrders = [] } = useQuery<ChangeOrder[]>({
     queryKey: ["/api/change-orders" + (rfi?.projectId ? `?projectId=${rfi.projectId}` : "")],
     enabled: !!rfi?.projectId && showLinkCODialog,
+  });
+
+  const { data: tmTickets = [] } = useQuery<TMTicket[]>({
+    queryKey: ["/api/projects", rfi?.projectId, "tm-tickets"],
+    enabled: !!rfi?.projectId && showLinkTMDialog,
   });
 
   useEffect(() => {
@@ -433,8 +448,7 @@ export default function RfiDetailDialog({
                         </Button>
                         <Button
                           variant="outline"
-                          onClick={() => mutations.linkTMMutation.mutate(rfi.id)}
-                          disabled={mutations.linkTMMutation.isPending}
+                          onClick={() => setShowLinkTMDialog(true)}
                           data-testid={`${p}button-link-tm`}
                         >
                           <Link2 className="h-4 w-4 mr-2" />
@@ -549,6 +563,57 @@ export default function RfiDetailDialog({
               data-testid={`${p}button-confirm-link-co`}
             >
               Link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLinkTMDialog} onOpenChange={(o) => { setShowLinkTMDialog(o); if (!o) setSelectedTMId(""); }}>
+        <DialogContent data-testid={`${p}dialog-link-tm`}>
+          <DialogHeader>
+            <DialogTitle>Link T&amp;M Ticket</DialogTitle>
+            <DialogDescription>Select a T&amp;M ticket to link to this RFI</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {tmTickets.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No T&amp;M tickets found for this project.</p>
+            ) : (
+              <Select value={selectedTMId} onValueChange={setSelectedTMId}>
+                <SelectTrigger data-testid={`${p}select-link-tm`}>
+                  <SelectValue placeholder="Select a T&amp;M ticket..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {tmTickets.map((tm) => (
+                    <SelectItem key={tm.id} value={tm.id}>
+                      {tm.ticketNumber}
+                      {tm.workDate ? ` — ${format(new Date(tm.workDate), "MMM d, yyyy")}` : ""}
+                      {tm.description ? ` — ${tm.description.slice(0, 40)}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowLinkTMDialog(false); setSelectedTMId(""); }}
+              data-testid={`${p}button-cancel-link-tm`}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (rfi && selectedTMId) {
+                  mutations.linkTMMutation.mutate({ id: rfi.id, tmTicketId: selectedTMId });
+                  setShowLinkTMDialog(false);
+                  setSelectedTMId("");
+                }
+              }}
+              disabled={!selectedTMId || mutations.linkTMMutation.isPending}
+              data-testid={`${p}button-confirm-link-tm`}
+            >
+              {mutations.linkTMMutation.isPending ? "Linking..." : "Link"}
             </Button>
           </DialogFooter>
         </DialogContent>

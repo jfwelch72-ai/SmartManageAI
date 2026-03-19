@@ -304,7 +304,8 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
   });
 
   const linkTMMutation = useMutation({
-    mutationFn: async (id: string) => await apiRequest("POST", `/api/rfi/${id}/link-tm`, {}),
+    mutationFn: async ({ id, tmTicketId }: { id: string; tmTicketId: string }) =>
+      await apiRequest("POST", `/api/rfi/${id}/link-tm`, { tmTicketId }),
     onSuccess: () => {
       invalidateAll();
       toast({ title: "T&M ticket linked" });
