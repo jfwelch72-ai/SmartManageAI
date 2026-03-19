@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X,
-  History, ChevronDown, GitCompare
+  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
@@ -20,6 +20,7 @@ import { computePixelDistance } from "@shared/utils/geometry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
+import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
 
 function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
   const [localValue, setLocalValue] = useState(currentValue);
@@ -98,6 +99,8 @@ interface TakeoffSidebarProps {
   sheets?: any[];
   onCompareRevisions?: () => void;
   onSelectSheet?: (id: string) => void;
+  markups?: TakeoffMarkupWithAuthor[];
+  deleteMarkupMutation?: any;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -122,7 +125,10 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     setCalibrationMode, setCalibrationPoints,
     workspaceRef, aiPanelOpen, onApplyPresetScale,
     sheets = [], onCompareRevisions, onSelectSheet,
+    markups = [], deleteMarkupMutation,
   } = props;
+
+  const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
 
   const revisionChain = (() => {
     if (!currentSheet) return [];
@@ -711,6 +717,62 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 </CardContent>
               </Card>
             </Collapsible>
+          )}
+          {markups.length > 0 && (
+            <Card>
+              <CardContent className="pt-4 space-y-2">
+                <button
+                  className="flex items-center gap-2 w-full text-left text-sm font-semibold"
+                  onClick={() => setMarkupsPanelOpen(v => !v)}
+                  data-testid="button-toggle-markups-panel"
+                >
+                  {markupsPanelOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  <Pen className="w-4 h-4" />
+                  Markups
+                  <Badge variant="secondary" className="ml-auto">{markups.length}</Badge>
+                </button>
+                {markupsPanelOpen && (
+                  <div className="space-y-1 mt-1">
+                    {markups.map((markup) => {
+                      const tool = markup.tool as string;
+                      const color = (markup.color as string) || "#ff0000";
+                      const ToolIcon =
+                        tool === "TEXT" ? Type :
+                        tool === "RECTANGLE" ? Square :
+                        tool === "HIGHLIGHT" ? Highlighter :
+                        tool === "FREEHAND" ? Pen :
+                        tool === "CLOUD" ? Spline :
+                        Pencil;
+                      return (
+                        <div
+                          key={markup.id}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 text-sm group"
+                          data-testid={`markup-item-${markup.id}`}
+                        >
+                          <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                          <ToolIcon className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                          <span className="flex-1 truncate text-xs capitalize">
+                            {tool.toLowerCase()}{markup.text ? `: ${markup.text}` : ""}
+                          </span>
+                          {deleteMarkupMutation && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 opacity-0 group-hover:opacity-100 shrink-0"
+                              onClick={() => deleteMarkupMutation.mutate(markup.id)}
+                              disabled={deleteMarkupMutation.isPending}
+                              data-testid={`button-delete-markup-${markup.id}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
         </div>
       </ScrollArea>

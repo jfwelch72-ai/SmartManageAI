@@ -360,6 +360,31 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   statusIdx: index("takeoff_measurements_status_idx").on(table.status),
 }));
 
+// Takeoff Markup Tool enum
+export const takeoffMarkupToolEnum = pgEnum("takeoff_markup_tool", ["ARROW", "TEXT", "RECTANGLE", "CLOUD", "HIGHLIGHT", "FREEHAND"]);
+
+// Takeoff Markups table
+export const takeoffMarkups = pgTable("takeoff_markups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tool: takeoffMarkupToolEnum("tool").notNull(),
+  points: text("points").notNull(),
+  color: text("color").notNull().default("#ff0000"),
+  thickness: integer("thickness").notNull().default(2),
+  text: text("text"),
+  categoryId: varchar("category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sheetIdx: index("takeoff_markups_sheet_idx").on(table.sheetId),
+  createdByIdx: index("takeoff_markups_created_by_idx").on(table.createdBy),
+}));
+
+export const insertTakeoffMarkupSchema = createInsertSchema(takeoffMarkups).omit({ id: true, createdAt: true });
+export type InsertTakeoffMarkup = z.infer<typeof insertTakeoffMarkupSchema>;
+export type TakeoffMarkup = typeof takeoffMarkups.$inferSelect;
+
 // Project Specs table (uploaded spec books)
 export const projectSpecs = pgTable("project_specs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

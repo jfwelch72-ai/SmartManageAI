@@ -1,6 +1,7 @@
 import {
   MousePointer2, Hand, Ruler, Square, Circle as CircleIcon,
-  Box, MapPin, StickyNote, MoveVertical, Triangle, Scaling, Grid3x3
+  Box, MapPin, StickyNote, MoveVertical, Triangle, Scaling, Grid3x3,
+  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine
 } from "lucide-react";
 
 export type Tool =
@@ -16,7 +17,17 @@ export type Tool =
   | "linear_with_drop"
   | "pitched_area"
   | "pitched_linear"
-  | "surface_area";
+  | "surface_area"
+  | "markup_arrow"
+  | "markup_text"
+  | "markup_rectangle"
+  | "markup_cloud"
+  | "markup_highlight"
+  | "markup_freehand";
+
+export type MarkupToolId = "markup_arrow" | "markup_text" | "markup_rectangle" | "markup_cloud" | "markup_highlight" | "markup_freehand";
+
+export const MARKUP_TOOL_IDS: MarkupToolId[] = ["markup_arrow", "markup_text", "markup_rectangle", "markup_cloud", "markup_highlight", "markup_freehand"];
 
 export type MeasurementType = "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE" | "LINEAR_WITH_DROP" | "PITCHED_AREA" | "PITCHED_LINEAR" | "SURFACE_AREA";
 
@@ -39,19 +50,25 @@ export interface AddendumOverlayData {
 }
 
 export const TOOL_CONFIG = [
-  { id: "select", icon: MousePointer2, label: "Select", color: "default", shortcut: "S" },
-  { id: "pan", icon: Hand, label: "Pan", color: "default", shortcut: "H" },
-  { id: "calibrate", icon: Ruler, label: "Calibrate", color: "secondary", shortcut: null },
-  { id: "linear", icon: Ruler, label: "Linear", color: "primary", shortcut: "L" },
-  { id: "arc", icon: CircleIcon, label: "Arc/Radius", color: "primary", shortcut: "R" },
-  { id: "area", icon: Square, label: "Area", color: "primary", shortcut: "A" },
-  { id: "volume", icon: Box, label: "Volume", color: "primary", shortcut: "V" },
-  { id: "count", icon: MapPin, label: "Count", color: "primary", shortcut: "C" },
-  { id: "note", icon: StickyNote, label: "Note", color: "default", shortcut: "N" },
-  { id: "linear_with_drop", icon: MoveVertical, label: "Linear + Drop", color: "primary", shortcut: "D" },
-  { id: "pitched_linear", icon: Triangle, label: "Pitched Linear", color: "primary", shortcut: "P" },
-  { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: "T" },
-  { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: "G" },
+  { id: "select", icon: MousePointer2, label: "Select", color: "default", shortcut: "S", group: "nav" },
+  { id: "pan", icon: Hand, label: "Pan", color: "default", shortcut: "H", group: "nav" },
+  { id: "calibrate", icon: Ruler, label: "Calibrate", color: "secondary", shortcut: null, group: "nav" },
+  { id: "linear", icon: Ruler, label: "Linear", color: "primary", shortcut: "L", group: "measure" },
+  { id: "arc", icon: CircleIcon, label: "Arc/Radius", color: "primary", shortcut: "R", group: "measure" },
+  { id: "area", icon: Square, label: "Area", color: "primary", shortcut: "A", group: "measure" },
+  { id: "volume", icon: Box, label: "Volume", color: "primary", shortcut: "V", group: "measure" },
+  { id: "count", icon: MapPin, label: "Count", color: "primary", shortcut: "C", group: "measure" },
+  { id: "note", icon: StickyNote, label: "Note", color: "default", shortcut: "N", group: "measure" },
+  { id: "linear_with_drop", icon: MoveVertical, label: "Linear + Drop", color: "primary", shortcut: "D", group: "measure" },
+  { id: "pitched_linear", icon: Triangle, label: "Pitched Linear", color: "primary", shortcut: "P", group: "measure" },
+  { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: "T", group: "measure" },
+  { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: "G", group: "measure" },
+  { id: "markup_arrow", icon: MoveUpRight, label: "Arrow", color: "default", shortcut: null, group: "markup" },
+  { id: "markup_text", icon: Type, label: "Text Label", color: "default", shortcut: null, group: "markup" },
+  { id: "markup_rectangle", icon: RectangleHorizontal, label: "Rectangle", color: "default", shortcut: null, group: "markup" },
+  { id: "markup_cloud", icon: MessageSquare, label: "Cloud/Bubble", color: "default", shortcut: null, group: "markup" },
+  { id: "markup_highlight", icon: Highlighter, label: "Highlight", color: "default", shortcut: null, group: "markup" },
+  { id: "markup_freehand", icon: PenLine, label: "Freehand Pen", color: "default", shortcut: null, group: "markup" },
 ] as const;
 
 export const COMMON_SCALES = {

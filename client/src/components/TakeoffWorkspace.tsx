@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, Fragment } from "react";
-import { Stage, Layer, Image as KonvaImage, Line, Circle, Text } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect } from "react-konva";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -96,11 +96,41 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [verifyResult, setVerifyResult] = useState<{ expected: number; measured: number; errorPct: number } | null>(null);
   const [multiCalibPoints, setMultiCalibPoints] = useState<Array<{ points: [{ x: number; y: number }, { x: number; y: number }]; distance: number }>>([]);
   const [multiCalibMode, setMultiCalibMode] = useState(false);
+  const [markupColor, setMarkupColor] = useState("#ff0000");
+  const [markupThickness, setMarkupThickness] = useState(2);
+  const [markupDrawing, setMarkupDrawing] = useState(false);
+  const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
+  const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
+
+  const isMarkupTool = (tool: string) => tool.startsWith("markup_");
+
+  const getStagePointer = (): { x: number; y: number } | null => {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const pos = stage.getPointerPosition();
+    if (!pos) return null;
+    return {
+      x: (pos.x - stagePosition.x) / stageScale,
+      y: (pos.y - stagePosition.y) / stageScale,
+    };
+  };
+
+  const toolToMarkupType = (tool: string): string => {
+    switch (tool) {
+      case "markup_arrow": return "ARROW";
+      case "markup_text": return "TEXT";
+      case "markup_rectangle": return "RECTANGLE";
+      case "markup_cloud": return "CLOUD";
+      case "markup_highlight": return "HIGHLIGHT";
+      case "markup_freehand": return "FREEHAND";
+      default: return "ARROW";
+    }
+  };
 
   const data = useTakeoffData({
     projectId,
@@ -127,10 +157,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const {
     sheets, sheetsLoading, planDocuments, documentsLoading,
     projectAddenda, measurements, measurementsLoading,
+    markups,
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
+    createMarkupMutation, deleteMarkupMutation,
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
     deleteSheetMutation, handleMoveSheet,
@@ -229,6 +261,67 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     currentSnap,
     cursorPosition,
   } = interactions;
+
+  const handleMarkupMouseDown = (e: any) => {
+    if (!isMarkupTool(activeTool) || !selectedSheet) return;
+    const pos = getStagePointer();
+    if (!pos) return;
+    if (activeTool === "markup_text") {
+      setMarkupTextInput({ x: pos.x, y: pos.y, value: "" });
+      return;
+    }
+    setMarkupDrawing(true);
+    setMarkupDrawPoints([pos]);
+  };
+
+  const handleMarkupMouseMove = () => {
+    if (!isMarkupTool(activeTool) || !markupDrawing) return;
+    const pos = getStagePointer();
+    if (!pos) return;
+    if (activeTool === "markup_freehand") {
+      setMarkupDrawPoints(prev => [...prev, pos]);
+    } else {
+      setMarkupDrawPoints(prev => prev.length > 0 ? [prev[0], pos] : [pos]);
+    }
+  };
+
+  const handleMarkupMouseUp = async () => {
+    if (!isMarkupTool(activeTool) || !markupDrawing || !selectedSheet) return;
+    setMarkupDrawing(false);
+    const points = [...markupDrawPoints];
+    setMarkupDrawPoints([]);
+    if (points.length < 2) return;
+    try {
+      await createMarkupMutation.mutateAsync({
+        sheetId: selectedSheet,
+        tool: toolToMarkupType(activeTool),
+        points,
+        color: markupColor,
+        thickness: markupThickness,
+      });
+    } catch {
+    }
+  };
+
+  const handleMarkupTextSubmit = async (text: string) => {
+    if (!markupTextInput || !selectedSheet || !text.trim()) {
+      setMarkupTextInput(null);
+      return;
+    }
+    const pos = markupTextInput;
+    setMarkupTextInput(null);
+    try {
+      await createMarkupMutation.mutateAsync({
+        sheetId: selectedSheet,
+        tool: "TEXT",
+        points: [pos],
+        color: markupColor,
+        thickness: markupThickness,
+        text: text.trim(),
+      });
+    } catch {
+    }
+  };
 
   useEffect(() => {
     Object.entries(addendaOverlays).forEach(([addendumId, overlay]) => {
@@ -394,6 +487,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         isDrawing={isDrawing}
         drawingPoints={drawingPoints}
         isMobile={isMobile}
+        markupColor={markupColor}
+        setMarkupColor={setMarkupColor}
+        markupThickness={markupThickness}
+        setMarkupThickness={setMarkupThickness}
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
@@ -558,12 +655,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               scaleY={stageScale}
               x={stagePosition.x}
               y={stagePosition.y}
-              onMouseDown={handleStageMouseDown}
-              onMouseUp={handleStageMouseUp}
-              onMouseMove={handleStageMouseMove}
-              onTouchStart={handleStageMouseDown}
-              onTouchEnd={handleTouchEnd}
-              onTouchMove={handleTouchMove}
+              onMouseDown={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
+              onMouseUp={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleStageMouseUp(e); } }}
+              onMouseMove={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleStageMouseMove(e); } }}
+              onTouchStart={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
+              onTouchEnd={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleTouchEnd(e); } }}
+              onTouchMove={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleTouchMove(e); } }}
               onDblClick={(e) => {
                 if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
@@ -933,6 +1030,152 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     />
                   </>
                 )}
+
+                {markups.map((markup) => {
+                  if (markup.categoryId && hiddenCategoryIds.has(markup.categoryId)) return null;
+                  const pts = markup.points as { x: number; y: number }[];
+                  if (!pts || pts.length === 0) return null;
+                  const color = (markup.color as string) || "#ff0000";
+                  const thickness = (markup.thickness as number) || 2;
+                  const tool = markup.tool as string;
+                  if (tool === "ARROW" && pts.length >= 2) {
+                    return (
+                      <Arrow
+                        key={markup.id}
+                        points={[pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y]}
+                        stroke={color}
+                        strokeWidth={thickness}
+                        fill={color}
+                        pointerLength={12}
+                        pointerWidth={8}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (tool === "TEXT" && pts.length >= 1) {
+                    return (
+                      <Text
+                        key={markup.id}
+                        x={pts[0].x}
+                        y={pts[0].y}
+                        text={(markup.text as string) || ""}
+                        fontSize={16 / stageScale}
+                        fill={color}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (tool === "RECTANGLE" && pts.length >= 2) {
+                    const x = Math.min(pts[0].x, pts[1].x);
+                    const y = Math.min(pts[0].y, pts[1].y);
+                    const w = Math.abs(pts[1].x - pts[0].x);
+                    const h = Math.abs(pts[1].y - pts[0].y);
+                    return (
+                      <Rect
+                        key={markup.id}
+                        x={x} y={y} width={w} height={h}
+                        stroke={color}
+                        strokeWidth={thickness}
+                        fill="transparent"
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (tool === "HIGHLIGHT" && pts.length >= 2) {
+                    const x = Math.min(pts[0].x, pts[1].x);
+                    const y = Math.min(pts[0].y, pts[1].y);
+                    const w = Math.abs(pts[1].x - pts[0].x);
+                    const h = Math.abs(pts[1].y - pts[0].y);
+                    return (
+                      <Rect
+                        key={markup.id}
+                        x={x} y={y} width={w} height={h}
+                        fill={color}
+                        opacity={0.3}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if ((tool === "FREEHAND" || tool === "CLOUD") && pts.length >= 2) {
+                    return (
+                      <Line
+                        key={markup.id}
+                        points={pts.flatMap(p => [p.x, p.y])}
+                        stroke={color}
+                        strokeWidth={thickness}
+                        tension={tool === "CLOUD" ? 0.5 : 0}
+                        lineCap="round"
+                        lineJoin="round"
+                        listening={false}
+                      />
+                    );
+                  }
+                  return null;
+                })}
+
+                {markupDrawing && markupDrawPoints.length >= 2 && (() => {
+                  const pts = markupDrawPoints;
+                  if (activeTool === "markup_arrow") {
+                    return (
+                      <Arrow
+                        key="markup-preview"
+                        points={[pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y]}
+                        stroke={markupColor}
+                        strokeWidth={markupThickness}
+                        fill={markupColor}
+                        pointerLength={12}
+                        pointerWidth={8}
+                        opacity={0.7}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (activeTool === "markup_rectangle") {
+                    const x = Math.min(pts[0].x, pts[1].x);
+                    const y = Math.min(pts[0].y, pts[1].y);
+                    const w = Math.abs(pts[1].x - pts[0].x);
+                    const h = Math.abs(pts[1].y - pts[0].y);
+                    return (
+                      <Rect
+                        key="markup-preview"
+                        x={x} y={y} width={w} height={h}
+                        stroke={markupColor}
+                        strokeWidth={markupThickness}
+                        fill="transparent"
+                        opacity={0.7}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (activeTool === "markup_highlight") {
+                    const x = Math.min(pts[0].x, pts[1].x);
+                    const y = Math.min(pts[0].y, pts[1].y);
+                    const w = Math.abs(pts[1].x - pts[0].x);
+                    const h = Math.abs(pts[1].y - pts[0].y);
+                    return (
+                      <Rect
+                        key="markup-preview"
+                        x={x} y={y} width={w} height={h}
+                        fill={markupColor}
+                        opacity={0.2}
+                        listening={false}
+                      />
+                    );
+                  }
+                  return (
+                    <Line
+                      key="markup-preview"
+                      points={pts.flatMap(p => [p.x, p.y])}
+                      stroke={markupColor}
+                      strokeWidth={markupThickness}
+                      tension={activeTool === "markup_cloud" ? 0.5 : 0}
+                      lineCap="round"
+                      lineJoin="round"
+                      opacity={0.7}
+                      listening={false}
+                    />
+                  );
+                })()}
               </Layer>
             </Stage>
           ) : (
@@ -946,6 +1189,29 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 <p className="font-medium">Select or upload a plan sheet to begin takeoff</p>
                 <p className="text-sm mt-2">Click here to import a document</p>
               </div>
+            </div>
+          )}
+
+          {markupTextInput && (
+            <div
+              className="absolute z-50 pointer-events-auto"
+              style={{
+                left: markupTextInput.x * stageScale + stagePosition.x,
+                top: markupTextInput.y * stageScale + stagePosition.y,
+              }}
+            >
+              <input
+                autoFocus
+                className="border-2 border-primary rounded px-2 py-1 text-sm bg-background shadow-md min-w-40"
+                placeholder="Type label..."
+                defaultValue=""
+                data-testid="input-markup-text"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleMarkupTextSubmit(e.currentTarget.value);
+                  if (e.key === "Escape") setMarkupTextInput(null);
+                }}
+                onBlur={(e) => handleMarkupTextSubmit(e.currentTarget.value)}
+              />
             </div>
           )}
         </div>
@@ -1014,6 +1280,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         sheets={sheets}
         onCompareRevisions={hasRevisionHistory ? () => setCompareDialogOpen(true) : undefined}
         onSelectSheet={setSelectedSheet}
+        markups={markups}
+        deleteMarkupMutation={deleteMarkupMutation}
       />
 
       <TakeoffDialogs

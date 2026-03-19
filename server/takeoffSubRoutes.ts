@@ -1471,4 +1471,126 @@ router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthReque
   }
 });
 
+// ====================
+// TAKEOFF MARKUP ROUTES
+// ====================
+
+// Get markups for a sheet
+router.get("/api/takeoff/sheets/:sheetId/markups", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const { takeoffMarkups, users } = await import("@shared/schema");
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    const markups = await db
+      .select({
+        id: takeoffMarkups.id,
+        sheetId: takeoffMarkups.sheetId,
+        organizationId: takeoffMarkups.organizationId,
+        createdBy: takeoffMarkups.createdBy,
+        tool: takeoffMarkups.tool,
+        points: takeoffMarkups.points,
+        color: takeoffMarkups.color,
+        thickness: takeoffMarkups.thickness,
+        text: takeoffMarkups.text,
+        categoryId: takeoffMarkups.categoryId,
+        createdAt: takeoffMarkups.createdAt,
+        authorName: users.name,
+      })
+      .from(takeoffMarkups)
+      .leftJoin(users, eq(takeoffMarkups.createdBy, users.id))
+      .where(eq(takeoffMarkups.sheetId, sheetId))
+      .orderBy(takeoffMarkups.createdAt);
+
+    const parsed = markups.map(m => ({
+      ...m,
+      points: JSON.parse(m.points),
+    }));
+
+    res.json(parsed);
+  } catch (error) {
+    console.error("Error fetching markups:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Create a markup
+router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { takeoffMarkups, insertTakeoffMarkupSchema } = await import("@shared/schema");
+
+    const body = {
+      ...req.body,
+      createdBy: req.user!.id,
+      organizationId: req.user!.organizationId,
+      points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
+    };
+
+    const validated = insertTakeoffMarkupSchema.parse(body);
+
+    const access = await verifySheetAccess(validated.sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    const [markup] = await db.insert(takeoffMarkups).values(validated).returning();
+
+    res.status(201).json({
+      ...markup,
+      points: JSON.parse(markup.points),
+      authorName: req.user!.name,
+    });
+  } catch (error: any) {
+    console.error("Error creating markup:", error);
+    if (error.name === "ZodError") {
+      res.status(400).json({ error: "Invalid markup data", details: error.errors });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+});
+
+// Delete a markup
+router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { markupId } = req.params;
+    const { takeoffMarkups } = await import("@shared/schema");
+
+    const [markup] = await db
+      .select()
+      .from(takeoffMarkups)
+      .where(eq(takeoffMarkups.id, markupId))
+      .limit(1);
+
+    if (!markup) {
+      res.status(404).json({ error: "Markup not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+
+    const isOwner = markup.createdBy === userId;
+    const isAdminOrManager = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPER_ADMIN";
+
+    if (!isOwner && !isAdminOrManager) {
+      res.status(403).json({ error: "You can only delete your own markups" });
+      return;
+    }
+
+    await db.delete(takeoffMarkups).where(eq(takeoffMarkups.id, markupId));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting markup:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

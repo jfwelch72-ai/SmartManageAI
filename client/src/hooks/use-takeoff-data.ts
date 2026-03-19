@@ -3,8 +3,10 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
-import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffMarkup } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
+
+export type TakeoffMarkupWithAuthor = TakeoffMarkup & { authorName?: string | null; points: { x: number; y: number }[] };
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -113,6 +115,11 @@ export function useTakeoffData({
 
   const { data: measurements = [], isLoading: measurementsLoading } = useQuery<TakeoffMeasurement[]>({
     queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"],
+    enabled: !!selectedSheet,
+  });
+
+  const { data: markups = [] } = useQuery<TakeoffMarkupWithAuthor[]>({
+    queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"],
     enabled: !!selectedSheet,
   });
 
@@ -283,6 +290,41 @@ export function useTakeoffData({
     },
   });
 
+  const createMarkupMutation = useMutation({
+    mutationFn: async (data: {
+      sheetId: string;
+      tool: string;
+      points: { x: number; y: number }[];
+      color: string;
+      thickness: number;
+      text?: string;
+      categoryId?: string | null;
+    }) => {
+      const res = await apiRequest("POST", "/api/takeoff/markups", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save markup", variant: "destructive" });
+    },
+  });
+
+  const deleteMarkupMutation = useMutation({
+    mutationFn: async (markupId: string) => {
+      await apiRequest("DELETE", `/api/takeoff/markups/${markupId}`);
+      return markupId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+      toast({ title: "Markup deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete markup", variant: "destructive" });
+    },
+  });
+
   const reorderSheetsMutation = useMutation({
     mutationFn: async (order: { id: string; sheetIndex: number }[]) => {
       const url = isBid
@@ -384,6 +426,7 @@ export function useTakeoffData({
     projectAddenda,
     measurements,
     measurementsLoading,
+    markups,
     categories,
     currentSheet,
     aggregatedMeasurements,
@@ -392,6 +435,8 @@ export function useTakeoffData({
     createMeasurementMutation,
     updateMeasurementMutation,
     deleteMeasurementMutation,
+    createMarkupMutation,
+    deleteMarkupMutation,
     saveCategoryMutation,
     deleteCategoryMutation,
     renameSheetMutation,
