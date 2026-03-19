@@ -376,8 +376,8 @@ export const RoutePermissions = {
   HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER",
   // Candidate review access (read candidates, pipeline board view, dashboard)
   HIRING_REVIEW: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
-  // Interviews + analytics: excludes OFFICE_MANAGER
-  HIRING_ADVANCED: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "HR_MANAGER",
+  // Interviews + analytics: ADMIN/HUSTLER/MANAGER only (excludes OFFICE_MANAGER and HR_MANAGER)
+  HIRING_ADVANCED: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
   HIRING_SETTINGS: (role?: string) => role === "ADMIN",
 };
 

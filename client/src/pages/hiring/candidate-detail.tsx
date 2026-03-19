@@ -120,7 +120,7 @@ export default function CandidateDetailPage() {
   const { user } = useAuth();
   const role = user?.role;
   const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER";
-  const canRunAiReview = role === "ADMIN" || role === "MANAGER";
+  const canRunAiReview = role === "ADMIN" || role === "HUSTLER" || role === "MANAGER";
   const candidateId = params?.id ?? "";
 
   const [newNote, setNewNote] = useState("");

@@ -50,6 +50,8 @@ const HIRING_FULL = ["ADMIN", "HUSTLER", "HR_MANAGER"] as const;
 const HIRING_REVIEW = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER", "OFFICE_MANAGER"] as const;
 /** Manager-level hiring: can schedule interviews, run AI review, update stage — excludes OFFICE_MANAGER */
 const HIRING_MANAGER_LEVEL = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER"] as const;
+/** Advanced hiring views (Interviews list + Analytics pages): ADMIN/HUSTLER/MANAGER only */
+const HIRING_ADVANCED = ["ADMIN", "HUSTLER", "MANAGER"] as const;
 /** Integration management restricted to ADMIN only (ATS credentials are sensitive) */
 const HIRING_INTEGRATION = ["ADMIN"] as const;
 
@@ -942,7 +944,7 @@ router.get(
 // INTERVIEWS
 // ============================================
 
-router.get("/interviews", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/interviews", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const candidateId = req.query.candidateId as string | undefined;
@@ -1619,7 +1621,7 @@ function scrubProtectedCharacteristics(text: string): string {
 router.post(
   "/candidates/:id/ai-review",
   requireAuth,
-  requireRole("ADMIN", "MANAGER"),
+  requireRole("ADMIN", "HUSTLER", "MANAGER"),
   async (req: AuthRequest, res) => {
     try {
       const aiEnabled = await isFeatureEnabled(orgId(req), "HIRING_AI_SCORING");
@@ -1821,7 +1823,7 @@ router.post(
 // ANALYTICS
 // ============================================
 
-router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -1862,7 +1864,7 @@ router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_REVIEW), a
   }
 });
 
-router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+router.get("/analytics", requireAuth, requireRole(...HIRING_ADVANCED), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
