@@ -163,7 +163,7 @@ export default function CandidateDetailPage() {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Candidate not found.</p>
-        <Button variant="link" onClick={() => navigate("/hiring/candidates")} className="px-0 mt-2">
+        <Button variant="ghost" onClick={() => navigate("/hiring/candidates")} className="px-0 mt-2">
           <ArrowLeft className="w-4 h-4 mr-1" />Back to Candidates
         </Button>
       </div>
@@ -265,7 +265,8 @@ export default function CandidateDetailPage() {
               ) : (
                 <ol className="relative border-l border-border ml-2 space-y-4">
                   {stageHistory.map((log) => {
-                    const meta = log.metadata as { toStage?: string } | null;
+                    let meta: { toStage?: string } | null = null;
+                    try { meta = log.metadataJson ? JSON.parse(log.metadataJson) : null; } catch { meta = null; }
                     return (
                       <li key={log.id} className="ml-4" data-testid={`stage-history-${log.id}`}>
                         <span className="absolute -left-1.5 mt-1 w-3 h-3 bg-primary rounded-full border-2 border-background" />
@@ -425,7 +426,7 @@ export default function CandidateDetailPage() {
                       <div>
                         <span>{log.actorName ?? "System"}</span>
                         <span className="text-muted-foreground"> · {log.activityType.replace(/_/g, " ").toLowerCase()}</span>
-                        {log.entityName && <span className="text-muted-foreground"> — {log.entityName}</span>}
+                        {log.entityLabel && <span className="text-muted-foreground"> — {log.entityLabel}</span>}
                         <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}</p>
                       </div>
                     </li>

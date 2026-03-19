@@ -55,14 +55,17 @@ function activityIcon(type: string) {
 
 function humanizeActivity(log: HiringActivityLog) {
   const actor = log.actorName ?? "System";
-  const entity = log.entityName ? `"${log.entityName}"` : "";
+  const entity = log.entityLabel ? `"${log.entityLabel}"` : "";
+  const parseMeta = () => {
+    try { return log.metadataJson ? JSON.parse(log.metadataJson) : null; } catch { return null; }
+  };
   switch (log.activityType) {
     case "JOB_CREATED": return `${actor} created job ${entity}`;
     case "JOB_PUBLISHED": return `${actor} published job ${entity}`;
     case "JOB_ARCHIVED": return `${actor} archived job ${entity}`;
     case "CANDIDATE_APPLIED": return `${entity} applied`;
     case "CANDIDATE_STAGE_CHANGED": {
-      const meta = log.metadata as { fromStage?: string; toStage?: string } | null;
+      const meta = parseMeta() as { fromStage?: string; toStage?: string } | null;
       return `${actor} moved ${entity} from ${meta?.fromStage ?? "?"} to ${meta?.toStage ?? "?"}`;
     }
     case "CANDIDATE_HIRED": return `${entity} was hired`;

@@ -44,7 +44,7 @@ const JOB_STATUS_CONFIG: Record<string, { label: string; variant: "default" | "s
 type EditableJob = Partial<HiringJob> & {
   certificationsList?: string[];
   screeningQuestionsList?: string[];
-  postingDestinations?: string[];
+  postingDestinationsList?: string[];
 };
 
 export default function HiringJobDetailPage() {
@@ -63,13 +63,21 @@ export default function HiringJobDetailPage() {
   function getEditing(): EditableJob {
     if (form) return form;
     if (!job) return {};
+    const certsList = job.certificationsRequired
+      ? job.certificationsRequired.split("\n").map((s) => s.trim()).filter(Boolean)
+      : [];
+    let sqList: string[] = [];
+    try {
+      const parsed = job.screeningQuestionsJson ? JSON.parse(job.screeningQuestionsJson) : [];
+      sqList = (parsed as Array<string | { question?: string }>).map(
+        (q) => (typeof q === "string" ? q : q.question ?? "")
+      );
+    } catch { sqList = []; }
     return {
       ...job,
-      certificationsList: (job.certifications ?? []) as string[],
-      screeningQuestionsList: ((job.screeningQuestions ?? []) as Array<string | { question?: string }>).map(
-        (q) => (typeof q === "string" ? q : (q as { question?: string }).question ?? "")
-      ),
-      postingDestinations: ((job as Record<string, unknown>).postingDestinations ?? []) as string[],
+      certificationsList: certsList,
+      screeningQuestionsList: sqList,
+      postingDestinationsList: [],
     };
   }
 
@@ -85,15 +93,16 @@ export default function HiringJobDetailPage() {
     mutationFn: async (data: EditableJob) => {
       const payload: Record<string, unknown> = { ...data };
       if (data.certificationsList !== undefined) {
-        payload.certifications = data.certificationsList.filter(Boolean);
+        payload.certificationsRequired = data.certificationsList.filter(Boolean).join("\n");
         delete payload.certificationsList;
       }
       if (data.screeningQuestionsList !== undefined) {
-        payload.screeningQuestions = data.screeningQuestionsList
-          .filter(Boolean)
-          .map((q) => ({ question: q }));
+        payload.screeningQuestionsJson = JSON.stringify(
+          data.screeningQuestionsList.filter(Boolean).map((q) => ({ question: q }))
+        );
         delete payload.screeningQuestionsList;
       }
+      delete payload.postingDestinationsList;
       const res = await apiRequest("PATCH", `/api/hiring/jobs/${jobId}`, payload);
       return res.json();
     },
@@ -131,7 +140,7 @@ export default function HiringJobDetailPage() {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Job not found.</p>
-        <Button variant="link" onClick={() => navigate("/hiring/jobs")} className="px-0 mt-2">
+        <Button variant="ghost" onClick={() => navigate("/hiring/jobs")} className="px-0 mt-2">
           <ArrowLeft className="w-4 h-4 mr-1" />Back to Jobs
         </Button>
       </div>
@@ -141,7 +150,7 @@ export default function HiringJobDetailPage() {
   const cfg = JOB_STATUS_CONFIG[job.status] ?? JOB_STATUS_CONFIG.DRAFT;
   const certList: string[] = editing.certificationsList ?? [];
   const sqList: string[] = editing.screeningQuestionsList ?? [];
-  const destList: string[] = editing.postingDestinations ?? [];
+  const destList: string[] = editing.postingDestinationsList ?? [];
 
   function addCert() { setField("certificationsList", [...certList, ""]); }
   function removeCert(i: number) { setField("certificationsList", certList.filter((_, idx) => idx !== i)); }
@@ -155,7 +164,7 @@ export default function HiringJobDetailPage() {
     const next = destList.includes(dest)
       ? destList.filter((d) => d !== dest)
       : [...destList, dest];
-    setField("postingDestinations", next);
+    setField("postingDestinationsList", next);
   }
 
   return (
@@ -335,10 +344,10 @@ export default function HiringJobDetailPage() {
                 <span className="text-sm text-muted-foreground">Status</span>
                 <Badge variant={cfg.variant}>{cfg.label}</Badge>
               </div>
-              {job.syncedAt && (
+              {job.lastSyncedAt && (
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Last Synced</span>
-                  <span className="text-sm">{new Date(job.syncedAt).toLocaleDateString()}</span>
+                  <span className="text-sm">{new Date(job.lastSyncedAt).toLocaleDateString()}</span>
                 </div>
               )}
               {job.externalJobId && (

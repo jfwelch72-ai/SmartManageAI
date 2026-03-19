@@ -25,9 +25,8 @@ import { Redirect } from "wouter";
 const SYNC_STATUS_CONFIG: Record<string, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
   PENDING: { label: "Pending", icon: Clock },
   RUNNING: { label: "Running", icon: RefreshCw },
-  SUCCESS: { label: "Success", icon: CheckCircle2 },
+  COMPLETED: { label: "Completed", icon: CheckCircle2 },
   FAILED: { label: "Failed", icon: AlertCircle },
-  PARTIAL: { label: "Partial", icon: AlertCircle },
 };
 
 const DEFAULT_PIPELINE_STAGES = [

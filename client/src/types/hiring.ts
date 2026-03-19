@@ -25,28 +25,34 @@ export type HiringCandidateSource =
   | "OTHER";
 
 export type ATSProvider = "WORKABLE" | "GREENHOUSE" | "LEVER";
-export type HiringSyncStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED" | "PARTIAL";
+export type HiringSyncStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 export type HiringInterviewStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
 
 export interface HiringJob {
   id: string;
   organizationId: string;
+  externalProvider: ATSProvider | null;
+  externalJobId: string | null;
   title: string;
   department: string | null;
   trade: string | null;
-  location: string | null;
   employmentType: HiringEmploymentType | null;
+  location: string | null;
   compensationType: HiringCompensationType | null;
   compensationMin: string | null;
   compensationMax: string | null;
   description: string | null;
   requirements: string | null;
-  certifications: string[] | null;
-  screeningQuestions: Record<string, unknown>[] | null;
-  postingDestinations: string[] | null;
+  preferredQualifications: string | null;
+  certificationsRequired: string | null;
+  screeningQuestionsJson: string | null;
+  internalNotes: string | null;
   status: HiringJobStatus;
-  externalJobId: string | null;
-  syncedAt: string | null;
+  assignedOwnerUserId: string | null;
+  createdByUserId: string | null;
+  publishedAt: string | null;
+  archivedAt: string | null;
+  lastSyncedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -122,13 +128,13 @@ export interface HiringInterview {
 export interface HiringActivityLog {
   id: string;
   organizationId: string;
-  actorId: string | null;
+  actorUserId: string | null;
   actorName: string | null;
   activityType: string;
   entityType: string | null;
   entityId: string | null;
-  entityName: string | null;
-  metadata: Record<string, unknown> | null;
+  entityLabel: string | null;
+  metadataJson: string | null;
   createdAt: string;
 }
 
