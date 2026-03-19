@@ -27,6 +27,7 @@ import {
   hiringPipelineConfigs,
   hiringActivityLogs,
   organizations,
+  tasks,
   insertHiringJobSchema,
   insertHiringJobTemplateSchema,
   insertHiringCandidateSchema,
@@ -731,9 +732,12 @@ router.put(
         });
       }
 
-      // Auto-create a follow-up task in hiring_tasks when HIRING_AUTO_TASKS is enabled
-      const autoTasksEnabled = await isFeatureEnabled(orgId(req), "HIRING_AUTO_TASKS");
-      if (autoTasksEnabled) {
+      // Auto-create a follow-up task in the unified tasks table when hiringAutoTasksEnabled org setting is on
+      const [orgSettings] = await db
+        .select({ hiringAutoTasksEnabled: organizations.hiringAutoTasksEnabled })
+        .from(organizations)
+        .where(eq(organizations.id, orgId(req)));
+      if (orgSettings?.hiringAutoTasksEnabled) {
         const STAGE_TASK_MAP: Record<string, string> = {
           SCREENING: `Review application for ${existing.fullName}`,
           PHONE_INTERVIEW: `Schedule phone interview with ${existing.fullName}`,
@@ -746,16 +750,18 @@ router.put(
         const taskTitle = STAGE_TASK_MAP[stage];
         if (taskTitle) {
           const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + 3); // 3-day default deadline
-          void db.insert(hiringTasks).values({
+          dueDate.setDate(dueDate.getDate() + 3);
+          void db.insert(tasks).values({
             organizationId: orgId(req),
-            candidateId: existing.id,
-            jobId: existing.jobId ?? null,
+            context: "HIRING",
+            hiringCandidateId: existing.id,
             title: taskTitle,
-            status: "open",
-            assignedUserId: existing.reviewerUserId ?? userId(req),
+            status: "PENDING",
+            priority: "MEDIUM",
+            sourceType: "SYSTEM",
+            assignedToId: existing.reviewerUserId ?? userId(req),
             dueDate,
-            createdByUserId: userId(req),
+            createdById: userId(req),
           });
         }
       }
@@ -1011,6 +1017,9 @@ router.post(
         updatedByUserId: userId(req),
         startAt: req.body.startAt ? new Date(req.body.startAt) : null,
         endAt: req.body.endAt ? new Date(req.body.endAt) : null,
+        interviewerUserIdsJson: req.body.interviewerUserIds?.length
+          ? JSON.stringify(req.body.interviewerUserIds)
+          : req.body.interviewerUserIdsJson ?? null,
       });
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -1653,10 +1662,30 @@ router.post(
         : "None provided";
 
       const screeningAnswers = scrubProtectedCharacteristics(rawAnswers);
+
+      // Attempt to extract resume text for inclusion in the prompt
+      let resumeContent = "";
       const hasResume = !!candidate.resumeStorageKey;
-      const resumeNote = hasResume
-        ? "Note: A resume file is on record. Evaluate based on application answers and any skills/certs mentioned."
-        : "Note: No resume on file. Evaluate based on application answers only; assign a lower confidenceScore accordingly.";
+      if (hasResume && candidate.resumeStorageKey) {
+        try {
+          const { ObjectStorageService } = await import("./objectStorage");
+          const objectStorageService = new ObjectStorageService();
+          const objectFile = await objectStorageService.getObjectEntityFile(candidate.resumeStorageKey);
+          const [contents] = await objectFile.download();
+          const ext = candidate.resumeStorageKey.split(".").pop()?.toLowerCase() ?? "";
+          if (["txt", "md", "csv"].includes(ext)) {
+            const text = contents.toString("utf8").slice(0, 4000);
+            resumeContent = scrubProtectedCharacteristics(text);
+          } else if (["pdf", "doc", "docx"].includes(ext)) {
+            resumeContent = `[${ext.toUpperCase()} resume file on record — content not extractable in this context. Evaluate based on application answers and inferred skills.]`;
+          }
+        } catch {
+          resumeContent = "[Resume file on record but could not be read. Evaluate based on application answers.]";
+        }
+      }
+      const resumeSection = hasResume
+        ? `--- RESUME ---\n${resumeContent || "[Resume file on record]"}\n\n`
+        : "Note: No resume on file. Evaluate based on application answers only; assign a lower confidenceScore accordingly.\n\n";
 
       const systemPrompt = `You are an expert construction HR analyst evaluating candidates for skilled trade roles in a ${orgTradeType.replace(/_/g, " ").toLowerCase()} company. Your evaluation must be based solely on job-relevant skills, certifications, experience, and answers. Do NOT consider or reference any protected characteristics such as race, gender, religion, age, nationality, disability, or any other characteristic protected by employment law. Return a JSON object with these exact keys:
 - "score": integer 0-100 overall fit score
@@ -1673,7 +1702,7 @@ router.post(
 - "extractedEquipment": array of strings (equipment or tools mentioned)
 - "interviewRecommendation": string, 1-2 sentences about what to probe in the interview`;
 
-      const userPrompt = `Evaluate this candidate for the role of ${jobTitle} at a ${orgTradeType.replace(/_/g, " ").toLowerCase()} firm.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n${resumeNote}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}--- APPLICATION ANSWERS ---\n${screeningAnswers}\n\nIMPORTANT: Base your evaluation on job-relevant skills, experience, and role requirements only. Do not reference or consider any protected characteristics.`;
+      const userPrompt = `Evaluate this candidate for the role of ${jobTitle} at a ${orgTradeType.replace(/_/g, " ").toLowerCase()} firm.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}${resumeSection}--- APPLICATION ANSWERS ---\n${screeningAnswers}\n\nIMPORTANT: Base your evaluation on job-relevant skills, experience, and role requirements only. Do not reference or consider any protected characteristics.`;
 
       const scored = await governedAiCall({
         orgId: orgId(req),
@@ -1716,6 +1745,17 @@ router.post(
       }
 
       const r = scored.result;
+
+      // Post-process: strip any protected-class content from AI-generated text fields
+      const sanitizeText = (text: string | undefined | null): string | null => {
+        if (!text) return null;
+        return scrubProtectedCharacteristics(text);
+      };
+      const sanitizeArray = (arr: string[] | undefined | null): string[] => {
+        if (!arr) return [];
+        return arr.map((item) => scrubProtectedCharacteristics(item)).filter(Boolean);
+      };
+
       const score = Math.max(0, Math.min(100, Number(r.score) || 0));
       const tradeFitScore = Math.max(0, Math.min(100, Number(r.tradeFitScore) || 0));
       const roleFitScore = Math.max(0, Math.min(100, Number(r.roleFitScore) || 0));
@@ -1733,14 +1773,14 @@ router.post(
           roleFitScore,
           confidenceScore,
           recommendation,
-          summary: r.summary ?? null,
-          strengthsJson: JSON.stringify(r.strengths ?? []),
-          concernsJson: JSON.stringify(r.concerns ?? []),
-          redFlagsJson: JSON.stringify(r.redFlags ?? []),
-          extractedSkillsJson: JSON.stringify(r.extractedSkills ?? []),
-          extractedCertsJson: JSON.stringify(r.extractedCerts ?? []),
-          extractedEquipmentJson: JSON.stringify(r.extractedEquipment ?? []),
-          interviewRecommendation: r.interviewRecommendation ?? null,
+          summary: sanitizeText(r.summary),
+          strengthsJson: JSON.stringify(sanitizeArray(r.strengths)),
+          concernsJson: JSON.stringify(sanitizeArray(r.concerns)),
+          redFlagsJson: JSON.stringify(sanitizeArray(r.redFlags)),
+          extractedSkillsJson: JSON.stringify(sanitizeArray(r.extractedSkills)),
+          extractedCertsJson: JSON.stringify(sanitizeArray(r.extractedCerts)),
+          extractedEquipmentJson: JSON.stringify(sanitizeArray(r.extractedEquipment)),
+          interviewRecommendation: sanitizeText(r.interviewRecommendation),
           promptVersion: AI_REVIEW_PROMPT_VERSION,
         })
         .returning();
@@ -1758,14 +1798,14 @@ router.post(
         roleFitScore,
         confidenceScore,
         recommendation,
-        summary: r.summary ?? "",
-        strengths: r.strengths ?? [],
-        concerns: r.concerns ?? [],
-        redFlags: r.redFlags ?? [],
-        extractedSkills: r.extractedSkills ?? [],
-        extractedCerts: r.extractedCerts ?? [],
-        extractedEquipment: r.extractedEquipment ?? [],
-        interviewRecommendation: r.interviewRecommendation ?? "",
+        summary: sanitizeText(r.summary) ?? "",
+        strengths: sanitizeArray(r.strengths),
+        concerns: sanitizeArray(r.concerns),
+        redFlags: sanitizeArray(r.redFlags),
+        extractedSkills: sanitizeArray(r.extractedSkills),
+        extractedCerts: sanitizeArray(r.extractedCerts),
+        extractedEquipment: sanitizeArray(r.extractedEquipment),
+        interviewRecommendation: sanitizeText(r.interviewRecommendation) ?? "",
         promptVersion: AI_REVIEW_PROMPT_VERSION,
         aiReviewId: aiReview.id,
         disclaimer: "This AI evaluation is one data point and must be reviewed by a human before any hiring decision is made. All final decisions must comply with applicable employment law.",
@@ -1826,10 +1866,19 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
   try {
     const org = orgId(req);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000);
 
     const [
-      jobCounts, candidateStageCounts, interviewStatusCounts, recentActivity, candidatesPerRole,
-      sourceCounts, aiScoreRows, monthlyApplicants,
+      jobCounts,
+      candidateStageCounts,
+      interviewStatusCounts,
+      recentActivity,
+      candidatesPerRole,
+      sourceCounts,
+      aiScoreRows,
+      monthlyApplicants,
+      rejectionReasonRows,
+      hiredCandidatesForDays,
     ] = await Promise.all([
       db
         .select({ status: hiringJobs.status, count: count() })
@@ -1885,10 +1934,30 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         .from(hiringCandidates)
         .where(and(
           eq(hiringCandidates.organizationId, org),
-          gte(hiringCandidates.appliedAt, new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)),
+          gte(hiringCandidates.appliedAt, sixMonthsAgo),
         ))
         .groupBy(sql`to_char(applied_at, 'YYYY-MM')`)
         .orderBy(sql`to_char(applied_at, 'YYYY-MM')`),
+      // rejection reasons from stage history
+      db
+        .select({ reason: hiringCandidateStageHistory.reason, count: count() })
+        .from(hiringCandidateStageHistory)
+        .where(and(
+          eq(hiringCandidateStageHistory.organizationId, org),
+          eq(hiringCandidateStageHistory.toStage, "REJECTED"),
+          isNotNull(hiringCandidateStageHistory.reason),
+        ))
+        .groupBy(hiringCandidateStageHistory.reason)
+        .orderBy(desc(count()))
+        .limit(10),
+      // hired candidates with appliedAt for avg days-to-hire calculation
+      db
+        .select({
+          appliedAt: hiringCandidates.appliedAt,
+          updatedAt: hiringCandidates.updatedAt,
+        })
+        .from(hiringCandidates)
+        .where(and(eq(hiringCandidates.organizationId, org), eq(hiringCandidates.currentStage, "HIRED"))),
     ]);
 
     const jobsByStatus = Object.fromEntries(jobCounts.map((r) => [r.status, Number(r.count)]));
@@ -1915,15 +1984,60 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
       count: Number(r.count),
     })).sort((a, b) => b.count - a.count);
 
+    // Pipeline funnel (canonical stage order for conversion metrics)
+    const STAGE_ORDER = [
+      "APPLICATION_RECEIVED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
+      "SKILLS_ASSESSMENT", "BACKGROUND_CHECK", "REFERENCE_CHECK", "OFFER_EXTENDED",
+      "HIRED", "REJECTED",
+    ];
+    const funnelStages = STAGE_ORDER.filter((s) => candidatesByStage[s] ?? 0 > 0);
+    const totalApplicants = candidateStageCounts.reduce((acc, r) => acc + Number(r.count), 0);
+    const funnelConversion = funnelStages.map((stage) => ({
+      stage,
+      count: candidatesByStage[stage] ?? 0,
+      conversionRate: totalApplicants > 0
+        ? Math.round(((candidatesByStage[stage] ?? 0) / totalApplicants) * 100)
+        : 0,
+    }));
+
+    // Avg days to hire
+    const hiredCount = hiredCandidatesForDays.length;
+    let avgDaysToHire: number | null = null;
+    if (hiredCount > 0) {
+      const totalDays = hiredCandidatesForDays.reduce((acc, c) => {
+        if (!c.appliedAt) return acc;
+        const applied = new Date(c.appliedAt).getTime();
+        const hired = new Date(c.updatedAt).getTime();
+        return acc + Math.max(0, Math.round((hired - applied) / (1000 * 60 * 60 * 24)));
+      }, 0);
+      avgDaysToHire = Math.round(totalDays / hiredCount);
+    }
+
+    // Fill rate (hired / published roles) as a percentage
+    const publishedRoles = jobsByStatus["PUBLISHED"] ?? 0;
+    const hired = candidatesByStage["HIRED"] ?? 0;
+    const fillRate = publishedRoles > 0 ? Math.round((hired / publishedRoles) * 100) : null;
+
+    // Offer acceptance rate: hired / (hired + offer_extended) * 100
+    const offerExtended = candidatesByStage["OFFER_EXTENDED"] ?? 0;
+    const offerAcceptanceRate = (hired + offerExtended) > 0
+      ? Math.round((hired / (hired + offerExtended)) * 100)
+      : null;
+
+    // Applicants this month
+    const now = new Date();
+    const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const applicantsThisMonth = monthlyApplicants.find((r) => r.month === thisMonthKey);
+
     res.json({
       jobs: {
         total: jobCounts.reduce((acc, r) => acc + Number(r.count), 0),
         byStatus: jobsByStatus,
       },
       candidates: {
-        total: candidateStageCounts.reduce((acc, r) => acc + Number(r.count), 0),
+        total: totalApplicants,
         byStage: candidatesByStage,
-        hired: candidatesByStage["HIRED"] ?? 0,
+        hired,
         rejected: candidatesByStage["REJECTED"] ?? 0,
         perRole: candidatesPerRole.map((r) => ({
           jobId: r.jobId,
@@ -1932,6 +2046,13 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         })),
         bySource: sourceBreakdown,
         aiScoreHistogram: scoreBuckets.map(({ range, count: c }) => ({ range, count: c })),
+        funnelConversion,
+        rejectionReasons: rejectionReasonRows.length > 0
+          ? rejectionReasonRows.map((r) => ({
+            reason: r.reason ?? "No reason provided",
+            count: Number(r.count),
+          }))
+          : [],
       },
       interviews: {
         total: interviewStatusCounts.reduce((acc, r) => acc + Number(r.count), 0),
@@ -1941,6 +2062,14 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         month: r.month,
         count: Number(r.count),
       })),
+      summaryStats: {
+        avgDaysToHire,
+        fillRate,
+        offerAcceptanceRate,
+        applicantsThisMonth: Number(applicantsThisMonth?.count ?? 0),
+        publishedRoles,
+        hired,
+      },
       recentActivity,
     });
   } catch (err) {

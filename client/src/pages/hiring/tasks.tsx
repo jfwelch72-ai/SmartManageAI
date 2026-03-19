@@ -1,26 +1,72 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ClipboardList, Plus, CheckCircle2, Circle } from "lucide-react";
-import { useHiringTasks, useCreateHiringTask, useUpdateHiringTask } from "@/lib/hiring-api";
 import { format } from "date-fns";
 
 interface HiringTask {
   id: string;
   title: string;
+  description: string | null;
   status: string;
+  priority: string;
   dueDate: string | null;
-  candidateId: string | null;
+  hiringCandidateId: string | null;
+  assignedToId: string | null;
+  assignedToFirstName: string | null;
+  assignedToLastName: string | null;
   createdAt: string;
+}
+
+const TASKS_QK = ["/api/tasks", "HIRING"] as const;
+
+function useHiringTasksList(statusFilter?: string) {
+  const params = new URLSearchParams({ context: "HIRING" });
+  if (statusFilter && statusFilter !== "all") params.set("status", statusFilter.toUpperCase());
+  return useQuery<HiringTask[]>({
+    queryKey: [...TASKS_QK, statusFilter ?? "all"],
+    queryFn: () => apiRequest("GET", `/api/tasks?${params.toString()}`).then((r) => r.json()),
+  });
+}
+
+function useCreateHiringTask() {
+  return useMutation({
+    mutationFn: (data: { title: string; description?: string; dueDate?: string; priority?: string }) =>
+      apiRequest("POST", "/api/tasks", {
+        ...data,
+        context: "HIRING",
+        sourceType: "MANUAL",
+        status: "PENDING",
+        priority: data.priority ?? "MEDIUM",
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QK });
+    },
+  });
+}
+
+function useToggleHiringTask(taskId: string, currentStatus: string) {
+  return useMutation({
+    mutationFn: () =>
+      apiRequest("PATCH", `/api/tasks/${taskId}`, {
+        status: currentStatus === "COMPLETED" ? "PENDING" : "COMPLETED",
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QK });
+    },
+  });
 }
 
 export default function HiringTasksPage() {
@@ -28,24 +74,49 @@ export default function HiringTasksPage() {
   const { toast } = useToast();
   const role = user?.role;
   const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER";
-  const canCreate = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER";
+  const canCreate = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER";
 
   const [showDialog, setShowDialog] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newDue, setNewDue] = useState("");
+  const [newPriority, setNewPriority] = useState("MEDIUM");
   const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
 
-  const { data: tasks = [], isLoading } = useHiringTasks();
+  const { data: allTasks = [], isLoading } = useHiringTasksList();
   const createMutation = useCreateHiringTask();
 
-  const filtered = (tasks as HiringTask[]).filter((t) => {
-    if (filter === "pending") return t.status !== "completed";
-    if (filter === "completed") return t.status === "completed";
+  const filtered = allTasks.filter((t) => {
+    if (filter === "pending") return t.status !== "COMPLETED";
+    if (filter === "completed") return t.status === "COMPLETED";
     return true;
   });
 
-  const pending = (tasks as HiringTask[]).filter((t) => t.status !== "completed").length;
-  const done = (tasks as HiringTask[]).filter((t) => t.status === "completed").length;
+  const pending = allTasks.filter((t) => t.status !== "COMPLETED").length;
+  const done = allTasks.filter((t) => t.status === "COMPLETED").length;
+
+  const handleCreate = () => {
+    if (!newTitle.trim()) return;
+    createMutation.mutate(
+      {
+        title: newTitle.trim(),
+        description: newDescription.trim() || undefined,
+        dueDate: newDue ? new Date(newDue).toISOString() : undefined,
+        priority: newPriority,
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "Task created" });
+          setShowDialog(false);
+          setNewTitle("");
+          setNewDescription("");
+          setNewDue("");
+          setNewPriority("MEDIUM");
+        },
+        onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  };
 
   return (
     <div className="space-y-6 p-6 max-w-4xl mx-auto">
@@ -80,7 +151,7 @@ export default function HiringTasksPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <ClipboardList className="w-4 h-4" />All Tasks
+            <ClipboardList className="w-4 h-4" />All Hiring Tasks
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -116,6 +187,29 @@ export default function HiringTasksPage() {
               />
             </div>
             <div className="space-y-1">
+              <Label>Description (optional)</Label>
+              <Input
+                placeholder="Additional details..."
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                data-testid="input-task-description"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Priority</Label>
+              <Select value={newPriority} onValueChange={setNewPriority}>
+                <SelectTrigger data-testid="select-task-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CRITICAL">Critical</SelectItem>
+                  <SelectItem value="HIGH">High</SelectItem>
+                  <SelectItem value="MEDIUM">Medium</SelectItem>
+                  <SelectItem value="LOW">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
               <Label>Due Date (optional)</Label>
               <Input
                 type="date"
@@ -128,21 +222,7 @@ export default function HiringTasksPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
             <Button
-              onClick={() => {
-                if (!newTitle.trim()) return;
-                createMutation.mutate(
-                  { title: newTitle.trim(), dueDate: newDue ? new Date(newDue).toISOString() : undefined },
-                  {
-                    onSuccess: () => {
-                      toast({ title: "Task created" });
-                      setShowDialog(false);
-                      setNewTitle("");
-                      setNewDue("");
-                    },
-                    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-                  }
-                );
-              }}
+              onClick={handleCreate}
               disabled={!newTitle.trim() || createMutation.isPending}
               data-testid="button-save-task"
             >
@@ -157,8 +237,15 @@ export default function HiringTasksPage() {
 
 function TaskRow({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
   const { toast } = useToast();
-  const isDone = task.status === "completed";
-  const updateMutation = useUpdateHiringTask(task.id);
+  const isDone = task.status === "COMPLETED";
+  const toggleMutation = useToggleHiringTask(task.id, task.status);
+
+  const priorityColors: Record<string, string> = {
+    CRITICAL: "destructive",
+    HIGH: "outline",
+    MEDIUM: "secondary",
+    LOW: "secondary",
+  };
 
   return (
     <li
@@ -169,13 +256,12 @@ function TaskRow({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
         type="button"
         onClick={() => {
           if (!canEdit) return;
-          updateMutation.mutate(
-            { status: isDone ? "pending" : "completed" },
-            { onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }) }
-          );
+          toggleMutation.mutate(undefined, {
+            onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+          });
         }}
         className="mt-0.5 shrink-0 hover:opacity-70 transition-opacity"
-        disabled={!canEdit || updateMutation.isPending}
+        disabled={!canEdit || toggleMutation.isPending}
         data-testid={`button-toggle-task-${task.id}`}
       >
         {isDone
@@ -186,20 +272,33 @@ function TaskRow({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
         <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : ""}`}>
           {task.title}
         </p>
-        <div className="flex items-center gap-2 mt-0.5">
+        {task.description && (
+          <p className="text-xs text-muted-foreground truncate">{task.description}</p>
+        )}
+        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
           {task.dueDate && (
             <span className="text-xs text-muted-foreground">
               Due {format(new Date(task.dueDate), "MMM d, yyyy")}
             </span>
           )}
-          {task.candidateId && (
+          {task.assignedToId && (
+            <span className="text-xs text-muted-foreground">
+              Assigned to {[task.assignedToFirstName, task.assignedToLastName].filter(Boolean).join(" ") || "—"}
+            </span>
+          )}
+          {task.hiringCandidateId && (
             <Badge variant="outline" className="text-xs">Linked to candidate</Badge>
           )}
         </div>
       </div>
-      <Badge variant={isDone ? "secondary" : "outline"} className="text-xs shrink-0">
-        {isDone ? "Done" : "Pending"}
-      </Badge>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Badge variant={priorityColors[task.priority] as "destructive" | "outline" | "secondary" | "default" || "outline"} className="text-xs">
+          {task.priority}
+        </Badge>
+        <Badge variant={isDone ? "secondary" : "outline"} className="text-xs">
+          {isDone ? "Done" : "Pending"}
+        </Badge>
+      </div>
     </li>
   );
 }

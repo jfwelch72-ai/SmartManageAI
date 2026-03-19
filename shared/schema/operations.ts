@@ -547,6 +547,8 @@ export const tasks = pgTable("tasks", {
   vendorId: varchar("vendor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
   emailThreadId: varchar("email_thread_id"),
   emailMessageId: varchar("email_message_id"),
+  context: varchar("context"),
+  hiringCandidateId: varchar("hiring_candidate_id"),
   title: text("title").notNull(),
   description: text("description"),
   category: aiNoteInsightCategoryEnum("category").notNull().default("OTHER"),

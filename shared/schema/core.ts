@@ -31,6 +31,7 @@ export const organizations = pgTable("organizations", {
   featureFlags: text("feature_flags"),
   matchTolerancePct: decimal("match_tolerance_pct", { precision: 5, scale: 2 }).default("5"),
   isActive: boolean("is_active").notNull().default(true),
+  hiringAutoTasksEnabled: boolean("hiring_auto_tasks_enabled").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

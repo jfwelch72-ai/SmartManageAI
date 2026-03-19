@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
-import { Users, BriefcaseBusiness, CalendarClock, TrendingUp, UserCheck, UserX } from "lucide-react";
+import { Users, BriefcaseBusiness, CalendarClock, TrendingUp, UserCheck, UserX, Clock, Target, BadgePercent, ClipboardList } from "lucide-react";
 
 interface HiringAnalytics {
   jobs: {
@@ -21,12 +21,22 @@ interface HiringAnalytics {
     perRole: Array<{ jobId: string | null; jobTitle: string; count: number }>;
     bySource: Array<{ source: string; count: number }>;
     aiScoreHistogram: Array<{ range: string; count: number }>;
+    funnelConversion: Array<{ stage: string; count: number; conversionRate: number }>;
+    rejectionReasons: Array<{ reason: string; count: number }>;
   };
   interviews: {
     total: number;
     byStatus: Record<string, number>;
   };
   monthlyTrend: Array<{ month: string; count: number }>;
+  summaryStats: {
+    avgDaysToHire: number | null;
+    fillRate: number | null;
+    offerAcceptanceRate: number | null;
+    applicantsThisMonth: number;
+    publishedRoles: number;
+    hired: number;
+  };
   recentActivity: Array<{
     id: string;
     activityType: string;
@@ -164,6 +174,12 @@ export default function HiringAnalyticsPage() {
   const sourceData = analytics?.candidates.bySource ?? [];
   const aiHistogramData = analytics?.candidates.aiScoreHistogram ?? [];
   const monthlyTrendData = analytics?.monthlyTrend ?? [];
+  const funnelData = (analytics?.candidates.funnelConversion ?? []).map((d) => ({
+    ...d,
+    name: STAGE_LABELS[d.stage] ?? d.stage,
+  }));
+  const rejectionReasonsData = analytics?.candidates.rejectionReasons ?? [];
+  const summaryStats = analytics?.summaryStats;
 
   const SOURCE_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ec4899", "#06b6d4", "#eab308", "#6366f1"];
   const AI_HISTOGRAM_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"];
@@ -184,6 +200,71 @@ export default function HiringAnalyticsPage() {
         <MetricCard icon={UserX} label="Rejected" value={analytics?.candidates.rejected} color="bg-destructive" sub={`${rejectionRate}% rejection rate`} />
         <MetricCard icon={CalendarClock} label="Scheduled Interviews" value={stats?.scheduledInterviews} />
         <MetricCard icon={BriefcaseBusiness} label="Offer Ready" value={stats?.offerReady} color="bg-emerald-600" />
+      </div>
+
+      {/* Key Hiring KPI Stats Row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <ClipboardList className="w-5 h-5 text-blue-600 dark:text-blue-300" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="stat-applicants-this-month">
+                  {isLoading ? <Skeleton className="h-6 w-10 inline-block" /> : (summaryStats?.applicantsThisMonth ?? 0)}
+                </p>
+                <p className="text-sm text-muted-foreground">Applicants This Month</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                <Clock className="w-5 h-5 text-orange-600 dark:text-orange-300" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="stat-avg-days-to-hire">
+                  {isLoading ? <Skeleton className="h-6 w-10 inline-block" /> : (summaryStats?.avgDaysToHire != null ? `${summaryStats.avgDaysToHire}d` : "—")}
+                </p>
+                <p className="text-sm text-muted-foreground">Avg Days to Hire</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                <Target className="w-5 h-5 text-emerald-600 dark:text-emerald-300" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="stat-fill-rate">
+                  {isLoading ? <Skeleton className="h-6 w-10 inline-block" /> : (summaryStats?.fillRate != null ? `${summaryStats.fillRate}%` : "—")}
+                </p>
+                <p className="text-sm text-muted-foreground">Fill Rate</p>
+                <p className="text-xs text-muted-foreground">Hired / Published Roles</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <BadgePercent className="w-5 h-5 text-purple-600 dark:text-purple-300" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold" data-testid="stat-offer-acceptance">
+                  {isLoading ? <Skeleton className="h-6 w-10 inline-block" /> : (summaryStats?.offerAcceptanceRate != null ? `${summaryStats.offerAcceptanceRate}%` : "—")}
+                </p>
+                <p className="text-sm text-muted-foreground">Offer Acceptance Rate</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -429,6 +510,75 @@ export default function HiringAnalyticsPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Pipeline Funnel &amp; Conversion</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : funnelData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No funnel data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={funnelData} margin={{ top: 5, right: 10, bottom: 40, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: 10 }}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip
+                    formatter={(value: number, name: string) =>
+                      name === "conversionRate" ? [`${value}%`, "Conversion Rate"] : [value, "Candidates"]
+                    }
+                  />
+                  <Bar dataKey="count" name="Candidates" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Rejection Reasons</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-48 w-full" />
+            ) : rejectionReasonsData.length === 0 ? (
+              <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
+                No rejection reason data (reasons are captured when candidates are rejected with a reason noted)
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1" data-testid="rejection-reasons-list">
+                {rejectionReasonsData.slice(0, 8).map((item, index) => {
+                  const maxCount = rejectionReasonsData[0].count;
+                  const pct = maxCount > 0 ? Math.round((item.count / maxCount) * 100) : 0;
+                  return (
+                    <div key={index} className="space-y-0.5" data-testid={`rejection-reason-${index}`}>
+                      <div className="flex justify-between text-sm">
+                        <span className="truncate max-w-[70%] text-muted-foreground">{item.reason}</span>
+                        <span className="font-medium">{item.count}</span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-destructive/70 transition-all"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </CardContent>
         </Card>

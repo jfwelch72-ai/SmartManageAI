@@ -132,7 +132,7 @@ router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: Aut
  */
 router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { status, assignedToId, projectId, createdById } = req.query;
+    const { status, assignedToId, projectId, createdById, context, hiringCandidateId } = req.query;
     const userRole = req.user!.role;
     const userId = req.user!.id;
 
@@ -164,6 +164,14 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
       conditions.push(eq(tasks.createdById, createdById as string));
     }
 
+    if (context) {
+      conditions.push(eq(tasks.context, context as string));
+    }
+
+    if (hiringCandidateId) {
+      conditions.push(eq(tasks.hiringCandidateId, hiringCandidateId as string));
+    }
+
     // Organization filter: filter tasks by organization
     if (shouldFilter && orgId) {
       conditions.push(eq(tasks.organizationId, orgId));
@@ -190,6 +198,8 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
         projectId: tasks.projectId,
         projectName: projects.name,
         projectCode: projects.code,
+        context: tasks.context,
+        hiringCandidateId: tasks.hiringCandidateId,
         title: tasks.title,
         description: tasks.description,
         category: tasks.category,
@@ -273,10 +283,14 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
     // Validate request body
     const schema = z.object({
       projectId: z.string().optional().nullable(),
+      context: z.string().optional().nullable(),
+      hiringCandidateId: z.string().optional().nullable(),
       title: z.string().min(1, "Title is required"),
       description: z.string().optional().nullable(),
       category: z.enum(["SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"]).default("OTHER"),
       priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).default("MEDIUM"),
+      status: z.enum(["PENDING", "IN_PROGRESS", "COMPLETED", "DISMISSED"]).optional(),
+      sourceType: z.enum(["MANUAL", "EMAIL", "AI_GENERATED", "SYSTEM"]).optional(),
       assignedToId: z.string().optional().nullable(),
       dueDate: z.string().optional().nullable().transform(val => val ? new Date(val) : undefined),
     });
@@ -289,6 +303,8 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
       .values({
         organizationId,
         projectId: validated.projectId || undefined,
+        context: validated.context || undefined,
+        hiringCandidateId: validated.hiringCandidateId || undefined,
         title: validated.title,
         description: validated.description || undefined,
         category: validated.category,
@@ -296,8 +312,8 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
         assignedToId: validated.assignedToId || undefined,
         dueDate: validated.dueDate,
         createdById: userId,
-        status: "PENDING",
-        sourceType: "MANUAL",
+        status: validated.status ?? "PENDING",
+        sourceType: validated.sourceType ?? "MANUAL",
       })
       .returning();
 

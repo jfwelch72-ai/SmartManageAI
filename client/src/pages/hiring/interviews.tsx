@@ -5,8 +5,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -18,7 +20,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Calendar, Clock, MapPin, Video, Plus, Bell, RotateCcw,
+  MapPin, Video, Plus, Bell, Users,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useHiringInterviews, useScheduleInterview, useUpdateInterview } from "@/lib/hiring-api";
@@ -59,6 +61,7 @@ const DEFAULT_FORM = {
   location: "",
   videoLink: "",
   notes: "",
+  interviewerUserIds: [] as string[],
 };
 
 export default function HiringInterviewsPage() {
@@ -80,6 +83,9 @@ export default function HiringInterviewsPage() {
   const { data: jobsList = [] } = useQuery<Array<{ id: string; title: string }>>({
     queryKey: ["/api/hiring/jobs"],
   });
+  const { data: usersList = [] } = useQuery<Array<{ id: string; firstName: string; lastName: string; role: string }>>({
+    queryKey: ["/api/users"],
+  });
   const scheduleMutation = useScheduleInterview();
   const cancelMutation = useUpdateInterview(cancelTarget?.id ?? "");
 
@@ -99,7 +105,7 @@ export default function HiringInterviewsPage() {
 
   function handleSchedule() {
     if (!form.candidateId || !form.startAt) {
-      toast({ title: "Required fields missing", description: "Candidate ID and start time are required.", variant: "destructive" });
+      toast({ title: "Required fields missing", description: "Candidate and start time are required.", variant: "destructive" });
       return;
     }
     scheduleMutation.mutate(
@@ -113,6 +119,7 @@ export default function HiringInterviewsPage() {
         location: form.location || undefined,
         videoLink: form.videoLink || undefined,
         notes: form.notes || undefined,
+        interviewerUserIds: form.interviewerUserIds.length > 0 ? form.interviewerUserIds : undefined,
       },
       {
         onSuccess: () => {
@@ -181,6 +188,7 @@ export default function HiringInterviewsPage() {
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium">Date &amp; Time</th>
                   <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Interviewers</th>
                   <th className="px-4 py-3 font-medium">Location</th>
                   {canEdit && <th className="px-4 py-3 font-medium">Actions</th>}
                 </tr>
@@ -212,6 +220,28 @@ export default function HiringInterviewsPage() {
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[interview.status] ?? "bg-muted text-muted-foreground"}`} data-testid={`status-${interview.id}`}>
                           {interview.status}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {(() => {
+                          try {
+                            const ids: string[] = JSON.parse(interview.interviewerUserIdsJson ?? "[]");
+                            if (!ids.length) return <span className="text-muted-foreground">—</span>;
+                            return (
+                              <div className="flex flex-wrap gap-1">
+                                {ids.map((uid) => {
+                                  const u = usersList.find((x) => x.id === uid);
+                                  return (
+                                    <Badge key={uid} variant="outline" className="text-xs">
+                                      {u ? `${u.firstName} ${u.lastName}` : uid.slice(0, 6)}
+                                    </Badge>
+                                  );
+                                })}
+                              </div>
+                            );
+                          } catch {
+                            return <span className="text-muted-foreground">—</span>;
+                          }
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {interview.videoLink ? (
@@ -365,6 +395,52 @@ export default function HiringInterviewsPage() {
                 data-testid="textarea-notes"
               />
             </div>
+            {usersList.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <Users className="w-4 h-4" /> Interviewers
+                </Label>
+                <div className="max-h-36 overflow-y-auto border rounded-md p-2 space-y-1" data-testid="interviewer-list">
+                  {usersList.map((u) => {
+                    const uid = u.id;
+                    const checked = form.interviewerUserIds.includes(uid);
+                    return (
+                      <div key={uid} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`interviewer-${uid}`}
+                          checked={checked}
+                          onCheckedChange={(val) =>
+                            setForm((f) => ({
+                              ...f,
+                              interviewerUserIds: val
+                                ? [...f.interviewerUserIds, uid]
+                                : f.interviewerUserIds.filter((id) => id !== uid),
+                            }))
+                          }
+                          data-testid={`checkbox-interviewer-${uid}`}
+                        />
+                        <label htmlFor={`interviewer-${uid}`} className="text-sm cursor-pointer">
+                          {u.firstName} {u.lastName}
+                          <span className="text-muted-foreground ml-1 text-xs">({u.role})</span>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                {form.interviewerUserIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {form.interviewerUserIds.map((uid) => {
+                      const u = usersList.find((x) => x.id === uid);
+                      return u ? (
+                        <Badge key={uid} variant="secondary" className="text-xs">
+                          {u.firstName} {u.lastName}
+                        </Badge>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSchedule(false)}>Cancel</Button>

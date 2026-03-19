@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -30,7 +30,7 @@ import {
 } from "lucide-react";
 import {
   useHiringCandidate, useCandidateNotes, useCandidateActivity,
-  useHiringTasks, useCreateHiringTask, useUpdateHiringTask, useAiScoreCandidate,
+  useAiScoreCandidate,
 } from "@/lib/hiring-api";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -105,9 +105,11 @@ interface HiringTask {
   id: string;
   title: string;
   status: string;
+  priority: string;
   dueDate: string | null;
-  assignedUserId: string | null;
-  candidateId: string | null;
+  hiringCandidateId: string | null;
+  assignedToFirstName: string | null;
+  assignedToLastName: string | null;
   createdAt: string;
 }
 
@@ -165,8 +167,32 @@ export default function CandidateDetailPage() {
 
   const { data: activity = [] } = useCandidateActivity(candidateId);
   const { data: notes = [] } = useCandidateNotes(candidateId);
-  const { data: tasks = [] } = useHiringTasks(candidateId);
-  const createTaskMutation = useCreateHiringTask();
+  const HIRING_TASKS_QK = ["/api/tasks", "HIRING", candidateId] as const;
+  const { data: tasks = [] } = useQuery<Array<{
+    id: string; title: string; status: string; priority: string;
+    dueDate: string | null; hiringCandidateId: string | null; createdAt: string;
+    assignedToFirstName: string | null; assignedToLastName: string | null;
+  }>>({
+    queryKey: HIRING_TASKS_QK,
+    queryFn: () =>
+      apiRequest("GET", `/api/tasks?context=HIRING&hiringCandidateId=${candidateId}`).then((r) => r.json()),
+    enabled: !!candidateId,
+  });
+  const createTaskMutation = useMutation({
+    mutationFn: (data: { title: string; dueDate?: string }) =>
+      apiRequest("POST", "/api/tasks", {
+        title: data.title,
+        dueDate: data.dueDate,
+        context: "HIRING",
+        hiringCandidateId: candidateId,
+        status: "PENDING",
+        priority: "MEDIUM",
+        sourceType: "MANUAL",
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: HIRING_TASKS_QK });
+    },
+  });
   const aiScoreMutation = useAiScoreCandidate(candidateId);
 
   const stageMutation = useMutation({
@@ -664,7 +690,17 @@ export default function CandidateDetailPage() {
                   ) : (
                     <ul className="space-y-2">
                       {(tasks as HiringTask[]).map((task) => (
-                        <LinkedTask key={task.id} task={task} canEdit={canEdit} />
+                        <LinkedTask
+                          key={task.id}
+                          task={task}
+                          canEdit={canEdit}
+                          onToggle={() => {
+                            const newStatus = task.status === "COMPLETED" ? "PENDING" : "COMPLETED";
+                            apiRequest("PATCH", `/api/tasks/${task.id}`, { status: newStatus })
+                              .then(() => queryClient.invalidateQueries({ queryKey: HIRING_TASKS_QK }))
+                              .catch(() => {});
+                          }}
+                        />
                       ))}
                     </ul>
                   )}
@@ -778,7 +814,6 @@ export default function CandidateDetailPage() {
                 createTaskMutation.mutate(
                   {
                     title: newTaskTitle.trim(),
-                    candidateId,
                     dueDate: newTaskDue ? new Date(newTaskDue).toISOString() : undefined,
                   },
                   {
@@ -804,25 +839,17 @@ export default function CandidateDetailPage() {
   );
 }
 
-function LinkedTask({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
-  const { toast } = useToast();
-  const isDone = task.status === "completed";
-  const updateMutation = useUpdateHiringTask(task.id);
+function LinkedTask({ task, canEdit, onToggle }: { task: HiringTask; canEdit: boolean; onToggle: () => void }) {
+  const isDone = task.status === "COMPLETED";
 
   return (
     <li className="flex items-start gap-2 text-sm" data-testid={`task-row-${task.id}`}>
       <button
         type="button"
-        onClick={() => {
-          if (!canEdit) return;
-          updateMutation.mutate(
-            { status: isDone ? "pending" : "completed" },
-            { onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }) }
-          );
-        }}
+        onClick={() => { if (canEdit) onToggle(); }}
         className="mt-0.5 shrink-0 hover:opacity-70 transition-opacity"
         data-testid={`button-toggle-task-${task.id}`}
-        disabled={!canEdit || updateMutation.isPending}
+        disabled={!canEdit}
       >
         {isDone
           ? <CheckCircle2 className="w-4 h-4 text-green-600" />
