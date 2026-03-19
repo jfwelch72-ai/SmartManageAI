@@ -311,12 +311,12 @@ export default function HiringInterviewsPage() {
             </div>
             <div className="space-y-1">
               <Label>Job (optional)</Label>
-              <Select value={form.jobId ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, jobId: v || undefined }))}>
+              <Select value={form.jobId ?? "__none__"} onValueChange={(v) => setForm((f) => ({ ...f, jobId: v === "__none__" ? undefined : v }))}>
                 <SelectTrigger data-testid="select-job">
                   <SelectValue placeholder="Select a job…" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No specific job</SelectItem>
+                  <SelectItem value="__none__">No specific job</SelectItem>
                   {(jobsList as Array<{ id: string; title: string }>).map((j) => (
                     <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>
                   ))}

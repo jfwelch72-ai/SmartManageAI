@@ -177,16 +177,6 @@ export interface HiringCandidateNote {
   createdAt: string;
 }
 
-export interface HiringCandidateNote {
-  id: string;
-  organizationId: string;
-  candidateId: string;
-  authorUserId: string | null;
-  authorName: string;
-  body: string;
-  createdAt: string;
-}
-
 export interface HiringDashboardStats {
   openRoles: number;
   draftRoles: number;
