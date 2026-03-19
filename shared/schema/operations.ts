@@ -4,7 +4,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
-import { aiRuns, crmOrganisations, organizationSowItems, quantityCategories, scopeWorkTypes } from "./features";
+import { aiRuns, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
 export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -770,6 +770,12 @@ export const changeOrders = pgTable("change_orders", {
   rejectionReason: text("rejection_reason"),
   approvalChainJson: text("approval_chain_json"),
   attachmentsJson: text("attachments_json"),
+  clientResponseDueDate: timestamp("client_response_due_date"),
+  linkedTmTicketId: varchar("linked_tm_ticket_id").references(() => tmTickets.id, { onDelete: "set null" }),
+  linkedRfiId: varchar("linked_rfi_id").references(() => rfis.id, { onDelete: "set null" }),
+  voidedAt: timestamp("voided_at"),
+  voidedById: varchar("voided_by_id").references(() => users.id, { onDelete: "set null" }),
+  voidReason: text("void_reason"),
   // Standardized Scope of Work fields (matches estimating sheets for production rate tracking)
   workTypeId: varchar("work_type_id"),
   workTypeCode: text("work_type_code"),
@@ -855,6 +861,28 @@ export const changeOrderApprovals = pgTable("change_order_approvals", {
   changeOrderIdIdx: index("change_order_approvals_co_id_idx").on(table.changeOrderId),
   statusIdx: index("change_order_approvals_status_idx").on(table.status),
 }));
+
+// Change Order Attachments - normalized file attachment table (replaces attachmentsJson blob)
+export const changeOrderAttachments = pgTable("change_order_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  storageKey: text("storage_key").notNull(),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  changeOrderIdIdx: index("co_attachments_co_id_idx").on(table.changeOrderId),
+  orgIdIdx: index("co_attachments_org_id_idx").on(table.organizationId),
+}));
+
+export const insertChangeOrderAttachmentSchema = createInsertSchema(changeOrderAttachments).omit({ id: true, createdAt: true });
+export type InsertChangeOrderAttachment = z.infer<typeof insertChangeOrderAttachmentSchema>;
+export type ChangeOrderAttachment = typeof changeOrderAttachments.$inferSelect;
 
 // Project Delays table - tracks schedule delays with change order integration
 export const projectDelays = pgTable("project_delays", {
@@ -1597,6 +1625,7 @@ export const insertChangeOrderSchema = createInsertSchema(changeOrders).omit({
   createdAt: true,
   updatedAt: true,
   approvedAt: true,
+  changeOrderNumber: true,
 });
 
 export const insertCalendarEventSchema = createInsertSchema(calendarEvents).omit({

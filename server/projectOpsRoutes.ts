@@ -5,10 +5,10 @@ import {
   changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries,
   calendarEvents, notifications, users,
   insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema,
-  insertChangeOrderSchema, insertCalendarEventSchema,
+  insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum,
 } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, desc, sql, and, type SQL } from "drizzle-orm";
+import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logDelete } from "./auditLogger";
 import { insertNotification, insertNotifications } from "./services/notificationService";
@@ -918,6 +918,61 @@ router.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthR
 // Change Orders Routes
 // ====================
 
+router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const { status, projectId } = req.query;
+
+    const conditions: SQL[] = [];
+
+    if (status === "OVERDUE") {
+      conditions.push(eq(changeOrders.status, "SUBMITTED"));
+      conditions.push(lt(changeOrders.clientResponseDueDate, sql`NOW()`));
+    } else if (status && typeof status === "string") {
+      const validStatuses = changeOrderStatusEnum.enumValues;
+      if (validStatuses.includes(status as typeof validStatuses[number])) {
+        conditions.push(eq(changeOrders.status, status as typeof validStatuses[number]));
+      }
+    }
+
+    if (projectId && typeof projectId === "string") {
+      conditions.push(eq(changeOrders.projectId, projectId));
+    }
+
+    let query = db
+      .select({
+        order: changeOrders,
+        project: {
+          id: projects.id,
+          name: projects.name,
+          code: projects.code,
+          gcOrganizationId: projects.gcOrganizationId,
+        },
+      })
+      .from(changeOrders)
+      .leftJoin(projects, eq(changeOrders.projectId, projects.id));
+
+    const rows = conditions.length > 0
+      ? await query.where(and(...conditions)).orderBy(desc(changeOrders.createdAt))
+      : await query.orderBy(desc(changeOrders.createdAt));
+
+    let result = rows;
+    if (shouldFilter && orgId) {
+      result = rows.filter(r => r.project?.gcOrganizationId === orgId);
+    }
+
+    res.json(result.map(r => ({ ...r.order, project: r.project })));
+  } catch (error) {
+    console.error("List change orders error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthRequest, res) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
@@ -999,8 +1054,16 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       scopeQuantity,
     } = req.body;
 
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(changeOrders)
+      .where(eq(changeOrders.projectId, validationResult.data.projectId));
+
+    const changeOrderNumber = `CO-${String((countResult?.count ?? 0) + 1).padStart(3, "0")}`;
+
     const insertData = { 
-      ...validationResult.data, 
+      ...validationResult.data,
+      changeOrderNumber,
       requestedById: req.user!.id,
       workTypeId: workTypeId || null,
       workTypeCode: workTypeCode || null,

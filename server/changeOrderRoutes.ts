@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals } from "@shared/schema";
+import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, tmTickets, rfis } from "@shared/schema";
 import { eq, and, desc, sql, max } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
@@ -276,12 +277,23 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
 
     // Update change order status with submittedAt timestamp
     const now = new Date();
+
+    const clientResponseDueDateRaw = req.body.clientResponseDueDate;
+    let clientResponseDueDate: Date | undefined;
+    if (clientResponseDueDateRaw) {
+      const parsed = new Date(clientResponseDueDateRaw);
+      if (!isNaN(parsed.getTime())) {
+        clientResponseDueDate = parsed;
+      }
+    }
+
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
         status: "SUBMITTED",
         submittedAt: now,
         updatedAt: now,
+        ...(clientResponseDueDate !== undefined ? { clientResponseDueDate } : {}),
       })
       .where(eq(changeOrders.id, req.params.id))
       .returning();
@@ -951,7 +963,6 @@ router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANA
     await db.insert(changeOrderApprovals).values(approvalEntries);
 
     await db.update(changeOrders).set({
-      approvalChainJson: JSON.stringify(validation.data.steps),
       updatedAt: new Date(),
     }).where(eq(changeOrders.id, req.params.id));
 
@@ -963,19 +974,157 @@ router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANA
 });
 
 // ====================
-// Change Order File Attachments
+// Change Order Link Routes
 // ====================
 
-/**
- * Upload and attach a file to a change order
- * Note: File should already be uploaded to object storage via /api/objects/upload
- * This endpoint saves the file metadata to the change order's attachmentsJson field
- * RBAC: Only admins, managers, and users associated with the project can upload files
- */
+router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { tmTicketId } = req.body;
+    if (!tmTicketId || typeof tmTicketId !== "string") {
+      res.status(400).json({ error: "tmTicketId is required" });
+      return;
+    }
+
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const [ticket] = await db.select().from(tmTickets).where(eq(tmTickets.id, tmTicketId)).limit(1);
+    if (!ticket) {
+      res.status(404).json({ error: "T&M ticket not found" });
+      return;
+    }
+
+    if (ticket.projectId !== order.projectId) {
+      res.status(400).json({ error: "T&M ticket does not belong to the same project as this change order" });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({ linkedTmTicketId: tmTicketId, updatedAt: new Date() })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    await createRevision(
+      order.id,
+      order.status,
+      order.status,
+      req.user!.id,
+      `Linked to T&M ticket ${ticket.ticketNumber}`,
+      order.amount,
+      { linkedTmTicketId: tmTicketId }
+    );
+
+    if (ticket.submittedById) {
+      try {
+        const { notifySubmitter } = await import("./services/approvalNotificationService");
+        await notifySubmitter(ticket.submittedById, {
+          type: "GENERAL",
+          title: "T&M Ticket Linked to Change Order",
+          message: `T&M ticket ${ticket.ticketNumber} has been linked to change order ${order.changeOrderNumber}`,
+          relatedEntityId: order.id,
+          relatedEntityType: "changeOrder",
+        });
+      } catch (e) {
+        console.error("Failed to notify TM ticket submitter:", e);
+      }
+    }
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Link TM ticket error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { rfiId } = req.body;
+    if (!rfiId || typeof rfiId !== "string") {
+      res.status(400).json({ error: "rfiId is required" });
+      return;
+    }
+
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const [rfi] = await db.select().from(rfis).where(eq(rfis.id, rfiId)).limit(1);
+    if (!rfi) {
+      res.status(404).json({ error: "RFI not found" });
+      return;
+    }
+
+    if (rfi.projectId !== order.projectId) {
+      res.status(400).json({ error: "RFI does not belong to the same project as this change order" });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({ linkedRfiId: rfiId, updatedAt: new Date() })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    await createRevision(
+      order.id,
+      order.status,
+      order.status,
+      req.user!.id,
+      `Linked to RFI ${rfi.rfiNumber}`,
+      order.amount,
+      { linkedRfiId: rfiId }
+    );
+
+    if (rfi.submittedById) {
+      try {
+        const { notifySubmitter } = await import("./services/approvalNotificationService");
+        await notifySubmitter(rfi.submittedById, {
+          type: "GENERAL",
+          title: "RFI Linked to Change Order",
+          message: `RFI ${rfi.rfiNumber} has been linked to change order ${order.changeOrderNumber}`,
+          relatedEntityId: order.id,
+          relatedEntityType: "changeOrder",
+        });
+      } catch (e) {
+        console.error("Failed to notify RFI submitter:", e);
+      }
+    }
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Link RFI error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// Change Order File Attachments (GCS-sidecar-backed normalized table)
+// ====================
+
 router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const result = await getChangeOrderById(req.params.id);
-    
+
     if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
       return;
@@ -983,104 +1132,113 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
 
     const { order, project: orderProject } = result;
 
-    // Check organization access first
     const { allowed } = checkOrgAccess(req, orderProject?.gcOrganizationId);
     if (!allowed) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
 
-    // SECURITY: Verify user has permission to attach files to this change order
-    // Only admins, managers, office managers, and users associated with the project can upload
-    const userRole = req.user!.role;
-    const userId = req.user!.id;
-    
-    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
-      // Get full project to verify user is superintendent or associated with project
-      const [project] = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, order.projectId))
-        .limit(1);
-      
-      if (!project) {
+    const user = req.user!;
+    const userId = user.id;
+    const organizationId = user.organizationId;
+    if (!organizationId) {
+      res.status(400).json({ error: "User must belong to an organization" });
+      return;
+    }
+
+    // Project-level permission: non-privileged roles may only upload if they are
+    // the project superintendent, estimator, or the change order requester
+    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user.role)) {
+      const [proj] = await db.select().from(projects).where(eq(projects.id, order.projectId)).limit(1);
+      if (!proj) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      
-      // Verify user is the project superintendent, estimator, or the change order requester
-      if (project.superintendentId !== userId && 
-          project.estimatorId !== userId && 
-          order.requestedById !== userId) {
+      if (proj.superintendentId !== userId && proj.estimatorId !== userId && order.requestedById !== userId) {
         res.status(403).json({ error: "You don't have permission to upload files to this change order" });
         return;
       }
     }
 
-    // Validate file metadata
-    const fileSchema = z.object({
-      fileUrl: z.string(),
+    const uploadSchema = z.object({
       fileName: z.string(),
-      fileSize: z.number(),
-      mimeType: z.string(),
+      fileSize: z.number().optional(),
+      mimeType: z.string().optional(),
+      fileUrl: z.string(),
       description: z.string().optional(),
     });
 
-    const validationResult = fileSchema.safeParse(req.body);
-    
-    if (!validationResult.success) {
-      res.status(400).json({ error: "Invalid file metadata", details: validationResult.error.errors });
+    const parseResult = uploadSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: "Validation failed", details: parseResult.error.flatten() });
       return;
     }
 
-    const { fileUrl, fileName, fileSize, mimeType, description } = validationResult.data;
+    const { fileName, fileSize, mimeType, fileUrl, description } = parseResult.data;
 
-    // Set object ACL policy for the file
-    const { ObjectStorageService } = await import("./objectStorage");
-    const objectStorageService = new ObjectStorageService();
-    
-    const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
-      fileUrl,
-      {
-        owner: req.user!.id,
-        organizationId: req.user!.organizationId!,
-        visibility: "private", // Change order files are private
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(fileUrl);
+    } catch {
+      res.status(400).json({ error: "Invalid fileUrl" });
+      return;
+    }
+    if (parsedUrl.protocol !== "https:") {
+      res.status(400).json({ error: "fileUrl must use https" });
+      return;
+    }
+    const blockedHosts = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0|fd[0-9a-f]{2}:|fc[0-9a-f]{2}:)/i;
+    if (blockedHosts.test(parsedUrl.hostname)) {
+      res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
+      return;
+    }
+
+    const objectUUID = randomUUID();
+    const objectPath = `${organizationId}/change-orders/${req.params.id}/${objectUUID}/${fileName}`;
+
+    let storageKey: string;
+    try {
+      const response = await fetch(`http://127.0.0.1:1106/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl, objectPath }),
+      });
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+        res.status(502).json({ error: "File storage upload failed" });
+        return;
       }
-    );
+      const data = await response.json() as { storageKey?: string };
+      storageKey = data.storageKey || objectPath;
+    } catch (sidecarErr) {
+      console.error("GCS sidecar unreachable:", sidecarErr);
+      res.status(502).json({ error: "File storage service unavailable" });
+      return;
+    }
 
-    // Get current attachments or initialize empty array
-    const currentAttachments = order.attachmentsJson 
-      ? JSON.parse(order.attachmentsJson) 
-      : [];
+    const [dbUser] = await db
+      .select({ firstName: users.firstName, lastName: users.lastName })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
 
-    // Add new file to attachments
-    const newAttachment = {
-      id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      fileUrl,
+    const uploadedByName = dbUser ? `${dbUser.firstName} ${dbUser.lastName}` : user.id;
+
+    const [newAttachment] = await db.insert(changeOrderAttachments).values({
+      changeOrderId: req.params.id,
+      organizationId,
       fileName,
-      fileSize,
-      mimeType,
-      description: description || "",
-      uploadedById: req.user!.id,
-      uploadedAt: new Date().toISOString(),
-      objectKey,
-    };
+      fileSize: fileSize ?? null,
+      mimeType: mimeType ?? null,
+      storageKey,
+      uploadedById: user.id,
+      uploadedByName,
+      description: description ?? null,
+    }).returning();
 
-    const updatedAttachments = [...currentAttachments, newAttachment];
-
-    // Update change order with new attachments
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        attachmentsJson: JSON.stringify(updatedAttachments),
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
-
-    // Audit log
     await logAudit({
-      userId: req.user!.id,
+      userId: user.id,
       action: "UPDATE",
       entityType: "changeOrder",
       entityId: order.id,
@@ -1095,168 +1253,171 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
   }
 });
 
-/**
- * Get all files attached to a change order
- * RBAC: Only admins, managers, and users associated with the project can view files
- */
 router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const result = await getChangeOrderById(req.params.id);
-    
+
     if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
       return;
     }
 
-    const { order, project: orderProject } = result;
+    const { order: orderForFiles, project: orderProject } = result;
 
-    // Check organization access first
     const { allowed } = checkOrgAccess(req, orderProject?.gcOrganizationId);
     if (!allowed) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
 
-    // SECURITY: Verify user has permission to view files for this change order
-    const userRole = req.user!.role;
-    const userId = req.user!.id;
-    
-    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
-      // Get full project to verify user is superintendent or associated with project
-      const [project] = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, order.projectId))
-        .limit(1);
-      
-      if (!project) {
+    // Project-level permission: non-privileged roles may only view if they are
+    // the project superintendent, estimator, or the change order requester
+    const viewUser = req.user!;
+    const viewUserId = viewUser.id;
+    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(viewUser.role)) {
+      const [proj] = await db.select().from(projects).where(eq(projects.id, orderForFiles.projectId)).limit(1);
+      if (!proj) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      
-      // Verify user is the project superintendent, estimator, or the change order requester
-      if (project.superintendentId !== userId && 
-          project.estimatorId !== userId && 
-          order.requestedById !== userId) {
+      if (proj.superintendentId !== viewUserId && proj.estimatorId !== viewUserId && orderForFiles.requestedById !== viewUserId) {
         res.status(403).json({ error: "You don't have permission to view files for this change order" });
         return;
       }
     }
 
-    const attachments = order.attachmentsJson 
-      ? JSON.parse(order.attachmentsJson) 
-      : [];
+    const attachments = await db
+      .select()
+      .from(changeOrderAttachments)
+      .where(eq(changeOrderAttachments.changeOrderId, req.params.id))
+      .orderBy(changeOrderAttachments.createdAt);
 
-    res.json(attachments);
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+
+    const result2 = await Promise.all(
+      attachments.map(async (att) => {
+        let fileUrl: string | null = null;
+        try {
+          const objectFile = await objectStorageService.getObjectEntityFile(att.storageKey);
+          const [signedUrl] = await objectFile.getSignedUrl({
+            version: "v4" as const,
+            action: "read" as const,
+            expires: Date.now() + 60 * 60 * 1000,
+          });
+          fileUrl = signedUrl;
+        } catch (e) {
+          console.error(`Failed to get signed URL for attachment ${att.id}:`, e);
+        }
+        return {
+          id: att.id,
+          fileUrl,
+          fileName: att.fileName,
+          fileSize: att.fileSize,
+          mimeType: att.mimeType,
+          description: att.description,
+          uploadedById: att.uploadedById,
+          uploadedByName: att.uploadedByName,
+          uploadedAt: att.createdAt,
+          storageKey: att.storageKey,
+          organizationId: att.organizationId,
+          changeOrderId: att.changeOrderId,
+        };
+      })
+    );
+
+    res.json(result2);
   } catch (error: any) {
     console.error("Get change order files error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-/**
- * Delete a file from a change order
- * RBAC: Only the uploader, admins, and managers can delete files
- */
 router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const result = await getChangeOrderById(req.params.id);
-    
+
     if (!result?.order) {
       res.status(404).json({ error: "Change order not found" });
       return;
     }
 
-    const { order, project: orderProject } = result;
+    const { order: deleteOrder, project: orderProject } = result;
 
-    // Check organization access first
     const { allowed } = checkOrgAccess(req, orderProject?.gcOrganizationId);
     if (!allowed) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
 
-    // SECURITY: First verify user has basic access to view this change order
-    const userRole = req.user!.role;
-    const userId = req.user!.id;
-    
-    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(userRole)) {
-      // Get full project to verify user is superintendent or associated with project
-      const [project] = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, order.projectId))
-        .limit(1);
-      
-      if (!project) {
+    // Project-level permission: non-privileged roles may only access if they are
+    // the project superintendent, estimator, or the change order requester
+    const deleteUser = req.user!;
+    const deleteUserId = deleteUser.id;
+    if (!["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(deleteUser.role)) {
+      const [proj] = await db.select().from(projects).where(eq(projects.id, deleteOrder.projectId)).limit(1);
+      if (!proj) {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      
-      // Verify user is the project superintendent, estimator, or the change order requester
-      if (project.superintendentId !== userId && 
-          project.estimatorId !== userId && 
-          order.requestedById !== userId) {
-        res.status(403).json({ error: "You don't have permission to access this change order" });
+      if (proj.superintendentId !== deleteUserId && proj.estimatorId !== deleteUserId && deleteOrder.requestedById !== deleteUserId) {
+        res.status(403).json({ error: "You don't have permission to delete files for this change order" });
         return;
       }
     }
 
-    const attachments = order.attachmentsJson 
-      ? JSON.parse(order.attachmentsJson) 
-      : [];
+    const [attachment] = await db
+      .select()
+      .from(changeOrderAttachments)
+      .where(and(
+        eq(changeOrderAttachments.id, req.params.fileId),
+        eq(changeOrderAttachments.changeOrderId, req.params.id)
+      ))
+      .limit(1);
 
-    const fileToDelete = attachments.find((f: any) => f.id === req.params.fileId);
-    
-    if (!fileToDelete) {
+    if (!attachment) {
       res.status(404).json({ error: "File not found" });
       return;
     }
 
-    // Check permissions: uploader, admin, manager, or office manager can delete
-    const isUploader = fileToDelete.uploadedById === req.user!.id;
-    const isAuthorized = ["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(req.user!.role);
-
-    if (!isUploader && !isAuthorized) {
-      res.status(403).json({ error: "Permission denied" });
+    const user = req.user!;
+    if (attachment.uploadedById !== user.id && !["ADMIN", "MANAGER", "OFFICE_MANAGER"].includes(user.role)) {
+      res.status(403).json({ error: "You don't have permission to delete this file" });
       return;
     }
 
-    // Remove file from attachments
-    const updatedAttachments = attachments.filter((f: any) => f.id !== req.params.fileId);
-
-    if (fileToDelete.objectKey) {
+    if (attachment.storageKey) {
       try {
-        const { ObjectStorageService } = await import("./objectStorage");
-        const objectStorageService = new ObjectStorageService();
-        const objectFile = await objectStorageService.getObjectEntityFile(fileToDelete.objectKey);
-        await objectFile.delete();
-      } catch (error) {
-        console.error("Error deleting change order attachment from object storage:", error);
+        const delResponse = await fetch(`http://127.0.0.1:1106/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storageKey: attachment.storageKey }),
+        });
+        if (!delResponse.ok) {
+          const errBody = await delResponse.text().catch(() => "");
+          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
+          return;
+        }
+      } catch (sidecarErr) {
+        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
+        return;
       }
     }
 
-    // Update change order
-    const [updatedOrder] = await db
-      .update(changeOrders)
-      .set({
-        attachmentsJson: JSON.stringify(updatedAttachments),
-        updatedAt: new Date(),
-      })
-      .where(eq(changeOrders.id, req.params.id))
-      .returning();
+    await db.delete(changeOrderAttachments).where(eq(changeOrderAttachments.id, req.params.fileId));
 
-    // Audit log
     await logAudit({
-      userId: req.user!.id,
+      userId: user.id,
       action: "DELETE",
       entityType: "changeOrder",
-      entityId: order.id,
-      oldValue: JSON.stringify({ fileName: fileToDelete.fileName }),
+      entityId: deleteOrder.id,
+      oldValue: JSON.stringify({ fileName: attachment.fileName }),
       newValue: null,
     }, req);
 
-    res.json({ success: true });
+    res.status(204).send();
   } catch (error: any) {
     console.error("Delete change order file error:", error);
     res.status(500).json({ error: "Internal server error" });
