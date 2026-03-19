@@ -14,7 +14,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Link2, RefreshCw, TestTube2, ShieldOff, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { Link2, RefreshCw, TestTube2, ShieldOff, AlertCircle, CheckCircle2, Clock, GripVertical } from "lucide-react";
 import {
   useHiringIntegrations, useHiringSyncLogs, useConnectIntegration,
   useDisconnectIntegration, useTestIntegration, useSyncIntegration,
@@ -29,6 +29,74 @@ const SYNC_STATUS_CONFIG: Record<string, { label: string; icon: React.ComponentT
   FAILED: { label: "Failed", icon: AlertCircle },
   PARTIAL: { label: "Partial", icon: AlertCircle },
 };
+
+const DEFAULT_PIPELINE_STAGES = [
+  "APPLIED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
+  "SKILLS_ASSESSMENT", "BACKGROUND_CHECK", "REFERENCE_CHECK",
+  "OFFER_EXTENDED", "HIRED", "REJECTED", "ARCHIVED",
+];
+
+function stageName(stage: string) {
+  return stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function PipelineStageOrderCard() {
+  const [stages, setStages] = useState<string[]>(DEFAULT_PIPELINE_STAGES);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  function handleDragStart(idx: number) { setDragIdx(idx); }
+  function handleDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault();
+    setOverIdx(idx);
+  }
+  function handleDrop(e: React.DragEvent, idx: number) {
+    e.preventDefault();
+    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setOverIdx(null); return; }
+    const next = [...stages];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(idx, 0, moved);
+    setStages(next);
+    setDragIdx(null);
+    setOverIdx(null);
+  }
+  function handleDragEnd() { setDragIdx(null); setOverIdx(null); }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Default Pipeline Stage Order</CardTitle>
+        <CardDescription>Drag to reorder stages in your hiring pipeline. Changes are saved per-organization in a future release.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ul className="space-y-1.5" data-testid="pipeline-stage-order">
+          {stages.map((stage, idx) => (
+            <li
+              key={stage}
+              draggable
+              onDragStart={() => handleDragStart(idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDrop={(e) => handleDrop(e, idx)}
+              onDragEnd={handleDragEnd}
+              className={`flex items-center gap-3 px-3 py-2 rounded border cursor-grab active:cursor-grabbing transition-all select-none ${
+                overIdx === idx && dragIdx !== idx
+                  ? "border-primary bg-primary/5"
+                  : "bg-muted/30 border-border"
+              } ${dragIdx === idx ? "opacity-40" : ""}`}
+              data-testid={`stage-order-${stage}`}
+            >
+              <GripVertical className="w-4 h-4 text-muted-foreground shrink-0" />
+              <span className="text-xs text-muted-foreground w-5 text-right">{idx + 1}</span>
+              <span className="text-sm font-medium flex-1">{stageName(stage)}</span>
+              <Badge variant="outline" className="text-xs">Default</Badge>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground mt-3">Changes to stage order here apply to your local view; per-org persistence is coming in a future update.</p>
+      </CardContent>
+    </Card>
+  );
+}
 
 interface ATSConnectForm {
   providerName: string;
@@ -290,30 +358,7 @@ export default function HiringSettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Default Pipeline Stage Order</CardTitle>
-          <CardDescription>Configure the default order of stages in your hiring pipeline. Drag to reorder (future use).</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2" data-testid="pipeline-stage-order">
-            {[
-              "APPLIED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
-              "SKILLS_ASSESSMENT", "BACKGROUND_CHECK", "REFERENCE_CHECK",
-              "OFFER_EXTENDED", "HIRED", "REJECTED", "ARCHIVED",
-            ].map((stage, idx) => (
-              <li key={stage} className="flex items-center gap-3 p-2 rounded border bg-muted/30" data-testid={`stage-order-${stage}`}>
-                <span className="text-xs text-muted-foreground w-5 text-right">{idx + 1}</span>
-                <span className="text-sm font-medium">
-                  {stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                </span>
-                <Badge variant="outline" className="ml-auto text-xs">Default</Badge>
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-muted-foreground mt-3">Drag-to-reorder will be available in a future update.</p>
-        </CardContent>
-      </Card>
+      <PipelineStageOrderCard />
     </div>
   );
 }

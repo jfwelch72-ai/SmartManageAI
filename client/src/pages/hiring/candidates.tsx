@@ -12,9 +12,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Search, Star, X } from "lucide-react";
 import { useHiringCandidates, useHiringJobs } from "@/lib/hiring-api";
-import { format } from "date-fns";
+import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
+import type { HiringCandidate } from "@/types/hiring";
 
 const STAGE_COLORS: Record<string, string> = {
   APPLIED: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
@@ -63,6 +65,8 @@ const AI_SCORE_FILTERS = [
   { value: "NONE", label: "Not Scored" },
 ];
 
+const ALL_STAGES = Object.keys(STAGE_LABELS);
+
 function initials(name: string) {
   return name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
 }
@@ -76,12 +80,28 @@ function matchesAiScore(score: number | null, filter: string): boolean {
   return true;
 }
 
+function matchesDateRange(appliedAt: string | null, from: string, to: string): boolean {
+  if (!from && !to) return true;
+  if (!appliedAt) return false;
+  const date = parseISO(appliedAt);
+  const start = from ? startOfDay(parseISO(from)) : new Date(0);
+  const end = to ? endOfDay(parseISO(to)) : new Date(8640000000000000);
+  return isWithinInterval(date, { start, end });
+}
+
+function reviewerDisplay(candidate: HiringCandidate): string | null {
+  if (!candidate.reviewerUserId) return null;
+  return candidate.reviewerUserId.slice(0, 6).toUpperCase();
+}
+
 export default function HiringCandidatesPage() {
   const [search, setSearch] = useState("");
-  const [stageFilter, setStageFilter] = useState("ALL");
+  const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState("ALL");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [aiScoreFilter, setAiScoreFilter] = useState("ALL");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const { data: candidates = [], isLoading } = useHiringCandidates();
   const { data: jobs = [] } = useHiringJobs();
@@ -93,31 +113,42 @@ export default function HiringCandidatesPage() {
       !search ||
       c.fullName.toLowerCase().includes(search.toLowerCase()) ||
       (c.email ?? "").toLowerCase().includes(search.toLowerCase());
-    const matchStage = stageFilter === "ALL" || c.currentStage === stageFilter;
+    const matchStage = selectedStages.length === 0 || selectedStages.includes(c.currentStage);
     const matchSource = sourceFilter === "ALL" || c.source === sourceFilter;
     const matchRole =
       roleFilter === "ALL" || (c.jobId ? jobsById[c.jobId]?.title === roleFilter : false);
     const matchAi = matchesAiScore(c.aiScore, aiScoreFilter);
-    return matchSearch && matchStage && matchSource && matchRole && matchAi;
+    const matchDate = matchesDateRange(c.appliedAt, dateFrom, dateTo);
+    return matchSearch && matchStage && matchSource && matchRole && matchAi && matchDate;
   });
 
   const uniqueRoles = Array.from(new Set(
     candidates.filter((c) => c.jobId && jobsById[c.jobId]).map((c) => jobsById[c.jobId!]?.title)
   )).filter(Boolean) as string[];
 
+  function toggleStage(stage: string) {
+    setSelectedStages((prev) =>
+      prev.includes(stage) ? prev.filter((s) => s !== stage) : [...prev, stage]
+    );
+  }
+
   const activeFilters =
-    (stageFilter !== "ALL" ? 1 : 0) +
+    selectedStages.length +
     (sourceFilter !== "ALL" ? 1 : 0) +
     (roleFilter !== "ALL" ? 1 : 0) +
     (aiScoreFilter !== "ALL" ? 1 : 0) +
-    (search ? 1 : 0);
+    (search ? 1 : 0) +
+    (dateFrom ? 1 : 0) +
+    (dateTo ? 1 : 0);
 
   function clearFilters() {
     setSearch("");
-    setStageFilter("ALL");
+    setSelectedStages([]);
     setSourceFilter("ALL");
     setRoleFilter("ALL");
     setAiScoreFilter("ALL");
+    setDateFrom("");
+    setDateTo("");
   }
 
   return (
@@ -129,7 +160,7 @@ export default function HiringCandidatesPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-end gap-2">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -148,17 +179,6 @@ export default function HiringCandidatesPage() {
                 <SelectItem value="ALL">All Roles</SelectItem>
                 {uniqueRoles.map((r) => (
                   <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={stageFilter} onValueChange={setStageFilter}>
-              <SelectTrigger className="w-44 h-8" data-testid="select-stage-filter">
-                <SelectValue placeholder="All Stages" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Stages</SelectItem>
-                {Object.entries(STAGE_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>{v}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -183,11 +203,54 @@ export default function HiringCandidatesPage() {
                 ))}
               </SelectContent>
             </Select>
+            <div className="flex items-end gap-1.5">
+              <div className="space-y-0.5">
+                <Label className="text-xs text-muted-foreground">From</Label>
+                <Input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="h-8 w-36"
+                  data-testid="input-date-from"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-xs text-muted-foreground">To</Label>
+                <Input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="h-8 w-36"
+                  data-testid="input-date-to"
+                />
+              </div>
+            </div>
             {activeFilters > 0 && (
               <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 px-2" data-testid="button-clear-filters">
                 <X className="w-3 h-3 mr-1" />Clear ({activeFilters})
               </Button>
             )}
+          </div>
+
+          <div className="flex flex-wrap gap-1 mt-2" data-testid="stage-multi-select">
+            {ALL_STAGES.map((stage) => {
+              const active = selectedStages.includes(stage);
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => toggleStage(stage)}
+                  data-testid={`stage-toggle-${stage}`}
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-all ${
+                    active
+                      ? STAGE_COLORS[stage] + " border-current"
+                      : "border-border text-muted-foreground hover:border-foreground/40"
+                  }`}
+                >
+                  {STAGE_LABELS[stage]}
+                </button>
+              );
+            })}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -207,11 +270,13 @@ export default function HiringCandidatesPage() {
                   <TableHead>Source</TableHead>
                   <TableHead>Applied</TableHead>
                   <TableHead>AI Score</TableHead>
+                  <TableHead>Reviewer</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((c) => {
                   const job = c.jobId ? jobsById[c.jobId] : null;
+                  const rev = reviewerDisplay(c);
                   return (
                     <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" data-testid={`row-candidate-${c.id}`}>
                       <TableCell>
@@ -247,6 +312,17 @@ export default function HiringCandidatesPage() {
                           </div>
                         ) : (
                           <Badge variant="outline" className="text-xs text-muted-foreground">Pending</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {rev ? (
+                          <div className="flex items-center gap-1.5" data-testid={`reviewer-${c.id}`}>
+                            <Avatar className="w-6 h-6">
+                              <AvatarFallback className="text-xs bg-secondary text-secondary-foreground">{rev}</AvatarFallback>
+                            </Avatar>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
                         )}
                       </TableCell>
                     </TableRow>

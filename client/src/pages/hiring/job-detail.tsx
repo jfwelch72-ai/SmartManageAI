@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Globe, Archive, Save } from "lucide-react";
+import { ArrowLeft, Globe, Archive, Save, Plus, Trash2 } from "lucide-react";
 import type { HiringJob } from "@/types/hiring";
 
 const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
@@ -24,11 +24,27 @@ const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
   SEASONAL: "Seasonal",
 };
 
+const POSTING_DESTINATIONS = [
+  { value: "INDEED", label: "Indeed" },
+  { value: "LINKEDIN", label: "LinkedIn" },
+  { value: "CRAIGSLIST", label: "Craigslist" },
+  { value: "COMPANY_WEBSITE", label: "Company Website" },
+  { value: "WORKABLE", label: "Workable (ATS)" },
+  { value: "GREENHOUSE", label: "Greenhouse (ATS)" },
+  { value: "LEVER", label: "Lever (ATS)" },
+];
+
 const JOB_STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
   DRAFT: { label: "Draft", variant: "secondary" },
   PUBLISHED: { label: "Published", variant: "default" },
   PAUSED: { label: "Paused", variant: "outline" },
   ARCHIVED: { label: "Archived", variant: "destructive" },
+};
+
+type EditableJob = Partial<HiringJob> & {
+  certificationsList?: string[];
+  screeningQuestionsList?: string[];
+  postingDestinations?: string[];
 };
 
 export default function HiringJobDetailPage() {
@@ -42,12 +58,43 @@ export default function HiringJobDetailPage() {
     enabled: !!jobId,
   });
 
-  const [form, setForm] = useState<Partial<HiringJob> | null>(null);
-  const editing = form ?? job ?? {};
+  const [form, setForm] = useState<EditableJob | null>(null);
+
+  function getEditing(): EditableJob {
+    if (form) return form;
+    if (!job) return {};
+    return {
+      ...job,
+      certificationsList: (job.certifications ?? []) as string[],
+      screeningQuestionsList: ((job.screeningQuestions ?? []) as Array<string | { question?: string }>).map(
+        (q) => (typeof q === "string" ? q : (q as { question?: string }).question ?? "")
+      ),
+      postingDestinations: ((job as Record<string, unknown>).postingDestinations ?? []) as string[],
+    };
+  }
+
+  const editing = getEditing();
+
+  function setField(key: keyof EditableJob, value: unknown) {
+    setForm((f) => ({ ...(f ?? editing), [key]: value }));
+  }
+
+  const isDirty = form !== null;
 
   const updateMutation = useMutation({
-    mutationFn: async (data: Partial<HiringJob>) => {
-      const res = await apiRequest("PATCH", `/api/hiring/jobs/${jobId}`, data);
+    mutationFn: async (data: EditableJob) => {
+      const payload: Record<string, unknown> = { ...data };
+      if (data.certificationsList !== undefined) {
+        payload.certifications = data.certificationsList.filter(Boolean);
+        delete payload.certificationsList;
+      }
+      if (data.screeningQuestionsList !== undefined) {
+        payload.screeningQuestions = data.screeningQuestionsList
+          .filter(Boolean)
+          .map((q) => ({ question: q }));
+        delete payload.screeningQuestionsList;
+      }
+      const res = await apiRequest("PATCH", `/api/hiring/jobs/${jobId}`, payload);
       return res.json();
     },
     onSuccess: () => {
@@ -71,10 +118,6 @@ export default function HiringJobDetailPage() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  function setField(key: keyof HiringJob, value: unknown) {
-    setForm((f) => ({ ...(f ?? job ?? {}), [key]: value }));
-  }
-
   if (isLoading) {
     return (
       <div className="p-6 space-y-4">
@@ -96,7 +139,24 @@ export default function HiringJobDetailPage() {
   }
 
   const cfg = JOB_STATUS_CONFIG[job.status] ?? JOB_STATUS_CONFIG.DRAFT;
-  const isDirty = form !== null;
+  const certList: string[] = editing.certificationsList ?? [];
+  const sqList: string[] = editing.screeningQuestionsList ?? [];
+  const destList: string[] = editing.postingDestinations ?? [];
+
+  function addCert() { setField("certificationsList", [...certList, ""]); }
+  function removeCert(i: number) { setField("certificationsList", certList.filter((_, idx) => idx !== i)); }
+  function updateCert(i: number, val: string) { setField("certificationsList", certList.map((c, idx) => idx === i ? val : c)); }
+
+  function addSQ() { setField("screeningQuestionsList", [...sqList, ""]); }
+  function removeSQ(i: number) { setField("screeningQuestionsList", sqList.filter((_, idx) => idx !== i)); }
+  function updateSQ(i: number, val: string) { setField("screeningQuestionsList", sqList.map((q, idx) => idx === i ? val : q)); }
+
+  function toggleDest(dest: string) {
+    const next = destList.includes(dest)
+      ? destList.filter((d) => d !== dest)
+      : [...destList, dest];
+    setField("postingDestinations", next);
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -205,6 +265,66 @@ export default function HiringJobDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Certifications</CardTitle>
+                <Button size="sm" variant="outline" onClick={addCert} data-testid="button-add-cert">
+                  <Plus className="w-3.5 h-3.5 mr-1" />Add
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {certList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No certifications required. Click Add to specify.</p>
+              ) : (
+                certList.map((cert, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={cert}
+                      onChange={(e) => updateCert(i, e.target.value)}
+                      placeholder="e.g. OSHA 10, First Aid, CDL-A"
+                      data-testid={`input-cert-${i}`}
+                    />
+                    <Button size="icon" variant="ghost" className="shrink-0 text-destructive" onClick={() => removeCert(i)} data-testid={`button-remove-cert-${i}`}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Screening Questions</CardTitle>
+                <Button size="sm" variant="outline" onClick={addSQ} disabled={sqList.length >= 5} data-testid="button-add-screening-question">
+                  <Plus className="w-3.5 h-3.5 mr-1" />Add
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {sqList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No screening questions. Click Add to create one.</p>
+              ) : (
+                sqList.map((q, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={q}
+                      onChange={(e) => updateSQ(i, e.target.value)}
+                      placeholder={`Question ${i + 1}`}
+                      data-testid={`input-sq-${i}`}
+                    />
+                    <Button size="icon" variant="ghost" className="shrink-0 text-destructive" onClick={() => removeSQ(i)} data-testid={`button-remove-sq-${i}`}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         <div className="space-y-5">
@@ -230,32 +350,30 @@ export default function HiringJobDetailPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-base">Certifications</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Posting Destinations</CardTitle></CardHeader>
             <CardContent>
-              {(job.certifications ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">None specified</p>
-              ) : (
-                <ul className="space-y-1">
-                  {(job.certifications ?? []).map((c, i) => (
-                    <li key={i} className="text-sm">{c}</li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle className="text-base">Screening Questions</CardTitle></CardHeader>
-            <CardContent>
-              {(job.screeningQuestions ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">No screening questions</p>
-              ) : (
-                <ol className="space-y-2 list-decimal list-inside">
-                  {(job.screeningQuestions ?? []).map((q, i) => (
-                    <li key={i} className="text-sm">{(q as { question?: string }).question ?? String(q)}</li>
-                  ))}
-                </ol>
-              )}
+              <p className="text-xs text-muted-foreground mb-3">Select where this job should be posted when published.</p>
+              <div className="space-y-2" data-testid="posting-destinations">
+                {POSTING_DESTINATIONS.map(({ value, label }) => {
+                  const active = destList.includes(value);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => toggleDest(value)}
+                      data-testid={`dest-toggle-${value}`}
+                      className={`w-full text-left flex items-center justify-between px-3 py-2 rounded border text-sm transition-all ${
+                        active
+                          ? "border-primary bg-primary/5 text-primary font-medium"
+                          : "border-border text-muted-foreground hover:border-foreground/40"
+                      }`}
+                    >
+                      {label}
+                      {active && <span className="text-xs">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </div>

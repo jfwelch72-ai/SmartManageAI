@@ -373,8 +373,8 @@ export const RoutePermissions = {
 
   // Hiring Module
   // Full hiring management (jobs CRUD, integrations, pipeline management)
-  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER",
-  // Candidate review access (read candidates, pipeline board view, dashboard)
+  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER",
+  // Candidate review access (read candidates, pipeline board view, dashboard) — HR_MANAGER, MANAGER, OFFICE_MANAGER
   HIRING_REVIEW: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER",
   HIRING_SETTINGS: (role?: string) => role === "ADMIN",
 };
@@ -797,7 +797,7 @@ export const NavigationConfig = {
       href: "/hiring/jobs",
       label: "Jobs",
       testId: "nav-hiring-jobs",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER",
     },
     {
       href: "/hiring/candidates",

@@ -97,7 +97,10 @@ export function useHiringCandidates(params?: {
   const qs = searchParams.toString();
   const url = qs ? `/api/hiring/candidates?${qs}` : "/api/hiring/candidates";
 
-  return useQuery<HiringCandidate[]>({ queryKey: ["/api/hiring/candidates", params] });
+  return useQuery<HiringCandidate[]>({
+    queryKey: ["/api/hiring/candidates", params ?? {}],
+    queryFn: () => fetch(url, { credentials: "include" }).then((r) => r.json()),
+  });
 }
 
 export function useHiringCandidate(id: string | undefined) {
