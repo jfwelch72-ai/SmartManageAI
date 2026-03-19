@@ -58,6 +58,40 @@ function initials(name: string) {
   return name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
 }
 
+function ApplicationAnswersAccordion({ answers }: { answers: Record<string, unknown> }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  const entries = Object.entries(answers);
+  if (entries.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base flex items-center gap-2"><ClipboardList className="w-4 h-4" />Application Answers</CardTitle></CardHeader>
+      <CardContent className="p-0">
+        {entries.map(([q, a], i) => {
+          const isOpen = open[q] ?? i === 0;
+          return (
+            <div key={q} className="border-b last:border-0" data-testid={`answer-accordion-${i}`}>
+              <button
+                type="button"
+                onClick={() => setOpen((prev) => ({ ...prev, [q]: !isOpen }))}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-muted/40 transition-colors"
+                data-testid={`answer-toggle-${i}`}
+              >
+                <span className="text-sm font-medium">{q}</span>
+                <ChevronRight className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+              </button>
+              {isOpen && (
+                <div className="px-4 pb-3 text-sm text-muted-foreground" data-testid={`answer-body-${i}`}>
+                  {String(a)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CandidateDetailPage() {
   const [, params] = useRoute("/hiring/candidates/:id");
   const [, navigate] = useLocation();
@@ -310,6 +344,24 @@ export default function CandidateDetailPage() {
                       Download Resume
                     </a>
                   </object>
+                ) : candidate.resumeStorageKey.match(/\.(png|jpg|jpeg|gif|webp)$/i) ? (
+                  <div className="space-y-2">
+                    <img
+                      src={`/api/hiring/candidates/${candidate.id}/resume`}
+                      alt="Resume"
+                      className="w-full max-h-[600px] object-contain rounded border bg-muted"
+                      data-testid="resume-image-viewer"
+                    />
+                    <a
+                      href={`/api/hiring/candidates/${candidate.id}/resume`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline text-sm flex items-center gap-1"
+                      data-testid="link-resume-download-img"
+                    >
+                      <FileText className="w-4 h-4" />Open full size
+                    </a>
+                  </div>
                 ) : (
                   <a
                     href={`/api/hiring/candidates/${candidate.id}/resume`}
@@ -338,17 +390,7 @@ export default function CandidateDetailPage() {
 
           {/* Application answers accordion */}
           {applicationAnswers && Object.keys(applicationAnswers).length > 0 && (
-            <Card>
-              <CardHeader><CardTitle className="text-base">Application Answers</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                {Object.entries(applicationAnswers).map(([q, a]) => (
-                  <div key={q} className="border-b pb-3 last:border-0 last:pb-0">
-                    <p className="text-sm font-medium text-muted-foreground">{q}</p>
-                    <p className="text-sm mt-1">{String(a)}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
+            <ApplicationAnswersAccordion answers={applicationAnswers} />
           )}
 
           {/* AI Recommendation */}

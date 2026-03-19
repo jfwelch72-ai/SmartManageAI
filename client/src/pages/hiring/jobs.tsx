@@ -243,7 +243,19 @@ export default function HiringJobsPage() {
                         {EMPLOYMENT_TYPE_LABELS[job.employmentType ?? ""] ?? "—"}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                        <div className="flex items-center gap-1.5">
+                          <Badge variant={cfg.variant}>{cfg.label}</Badge>
+                          {job.status === "PUBLISHED" && job.syncedAt && (
+                            <span className="text-xs text-muted-foreground" title={`Synced ${new Date(job.syncedAt).toLocaleDateString()}`} data-testid={`sync-state-${job.id}`}>
+                              ✓ synced
+                            </span>
+                          )}
+                          {job.status === "PUBLISHED" && !job.syncedAt && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400" title="Not yet synced to ATS" data-testid={`sync-state-${job.id}`}>
+                              pending
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {format(new Date(job.createdAt), "MMM d, yyyy")}

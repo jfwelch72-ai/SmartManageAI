@@ -11,7 +11,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Star } from "lucide-react";
-import { useHiringCandidates } from "@/lib/hiring-api";
+import { useHiringCandidates, useHiringJobs } from "@/lib/hiring-api";
 import { format } from "date-fns";
 
 const STAGES = [
@@ -21,7 +21,6 @@ const STAGES = [
   { key: "IN_PERSON_INTERVIEW", label: "In-Person", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" },
   { key: "SKILLS_ASSESSMENT", label: "Skills Test", color: "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300" },
   { key: "BACKGROUND_CHECK", label: "Background", color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300" },
-  { key: "REFERENCE_CHECK", label: "References", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300" },
   { key: "OFFER_EXTENDED", label: "Offer Extended", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" },
   { key: "HIRED", label: "Hired", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
   { key: "REJECTED", label: "Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
@@ -48,6 +47,8 @@ export default function HiringPipelinePage() {
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
 
   const { data: candidates = [], isLoading } = useHiringCandidates();
+  const { data: jobs = [] } = useHiringJobs();
+  const jobsById = Object.fromEntries(jobs.map((j) => [j.id, j]));
 
   const stageMutation = useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {
@@ -134,42 +135,48 @@ export default function HiringPipelinePage() {
               </div>
 
               <div className="flex-1 space-y-2 min-h-[120px]">
-                {cols.map((c) => (
-                  <Card
-                    key={c.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, c.id)}
-                    className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
-                    data-testid={`card-candidate-${c.id}`}
-                  >
-                    <CardContent className="p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="w-7 h-7 shrink-0">
-                          <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
-                        </Avatar>
-                        <Link href={`/hiring/candidates/${c.id}`} className="font-medium text-xs hover:underline line-clamp-1 flex-1" data-testid={`link-pipeline-candidate-${c.id}`}>
-                          {c.fullName}
-                        </Link>
-                      </div>
-                      {c.appliedAt && (
-                        <p className="text-xs text-muted-foreground">{format(new Date(c.appliedAt), "MMM d")}</p>
-                      )}
-                      <div className="flex items-center justify-between">
-                        {c.source && (
-                          <span className="text-xs bg-secondary px-1.5 py-0.5 rounded text-secondary-foreground">
-                            {SOURCE_SHORT[c.source] ?? c.source}
-                          </span>
+                {cols.map((c) => {
+                  const role = c.jobId ? jobsById[c.jobId]?.title : null;
+                  return (
+                    <Card
+                      key={c.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, c.id)}
+                      className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+                      data-testid={`card-candidate-${c.id}`}
+                    >
+                      <CardContent className="p-3 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-7 h-7 shrink-0">
+                            <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <Link href={`/hiring/candidates/${c.id}`} className="font-medium text-xs hover:underline line-clamp-1 block" data-testid={`link-pipeline-candidate-${c.id}`}>
+                              {c.fullName}
+                            </Link>
+                            {role && <p className="text-xs text-muted-foreground line-clamp-1">{role}</p>}
+                          </div>
+                        </div>
+                        {c.appliedAt && (
+                          <p className="text-xs text-muted-foreground">{format(new Date(c.appliedAt), "MMM d")}</p>
                         )}
-                        {c.aiScore != null && (
-                          <span className="flex items-center gap-0.5 text-xs">
-                            <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                            {c.aiScore}
-                          </span>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                        <div className="flex items-center justify-between">
+                          {c.source && (
+                            <span className="text-xs bg-secondary px-1.5 py-0.5 rounded text-secondary-foreground">
+                              {SOURCE_SHORT[c.source] ?? c.source}
+                            </span>
+                          )}
+                          {c.aiScore != null && (
+                            <span className="flex items-center gap-0.5 text-xs">
+                              <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                              {c.aiScore}
+                            </span>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
                 {cols.length === 0 && (
                   <div className={`rounded-lg border-2 border-dashed p-4 text-center text-xs text-muted-foreground transition-colors ${isOver ? "border-primary" : "border-border"}`}>
                     Drop here
