@@ -1,11 +1,16 @@
 import { Router } from "express";
-import { requireAuth } from "./auth";
+import { requireAuth, requireRole } from "./auth";
 import { getAllProviders, getProvider } from "./integrations/registry";
 import * as connectionService from "./integrations/connectionService";
 import * as importExportService from "./integrations/importExportService";
 import { logIntegrationAudit, getSecurityAuditLog } from "./integrations/audit";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
+import { eq, and } from "drizzle-orm";
+import { integrationConnections, type IntegrationConnection } from "@shared/schema";
+import { db } from "./db";
+import { decryptMetadata } from "./integrations/encryption";
+import type { AuthRequest } from "./auth";
 
 const router = Router();
 
@@ -200,6 +205,229 @@ router.get("/security-log", requireAuth, async (req, res) => {
   } catch (err) {
     logError("Failed to get security audit log", { error: String(err) });
     res.status(500).json({ error: "Failed to get security log" });
+  }
+});
+
+type CloudProvider = "gdrive" | "dropbox";
+
+interface CloudFileEntry {
+  id: string;
+  name: string;
+  mimeType: string | null;
+  size: number | null;
+  modifiedAt: string | null;
+  isFolder: boolean;
+  path?: string;
+}
+
+interface DriveFileEntry {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+  modifiedTime?: string;
+}
+
+interface DropboxFileEntry {
+  ".tag": string;
+  id?: string;
+  name: string;
+  path_lower?: string;
+  path_display?: string;
+  size?: number;
+  client_modified?: string;
+  server_modified?: string;
+}
+
+interface DropboxSearchMatch {
+  metadata?: {
+    ".tag"?: string;
+    metadata?: DropboxFileEntry;
+    id?: string;
+    name?: string;
+    path_lower?: string;
+    path_display?: string;
+    size?: number;
+    client_modified?: string;
+    server_modified?: string;
+  };
+}
+
+async function getValidAccessToken(provider: CloudProvider, orgId: string): Promise<{ accessToken: string; connection: IntegrationConnection } | null> {
+  const [connection] = await db
+    .select()
+    .from(integrationConnections)
+    .where(and(
+      eq(integrationConnections.organizationId, orgId),
+      eq(integrationConnections.provider, provider),
+      eq(integrationConnections.status, "active"),
+    ))
+    .limit(1);
+
+  if (!connection || !connection.metadata) return null;
+
+  const metadata = decryptMetadata(connection.metadata as Record<string, unknown>);
+  const accessTokenRaw = metadata.accessToken;
+  if (!accessTokenRaw || typeof accessTokenRaw !== "string") return null;
+  let accessToken: string = accessTokenRaw;
+
+  const expiresAtRaw = metadata.expiresAt;
+  const expiresAt = expiresAtRaw && typeof expiresAtRaw === "string" ? new Date(expiresAtRaw) : null;
+  const isExpired = expiresAt && expiresAt < new Date(Date.now() + 60000);
+
+  if (isExpired && metadata.refreshToken) {
+    const providerImpl = getProvider(provider);
+    if (!providerImpl) return null;
+    try {
+      const tokens = await providerImpl.refreshToken({ ...connection, metadata });
+      await connectionService.storeConnectionTokens(connection.id, orgId, tokens);
+      accessToken = tokens.accessToken;
+    } catch (err) {
+      logError("Token refresh failed during cloud browse", { error: String(err) });
+      return null;
+    }
+  }
+
+  return { accessToken, connection };
+}
+
+router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+  try {
+    const { provider, folderId, query } = req.query as Record<string, string>;
+
+    if (!provider || !["gdrive", "dropbox"].includes(provider)) {
+      return res.status(400).json({ error: "Unsupported provider" });
+    }
+
+    const cloudProvider = provider as CloudProvider;
+    const tokenData = await getValidAccessToken(cloudProvider, req.user!.organizationId!);
+    if (!tokenData) {
+      return res.status(401).json({ error: "No active connection for provider" });
+    }
+
+    const { accessToken } = tokenData;
+
+    if (cloudProvider === "gdrive") {
+      const params = new URLSearchParams({
+        pageSize: "50",
+        fields: "files(id,name,mimeType,size,modifiedTime,parents)",
+        orderBy: "folder,name",
+      });
+
+      const q: string[] = ["trashed = false"];
+      if (query) {
+        q.push(`name contains '${query.replace(/'/g, "\\'")}'`);
+      } else if (folderId) {
+        q.push(`'${folderId}' in parents`);
+      } else {
+        q.push("'root' in parents");
+      }
+      params.set("q", q.join(" and "));
+
+      const driveRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?${params.toString()}`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+
+      if (!driveRes.ok) {
+        const errText = await driveRes.text();
+        logError("Google Drive list failed", { status: driveRes.status, body: errText });
+        return res.status(502).json({ error: "Failed to list Google Drive files" });
+      }
+
+      const GOOGLE_NATIVE_MIME_TYPES = new Set([
+        "application/vnd.google-apps.document",
+        "application/vnd.google-apps.spreadsheet",
+        "application/vnd.google-apps.presentation",
+        "application/vnd.google-apps.drawing",
+        "application/vnd.google-apps.form",
+        "application/vnd.google-apps.script",
+        "application/vnd.google-apps.site",
+        "application/vnd.google-apps.map",
+      ]);
+
+      const driveData = await driveRes.json() as { files?: DriveFileEntry[] };
+      const files: CloudFileEntry[] = (driveData.files || [])
+        .filter((f) => {
+          if (f.mimeType === "application/vnd.google-apps.folder") return true;
+          return !GOOGLE_NATIVE_MIME_TYPES.has(f.mimeType);
+        })
+        .map((f) => ({
+          id: f.id,
+          name: f.name,
+          mimeType: f.mimeType,
+          size: f.size ? parseInt(f.size) : null,
+          modifiedAt: f.modifiedTime ?? null,
+          isFolder: f.mimeType === "application/vnd.google-apps.folder",
+        }));
+
+      return res.json({ files });
+    }
+
+    if (cloudProvider === "dropbox") {
+      const path = folderId || "";
+      if (query) {
+        const searchRes = await fetch(
+          "https://api.dropboxapi.com/2/files/search_v2",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query, options: { path: path || undefined, max_results: 50 } }),
+          }
+        );
+        if (!searchRes.ok) {
+          return res.status(502).json({ error: "Failed to search Dropbox files" });
+        }
+        const searchData = await searchRes.json() as { matches?: DropboxSearchMatch[] };
+        const files: CloudFileEntry[] = (searchData.matches || []).map((m) => {
+          const meta: DropboxFileEntry = (m.metadata?.metadata || m.metadata) as DropboxFileEntry;
+          return {
+            id: meta.id || meta.path_lower || meta.name,
+            name: meta.name,
+            mimeType: null,
+            size: meta.size ?? null,
+            modifiedAt: meta.client_modified || meta.server_modified || null,
+            isFolder: meta[".tag"] === "folder",
+            path: meta.path_display || meta.path_lower,
+          };
+        });
+        return res.json({ files });
+      } else {
+        const listRes = await fetch(
+          "https://api.dropboxapi.com/2/files/list_folder",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ path, limit: 100 }),
+          }
+        );
+        if (!listRes.ok) {
+          return res.status(502).json({ error: "Failed to list Dropbox files" });
+        }
+        const listData = await listRes.json() as { entries?: DropboxFileEntry[] };
+        const files: CloudFileEntry[] = (listData.entries || []).map((f) => ({
+          id: f.id || f.path_lower || f.name,
+          name: f.name,
+          mimeType: null,
+          size: f.size ?? null,
+          modifiedAt: f.client_modified || f.server_modified || null,
+          isFolder: f[".tag"] === "folder",
+          path: f.path_display || f.path_lower,
+        }));
+        return res.json({ files });
+      }
+    }
+
+    return res.status(400).json({ error: "Unsupported provider" });
+  } catch (err) {
+    logError("Cloud browse error", { error: String(err) });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

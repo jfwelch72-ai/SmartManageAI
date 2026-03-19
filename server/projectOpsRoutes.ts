@@ -477,6 +477,189 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
   }
 });
 
+router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
+  try {
+    const bodySchema = z.object({
+      provider: z.enum(["gdrive", "dropbox"]),
+      fileId: z.string().min(1),
+      fileName: z.string().min(1),
+      filePath: z.string().optional(),
+      title: z.string().min(1).max(255),
+      type: z.enum(["PLANS", "SPECS", "TAKEOFF", "OTHER"]).default("OTHER"),
+      projectId: z.string().min(1),
+    });
+
+    const parseResult = bodySchema.safeParse(req.body);
+    if (!parseResult.success) {
+      res.status(400).json({ error: "Invalid input", details: parseResult.error.errors });
+      return;
+    }
+
+    const { provider, fileId, fileName, filePath, title, type, projectId } = parseResult.data;
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const { integrationConnections: intConnsTable } = await import("@shared/schema");
+    const { decryptMetadata } = await import("./integrations/encryption");
+    const { getProvider: getProviderImpl } = await import("./integrations/registry");
+    const { storeConnectionTokens } = await import("./integrations/connectionService");
+
+    const [conn] = await db
+      .select()
+      .from(intConnsTable)
+      .where(and(
+        eq(intConnsTable.organizationId, req.user!.organizationId!),
+        eq(intConnsTable.provider, provider),
+        eq(intConnsTable.status, "active"),
+      ))
+      .limit(1);
+
+    if (!conn || !conn.metadata) {
+      res.status(401).json({ error: "No active connection for provider" });
+      return;
+    }
+
+    const metadata = decryptMetadata(conn.metadata as Record<string, unknown>);
+    const accessTokenRaw = metadata.accessToken;
+    if (!accessTokenRaw || typeof accessTokenRaw !== "string") {
+      res.status(401).json({ error: "Invalid or missing access token for provider" });
+      return;
+    }
+    let accessToken: string = accessTokenRaw;
+
+    const expiresAtRaw = metadata.expiresAt;
+    const expiresAt = expiresAtRaw && typeof expiresAtRaw === "string" ? new Date(expiresAtRaw) : null;
+    const isExpired = expiresAt && expiresAt < new Date(Date.now() + 60000);
+    if (isExpired && metadata.refreshToken) {
+      const providerImpl = getProviderImpl(provider);
+      if (providerImpl) {
+        const tokens = await providerImpl.refreshToken({ ...conn, metadata });
+        await storeConnectionTokens(conn.id, req.user!.organizationId!, tokens);
+        accessToken = tokens.accessToken;
+      }
+    }
+
+    let fileBuffer: Buffer;
+    let contentType: string;
+
+    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+    if (provider === "gdrive") {
+      const dlRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      if (!dlRes.ok) {
+        res.status(502).json({ error: "Failed to download file from Google Drive" });
+        return;
+      }
+      const contentLengthHdr = dlRes.headers.get("content-length");
+      if (contentLengthHdr && parseInt(contentLengthHdr) > MAX_FILE_SIZE) {
+        res.status(400).json({ error: "File is too large (over 100MB)" });
+        return;
+      }
+      const ab = await dlRes.arrayBuffer();
+      fileBuffer = Buffer.from(ab);
+      contentType = dlRes.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+    } else {
+      const dropboxPath = filePath || "";
+      const dlRes = await fetch(
+        "https://content.dropboxapi.com/2/files/download",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Dropbox-API-Arg": JSON.stringify({ path: dropboxPath || `id:${fileId}` }),
+          },
+        }
+      );
+      if (!dlRes.ok) {
+        res.status(502).json({ error: "Failed to download file from Dropbox" });
+        return;
+      }
+      const contentLengthHdr = dlRes.headers.get("content-length");
+      if (contentLengthHdr && parseInt(contentLengthHdr) > MAX_FILE_SIZE) {
+        res.status(400).json({ error: "File is too large (over 100MB)" });
+        return;
+      }
+      const ab = await dlRes.arrayBuffer();
+      fileBuffer = Buffer.from(ab);
+      contentType = dlRes.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+    }
+
+    if (fileBuffer.length > MAX_FILE_SIZE) {
+      res.status(400).json({ error: "File is too large (over 100MB)" });
+      return;
+    }
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+
+    const { uploadURL: signedUploadUrl, objectKey: rawObjectKey } = await objectStorageService.getObjectEntityUploadURL(req.user!.organizationId!);
+
+    const uploadResponse = await fetch(signedUploadUrl, {
+      method: "PUT",
+      body: fileBuffer,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Length": String(fileBuffer.length),
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      res.status(500).json({ error: "Failed to upload file to object storage" });
+      return;
+    }
+
+    const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(rawObjectKey, {
+      owner: req.user!.id,
+      organizationId: req.user!.organizationId!,
+      visibility: "private",
+    });
+
+    const ext = fileName.split(".").pop() || "";
+    const finalFileName = title + (ext ? `.${ext}` : "");
+
+    const [newDoc] = await db.insert(planDocuments).values([{
+      projectId,
+      type: type as any,
+      title,
+      fileName: finalFileName,
+      fileUrl: objectKey,
+      objectKey,
+      fileSize: fileBuffer.length,
+      mimeType: contentType,
+      uploadedById: req.user!.id,
+    }]).returning();
+
+    await db.insert(filePermissions).values([{
+      fileId: newDoc.id,
+      fileType: "DOCUMENT",
+      userId: req.user!.id,
+      grantedById: req.user!.id,
+    }]);
+
+    await logCreate(req, "plan_document", newDoc.id, {
+      source: provider,
+      sourceFileId: fileId,
+      title,
+      projectId,
+      fileSize: fileBuffer.length,
+      mimeType: contentType,
+    });
+
+    res.status(201).json(newDoc);
+  } catch (error: any) {
+    console.error("Create document from cloud error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { documentId } = req.params;
