@@ -682,7 +682,18 @@ router.put(
       const activityType: HiringActivityType = stage === "HIRED" ? "CANDIDATE_HIRED" : stage === "REJECTED" ? "CANDIDATE_REJECTED" : "CANDIDATE_STAGE_CHANGED";
       void logActivity(orgId(req), userId(req), userName(req), activityType, "candidate", req.params.id, existing.fullName, { fromStage, toStage: stage });
 
+      // Always emit stage-changed so all stage subscribers receive every transition
+      emitEvent({
+        type: "hiring.candidate_stage_changed",
+        version: 1,
+        orgId: orgId(req),
+        actorId: userId(req),
+        timestamp: new Date(),
+        payload: { candidateId: existing.id, fullName: existing.fullName, fromStage: fromStage ?? null, toStage: stage },
+      });
+
       if (stage === "HIRED") {
+        // Additionally emit hired event for higher-signal subscribers
         emitEvent({
           type: "hiring.candidate_hired",
           version: 1,
@@ -702,15 +713,6 @@ router.put(
             relatedEntityType: "hiring_candidate",
           });
         }
-      } else {
-        emitEvent({
-          type: "hiring.candidate_stage_changed",
-          version: 1,
-          orgId: orgId(req),
-          actorId: userId(req),
-          timestamp: new Date(),
-          payload: { candidateId: existing.id, fullName: existing.fullName, fromStage: fromStage ?? null, toStage: stage },
-        });
       }
 
       res.json(candidate);
