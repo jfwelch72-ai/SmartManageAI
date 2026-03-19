@@ -22,6 +22,12 @@ function getEntityId(event: DomainEvent): string {
       return event.payload.shiftId;
     case "payroll.run.completed":
       return event.payload.payRunId;
+    case "hiring.job_published":
+      return event.payload.jobId;
+    case "hiring.candidate_applied":
+    case "hiring.candidate_stage_changed":
+    case "hiring.candidate_hired":
+      return event.payload.candidateId;
   }
 }
 

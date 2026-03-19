@@ -1,7 +1,36 @@
-import type { ATSProvider, ATSJob, ATSCandidate, ATSSyncResult } from "./ATSProvider";
+import type { ATSProvider, ATSJob, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
 
 export class WorkableProvider implements ATSProvider {
   readonly providerName = "WORKABLE";
+
+  normalizeJob(raw: Record<string, unknown>): ATSJob {
+    return {
+      externalId: String(raw["shortcode"] || raw["id"] || ""),
+      title: String(raw["title"] || ""),
+      status: String(raw["state"] || "published"),
+      department: raw["department"] ? String(raw["department"]) : undefined,
+      location: raw["location"] ? String((raw["location"] as Record<string, unknown>)["city"] || "") : undefined,
+      description: raw["full_description"] ? String(raw["full_description"]) : undefined,
+      createdAt: raw["created_at"] ? String(raw["created_at"]) : undefined,
+    };
+  }
+
+  normalizeCandidate(raw: Record<string, unknown>): ATSCandidate {
+    const name = String(raw["name"] || "");
+    const parts = name.trim().split(" ");
+    const firstName = parts[0] || "Unknown";
+    const lastName = parts.slice(1).join(" ") || "Unknown";
+    return {
+      externalId: String(raw["id"] || ""),
+      firstName,
+      lastName,
+      email: raw["email"] ? String(raw["email"]) : undefined,
+      phone: raw["phone"] ? String(raw["phone"]) : undefined,
+      currentStage: raw["stage"] ? String(raw["stage"]) : "APPLIED",
+      appliedAt: raw["created_at"] ? String(raw["created_at"]) : undefined,
+      rawPayload: raw,
+    };
+  }
 
   async testConnection(credentials: Record<string, string>): Promise<boolean> {
     const { apiKey, subdomain } = credentials;
@@ -25,17 +54,24 @@ export class WorkableProvider implements ATSProvider {
       });
       if (!res.ok) return [];
       const data = await res.json() as { jobs?: Record<string, unknown>[] };
-      return (data.jobs || []).map((j) => ({
-        externalId: String(j["shortcode"] || j["id"] || ""),
-        title: String(j["title"] || ""),
-        status: String(j["state"] || "published"),
-        department: j["department"] ? String(j["department"]) : undefined,
-        location: j["location"] ? String((j["location"] as Record<string, unknown>)["city"] || "") : undefined,
-        description: j["full_description"] ? String(j["full_description"]) : undefined,
-        createdAt: j["created_at"] ? String(j["created_at"]) : undefined,
-      }));
+      return (data.jobs || []).map((j) => this.normalizeJob(j));
     } catch {
       return [];
+    }
+  }
+
+  async getJob(credentials: Record<string, string>, externalJobId: string): Promise<ATSJob | null> {
+    const { apiKey, subdomain } = credentials;
+    if (!apiKey || !subdomain) return null;
+    try {
+      const res = await fetch(`https://www.workable.com/spi/v3/jobs/${externalJobId}`, {
+        headers: { Authorization: `Bearer ${apiKey}`, "X-WORKABLE-CLIENT-ID": subdomain },
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as Record<string, unknown>;
+      return this.normalizeJob(data);
+    } catch {
+      return null;
     }
   }
 
@@ -51,25 +87,43 @@ export class WorkableProvider implements ATSProvider {
       });
       if (!res.ok) return [];
       const data = await res.json() as { candidates?: Record<string, unknown>[] };
-      return (data.candidates || []).map((c) => {
-        const name = String(c["name"] || "");
-        const parts = name.trim().split(" ");
-        const firstName = parts[0] || "Unknown";
-        const lastName = parts.slice(1).join(" ") || "Unknown";
-        return {
-          externalId: String(c["id"] || ""),
-          firstName,
-          lastName,
-          email: c["email"] ? String(c["email"]) : undefined,
-          phone: c["phone"] ? String(c["phone"]) : undefined,
-          currentStage: c["stage"] ? String(c["stage"]) : "APPLIED",
-          appliedAt: c["created_at"] ? String(c["created_at"]) : undefined,
-          jobExternalId: jobExternalId,
-          rawPayload: c,
-        };
-      });
+      return (data.candidates || []).map((c) => ({ ...this.normalizeCandidate(c), jobExternalId }));
     } catch {
       return [];
+    }
+  }
+
+  async getCandidate(credentials: Record<string, string>, externalCandidateId: string): Promise<ATSCandidate | null> {
+    const { apiKey, subdomain } = credentials;
+    if (!apiKey || !subdomain) return null;
+    try {
+      const res = await fetch(`https://www.workable.com/spi/v3/candidates/${externalCandidateId}`, {
+        headers: { Authorization: `Bearer ${apiKey}`, "X-WORKABLE-CLIENT-ID": subdomain },
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as Record<string, unknown>;
+      return this.normalizeCandidate(data);
+    } catch {
+      return null;
+    }
+  }
+
+  async moveCandidateStage(credentials: Record<string, string>, externalCandidateId: string, stage: string): Promise<boolean> {
+    const { apiKey, subdomain } = credentials;
+    if (!apiKey || !subdomain) return false;
+    try {
+      const res = await fetch(`https://www.workable.com/spi/v3/candidates/${externalCandidateId}/move`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "X-WORKABLE-CLIENT-ID": subdomain,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ target_stage: stage }),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -89,5 +143,18 @@ export class WorkableProvider implements ATSProvider {
       result.errors.push(String(err));
     }
     return result;
+  }
+
+  webhookHandler(payload: Record<string, unknown>): ATSWebhookEvent | null {
+    const eventType = String(payload["event_type"] || "");
+    const data = payload["data"] as Record<string, unknown> | undefined;
+    if (!data) return null;
+    if (eventType.startsWith("candidate")) {
+      return { type: eventType, data: this.normalizeCandidate(data) };
+    }
+    if (eventType.startsWith("job")) {
+      return { type: eventType, data: this.normalizeJob(data) };
+    }
+    return null;
   }
 }

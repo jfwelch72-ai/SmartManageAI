@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, desc, sql, count } from "drizzle-orm";
+import { eq, and, desc, sql, count, or, ilike } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import type { AuthRequest } from "./auth";
@@ -7,6 +7,8 @@ import { logCreate, logUpdate, logAudit } from "./auditLogger";
 import { insertNotification } from "./services/notificationService";
 import { encryptToken, decryptToken } from "./integrations/encryption";
 import { getATSProvider, listATSProviders } from "./integrations/ats/registry";
+import { isFeatureEnabled } from "./services/featureFlagService";
+import { eventBus } from "./events";
 import { logError, logInfo } from "./utils/logger";
 import {
   hiringJobs,
@@ -26,6 +28,7 @@ import {
   insertHiringJobTemplateSchema,
   insertHiringCandidateSchema,
   insertHiringCandidateNoteSchema,
+  insertHiringCandidateDocumentSchema,
   insertHiringInterviewSchema,
   insertHiringTaskSchema,
   type InsertHiringActivityLog,
@@ -34,7 +37,7 @@ import {
 const router = Router();
 
 // ============================================
-// GUARD HELPERS
+// HELPERS
 // ============================================
 
 function orgId(req: AuthRequest): string {
@@ -47,6 +50,14 @@ function userId(req: AuthRequest): string {
 
 function userName(req: AuthRequest): string {
   return `${req.user!.firstName} ${req.user!.lastName}`.trim();
+}
+
+function emitEvent(event: Parameters<typeof eventBus.emit>[0]): void {
+  setImmediate(() => {
+    eventBus.emit(event).catch((err: unknown) => {
+      logError("hiringRoutes: eventBus.emit failed", { error: String(err), eventType: event.type });
+    });
+  });
 }
 
 type HiringActivityType = InsertHiringActivityLog["activityType"];
@@ -78,17 +89,29 @@ async function logActivity(
 }
 
 // ============================================
+// FEATURE-FLAG MIDDLEWARE
+// Require HIRING_MODULE to be enabled for the org.
+// SUPER_ADMIN can always access (for provisioning purposes).
+// ============================================
+router.use(requireAuth, async (req: AuthRequest, res, next) => {
+  const org = req.user?.organizationId;
+  if (!org) return res.status(403).json({ error: "Organization context required" });
+  if (req.user?.role === "SUPER_ADMIN") return next();
+  const enabled = await isFeatureEnabled(org, "HIRING_MODULE");
+  if (!enabled) return res.status(403).json({ error: "Hiring Module is not enabled for this organization" });
+  return next();
+});
+
+// ============================================
 // JOBS
 // ============================================
 
-// GET /api/hiring/jobs  — list jobs for org
 router.get("/jobs", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const org = orgId(req);
     const jobs = await db
       .select()
       .from(hiringJobs)
-      .where(eq(hiringJobs.organizationId, org))
+      .where(eq(hiringJobs.organizationId, orgId(req)))
       .orderBy(desc(hiringJobs.createdAt));
     res.json(jobs);
   } catch (err) {
@@ -97,7 +120,6 @@ router.get("/jobs", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/hiring/jobs/:id  — single job
 router.get("/jobs/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const [job] = await db
@@ -113,7 +135,6 @@ router.get("/jobs/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/hiring/jobs  — create job
 router.post(
   "/jobs",
   requireAuth,
@@ -141,9 +162,41 @@ router.post(
   },
 );
 
-// PATCH /api/hiring/jobs/:id  — update job
-router.patch(
-  "/jobs/:id",
+// PATCH and PUT both accepted for partial/full updates
+async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
+  try {
+    const [existing] = await db
+      .select()
+      .from(hiringJobs)
+      .where(and(eq(hiringJobs.id, req.params.id), eq(hiringJobs.organizationId, orgId(req))))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Job not found" }); return; }
+
+    const updates: Record<string, unknown> = { ...req.body, updatedByUserId: userId(req), updatedAt: new Date() };
+    delete updates["id"];
+    delete updates["organizationId"];
+    delete updates["createdAt"];
+
+    const [job] = await db
+      .update(hiringJobs)
+      .set(updates as Partial<typeof hiringJobs.$inferInsert>)
+      .where(and(eq(hiringJobs.id, req.params.id), eq(hiringJobs.organizationId, orgId(req))))
+      .returning();
+
+    void logUpdate(userId(req), "hiring_job", job.id, existing, job, req);
+    res.json(job);
+  } catch (err) {
+    logError("PATCH/PUT /api/hiring/jobs/:id", { error: String(err) });
+    res.status(500).json({ error: "Failed to update job" });
+  }
+}
+
+router.patch("/jobs/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleJobUpdate(req as AuthRequest, res));
+router.put("/jobs/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleJobUpdate(req as AuthRequest, res));
+
+// POST /jobs/:id/publish — publish a job
+router.post(
+  "/jobs/:id/publish",
   requireAuth,
   requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
   async (req: AuthRequest, res) => {
@@ -155,41 +208,64 @@ router.patch(
         .limit(1);
       if (!existing) return res.status(404).json({ error: "Job not found" });
 
-      const updates: Record<string, unknown> = { ...req.body, updatedByUserId: userId(req), updatedAt: new Date() };
-      delete updates["id"];
-      delete updates["organizationId"];
-      delete updates["createdAt"];
-
-      if (updates["status"] === "PUBLISHED" && !existing.publishedAt) {
-        updates["publishedAt"] = new Date();
-      }
-      if (updates["status"] === "ARCHIVED" && !existing.archivedAt) {
-        updates["archivedAt"] = new Date();
-      }
-
       const [job] = await db
         .update(hiringJobs)
-        .set(updates as Partial<typeof hiringJobs.$inferInsert>)
+        .set({ status: "PUBLISHED", publishedAt: existing.publishedAt ?? new Date(), updatedAt: new Date(), updatedByUserId: userId(req) })
         .where(and(eq(hiringJobs.id, req.params.id), eq(hiringJobs.organizationId, orgId(req))))
         .returning();
 
       void logUpdate(userId(req), "hiring_job", job.id, existing, job, req);
+      void logActivity(orgId(req), userId(req), userName(req), "JOB_PUBLISHED", "job", job.id, job.title);
 
-      if (updates["status"] === "PUBLISHED") {
-        void logActivity(orgId(req), userId(req), userName(req), "JOB_PUBLISHED", "job", job.id, job.title);
-      } else if (updates["status"] === "ARCHIVED") {
-        void logActivity(orgId(req), userId(req), userName(req), "JOB_ARCHIVED", "job", job.id, job.title);
-      }
+      emitEvent({
+        type: "hiring.job_published",
+        version: 1,
+        orgId: orgId(req),
+        actorId: userId(req),
+        timestamp: new Date(),
+        payload: { jobId: job.id, title: job.title, employmentType: job.employmentType ?? null },
+      });
 
       res.json(job);
     } catch (err) {
-      logError("PATCH /api/hiring/jobs/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to update job" });
+      logError("POST /api/hiring/jobs/:id/publish", { error: String(err) });
+      res.status(500).json({ error: "Failed to publish job" });
     }
   },
 );
 
-// DELETE /api/hiring/jobs/:id  — archive (soft delete via status)
+// POST /jobs/:id/archive — archive a job
+router.post(
+  "/jobs/:id/archive",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  async (req: AuthRequest, res) => {
+    try {
+      const [existing] = await db
+        .select()
+        .from(hiringJobs)
+        .where(and(eq(hiringJobs.id, req.params.id), eq(hiringJobs.organizationId, orgId(req))))
+        .limit(1);
+      if (!existing) return res.status(404).json({ error: "Job not found" });
+
+      const [job] = await db
+        .update(hiringJobs)
+        .set({ status: "ARCHIVED", archivedAt: existing.archivedAt ?? new Date(), updatedAt: new Date(), updatedByUserId: userId(req) })
+        .where(and(eq(hiringJobs.id, req.params.id), eq(hiringJobs.organizationId, orgId(req))))
+        .returning();
+
+      void logUpdate(userId(req), "hiring_job", job.id, existing, job, req);
+      void logActivity(orgId(req), userId(req), userName(req), "JOB_ARCHIVED", "job", job.id, job.title);
+
+      res.json(job);
+    } catch (err) {
+      logError("POST /api/hiring/jobs/:id/archive", { error: String(err) });
+      res.status(500).json({ error: "Failed to archive job" });
+    }
+  },
+);
+
+// DELETE /jobs/:id — hard archive (alias to archive action)
 router.delete(
   "/jobs/:id",
   requireAuth,
@@ -260,18 +336,63 @@ router.post(
   },
 );
 
+router.delete(
+  "/job-templates/:id",
+  requireAuth,
+  requireRole("ADMIN", "HR_MANAGER"),
+  async (req: AuthRequest, res) => {
+    try {
+      const [tpl] = await db
+        .select({ id: hiringJobTemplates.id, isGlobal: hiringJobTemplates.isGlobal })
+        .from(hiringJobTemplates)
+        .where(and(eq(hiringJobTemplates.id, req.params.id), eq(hiringJobTemplates.organizationId, orgId(req))))
+        .limit(1);
+      if (!tpl) return res.status(404).json({ error: "Template not found" });
+      if (tpl.isGlobal) return res.status(403).json({ error: "Cannot delete a global template" });
+      await db.delete(hiringJobTemplates).where(eq(hiringJobTemplates.id, req.params.id));
+      res.json({ success: true });
+    } catch (err) {
+      logError("DELETE /api/hiring/job-templates/:id", { error: String(err) });
+      res.status(500).json({ error: "Failed to delete template" });
+    }
+  },
+);
+
 // ============================================
 // CANDIDATES
 // ============================================
 
-// GET /api/hiring/candidates — list all candidates for org (optionally filtered by jobId)
 router.get("/candidates", requireAuth, async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const jobId = req.query.jobId as string | undefined;
+    const stage = req.query.stage as string | undefined;
+    const search = req.query.search as string | undefined;
 
     const conditions = [eq(hiringCandidates.organizationId, org)];
     if (jobId) conditions.push(eq(hiringCandidates.jobId, jobId));
+    if (stage) conditions.push(eq(hiringCandidates.currentStage, stage as Parameters<typeof eq>[1]));
+
+    let query = db.select().from(hiringCandidates).where(and(...conditions));
+
+    if (search) {
+      const searchQuery = db
+        .select()
+        .from(hiringCandidates)
+        .where(
+          and(
+            eq(hiringCandidates.organizationId, org),
+            ...(jobId ? [eq(hiringCandidates.jobId, jobId)] : []),
+            or(
+              ilike(hiringCandidates.fullName, `%${search}%`),
+              ilike(hiringCandidates.email, `%${search}%`),
+            ),
+          ),
+        )
+        .orderBy(desc(hiringCandidates.appliedAt));
+      const results = await searchQuery;
+      return res.json(results);
+    }
 
     const candidates = await db
       .select()
@@ -286,7 +407,6 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// GET /api/hiring/candidates/:id — single candidate with notes, docs, interviews, history
 router.get("/candidates/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
@@ -297,22 +417,21 @@ router.get("/candidates/:id", requireAuth, async (req: AuthRequest, res) => {
       .limit(1);
     if (!candidate) return res.status(404).json({ error: "Candidate not found" });
 
-    const [notes, documents, interviews, stageHistory, aiReview] = await Promise.all([
+    const [notes, documents, interviews, stageHistory, aiReviews] = await Promise.all([
       db.select().from(hiringCandidateNotes).where(eq(hiringCandidateNotes.candidateId, req.params.id)).orderBy(desc(hiringCandidateNotes.createdAt)),
       db.select().from(hiringCandidateDocuments).where(eq(hiringCandidateDocuments.candidateId, req.params.id)).orderBy(desc(hiringCandidateDocuments.createdAt)),
-      db.select().from(hiringInterviews).where(eq(hiringInterviews.candidateId, req.params.id)).orderBy(desc(hiringInterviews.createdAt)),
+      db.select().from(hiringInterviews).where(and(eq(hiringInterviews.candidateId, req.params.id), eq(hiringInterviews.organizationId, org))).orderBy(desc(hiringInterviews.createdAt)),
       db.select().from(hiringCandidateStageHistory).where(eq(hiringCandidateStageHistory.candidateId, req.params.id)).orderBy(desc(hiringCandidateStageHistory.createdAt)),
       db.select().from(hiringAiReviews).where(eq(hiringAiReviews.candidateId, req.params.id)).orderBy(desc(hiringAiReviews.generatedAt)).limit(1),
     ]);
 
-    res.json({ ...candidate, notes, documents, interviews, stageHistory, latestAiReview: aiReview[0] ?? null });
+    res.json({ ...candidate, notes, documents, interviews, stageHistory, latestAiReview: aiReviews[0] ?? null });
   } catch (err) {
     logError("GET /api/hiring/candidates/:id", { error: String(err) });
     res.status(500).json({ error: "Failed to fetch candidate" });
   }
 });
 
-// POST /api/hiring/candidates — create candidate
 router.post(
   "/candidates",
   requireAuth,
@@ -329,9 +448,18 @@ router.post(
       });
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
+      // Validate jobId belongs to org if provided
+      if (parsed.data.jobId) {
+        const [job] = await db
+          .select({ id: hiringJobs.id })
+          .from(hiringJobs)
+          .where(and(eq(hiringJobs.id, parsed.data.jobId), eq(hiringJobs.organizationId, orgId(req))))
+          .limit(1);
+        if (!job) return res.status(400).json({ error: "Invalid jobId — job does not belong to your organization" });
+      }
+
       const [candidate] = await db.insert(hiringCandidates).values(parsed.data).returning();
 
-      // Record initial stage
       await db.insert(hiringCandidateStageHistory).values({
         organizationId: orgId(req),
         candidateId: candidate.id,
@@ -345,6 +473,15 @@ router.post(
       void logCreate(userId(req), "hiring_candidate", candidate.id, candidate, req);
       void logActivity(orgId(req), userId(req), userName(req), "CANDIDATE_APPLIED", "candidate", candidate.id, candidate.fullName);
 
+      emitEvent({
+        type: "hiring.candidate_applied",
+        version: 1,
+        orgId: orgId(req),
+        actorId: userId(req),
+        timestamp: new Date(),
+        payload: { candidateId: candidate.id, jobId: candidate.jobId ?? null, fullName: candidate.fullName },
+      });
+
       res.status(201).json(candidate);
     } catch (err) {
       logError("POST /api/hiring/candidates", { error: String(err) });
@@ -353,42 +490,39 @@ router.post(
   },
 );
 
-// PATCH /api/hiring/candidates/:id — update candidate fields
-router.patch(
-  "/candidates/:id",
-  requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
-  async (req: AuthRequest, res) => {
-    try {
-      const [existing] = await db
-        .select()
-        .from(hiringCandidates)
-        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
-        .limit(1);
-      if (!existing) return res.status(404).json({ error: "Candidate not found" });
+async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
+  try {
+    const [existing] = await db
+      .select()
+      .from(hiringCandidates)
+      .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Candidate not found" }); return; }
 
-      const updates: Record<string, unknown> = { ...req.body, updatedAt: new Date() };
-      delete updates["id"];
-      delete updates["organizationId"];
-      delete updates["createdAt"];
-      delete updates["currentStage"];
+    const updates: Record<string, unknown> = { ...req.body, updatedAt: new Date() };
+    delete updates["id"];
+    delete updates["organizationId"];
+    delete updates["createdAt"];
+    delete updates["currentStage"];
 
-      const [candidate] = await db
-        .update(hiringCandidates)
-        .set(updates as Partial<typeof hiringCandidates.$inferInsert>)
-        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
-        .returning();
+    const [candidate] = await db
+      .update(hiringCandidates)
+      .set(updates as Partial<typeof hiringCandidates.$inferInsert>)
+      .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+      .returning();
 
-      void logUpdate(userId(req), "hiring_candidate", candidate.id, existing, candidate, req);
-      res.json(candidate);
-    } catch (err) {
-      logError("PATCH /api/hiring/candidates/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to update candidate" });
-    }
-  },
-);
+    void logUpdate(userId(req), "hiring_candidate", candidate.id, existing, candidate, req);
+    res.json(candidate);
+  } catch (err) {
+    logError("PATCH/PUT /api/hiring/candidates/:id", { error: String(err) });
+    res.status(500).json({ error: "Failed to update candidate" });
+  }
+}
 
-// POST /api/hiring/candidates/:id/stage — move candidate to new stage
+router.patch("/candidates/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
+router.put("/candidates/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
+
+// POST /candidates/:id/stage — stage transition
 router.post(
   "/candidates/:id/stage",
   requireAuth,
@@ -416,35 +550,123 @@ router.post(
       await db.insert(hiringCandidateStageHistory).values({
         organizationId: orgId(req),
         candidateId: req.params.id,
-        fromStage: fromStage || null,
+        fromStage: fromStage ?? null,
         toStage: stage,
         changedByUserId: userId(req),
         changedByName: userName(req),
-        reason: reason || null,
+        reason: reason ?? null,
       });
 
-      const activityType = stage === "HIRED" ? "CANDIDATE_HIRED" : stage === "REJECTED" ? "CANDIDATE_REJECTED" : "CANDIDATE_STAGE_CHANGED";
+      const activityType: HiringActivityType = stage === "HIRED" ? "CANDIDATE_HIRED" : stage === "REJECTED" ? "CANDIDATE_REJECTED" : "CANDIDATE_STAGE_CHANGED";
       void logActivity(orgId(req), userId(req), userName(req), activityType, "candidate", req.params.id, existing.fullName, { fromStage, toStage: stage });
 
-      if (stage === "HIRED" || stage === "REJECTED") {
-        // Notify the reviewing manager
+      if (stage === "HIRED") {
+        emitEvent({
+          type: "hiring.candidate_hired",
+          version: 1,
+          orgId: orgId(req),
+          actorId: userId(req),
+          timestamp: new Date(),
+          payload: { candidateId: existing.id, fullName: existing.fullName, jobId: existing.jobId ?? null },
+        });
         if (existing.reviewerUserId) {
           void insertNotification({
             userId: existing.reviewerUserId,
             organizationId: orgId(req),
             type: "GENERAL",
-            title: stage === "HIRED" ? "Candidate Hired" : "Candidate Rejected",
-            message: `${existing.fullName} has been marked as ${stage.toLowerCase()}.`,
+            title: "Candidate Hired",
+            message: `${existing.fullName} has been marked as hired.`,
             relatedEntityId: existing.id,
             relatedEntityType: "hiring_candidate",
           });
         }
+      } else if (stage === "REJECTED") {
+        emitEvent({
+          type: "hiring.candidate_stage_changed",
+          version: 1,
+          orgId: orgId(req),
+          actorId: userId(req),
+          timestamp: new Date(),
+          payload: { candidateId: existing.id, fullName: existing.fullName, fromStage: fromStage ?? null, toStage: stage },
+        });
+        if (existing.reviewerUserId) {
+          void insertNotification({
+            userId: existing.reviewerUserId,
+            organizationId: orgId(req),
+            type: "GENERAL",
+            title: "Candidate Rejected",
+            message: `${existing.fullName} has been marked as rejected.`,
+            relatedEntityId: existing.id,
+            relatedEntityType: "hiring_candidate",
+          });
+        }
+      } else {
+        emitEvent({
+          type: "hiring.candidate_stage_changed",
+          version: 1,
+          orgId: orgId(req),
+          actorId: userId(req),
+          timestamp: new Date(),
+          payload: { candidateId: existing.id, fullName: existing.fullName, fromStage: fromStage ?? null, toStage: stage },
+        });
       }
 
       res.json(candidate);
     } catch (err) {
       logError("POST /api/hiring/candidates/:id/stage", { error: String(err) });
       res.status(500).json({ error: "Failed to update candidate stage" });
+    }
+  },
+);
+
+// POST /candidates/:id/documents — register a document (file already uploaded to object storage)
+router.post(
+  "/candidates/:id/documents",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  async (req: AuthRequest, res) => {
+    try {
+      const [candidate] = await db
+        .select({ id: hiringCandidates.id })
+        .from(hiringCandidates)
+        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+        .limit(1);
+      if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+
+      const parsed = insertHiringCandidateDocumentSchema.safeParse({
+        ...req.body,
+        organizationId: orgId(req),
+        candidateId: req.params.id,
+        uploadedByUserId: userId(req),
+      });
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+      const [doc] = await db.insert(hiringCandidateDocuments).values(parsed.data).returning();
+      res.status(201).json(doc);
+    } catch (err) {
+      logError("POST /api/hiring/candidates/:id/documents", { error: String(err) });
+      res.status(500).json({ error: "Failed to register candidate document" });
+    }
+  },
+);
+
+router.delete(
+  "/candidates/:candidateId/documents/:docId",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  async (req: AuthRequest, res) => {
+    try {
+      const [doc] = await db
+        .select()
+        .from(hiringCandidateDocuments)
+        .where(and(eq(hiringCandidateDocuments.id, req.params.docId), eq(hiringCandidateDocuments.organizationId, orgId(req))))
+        .limit(1);
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      await db.delete(hiringCandidateDocuments).where(eq(hiringCandidateDocuments.id, req.params.docId));
+      res.json({ success: true });
+    } catch (err) {
+      logError("DELETE /api/hiring/candidates/:candidateId/documents/:docId", { error: String(err) });
+      res.status(500).json({ error: "Failed to delete document" });
     }
   },
 );
@@ -541,6 +763,26 @@ router.post(
   requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
   async (req: AuthRequest, res) => {
     try {
+      // TENANT ISOLATION: Verify candidateId belongs to this org
+      if (req.body.candidateId) {
+        const [ownerCheck] = await db
+          .select({ id: hiringCandidates.id })
+          .from(hiringCandidates)
+          .where(and(eq(hiringCandidates.id, req.body.candidateId), eq(hiringCandidates.organizationId, orgId(req))))
+          .limit(1);
+        if (!ownerCheck) return res.status(400).json({ error: "Invalid candidateId — candidate does not belong to your organization" });
+      }
+
+      // TENANT ISOLATION: Verify jobId belongs to this org
+      if (req.body.jobId) {
+        const [jobCheck] = await db
+          .select({ id: hiringJobs.id })
+          .from(hiringJobs)
+          .where(and(eq(hiringJobs.id, req.body.jobId), eq(hiringJobs.organizationId, orgId(req))))
+          .limit(1);
+        if (!jobCheck) return res.status(400).json({ error: "Invalid jobId — job does not belong to your organization" });
+      }
+
       const parsed = insertHiringInterviewSchema.safeParse({
         ...req.body,
         organizationId: orgId(req),
@@ -553,27 +795,29 @@ router.post(
 
       const [interview] = await db.insert(hiringInterviews).values(parsed.data).returning();
 
-      // Notify candidate's reviewer if set
-      const [candidate] = await db
-        .select({ reviewerUserId: hiringCandidates.reviewerUserId, fullName: hiringCandidates.fullName })
-        .from(hiringCandidates)
-        .where(eq(hiringCandidates.id, parsed.data.candidateId || ""))
-        .limit(1);
+      // Notify the candidate's reviewer
+      if (parsed.data.candidateId) {
+        const [candidate] = await db
+          .select({ reviewerUserId: hiringCandidates.reviewerUserId, fullName: hiringCandidates.fullName })
+          .from(hiringCandidates)
+          .where(eq(hiringCandidates.id, parsed.data.candidateId))
+          .limit(1);
 
-      if (candidate?.reviewerUserId) {
-        void insertNotification({
-          userId: candidate.reviewerUserId,
-          organizationId: orgId(req),
-          type: "GENERAL",
-          title: "Interview Scheduled",
-          message: `An interview has been scheduled for ${candidate.fullName}.`,
-          relatedEntityId: interview.id,
-          relatedEntityType: "hiring_interview",
-        });
+        if (candidate?.reviewerUserId) {
+          void insertNotification({
+            userId: candidate.reviewerUserId,
+            organizationId: orgId(req),
+            type: "GENERAL",
+            title: "Interview Scheduled",
+            message: `An interview has been scheduled for ${candidate.fullName}.`,
+            relatedEntityId: interview.id,
+            relatedEntityType: "hiring_interview",
+          });
+        }
       }
 
       void logCreate(userId(req), "hiring_interview", interview.id, interview, req);
-      void logActivity(orgId(req), userId(req), userName(req), "INTERVIEW_SCHEDULED", "interview", interview.id, `Interview for candidate`);
+      void logActivity(orgId(req), userId(req), userName(req), "INTERVIEW_SCHEDULED", "interview", interview.id, "Interview scheduled");
 
       res.status(201).json(interview);
     } catch (err) {
@@ -583,7 +827,41 @@ router.post(
   },
 );
 
-router.patch(
+async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
+  try {
+    const [existing] = await db
+      .select()
+      .from(hiringInterviews)
+      .where(and(eq(hiringInterviews.id, req.params.id), eq(hiringInterviews.organizationId, orgId(req))))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Interview not found" }); return; }
+
+    const updates: Record<string, unknown> = { ...req.body, updatedByUserId: userId(req), updatedAt: new Date() };
+    delete updates["id"];
+    delete updates["organizationId"];
+    delete updates["createdAt"];
+    if (updates["startAt"]) updates["startAt"] = new Date(updates["startAt"] as string);
+    if (updates["endAt"]) updates["endAt"] = new Date(updates["endAt"] as string);
+
+    const [interview] = await db
+      .update(hiringInterviews)
+      .set(updates as Partial<typeof hiringInterviews.$inferInsert>)
+      .where(and(eq(hiringInterviews.id, req.params.id), eq(hiringInterviews.organizationId, orgId(req))))
+      .returning();
+
+    void logUpdate(userId(req), "hiring_interview", interview.id, existing, interview, req);
+    res.json(interview);
+  } catch (err) {
+    logError("PATCH/PUT /api/hiring/interviews/:id", { error: String(err) });
+    res.status(500).json({ error: "Failed to update interview" });
+  }
+}
+
+router.patch("/interviews/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
+router.put("/interviews/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
+
+// DELETE /interviews/:id — cancel an interview
+router.delete(
   "/interviews/:id",
   requireAuth,
   requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
@@ -596,24 +874,15 @@ router.patch(
         .limit(1);
       if (!existing) return res.status(404).json({ error: "Interview not found" });
 
-      const updates: Record<string, unknown> = { ...req.body, updatedByUserId: userId(req), updatedAt: new Date() };
-      delete updates["id"];
-      delete updates["organizationId"];
-      delete updates["createdAt"];
-      if (updates["startAt"]) updates["startAt"] = new Date(updates["startAt"] as string);
-      if (updates["endAt"]) updates["endAt"] = new Date(updates["endAt"] as string);
-
-      const [interview] = await db
+      await db
         .update(hiringInterviews)
-        .set(updates as Partial<typeof hiringInterviews.$inferInsert>)
-        .where(and(eq(hiringInterviews.id, req.params.id), eq(hiringInterviews.organizationId, orgId(req))))
-        .returning();
+        .set({ status: "CANCELLED", updatedAt: new Date() })
+        .where(and(eq(hiringInterviews.id, req.params.id), eq(hiringInterviews.organizationId, orgId(req))));
 
-      void logUpdate(userId(req), "hiring_interview", interview.id, existing, interview, req);
-      res.json(interview);
+      res.json({ success: true });
     } catch (err) {
-      logError("PATCH /api/hiring/interviews/:id", { error: String(err) });
-      res.status(500).json({ error: "Failed to update interview" });
+      logError("DELETE /api/hiring/interviews/:id", { error: String(err) });
+      res.status(500).json({ error: "Failed to cancel interview" });
     }
   },
 );
@@ -624,11 +893,10 @@ router.patch(
 
 router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const org = orgId(req);
     const tasks = await db
       .select()
       .from(hiringTasks)
-      .where(eq(hiringTasks.organizationId, org))
+      .where(eq(hiringTasks.organizationId, orgId(req)))
       .orderBy(desc(hiringTasks.createdAt));
     res.json(tasks);
   } catch (err) {
@@ -643,6 +911,16 @@ router.post(
   requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
   async (req: AuthRequest, res) => {
     try {
+      // Validate candidateId belongs to org
+      if (req.body.candidateId) {
+        const [cand] = await db
+          .select({ id: hiringCandidates.id })
+          .from(hiringCandidates)
+          .where(and(eq(hiringCandidates.id, req.body.candidateId), eq(hiringCandidates.organizationId, orgId(req))))
+          .limit(1);
+        if (!cand) return res.status(400).json({ error: "Invalid candidateId" });
+      }
+
       const parsed = insertHiringTaskSchema.safeParse({
         ...req.body,
         organizationId: orgId(req),
@@ -713,7 +991,6 @@ router.patch(
 // ATS INTEGRATIONS
 // ============================================
 
-// GET /api/hiring/integrations — list ATS integrations for org
 router.get("/integrations", requireAuth, requireRole("ADMIN", "HR_MANAGER"), async (req: AuthRequest, res) => {
   try {
     const integrations = await db
@@ -738,7 +1015,6 @@ router.get("/integrations", requireAuth, requireRole("ADMIN", "HR_MANAGER"), asy
   }
 });
 
-// POST /api/hiring/integrations — connect an ATS
 router.post(
   "/integrations",
   requireAuth,
@@ -753,7 +1029,6 @@ router.post(
       const provider = getATSProvider(providerName);
       if (!provider) return res.status(400).json({ error: `Unknown ATS provider: ${providerName}` });
 
-      // Test connection before saving
       const ok = await provider.testConnection(credentials);
       if (!ok) return res.status(400).json({ error: "ATS connection test failed — check your credentials" });
 
@@ -777,7 +1052,8 @@ router.post(
           })
           .where(eq(hiringIntegrations.id, existing.id))
           .returning();
-        return res.json(updated);
+
+        return res.json({ ...updated, encryptedCredentialsJson: undefined });
       }
 
       const [integration] = await db.insert(hiringIntegrations).values({
@@ -800,7 +1076,39 @@ router.post(
   },
 );
 
-// DELETE /api/hiring/integrations/:id — disconnect
+// POST /integrations/:id/test — re-test an existing integration
+router.post(
+  "/integrations/:id/test",
+  requireAuth,
+  requireRole("ADMIN", "HR_MANAGER"),
+  async (req: AuthRequest, res) => {
+    try {
+      const [integration] = await db
+        .select()
+        .from(hiringIntegrations)
+        .where(and(eq(hiringIntegrations.id, req.params.id), eq(hiringIntegrations.organizationId, orgId(req))))
+        .limit(1);
+      if (!integration) return res.status(404).json({ error: "Integration not found" });
+      if (!integration.encryptedCredentialsJson) return res.status(400).json({ error: "No credentials stored" });
+
+      const provider = getATSProvider(integration.providerName);
+      if (!provider) return res.status(500).json({ error: "Provider implementation not found" });
+
+      const credentials = JSON.parse(decryptToken(integration.encryptedCredentialsJson)) as Record<string, string>;
+      const ok = await provider.testConnection(credentials);
+
+      await db.update(hiringIntegrations)
+        .set({ lastTestAt: new Date(), status: ok ? "connected" : "error", updatedAt: new Date() })
+        .where(eq(hiringIntegrations.id, req.params.id));
+
+      res.json({ connected: ok, testedAt: new Date() });
+    } catch (err) {
+      logError("POST /api/hiring/integrations/:id/test", { error: String(err) });
+      res.status(500).json({ error: "Failed to test integration" });
+    }
+  },
+);
+
 router.delete(
   "/integrations/:id",
   requireAuth,
@@ -827,7 +1135,7 @@ router.delete(
   },
 );
 
-// POST /api/hiring/integrations/:id/sync — trigger full sync
+// POST /integrations/:id/sync — trigger full background sync
 router.post(
   "/integrations/:id/sync",
   requireAuth,
@@ -841,17 +1149,12 @@ router.post(
         .limit(1);
 
       if (!integration) return res.status(404).json({ error: "Integration not found" });
-      if (integration.status !== "connected") {
-        return res.status(400).json({ error: "Integration is not connected" });
-      }
-      if (!integration.encryptedCredentialsJson) {
-        return res.status(400).json({ error: "No credentials stored for this integration" });
-      }
+      if (integration.status !== "connected") return res.status(400).json({ error: "Integration is not connected" });
+      if (!integration.encryptedCredentialsJson) return res.status(400).json({ error: "No credentials stored" });
 
       const provider = getATSProvider(integration.providerName);
       if (!provider) return res.status(500).json({ error: "Provider not found" });
 
-      // Insert a sync log row
       const [syncLog] = await db.insert(hiringSyncLogs).values({
         organizationId: orgId(req),
         integrationId: integration.id,
@@ -861,30 +1164,37 @@ router.post(
         startedAt: new Date(),
       }).returning();
 
-      // Fire-and-forget sync
+      // Capture values for the closure
+      const capturedOrgId = orgId(req);
+      const capturedIntegrationId = integration.id;
+      const capturedProviderName = integration.providerName;
+      const capturedEncrypted = integration.encryptedCredentialsJson;
+
       setImmediate(async () => {
         try {
-          const credentials = JSON.parse(decryptToken(integration.encryptedCredentialsJson!)) as Record<string, string>;
-          const result = await provider.syncAll(credentials);
+          const credentials = JSON.parse(decryptToken(capturedEncrypted)) as Record<string, string>;
+          const [atsJobs, atsCandidates] = await Promise.all([
+            provider.listJobs(credentials),
+            provider.listCandidates(credentials),
+          ]);
 
-          // Upsert synced jobs
-          for (const atsJob of await provider.listJobs(credentials)) {
+          for (const atsJob of atsJobs) {
             const [existing] = await db
               .select({ id: hiringJobs.id })
               .from(hiringJobs)
-              .where(and(eq(hiringJobs.organizationId, orgId(req)), eq(hiringJobs.externalJobId, atsJob.externalId)))
+              .where(and(eq(hiringJobs.organizationId, capturedOrgId), eq(hiringJobs.externalJobId, atsJob.externalId)))
               .limit(1);
 
             if (!existing) {
               await db.insert(hiringJobs).values({
-                organizationId: orgId(req),
-                externalProvider: integration.providerName,
+                organizationId: capturedOrgId,
+                externalProvider: capturedProviderName,
                 externalJobId: atsJob.externalId,
                 title: atsJob.title,
                 status: "PUBLISHED",
-                department: atsJob.department || null,
-                location: atsJob.location || null,
-                description: atsJob.description || null,
+                department: atsJob.department ?? null,
+                location: atsJob.location ?? null,
+                description: atsJob.description ?? null,
                 lastSyncedAt: new Date(),
               });
             } else {
@@ -892,25 +1202,24 @@ router.post(
             }
           }
 
-          // Upsert synced candidates
-          for (const atsCand of await provider.listCandidates(credentials)) {
-            const [existingCand] = await db
+          for (const atsCand of atsCandidates) {
+            const [existing] = await db
               .select({ id: hiringCandidates.id })
               .from(hiringCandidates)
-              .where(and(eq(hiringCandidates.organizationId, orgId(req)), eq(hiringCandidates.externalCandidateId, atsCand.externalId)))
+              .where(and(eq(hiringCandidates.organizationId, capturedOrgId), eq(hiringCandidates.externalCandidateId, atsCand.externalId)))
               .limit(1);
 
-            if (!existingCand) {
+            if (!existing) {
               await db.insert(hiringCandidates).values({
-                organizationId: orgId(req),
-                externalProvider: integration.providerName,
+                organizationId: capturedOrgId,
+                externalProvider: capturedProviderName,
                 externalCandidateId: atsCand.externalId,
                 firstName: atsCand.firstName,
                 lastName: atsCand.lastName,
                 fullName: `${atsCand.firstName} ${atsCand.lastName}`.trim(),
-                email: atsCand.email || null,
-                phone: atsCand.phone || null,
-                source: integration.providerName,
+                email: atsCand.email ?? null,
+                phone: atsCand.phone ?? null,
+                source: capturedProviderName,
                 currentStage: "APPLIED",
                 appliedAt: atsCand.appliedAt ? new Date(atsCand.appliedAt) : new Date(),
                 rawPayloadJson: atsCand.rawPayload ? JSON.stringify(atsCand.rawPayload) : null,
@@ -921,20 +1230,21 @@ router.post(
           await db.update(hiringSyncLogs)
             .set({
               status: "COMPLETED",
-              recordsProcessed: result.jobsSynced + result.candidatesSynced,
+              recordsProcessed: atsJobs.length + atsCandidates.length,
               completedAt: new Date(),
-              errorSummary: result.errors.length ? result.errors.join("; ") : null,
             })
             .where(eq(hiringSyncLogs.id, syncLog.id));
 
-          await db.update(hiringIntegrations).set({ lastSyncAt: new Date(), updatedAt: new Date() }).where(eq(hiringIntegrations.id, integration.id));
+          await db.update(hiringIntegrations)
+            .set({ lastSyncAt: new Date(), updatedAt: new Date() })
+            .where(eq(hiringIntegrations.id, capturedIntegrationId));
 
-          logInfo(`ATS sync completed for integration ${integration.id}`, result);
+          logInfo(`ATS sync completed for integration ${capturedIntegrationId}`, { jobs: atsJobs.length, candidates: atsCandidates.length });
         } catch (syncErr) {
           await db.update(hiringSyncLogs)
             .set({ status: "FAILED", errorSummary: String(syncErr), completedAt: new Date() })
             .where(eq(hiringSyncLogs.id, syncLog.id));
-          logError(`ATS sync failed for integration ${integration.id}`, { error: String(syncErr) });
+          logError(`ATS sync failed for integration ${capturedIntegrationId}`, { error: String(syncErr) });
         }
       });
 
@@ -946,7 +1256,7 @@ router.post(
   },
 );
 
-// GET /api/hiring/sync-logs — fetch sync history
+// GET /sync-logs
 router.get("/sync-logs", requireAuth, requireRole("ADMIN", "HR_MANAGER"), async (req: AuthRequest, res) => {
   try {
     const logs = await db
@@ -1038,7 +1348,7 @@ router.get("/activity", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // ============================================
-// ANALYTICS / DASHBOARD
+// ANALYTICS
 // ============================================
 
 router.get("/analytics", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
