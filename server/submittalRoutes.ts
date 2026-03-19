@@ -27,7 +27,7 @@ router.get("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANA
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const { projectId, status, phase, submittalType } = req.query;
+    const { projectId, status, phase, submittalType, category } = req.query;
 
     const allSubmittals = await db
       .select({
@@ -60,6 +60,9 @@ router.get("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANA
     }
     if (submittalType) {
       filtered = filtered.filter(s => s.submittal.submittalType === submittalType);
+    }
+    if (category) {
+      filtered = filtered.filter(s => s.submittal.submittalCategory === category);
     }
 
     const result = filtered.map(s => ({
@@ -295,7 +298,7 @@ router.patch("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
       return res.status(400).json({ error: "Only DRAFT submittals can be updated" });
     }
 
-    const allowedFields = ["subject", "description", "specSection", "category", "phase", "dateRequired", "attachmentsJson"];
+    const allowedFields = ["subject", "description", "specSection", "category", "submittalCategory", "phase", "dateRequired", "attachmentsJson"];
     const updates: Record<string, any> = { updatedAt: new Date() };
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) {
@@ -744,6 +747,7 @@ router.post("/submittals/:id/items", requireAuth, requireRole("SUPER_ADMIN", "AD
 
     if (!existing) return res.status(404).json({ error: "Submittal not found" });
     if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    if (existing.submittal.status !== "DRAFT") return res.status(400).json({ error: "Can only add items to DRAFT submittals" });
 
     const user = req.user!;
     const organizationId = existing.submittal.organizationId;
@@ -790,6 +794,7 @@ router.patch("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_AD
 
     if (!existing) return res.status(404).json({ error: "Submittal not found" });
     if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    if (existing.submittal.status !== "DRAFT") return res.status(400).json({ error: "Can only edit items on DRAFT submittals" });
 
     const [item] = await db.select().from(submittalItems).where(and(eq(submittalItems.id, itemId), eq(submittalItems.submittalId, id))).limit(1);
     if (!item) return res.status(404).json({ error: "Item not found" });
@@ -829,7 +834,7 @@ router.patch("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_AD
   }
 });
 
-router.delete("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id, itemId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
@@ -956,6 +961,7 @@ router.delete("/submittals/:id/reviews/:reviewId", requireAuth, requireRole("SUP
 
 // ==================== Submittal Attachments ====================
 
+
 router.get("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -981,6 +987,50 @@ router.get("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN"
     res.json(attachments);
   } catch (error) {
     console.error("Get submittal attachments error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/submittals/:id/attachments/:attachmentId/download", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, attachmentId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [attachment] = await db
+      .select()
+      .from(submittalAttachments)
+      .where(and(eq(submittalAttachments.id, attachmentId), eq(submittalAttachments.submittalId, id)))
+      .limit(1);
+
+    if (!attachment) return res.status(404).json({ error: "Attachment not found" });
+    if (!attachment.storageKey) return res.status(404).json({ error: "No file stored for this attachment" });
+
+    try {
+      const { ObjectStorageService } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+      const objectFile = await objectStorageService.getObjectEntityFile(attachment.storageKey);
+      const [signedUrl] = await objectFile.getSignedUrl({
+        version: 'v4',
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      });
+      res.json({ url: signedUrl });
+    } catch {
+      res.status(500).json({ error: "Failed to generate download URL" });
+    }
+  } catch (error) {
+    console.error("Get submittal attachment download URL error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1106,6 +1156,7 @@ router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN
       userName: uploadedByName,
       action: `Attachment uploaded: ${fileName}`,
     });
+
 
     res.status(201).json(newAttachment);
   } catch (error) {

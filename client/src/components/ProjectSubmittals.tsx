@@ -19,10 +19,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
-import DocumentAttachments from "@/components/DocumentAttachments";
 import { useSubmittalMutations } from "@/hooks/useSubmittalMutations";
 import type { Submittal, SubmittalStats, SubmittalCreateForm, Subcontractor } from "@/hooks/useSubmittalMutations";
+import { SUBMITTAL_CATEGORIES, SUBMITTAL_CATEGORY_LABELS } from "@/hooks/useSubmittalMutations";
 import { SubmittalDetailDialog, getStatusBadge, getPhaseBadge, getTypeBadge } from "@/components/document-control/SubmittalDetailDialog";
+import { useAuth } from "@/hooks/use-auth";
 
 interface ProjectSubmittalsProps {
   projectId: string;
@@ -31,6 +32,7 @@ interface ProjectSubmittalsProps {
 }
 
 export default function ProjectSubmittals({ projectId, projectCode, userRole }: ProjectSubmittalsProps) {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPhase, setFilterPhase] = useState("all");
@@ -44,7 +46,7 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
     submittalType: "CONTRACTOR",
     phase: "CONSTRUCTION",
     specSection: "",
-    category: "",
+    submittalCategory: "",
     subcontractorId: "",
     dateRequired: ""
   });
@@ -92,7 +94,7 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
       submittalType: "CONTRACTOR",
       phase: "CONSTRUCTION",
       specSection: "",
-      category: "",
+      submittalCategory: "",
       subcontractorId: "",
       dateRequired: ""
     });
@@ -110,7 +112,7 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
       submittalType: detail.submittalType,
       phase: detail.phase,
       specSection: detail.specSection || "",
-      category: detail.category || "",
+      submittalCategory: detail.submittalCategory || "",
       subcontractorId: detail.subcontractorId || "",
       dateRequired: detail.dateRequired || ""
     });
@@ -399,13 +401,17 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
                 />
               </div>
               <div className="space-y-2">
-                <Label>Category</Label>
-                <Input
-                  value={createForm.category}
-                  onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}
-                  placeholder="e.g., Materials, Shop Drawings"
-                  data-testid="proj-sub-input-create-category"
-                />
+                <Label>Document Category</Label>
+                <Select value={createForm.submittalCategory} onValueChange={(v) => setCreateForm({ ...createForm, submittalCategory: v })}>
+                  <SelectTrigger data-testid="proj-sub-select-create-category">
+                    <SelectValue placeholder="Select category..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBMITTAL_CATEGORIES.map(cat => (
+                      <SelectItem key={cat} value={cat}>{SUBMITTAL_CATEGORY_LABELS[cat]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             {createForm.submittalType === "SUBCONTRACTOR" && (
@@ -454,17 +460,8 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
         testIdPrefix="proj-sub-"
         mutations={mutations}
         onEdit={handleEdit}
-        attachmentsSlot={
-          detail ? (
-            <DocumentAttachments
-              entityType="submittals"
-              entityId={detail.id}
-              canUpload={["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole)}
-              canDelete={["ADMIN", "MANAGER"].includes(userRole)}
-              compact
-            />
-          ) : undefined
-        }
+        userRole={userRole}
+        currentUserId={user?.id ?? ""}
       />
     </div>
   );

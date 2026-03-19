@@ -24,6 +24,59 @@ export interface SubmittalActivity {
   userName: string | null;
 }
 
+export type SubmittalCategory = "SHOP_DRAWING" | "PRODUCT_DATA" | "MATERIAL_APPROVAL" | "ENGINEERING_APPROVAL" | "SAMPLE" | "OPERATION_AND_MAINTENANCE" | "OTHER";
+
+export const SUBMITTAL_CATEGORY_LABELS: Record<SubmittalCategory, string> = {
+  SHOP_DRAWING: "Shop Drawing",
+  PRODUCT_DATA: "Product Data",
+  MATERIAL_APPROVAL: "Material Approval",
+  ENGINEERING_APPROVAL: "Engineering Approval",
+  SAMPLE: "Sample",
+  OPERATION_AND_MAINTENANCE: "O&M Manual",
+  OTHER: "Other",
+};
+
+export const SUBMITTAL_CATEGORIES: SubmittalCategory[] = [
+  "SHOP_DRAWING",
+  "PRODUCT_DATA",
+  "MATERIAL_APPROVAL",
+  "ENGINEERING_APPROVAL",
+  "SAMPLE",
+  "OPERATION_AND_MAINTENANCE",
+  "OTHER",
+];
+
+export interface SubmittalItem {
+  id: string;
+  submittalId: string;
+  itemNumber: number;
+  description: string;
+  submittalCategory: SubmittalCategory | null;
+  specSection: string | null;
+  manufacturer: string | null;
+  modelNumber: string | null;
+  quantity: string | null;
+  unit: string | null;
+  notes: string | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubmittalAttachment {
+  id: string;
+  submittalId: string;
+  submittalItemId: string | null;
+  fileName: string;
+  fileSize: number | null;
+  mimeType: string | null;
+  storageKey: string;
+  uploadedById: string;
+  uploadedByName: string | null;
+  description: string | null;
+  createdAt: string;
+}
+
 export interface Submittal {
   id: string;
   projectId: string;
@@ -34,6 +87,7 @@ export interface Submittal {
   phase: string;
   specSection: string | null;
   category: string | null;
+  submittalCategory: string | null;
   status: string;
   revision: number;
   previousRevisionId: string | null;
@@ -77,7 +131,7 @@ export interface SubmittalCreateForm {
   submittalType: string;
   phase: string;
   specSection: string;
-  category: string;
+  submittalCategory: string;
   subcontractorId: string;
   dateRequired: string;
 }
@@ -110,7 +164,7 @@ export function useSubmittalMutations(callbacks?: {
       if (data.projectId) body.projectId = data.projectId;
       if (data.description) body.description = data.description;
       if (data.specSection) body.specSection = data.specSection;
-      if (data.category) body.category = data.category;
+      if (data.submittalCategory) body.submittalCategory = data.submittalCategory;
       if (data.subcontractorId) body.subcontractorId = data.subcontractorId;
       if (data.dateRequired) body.dateRequired = data.dateRequired;
       return await apiRequest("POST", "/api/submittals", body);
@@ -237,6 +291,71 @@ export function useSubmittalMutations(callbacks?: {
     }
   });
 
+  const addItemMutation = useMutation({
+    mutationFn: async ({ submittalId, data }: { submittalId: string; data: Record<string, unknown> }) => {
+      return await apiRequest("POST", `/api/submittals/${submittalId}/items`, data);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "items"] });
+      toast({ title: "Item added" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to add item", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const updateItemMutation = useMutation({
+    mutationFn: async ({ submittalId, itemId, data }: { submittalId: string; itemId: string; data: Record<string, unknown> }) => {
+      return await apiRequest("PATCH", `/api/submittals/${submittalId}/items/${itemId}`, data);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "items"] });
+      toast({ title: "Item updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update item", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: async ({ submittalId, itemId }: { submittalId: string; itemId: string }) => {
+      return await apiRequest("DELETE", `/api/submittals/${submittalId}/items/${itemId}`);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "items"] });
+      toast({ title: "Item deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete item", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const addAttachmentMutation = useMutation({
+    mutationFn: async ({ submittalId, data }: { submittalId: string; data: Record<string, unknown> }) => {
+      return await apiRequest("POST", `/api/submittals/${submittalId}/attachments`, data);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "attachments"] });
+      toast({ title: "Attachment uploaded" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to upload attachment", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: async ({ submittalId, attachId }: { submittalId: string; attachId: string }) => {
+      return await apiRequest("DELETE", `/api/submittals/${submittalId}/attachments/${attachId}`);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "attachments"] });
+      toast({ title: "Attachment deleted" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete attachment", description: error.message, variant: "destructive" });
+    }
+  });
+
   return {
     createMutation,
     submitMutation,
@@ -246,6 +365,11 @@ export function useSubmittalMutations(callbacks?: {
     linkRfiMutation,
     addCommentMutation,
     deleteMutation,
-    updateMutation
+    updateMutation,
+    addItemMutation,
+    updateItemMutation,
+    deleteItemMutation,
+    addAttachmentMutation,
+    deleteAttachmentMutation,
   };
 }

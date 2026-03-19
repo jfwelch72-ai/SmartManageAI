@@ -495,6 +495,7 @@ export const submittalStatusEnum = pgEnum("submittal_status", ["DRAFT", "SUBMITT
 export const submittalPhaseEnum = pgEnum("submittal_phase", ["ESTIMATE", "AWARDED", "CONSTRUCTION"]);
 export const submittalTypeEnum = pgEnum("submittal_type", ["CONTRACTOR", "SUBCONTRACTOR"]);
 export const submittalCategoryEnum = pgEnum("submittal_category", ["SHOP_DRAWING", "PRODUCT_DATA", "MATERIAL_APPROVAL", "ENGINEERING_APPROVAL", "SAMPLE", "OPERATION_AND_MAINTENANCE", "OTHER"]);
+export const submittalItemStatusEnum = pgEnum("submittal_item_status", ["PENDING", "APPROVED", "REJECTED", "REVISE"]);
 export const submittalReviewRoleEnum = pgEnum("submittal_review_role", ["ARCHITECT", "ENGINEER", "OWNER", "GC_MANAGER"]);
 export const submittalReviewStatusEnum = pgEnum("submittal_review_status", ["PENDING", "IN_REVIEW", "APPROVED", "APPROVED_AS_NOTED", "REJECTED", "REVISE_AND_RESUBMIT"]);
 

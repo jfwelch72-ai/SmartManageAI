@@ -23,12 +23,13 @@ import {
 import { format } from "date-fns";
 import { useSubmittalMutations } from "@/hooks/useSubmittalMutations";
 import type { Submittal, SubmittalStats, SubmittalCreateForm, Project, Subcontractor } from "@/hooks/useSubmittalMutations";
+import { SUBMITTAL_CATEGORIES, SUBMITTAL_CATEGORY_LABELS } from "@/hooks/useSubmittalMutations";
 import { SubmittalDetailDialog, getStatusBadge, getPhaseBadge, getTypeBadge } from "@/components/document-control/SubmittalDetailDialog";
 
 export default function SubmittalsPage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeCategoryTab, setActiveCategoryTab] = useState("all");
   const [filterProject, setFilterProject] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPhase, setFilterPhase] = useState("all");
@@ -43,7 +44,7 @@ export default function SubmittalsPage() {
     submittalType: "CONTRACTOR",
     phase: "CONSTRUCTION",
     specSection: "",
-    category: "",
+    submittalCategory: "",
     subcontractorId: "",
     dateRequired: ""
   });
@@ -62,8 +63,7 @@ export default function SubmittalsPage() {
     if (filterProject !== "all") params.set("projectId", filterProject);
     if (filterStatus !== "all") params.set("status", filterStatus);
     if (filterPhase !== "all") params.set("phase", filterPhase);
-    if (activeTab === "contractor") params.set("submittalType", "CONTRACTOR");
-    if (activeTab === "subcontractor") params.set("submittalType", "SUBCONTRACTOR");
+    if (activeCategoryTab !== "all") params.set("category", activeCategoryTab);
     const qs = params.toString();
     return qs ? `?${qs}` : "";
   };
@@ -101,7 +101,7 @@ export default function SubmittalsPage() {
       submittalType: "CONTRACTOR",
       phase: "CONSTRUCTION",
       specSection: "",
-      category: "",
+      submittalCategory: "",
       subcontractorId: "",
       dateRequired: ""
     });
@@ -120,7 +120,7 @@ export default function SubmittalsPage() {
       submittalType: detail.submittalType,
       phase: detail.phase,
       specSection: detail.specSection || "",
-      category: detail.category || "",
+      submittalCategory: detail.submittalCategory || "",
       subcontractorId: detail.subcontractorId || "",
       dateRequired: detail.dateRequired || ""
     });
@@ -201,11 +201,13 @@ export default function SubmittalsPage() {
         </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList data-testid="tabs-submittal-type">
-          <TabsTrigger value="all" data-testid="tab-all">All</TabsTrigger>
-          <TabsTrigger value="contractor" data-testid="tab-contractor">Contractor</TabsTrigger>
-          <TabsTrigger value="subcontractor" data-testid="tab-subcontractor">Subcontractor</TabsTrigger>
+      <Tabs value={activeCategoryTab} onValueChange={setActiveCategoryTab}>
+        <TabsList className="flex-wrap h-auto" data-testid="tabs-submittal-category">
+          <TabsTrigger value="all" data-testid="tab-all-types">All Types</TabsTrigger>
+          <TabsTrigger value="SHOP_DRAWING" data-testid="tab-shop-drawings">Shop Drawings</TabsTrigger>
+          <TabsTrigger value="PRODUCT_DATA" data-testid="tab-product-data">Product Data</TabsTrigger>
+          <TabsTrigger value="MATERIAL_APPROVAL" data-testid="tab-material-approvals">Material Approvals</TabsTrigger>
+          <TabsTrigger value="ENGINEERING_APPROVAL" data-testid="tab-engineering-approvals">Engineering Approvals</TabsTrigger>
         </TabsList>
 
         <div className="flex items-center gap-3 mt-4 flex-wrap">
@@ -254,7 +256,7 @@ export default function SubmittalsPage() {
           </div>
         </div>
 
-        {["all", "contractor", "subcontractor"].map(tab => (
+        {["all", "SHOP_DRAWING", "PRODUCT_DATA", "MATERIAL_APPROVAL", "ENGINEERING_APPROVAL"].map(tab => (
           <TabsContent key={tab} value={tab} className="mt-4">
             {loadingSubmittals ? (
               <div className="space-y-3">
@@ -420,13 +422,17 @@ export default function SubmittalsPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Category</Label>
-                <Input
-                  value={createForm.category}
-                  onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}
-                  placeholder="e.g., Materials, Shop Drawings"
-                  data-testid="input-create-category"
-                />
+                <Label>Document Category</Label>
+                <Select value={createForm.submittalCategory} onValueChange={(v) => setCreateForm({ ...createForm, submittalCategory: v })}>
+                  <SelectTrigger data-testid="select-create-category">
+                    <SelectValue placeholder="Select category..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBMITTAL_CATEGORIES.map(cat => (
+                      <SelectItem key={cat} value={cat}>{SUBMITTAL_CATEGORY_LABELS[cat]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             {createForm.submittalType === "SUBCONTRACTOR" && (
@@ -474,6 +480,8 @@ export default function SubmittalsPage() {
         selectedDetail={selectedDetail}
         mutations={mutations}
         onEdit={handleEdit}
+        userRole={user?.role ?? ""}
+        currentUserId={user?.id ?? ""}
       />
     </div>
   );
