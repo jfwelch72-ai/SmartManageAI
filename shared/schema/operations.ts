@@ -549,6 +549,7 @@ export const tasks = pgTable("tasks", {
   emailMessageId: varchar("email_message_id"),
   context: varchar("context"),
   hiringCandidateId: varchar("hiring_candidate_id"),
+  hiringJobId: varchar("hiring_job_id"),
   title: text("title").notNull(),
   description: text("description"),
   category: aiNoteInsightCategoryEnum("category").notNull().default("OTHER"),

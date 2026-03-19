@@ -132,7 +132,7 @@ router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: Aut
  */
 router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { status, assignedToId, projectId, createdById, context, hiringCandidateId } = req.query;
+    const { status, assignedToId, projectId, createdById, context, hiringCandidateId, hiringJobId } = req.query;
     const userRole = req.user!.role;
     const userId = req.user!.id;
 
@@ -172,6 +172,10 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
       conditions.push(eq(tasks.hiringCandidateId, hiringCandidateId as string));
     }
 
+    if (hiringJobId) {
+      conditions.push(eq(tasks.hiringJobId, hiringJobId as string));
+    }
+
     // Organization filter: filter tasks by organization
     if (shouldFilter && orgId) {
       conditions.push(eq(tasks.organizationId, orgId));
@@ -200,6 +204,7 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
         projectCode: projects.code,
         context: tasks.context,
         hiringCandidateId: tasks.hiringCandidateId,
+        hiringJobId: tasks.hiringJobId,
         title: tasks.title,
         description: tasks.description,
         category: tasks.category,
@@ -285,6 +290,7 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
       projectId: z.string().optional().nullable(),
       context: z.string().optional().nullable(),
       hiringCandidateId: z.string().optional().nullable(),
+      hiringJobId: z.string().optional().nullable(),
       title: z.string().min(1, "Title is required"),
       description: z.string().optional().nullable(),
       category: z.enum(["SUPPLY_NEED", "EQUIPMENT_REPAIR", "WEATHER_DELAY", "CHANGE_ORDER", "SAFETY", "CLIENT_COMMUNICATION", "OTHER"]).default("OTHER"),
@@ -305,6 +311,7 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
         projectId: validated.projectId || undefined,
         context: validated.context || undefined,
         hiringCandidateId: validated.hiringCandidateId || undefined,
+        hiringJobId: validated.hiringJobId || undefined,
         title: validated.title,
         description: validated.description || undefined,
         category: validated.category,

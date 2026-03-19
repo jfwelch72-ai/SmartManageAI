@@ -30,30 +30,26 @@ interface HiringTask {
   createdAt: string;
 }
 
-const TASKS_QK = ["/api/tasks", "HIRING"] as const;
-
-function useHiringTasksList(statusFilter?: string) {
-  const params = new URLSearchParams({ context: "HIRING" });
-  if (statusFilter && statusFilter !== "all") params.set("status", statusFilter.toUpperCase());
-  return useQuery<HiringTask[]>({
-    queryKey: [...TASKS_QK, statusFilter ?? "all"],
-    queryFn: () => apiRequest("GET", `/api/tasks?${params.toString()}`).then((r) => r.json()),
-  });
+interface HiringCandidate {
+  id: string;
+  fullName: string;
+  jobTitle: string | null;
 }
 
-function useCreateHiringTask() {
-  return useMutation({
-    mutationFn: (data: { title: string; description?: string; dueDate?: string; priority?: string }) =>
-      apiRequest("POST", "/api/tasks", {
-        ...data,
-        context: "HIRING",
-        sourceType: "MANUAL",
-        status: "PENDING",
-        priority: data.priority ?? "MEDIUM",
-      }).then((r) => r.json()),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: TASKS_QK });
-    },
+interface HiringJob {
+  id: string;
+  title: string;
+}
+
+const TASKS_QK = ["/api/tasks", "HIRING"] as const;
+
+function useHiringTasksList(filters: { status?: string; candidateId?: string }) {
+  const params = new URLSearchParams({ context: "HIRING" });
+  if (filters.status && filters.status !== "all") params.set("status", filters.status.toUpperCase());
+  if (filters.candidateId && filters.candidateId !== "all") params.set("hiringCandidateId", filters.candidateId);
+  return useQuery<HiringTask[]>({
+    queryKey: [...TASKS_QK, filters.status ?? "all", filters.candidateId ?? "all"],
+    queryFn: () => apiRequest("GET", `/api/tasks?${params.toString()}`).then((r) => r.json()),
   });
 }
 
@@ -81,19 +77,61 @@ export default function HiringTasksPage() {
   const [newDescription, setNewDescription] = useState("");
   const [newDue, setNewDue] = useState("");
   const [newPriority, setNewPriority] = useState("MEDIUM");
-  const [filter, setFilter] = useState<"all" | "pending" | "completed">("all");
+  const [newCandidateId, setNewCandidateId] = useState("none");
+  const [newJobId, setNewJobId] = useState("none");
 
-  const { data: allTasks = [], isLoading } = useHiringTasksList();
-  const createMutation = useCreateHiringTask();
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "completed">("all");
+  const [candidateFilter, setCandidateFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+
+  const { data: allTasks = [], isLoading } = useHiringTasksList({
+    status: statusFilter,
+    candidateId: candidateFilter,
+  });
+
+  const { data: candidates = [] } = useQuery<HiringCandidate[]>({
+    queryKey: ["/api/hiring/candidates"],
+    queryFn: () => apiRequest("GET", "/api/hiring/candidates").then((r) => r.json()),
+  });
+
+  const { data: jobs = [] } = useQuery<HiringJob[]>({
+    queryKey: ["/api/hiring/jobs"],
+    queryFn: () => apiRequest("GET", "/api/hiring/jobs").then((r) => r.json()),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data: {
+      title: string; description?: string; dueDate?: string; priority?: string;
+      hiringCandidateId?: string; hiringJobId?: string;
+    }) =>
+      apiRequest("POST", "/api/tasks", {
+        ...data,
+        context: "HIRING",
+        sourceType: "MANUAL",
+        status: "PENDING",
+        priority: data.priority ?? "MEDIUM",
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TASKS_QK });
+    },
+  });
 
   const filtered = allTasks.filter((t) => {
-    if (filter === "pending") return t.status !== "COMPLETED";
-    if (filter === "completed") return t.status === "COMPLETED";
+    if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
     return true;
   });
 
   const pending = allTasks.filter((t) => t.status !== "COMPLETED").length;
   const done = allTasks.filter((t) => t.status === "COMPLETED").length;
+
+  const resetDialog = () => {
+    setNewTitle("");
+    setNewDescription("");
+    setNewDue("");
+    setNewPriority("MEDIUM");
+    setNewCandidateId("none");
+    setNewJobId("none");
+  };
 
   const handleCreate = () => {
     if (!newTitle.trim()) return;
@@ -103,15 +141,14 @@ export default function HiringTasksPage() {
         description: newDescription.trim() || undefined,
         dueDate: newDue ? new Date(newDue).toISOString() : undefined,
         priority: newPriority,
+        hiringCandidateId: newCandidateId !== "none" ? newCandidateId : undefined,
+        hiringJobId: newJobId !== "none" ? newJobId : undefined,
       },
       {
         onSuccess: () => {
           toast({ title: "Task created" });
           setShowDialog(false);
-          setNewTitle("");
-          setNewDescription("");
-          setNewDue("");
-          setNewPriority("MEDIUM");
+          resetDialog();
         },
         onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
       }
@@ -134,24 +171,64 @@ export default function HiringTasksPage() {
         )}
       </div>
 
-      <div className="flex gap-2">
-        {(["all", "pending", "completed"] as const).map((f) => (
+      {/* Filters */}
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex gap-1">
+          {(["all", "pending", "completed"] as const).map((f) => (
+            <Button
+              key={f}
+              variant={statusFilter === f ? "default" : "outline"}
+              size="sm"
+              onClick={() => setStatusFilter(f)}
+              data-testid={`filter-status-${f}`}
+            >
+              {f.charAt(0).toUpperCase() + f.slice(1)}
+            </Button>
+          ))}
+        </div>
+
+        <Select value={candidateFilter} onValueChange={setCandidateFilter}>
+          <SelectTrigger className="w-44 h-8 text-sm" data-testid="filter-candidate">
+            <SelectValue placeholder="All candidates" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All candidates</SelectItem>
+            {candidates.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{c.fullName}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+          <SelectTrigger className="w-36 h-8 text-sm" data-testid="filter-priority">
+            <SelectValue placeholder="All priorities" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All priorities</SelectItem>
+            <SelectItem value="CRITICAL">Critical</SelectItem>
+            <SelectItem value="HIGH">High</SelectItem>
+            <SelectItem value="MEDIUM">Medium</SelectItem>
+            <SelectItem value="LOW">Low</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {(candidateFilter !== "all" || priorityFilter !== "all") && (
           <Button
-            key={f}
-            variant={filter === f ? "default" : "outline"}
+            variant="ghost"
             size="sm"
-            onClick={() => setFilter(f)}
-            data-testid={`filter-${f}`}
+            onClick={() => { setCandidateFilter("all"); setPriorityFilter("all"); }}
+            data-testid="button-clear-filters"
           >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
+            Clear filters
           </Button>
-        ))}
+        )}
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <ClipboardList className="w-4 h-4" />All Hiring Tasks
+            <ClipboardList className="w-4 h-4" />
+            {filtered.length} Task{filtered.length !== 1 ? "s" : ""}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -164,23 +241,23 @@ export default function HiringTasksPage() {
           ) : (
             <ul className="space-y-2">
               {filtered.map((task) => (
-                <TaskRow key={task.id} task={task} canEdit={canEdit} />
+                <TaskRow key={task.id} task={task} canEdit={canEdit} candidates={candidates} />
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
 
-      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+      <Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetDialog(); }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Add Hiring Task</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="space-y-1">
-              <Label>Task Title</Label>
+              <Label>Task Title *</Label>
               <Input
-                placeholder="e.g. Review applications for plumber role"
+                placeholder="e.g. Review resume for plumber role"
                 value={newTitle}
                 onChange={(e) => setNewTitle(e.target.value)}
                 data-testid="input-task-title"
@@ -194,6 +271,34 @@ export default function HiringTasksPage() {
                 onChange={(e) => setNewDescription(e.target.value)}
                 data-testid="input-task-description"
               />
+            </div>
+            <div className="space-y-1">
+              <Label>Link to Candidate (optional)</Label>
+              <Select value={newCandidateId} onValueChange={setNewCandidateId}>
+                <SelectTrigger data-testid="select-task-candidate">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {candidates.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.fullName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Link to Job (optional)</Label>
+              <Select value={newJobId} onValueChange={setNewJobId}>
+                <SelectTrigger data-testid="select-task-job">
+                  <SelectValue placeholder="None" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {jobs.map((j) => (
+                    <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1">
               <Label>Priority</Label>
@@ -220,7 +325,7 @@ export default function HiringTasksPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowDialog(false); resetDialog(); }}>Cancel</Button>
             <Button
               onClick={handleCreate}
               disabled={!newTitle.trim() || createMutation.isPending}
@@ -235,10 +340,14 @@ export default function HiringTasksPage() {
   );
 }
 
-function TaskRow({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
+function TaskRow({ task, canEdit, candidates }: { task: HiringTask; canEdit: boolean; candidates: HiringCandidate[] }) {
   const { toast } = useToast();
   const isDone = task.status === "COMPLETED";
   const toggleMutation = useToggleHiringTask(task.id, task.status);
+
+  const candidateName = task.hiringCandidateId
+    ? candidates.find((c) => c.id === task.hiringCandidateId)?.fullName ?? "Linked candidate"
+    : null;
 
   const priorityColors: Record<string, string> = {
     CRITICAL: "destructive",
@@ -283,16 +392,18 @@ function TaskRow({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
           )}
           {task.assignedToId && (
             <span className="text-xs text-muted-foreground">
-              Assigned to {[task.assignedToFirstName, task.assignedToLastName].filter(Boolean).join(" ") || "—"}
+              {[task.assignedToFirstName, task.assignedToLastName].filter(Boolean).join(" ") || "Assigned"}
             </span>
           )}
-          {task.hiringCandidateId && (
-            <Badge variant="outline" className="text-xs">Linked to candidate</Badge>
+          {candidateName && (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-candidate-${task.id}`}>
+              {candidateName}
+            </Badge>
           )}
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
-        <Badge variant={priorityColors[task.priority] as "destructive" | "outline" | "secondary" | "default" || "outline"} className="text-xs">
+        <Badge variant={(priorityColors[task.priority] ?? "outline") as "destructive" | "outline" | "secondary" | "default"} className="text-xs">
           {task.priority}
         </Badge>
         <Badge variant={isDone ? "secondary" : "outline"} className="text-xs">

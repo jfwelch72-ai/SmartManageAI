@@ -536,20 +536,57 @@ export default function CandidateDetailPage() {
                           <span className="text-sm text-muted-foreground">/100</span>
                         </div>
                         {displayReview && (
-                          <>
-                            <div className="text-xs text-muted-foreground">Trade fit: <span className="font-medium text-foreground">{displayReview.tradeFitScore}</span></div>
-                            <div className="text-xs text-muted-foreground">Role fit: <span className="font-medium text-foreground">{displayReview.roleFitScore}</span></div>
-                            <div className="text-xs text-muted-foreground">Confidence: <span className="font-medium text-foreground">{displayReview.confidenceScore}</span></div>
-                            <Badge
-                              variant={displayReview.recommendation === "YES" ? "default" : displayReview.recommendation === "NO" ? "destructive" : "secondary"}
-                              className="text-xs"
-                              data-testid="badge-ai-recommendation"
-                            >
-                              {displayReview.recommendation}
-                            </Badge>
-                          </>
+                          <Badge
+                            variant={displayReview.recommendation === "YES" ? "default" : displayReview.recommendation === "NO" ? "destructive" : "secondary"}
+                            className="text-xs"
+                            data-testid="badge-ai-recommendation"
+                          >
+                            {displayReview.recommendation}
+                          </Badge>
                         )}
                       </div>
+
+                      {/* Score bars */}
+                      {displayReview && (
+                        <div className="space-y-2">
+                          <div data-testid="bar-trade-fit">
+                            <div className="flex justify-between text-xs mb-0.5">
+                              <span className="text-muted-foreground">Trade Fit</span>
+                              <span className="font-medium">{displayReview.tradeFitScore}/100</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-blue-500"
+                                style={{ width: `${Math.min(100, displayReview.tradeFitScore)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div data-testid="bar-role-fit">
+                            <div className="flex justify-between text-xs mb-0.5">
+                              <span className="text-muted-foreground">Role Fit</span>
+                              <span className="font-medium">{displayReview.roleFitScore}/100</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-green-500"
+                                style={{ width: `${Math.min(100, displayReview.roleFitScore)}%` }}
+                              />
+                            </div>
+                          </div>
+                          <div data-testid="bar-confidence">
+                            <div className="flex justify-between text-xs mb-0.5">
+                              <span className="text-muted-foreground">Confidence</span>
+                              <span className="font-medium">{displayReview.confidenceScore}/100</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-purple-500"
+                                style={{ width: `${Math.min(100, displayReview.confidenceScore)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Summary */}
                       {(displayReview?.summary || candidate.aiRecommendation) && (
@@ -629,11 +666,18 @@ export default function CandidateDetailPage() {
                         <p className="text-xs text-muted-foreground italic border-t pt-2">{displayReview.disclaimer}</p>
                       )}
 
-                      {/* Show last reviewed date from persisted data */}
+                      {/* Show last reviewed date + prompt version from persisted data */}
                       {!aiResult && persistedReview?.generatedAt && (
-                        <p className="text-xs text-muted-foreground border-t pt-2">
-                          Last reviewed: {format(new Date(persistedReview.generatedAt), "MMM d, yyyy")}
-                        </p>
+                        <div className="flex items-center justify-between border-t pt-2">
+                          <p className="text-xs text-muted-foreground" data-testid="text-ai-last-reviewed">
+                            Last reviewed: {format(new Date(persistedReview.generatedAt), "MMM d, yyyy")}
+                          </p>
+                          {persistedReview.promptVersion && (
+                            <p className="text-xs text-muted-foreground" data-testid="text-ai-prompt-version">
+                              v{persistedReview.promptVersion}
+                            </p>
+                          )}
+                        </div>
                       )}
 
                       <p className="text-xs text-muted-foreground italic">

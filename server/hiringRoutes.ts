@@ -1986,7 +1986,7 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
 
     // Pipeline funnel (canonical stage order for conversion metrics)
     const STAGE_ORDER = [
-      "APPLICATION_RECEIVED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
+      "APPLIED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
       "SKILLS_ASSESSMENT", "BACKGROUND_CHECK", "REFERENCE_CHECK", "OFFER_EXTENDED",
       "HIRED", "REJECTED",
     ];
