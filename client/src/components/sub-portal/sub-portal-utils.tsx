@@ -7,6 +7,8 @@ function getStatusBadgeClass(status: string) {
     return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
   if (["IN_REVIEW", "UNDER_REVIEW"].includes(s))
     return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+  if (s === "FORWARDED")
+    return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
   if (["ANSWERED", "APPROVED", "ACKNOWLEDGED"].includes(s))
     return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
   if (["CLOSED", "SUPERSEDED"].includes(s))

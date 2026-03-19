@@ -486,7 +486,7 @@ export const vendorScoreCategoryEnum = pgEnum("vendor_score_category", ["QUALITY
 export const crewAvailabilityStatusEnum = pgEnum("crew_availability_status", ["AVAILABLE", "PARTIALLY_AVAILABLE", "BOOKED", "UNAVAILABLE"]);
 
 // Vendor Scores table - Vendor performance scoring by project
-export const rfiStatusEnum = pgEnum("rfi_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "ANSWERED", "CLOSED"]);
+export const rfiStatusEnum = pgEnum("rfi_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "FORWARDED", "ANSWERED", "CLOSED"]);
 export const rfiPriorityEnum = pgEnum("rfi_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
 export const rfiCategoryEnum = pgEnum("rfi_category", ["DESIGN_CLARIFICATION", "FIELD_CONDITION", "SUBSTITUTION_REQUEST", "SPECIFICATION_INTERPRETATION", "SCHEDULE", "ADMINISTRATIVE", "OTHER"]);
 

@@ -9,6 +9,7 @@ import {
   Clock,
   XCircle,
   Search,
+  Forward,
 } from "lucide-react";
 
 export interface RFI {
@@ -36,6 +37,8 @@ export interface RFI {
   answeredByName: string | null;
   closedById: string | null;
   closedByName: string | null;
+  forwardedToId: string | null;
+  forwardedAt: string | null;
   linkedChangeOrderId: string | null;
   linkedTmTicketId: string | null;
   linkedSubmittalId: string | null;
@@ -140,6 +143,8 @@ export function getStatusBadge(status: string): ReactNode {
       return <Badge variant="default"><Send className="h-3 w-3 mr-1" />Submitted</Badge>;
     case "UNDER_REVIEW":
       return <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"><Search className="h-3 w-3 mr-1" />Under Review</Badge>;
+    case "FORWARDED":
+      return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"><Forward className="h-3 w-3 mr-1" />Forwarded</Badge>;
     case "ANSWERED":
       return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"><CheckCircle2 className="h-3 w-3 mr-1" />Answered</Badge>;
     case "CLOSED":
@@ -151,7 +156,7 @@ export function getStatusBadge(status: string): ReactNode {
 
 export function isRfiOverdue(rfi: { status: string; dateRequired: string | null }): boolean {
   if (!rfi.dateRequired) return false;
-  if (!["SUBMITTED", "UNDER_REVIEW"].includes(rfi.status)) return false;
+  if (!["SUBMITTED", "UNDER_REVIEW", "FORWARDED"].includes(rfi.status)) return false;
   return new Date(rfi.dateRequired) < new Date();
 }
 
@@ -177,11 +182,12 @@ interface UseRfiMutationsOptions {
   onEditSuccess?: () => void;
   onAnswerSuccess?: () => void;
   onLinkCOSuccess?: () => void;
+  onForwardSuccess?: () => void;
 }
 
 export function useRfiMutations(options: UseRfiMutationsOptions) {
   const { toast } = useToast();
-  const { selectedRfiId, onCreateSuccess, onDeleteSuccess, onEditSuccess, onAnswerSuccess, onLinkCOSuccess } = options;
+  const { selectedRfiId, onCreateSuccess, onDeleteSuccess, onEditSuccess, onAnswerSuccess, onLinkCOSuccess, onForwardSuccess } = options;
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/rfi"] });
@@ -254,6 +260,19 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
     },
     onError: (error: any) => {
       toast({ title: "Failed to start review", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const forwardMutation = useMutation({
+    mutationFn: async ({ id, forwardedToId }: { id: string; forwardedToId: string }) =>
+      await apiRequest("POST", `/api/rfi/${id}/forward`, { forwardedToId }),
+    onSuccess: () => {
+      invalidateAll();
+      toast({ title: "RFI forwarded to design team" });
+      onForwardSuccess?.();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to forward RFI", description: error.message, variant: "destructive" });
     },
   });
 
@@ -358,6 +377,7 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
     updateMutation,
     submitMutation,
     reviewMutation,
+    forwardMutation,
     answerMutation,
     closeMutation,
     reopenMutation,

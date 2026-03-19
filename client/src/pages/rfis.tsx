@@ -134,6 +134,7 @@ export default function RFIsPage() {
               <SelectItem value="DRAFT">Draft</SelectItem>
               <SelectItem value="SUBMITTED">Submitted</SelectItem>
               <SelectItem value="UNDER_REVIEW">Under Review</SelectItem>
+              <SelectItem value="FORWARDED">Forwarded</SelectItem>
               <SelectItem value="ANSWERED">Answered</SelectItem>
               <SelectItem value="CLOSED">Closed</SelectItem>
               <SelectItem value="OVERDUE">Overdue</SelectItem>

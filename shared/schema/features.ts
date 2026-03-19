@@ -4654,6 +4654,8 @@ export const rfis = pgTable("rfis", {
   linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
   linkedTmTicketId: varchar("linked_tm_ticket_id").references(() => tmTickets.id, { onDelete: "set null" }),
   linkedSubmittalId: varchar("linked_submittal_id").references(() => submittals.id, { onDelete: "set null" }),
+  forwardedToId: varchar("forwarded_to_id").references(() => users.id),
+  forwardedAt: timestamp("forwarded_at"),
   closedAt: timestamp("closed_at"),
   closedById: varchar("closed_by_id").references(() => users.id),
   category: text("category"),

@@ -83,7 +83,7 @@ router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "
     }
     if (status && typeof status === "string") {
       if (status === "OVERDUE") {
-        conditions.push(inArray(rfis.status, ["SUBMITTED", "UNDER_REVIEW"]));
+        conditions.push(inArray(rfis.status, ["SUBMITTED", "UNDER_REVIEW", "FORWARDED"]));
         conditions.push(sql`${rfis.dateRequired} < NOW()`);
       } else {
         conditions.push(eq(rfis.status, status as any));
@@ -146,11 +146,11 @@ router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
 
     const now = new Date();
     const total = allRfis.length;
-    const open = allRfis.filter((r) => ["DRAFT", "SUBMITTED", "UNDER_REVIEW"].includes(r.status)).length;
+    const open = allRfis.filter((r) => ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "FORWARDED"].includes(r.status)).length;
     const answered = allRfis.filter((r) => r.status === "ANSWERED").length;
     const closed = allRfis.filter((r) => r.status === "CLOSED").length;
     const overdue = allRfis.filter((r) =>
-      ["SUBMITTED", "UNDER_REVIEW"].includes(r.status) &&
+      ["SUBMITTED", "UNDER_REVIEW", "FORWARDED"].includes(r.status) &&
       r.dateRequired &&
       new Date(r.dateRequired) < now
     ).length;
@@ -407,13 +407,62 @@ router.post("/rfi/:id/review", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
   }
 });
 
+router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
+    if (denied) return res.status(403).json({ error: "Access denied" });
+    if (!rfi) return res.status(404).json({ error: "RFI not found" });
+
+    if (rfi.status !== "UNDER_REVIEW") {
+      return res.status(400).json({ error: `Cannot forward from ${rfi.status} status` });
+    }
+
+    const { forwardedToId } = req.body;
+    if (!forwardedToId || typeof forwardedToId !== "string") {
+      return res.status(400).json({ error: "forwardedToId is required" });
+    }
+
+    const [forwardedToUser] = await db
+      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+      .from(users)
+      .where(eq(users.id, forwardedToId))
+      .limit(1);
+
+    if (!forwardedToUser) {
+      return res.status(404).json({ error: "Forwarded-to user not found" });
+    }
+
+    const user = req.user!;
+    const [updated] = await db
+      .update(rfis)
+      .set({
+        status: "FORWARDED",
+        forwardedToId,
+        forwardedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(rfis.id, req.params.id))
+      .returning();
+
+    const forwardedToName = `${forwardedToUser.firstName} ${forwardedToUser.lastName}`;
+    await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, `RFI Forwarded to ${forwardedToName}`);
+
+    notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, [forwardedToId], `RFI Forwarded to you: ${rfi.subject}`, rfi.rfiNumber);
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Forward RFI error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
     if (!rfi) return res.status(404).json({ error: "RFI not found" });
 
-    if (rfi.status !== "UNDER_REVIEW" && rfi.status !== "SUBMITTED") {
+    if (rfi.status !== "UNDER_REVIEW" && rfi.status !== "SUBMITTED" && rfi.status !== "FORWARDED") {
       return res.status(400).json({ error: `Cannot answer from ${rfi.status} status` });
     }
 

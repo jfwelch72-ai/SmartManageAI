@@ -23,6 +23,7 @@ import {
   RotateCcw,
   Link2,
   FileCheck,
+  Forward,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { RFI, ActivityEntry, ChangeOrder, RFIEditForm } from "@/hooks/useRfiMutations";
@@ -71,6 +72,7 @@ interface RfiDetailDialogProps {
   mutations: {
     submitMutation: { mutate: (id: string) => void; isPending: boolean };
     reviewMutation: { mutate: (id: string) => void; isPending: boolean };
+    forwardMutation: { mutate: (args: { id: string; forwardedToId: string }) => void; isPending: boolean };
     answerMutation: { mutate: (args: { id: string; answer: string }) => void; isPending: boolean };
     closeMutation: { mutate: (id: string) => void; isPending: boolean };
     reopenMutation: { mutate: (id: string) => void; isPending: boolean };
@@ -103,6 +105,8 @@ export default function RfiDetailDialog({
   const [selectedTMId, setSelectedTMId] = useState("");
   const [showLinkSubmittalDialog, setShowLinkSubmittalDialog] = useState(false);
   const [selectedSubmittalId, setSelectedSubmittalId] = useState("");
+  const [showForwardDialog, setShowForwardDialog] = useState(false);
+  const [forwardToUserId, setForwardToUserId] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<RFIEditForm>({ ...DEFAULT_EDIT_FORM });
 
@@ -138,6 +142,11 @@ export default function RfiDetailDialog({
     enabled: !!rfi?.projectId && showLinkSubmittalDialog,
   });
 
+  const { data: orgUsers = [] } = useQuery<{ id: string; firstName: string; lastName: string; role: string }[]>({
+    queryKey: ["/api/messaging/users"],
+    enabled: showForwardDialog,
+  });
+
   useEffect(() => {
     if (selectedRFIDetail && open) {
       onRfiUpdate(selectedRFIDetail);
@@ -150,6 +159,8 @@ export default function RfiDetailDialog({
       setShowAnswerInput(false);
       setAnswerText("");
       setCommentText("");
+      setShowForwardDialog(false);
+      setForwardToUserId("");
     }
   }, [open]);
 
@@ -416,6 +427,25 @@ export default function RfiDetailDialog({
                       </div>
                     )}
 
+                    {rfi.status === "FORWARDED" && rfi.forwardedAt && (
+                      <Card data-testid={`${p}card-forwarded`} className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                            <Forward className="h-4 w-4" />
+                            Forwarded to Design Team
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-blue-800 dark:text-blue-200" data-testid={`${p}text-forwarded-date`}>
+                            Forwarded on {format(new Date(rfi.forwardedAt), "MMM d, yyyy 'at' h:mm a")}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Awaiting response from the design team.
+                          </p>
+                        </CardContent>
+                      </Card>
+                    )}
+
                     {rfi.linkedChangeOrderId && (
                       <div data-testid={`${p}linked-co`}>
                         <Label className="text-muted-foreground text-xs">Linked Change Order</Label>
@@ -523,7 +553,54 @@ export default function RfiDetailDialog({
                             </div>
                           </div>
                         ) : (
-                          <Button onClick={() => setShowAnswerInput(true)} data-testid={`${p}button-answer-rfi`}>
+                          <>
+                            <Button onClick={() => setShowAnswerInput(true)} data-testid={`${p}button-answer-rfi`}>
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Answer
+                            </Button>
+                            <Button
+                              variant="outline"
+                              onClick={() => setShowForwardDialog(true)}
+                              disabled={mutations.forwardMutation.isPending}
+                              data-testid={`${p}button-forward-rfi`}
+                            >
+                              <Forward className="h-4 w-4 mr-2" />
+                              Forward to Design Team
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
+                    {rfi.status === "FORWARDED" && (
+                      <>
+                        {showAnswerInput ? (
+                          <div className="w-full space-y-3">
+                            <Textarea
+                              value={answerText}
+                              onChange={(e) => setAnswerText(e.target.value)}
+                              placeholder="Enter the answer to this RFI..."
+                              rows={4}
+                              data-testid={`${p}input-answer-forwarded`}
+                            />
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Button
+                                onClick={() => {
+                                  mutations.answerMutation.mutate({ id: rfi.id, answer: answerText });
+                                  setShowAnswerInput(false);
+                                  setAnswerText("");
+                                }}
+                                disabled={!answerText.trim() || mutations.answerMutation.isPending}
+                                data-testid={`${p}button-submit-answer-forwarded`}
+                              >
+                                {mutations.answerMutation.isPending ? "Submitting..." : "Submit Answer"}
+                              </Button>
+                              <Button variant="outline" onClick={() => setShowAnswerInput(false)} data-testid={`${p}button-cancel-answer-forwarded`}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Button onClick={() => setShowAnswerInput(true)} data-testid={`${p}button-answer-forwarded-rfi`}>
                             <MessageSquare className="h-4 w-4 mr-2" />
                             Answer
                           </Button>
@@ -634,6 +711,47 @@ export default function RfiDetailDialog({
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showForwardDialog} onOpenChange={(o) => { setShowForwardDialog(o); if (!o) setForwardToUserId(""); }}>
+        <DialogContent data-testid={`${p}dialog-forward-rfi`}>
+          <DialogHeader>
+            <DialogTitle>Forward to Design Team</DialogTitle>
+            <DialogDescription>Select a team member to forward this RFI to for an official response.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Select value={forwardToUserId} onValueChange={setForwardToUserId}>
+              <SelectTrigger data-testid={`${p}select-forward-user`}>
+                <SelectValue placeholder="Select a user..." />
+              </SelectTrigger>
+              <SelectContent>
+                {orgUsers.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.firstName} {u.lastName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowForwardDialog(false); setForwardToUserId(""); }} data-testid={`${p}button-cancel-forward`}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (rfi && forwardToUserId) {
+                  mutations.forwardMutation.mutate({ id: rfi.id, forwardedToId: forwardToUserId });
+                  setShowForwardDialog(false);
+                  setForwardToUserId("");
+                }
+              }}
+              disabled={!forwardToUserId || mutations.forwardMutation.isPending}
+              data-testid={`${p}button-confirm-forward`}
+            >
+              {mutations.forwardMutation.isPending ? "Forwarding..." : "Forward"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
