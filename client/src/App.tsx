@@ -321,8 +321,8 @@ function Router() {
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
 
       {/* Hiring Module routes */}
-      <Route path="/hiring/jobs/:id" component={() => <ProtectedRoute component={HiringJobDetailPage} permission={RoutePermissions.HIRING} />} />
-      <Route path="/hiring/jobs" component={() => <ProtectedRoute component={HiringJobsPage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/jobs/:id" component={() => <ProtectedRoute component={HiringJobDetailPage} permission={RoutePermissions.HIRING_REVIEW} />} />
+      <Route path="/hiring/jobs" component={() => <ProtectedRoute component={HiringJobsPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/candidates" component={() => <ProtectedRoute component={HiringCandidatesPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/pipeline" component={() => <ProtectedRoute component={HiringPipelinePage} permission={RoutePermissions.HIRING_REVIEW} />} />
