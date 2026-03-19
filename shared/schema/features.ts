@@ -6127,7 +6127,7 @@ export type HiringJob = typeof hiringJobs.$inferSelect;
 
 export const hiringJobTemplates = pgTable("hiring_job_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   trade: text("trade"),
   employmentType: hiringEmploymentTypeEnum("employment_type"),

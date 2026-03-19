@@ -1,4 +1,4 @@
-import type { ATSProvider, ATSJob, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
+import type { ATSProvider, ATSJob, ATSJobInput, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
 
 export class LeverProvider implements ATSProvider {
   readonly providerName = "LEVER";
@@ -113,6 +113,66 @@ export class LeverProvider implements ATSProvider {
         method: "PUT",
         headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
         body: JSON.stringify({ stage }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async createJob(credentials: Record<string, string>, job: ATSJobInput): Promise<ATSJob | null> {
+    if (!credentials["apiKey"]) return null;
+    try {
+      const res = await fetch("https://api.lever.co/v1/postings", {
+        method: "POST",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ text: job.title, content: { description: job.description || "" } }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as { data?: Record<string, unknown> };
+      return data.data ? this.normalizeJob(data.data) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async updateJob(credentials: Record<string, string>, externalJobId: string, updates: Partial<ATSJobInput>): Promise<ATSJob | null> {
+    if (!credentials["apiKey"]) return null;
+    try {
+      const res = await fetch(`https://api.lever.co/v1/postings/${externalJobId}`, {
+        method: "PUT",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ text: updates.title, content: { description: updates.description } }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json() as { data?: Record<string, unknown> };
+      return data.data ? this.normalizeJob(data.data) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async publishJob(credentials: Record<string, string>, externalJobId: string): Promise<boolean> {
+    if (!credentials["apiKey"]) return false;
+    try {
+      const res = await fetch(`https://api.lever.co/v1/postings/${externalJobId}/apply`, {
+        method: "POST",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ state: "published" }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async archiveJob(credentials: Record<string, string>, externalJobId: string): Promise<boolean> {
+    if (!credentials["apiKey"]) return false;
+    try {
+      const res = await fetch(`https://api.lever.co/v1/postings/${externalJobId}/state`, {
+        method: "PUT",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ state: "closed" }),
       });
       return res.ok;
     } catch {

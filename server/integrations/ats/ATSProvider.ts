@@ -32,13 +32,21 @@ export interface ATSWebhookEvent {
   data: ATSJob | ATSCandidate;
 }
 
+export interface ATSJobInput {
+  title: string;
+  department?: string;
+  location?: string;
+  description?: string;
+  employmentType?: string;
+}
+
 export interface ATSProvider {
   readonly providerName: string;
 
   /** Verify credentials are valid and the integration is reachable */
   testConnection(credentials: Record<string, string>): Promise<boolean>;
 
-  /** Fetch all open jobs */
+  /** Fetch all open jobs from the ATS */
   listJobs(credentials: Record<string, string>): Promise<ATSJob[]>;
 
   /** Fetch a single job by its external ID */
@@ -50,7 +58,19 @@ export interface ATSProvider {
   /** Fetch a single candidate by external ID */
   getCandidate(credentials: Record<string, string>, externalCandidateId: string): Promise<ATSCandidate | null>;
 
-  /** Push a stage change back to the ATS (returns success flag) */
+  /** Push a new job TO the ATS (bidirectional sync) */
+  createJob(credentials: Record<string, string>, job: ATSJobInput): Promise<ATSJob | null>;
+
+  /** Update an existing job in the ATS */
+  updateJob(credentials: Record<string, string>, externalJobId: string, updates: Partial<ATSJobInput>): Promise<ATSJob | null>;
+
+  /** Publish a draft job in the ATS */
+  publishJob(credentials: Record<string, string>, externalJobId: string): Promise<boolean>;
+
+  /** Archive a job in the ATS */
+  archiveJob(credentials: Record<string, string>, externalJobId: string): Promise<boolean>;
+
+  /** Push a stage change back to the ATS */
   moveCandidateStage(credentials: Record<string, string>, externalCandidateId: string, stage: string): Promise<boolean>;
 
   /** Pull all jobs + candidates and return a summary */
@@ -62,6 +82,6 @@ export interface ATSProvider {
   /** Normalize a raw candidate API response to ATSCandidate */
   normalizeCandidate(raw: Record<string, unknown>): ATSCandidate;
 
-  /** Parse an inbound webhook payload (optional — providers that don't support webhooks return null) */
+  /** Parse an inbound webhook payload (optional) */
   webhookHandler?(payload: Record<string, unknown>): ATSWebhookEvent | null;
 }

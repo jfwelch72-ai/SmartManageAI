@@ -5,6 +5,8 @@ import type {
   HiringCandidateAppliedEvent,
   HiringCandidateStageChangedEvent,
   HiringCandidateHiredEvent,
+  HiringInterviewScheduledEvent,
+  HiringIntegrationConnectedEvent,
 } from "../eventTypes";
 
 export function registerHiringEventListener(): void {
@@ -42,6 +44,27 @@ export function registerHiringEventListener(): void {
       logInfo("hiring.candidate_hired", { orgId: event.orgId, candidateId: event.payload.candidateId, fullName: event.payload.fullName });
     } catch (err) {
       logError("hiringEventListener: hiring.candidate_hired failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("hiring.interview_scheduled", async (event: HiringInterviewScheduledEvent) => {
+    try {
+      logInfo("hiring.interview_scheduled", {
+        orgId: event.orgId,
+        interviewId: event.payload.interviewId,
+        candidateId: event.payload.candidateId,
+        interviewType: event.payload.interviewType,
+      });
+    } catch (err) {
+      logError("hiringEventListener: hiring.interview_scheduled failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("hiring.integration_connected", async (event: HiringIntegrationConnectedEvent) => {
+    try {
+      logInfo("hiring.integration_connected", { orgId: event.orgId, providerName: event.payload.providerName });
+    } catch (err) {
+      logError("hiringEventListener: hiring.integration_connected failed", { error: String(err) });
     }
   });
 }

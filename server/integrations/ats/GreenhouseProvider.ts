@@ -1,4 +1,4 @@
-import type { ATSProvider, ATSJob, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
+import type { ATSProvider, ATSJob, ATSJobInput, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
 
 export class GreenhouseProvider implements ATSProvider {
   readonly providerName = "GREENHOUSE";
@@ -112,6 +112,64 @@ export class GreenhouseProvider implements ATSProvider {
         method: "POST",
         headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
         body: JSON.stringify({ from_stage_id: null, to_stage_id: stage }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async createJob(credentials: Record<string, string>, job: ATSJobInput): Promise<ATSJob | null> {
+    if (!credentials["apiKey"]) return null;
+    try {
+      const res = await fetch("https://harvest.greenhouse.io/v1/jobs", {
+        method: "POST",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ job: { title: job.title, description: job.description } }),
+      });
+      if (!res.ok) return null;
+      return this.normalizeJob(await res.json() as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  }
+
+  async updateJob(credentials: Record<string, string>, externalJobId: string, updates: Partial<ATSJobInput>): Promise<ATSJob | null> {
+    if (!credentials["apiKey"]) return null;
+    try {
+      const res = await fetch(`https://harvest.greenhouse.io/v1/jobs/${externalJobId}`, {
+        method: "PATCH",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) return null;
+      return this.normalizeJob(await res.json() as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  }
+
+  async publishJob(credentials: Record<string, string>, externalJobId: string): Promise<boolean> {
+    if (!credentials["apiKey"]) return false;
+    try {
+      const res = await fetch(`https://harvest.greenhouse.io/v1/jobs/${externalJobId}`, {
+        method: "PATCH",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "open" }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async archiveJob(credentials: Record<string, string>, externalJobId: string): Promise<boolean> {
+    if (!credentials["apiKey"]) return false;
+    try {
+      const res = await fetch(`https://harvest.greenhouse.io/v1/jobs/${externalJobId}`, {
+        method: "PATCH",
+        headers: { Authorization: this.getAuthHeader(credentials), "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "closed" }),
       });
       return res.ok;
     } catch {

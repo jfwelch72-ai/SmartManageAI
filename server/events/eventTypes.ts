@@ -134,6 +134,25 @@ export interface HiringCandidateHiredEvent extends EventEnvelope {
   };
 }
 
+export interface HiringInterviewScheduledEvent extends EventEnvelope {
+  type: "hiring.interview_scheduled";
+  payload: {
+    interviewId: string;
+    candidateId: string | null;
+    jobId: string | null;
+    scheduledAt: string | null;
+    interviewType: string | null;
+  };
+}
+
+export interface HiringIntegrationConnectedEvent extends EventEnvelope {
+  type: "hiring.integration_connected";
+  payload: {
+    integrationId: string;
+    providerName: string;
+  };
+}
+
 export type DomainEvent =
   | ProjectCreatedEvent
   | ProjectStatusChangedEvent
@@ -147,7 +166,9 @@ export type DomainEvent =
   | HiringJobPublishedEvent
   | HiringCandidateAppliedEvent
   | HiringCandidateStageChangedEvent
-  | HiringCandidateHiredEvent;
+  | HiringCandidateHiredEvent
+  | HiringInterviewScheduledEvent
+  | HiringIntegrationConnectedEvent;
 
 export type DomainEventType = DomainEvent["type"];
 
@@ -165,4 +186,6 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "hiring.candidate_applied",
   "hiring.candidate_stage_changed",
   "hiring.candidate_hired",
+  "hiring.interview_scheduled",
+  "hiring.integration_connected",
 ];

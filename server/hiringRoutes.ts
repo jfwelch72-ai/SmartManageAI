@@ -37,6 +37,19 @@ import {
 const router = Router();
 
 // ============================================
+// RBAC ROLE SETS
+// ============================================
+
+/** Full read + write hiring access */
+const HIRING_FULL = ["ADMIN", "HUSTLER", "HR_MANAGER"] as const;
+/** Candidate-review (read candidates/interviews, approve stage moves) */
+const HIRING_REVIEW = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER", "OFFICE_MANAGER"] as const;
+/** Integration management restricted to ADMIN + HR_MANAGER */
+const HIRING_INTEGRATION = ["ADMIN", "HR_MANAGER"] as const;
+
+type UserRole = (typeof HIRING_FULL)[number] | (typeof HIRING_REVIEW)[number];
+
+// ============================================
 // HELPERS
 // ============================================
 
@@ -90,8 +103,6 @@ async function logActivity(
 
 // ============================================
 // FEATURE-FLAG MIDDLEWARE
-// Require HIRING_MODULE to be enabled for the org.
-// SUPER_ADMIN can always access (for provisioning purposes).
 // ============================================
 router.use(requireAuth, async (req: AuthRequest, res, next) => {
   const org = req.user?.organizationId;
@@ -106,7 +117,7 @@ router.use(requireAuth, async (req: AuthRequest, res, next) => {
 // JOBS
 // ============================================
 
-router.get("/jobs", requireAuth, async (req: AuthRequest, res) => {
+router.get("/jobs", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const jobs = await db
       .select()
@@ -120,7 +131,7 @@ router.get("/jobs", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/jobs/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/jobs/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const [job] = await db
       .select()
@@ -138,7 +149,7 @@ router.get("/jobs/:id", requireAuth, async (req: AuthRequest, res) => {
 router.post(
   "/jobs",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const parsed = insertHiringJobSchema.safeParse({
@@ -162,7 +173,6 @@ router.post(
   },
 );
 
-// PATCH and PUT both accepted for partial/full updates
 async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
   try {
     const [existing] = await db
@@ -191,14 +201,13 @@ async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<type
   }
 }
 
-router.patch("/jobs/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleJobUpdate(req as AuthRequest, res));
-router.put("/jobs/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleJobUpdate(req as AuthRequest, res));
+router.patch("/jobs/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleJobUpdate(req as AuthRequest, res));
+router.put("/jobs/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleJobUpdate(req as AuthRequest, res));
 
-// POST /jobs/:id/publish — publish a job
 router.post(
   "/jobs/:id/publish",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [existing] = await db
@@ -234,11 +243,10 @@ router.post(
   },
 );
 
-// POST /jobs/:id/archive — archive a job
 router.post(
   "/jobs/:id/archive",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [existing] = await db
@@ -265,11 +273,10 @@ router.post(
   },
 );
 
-// DELETE /jobs/:id — hard archive (alias to archive action)
 router.delete(
   "/jobs/:id",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [existing] = await db
@@ -299,13 +306,16 @@ router.delete(
 // JOB TEMPLATES
 // ============================================
 
-router.get("/job-templates", requireAuth, async (req: AuthRequest, res) => {
+router.get("/job-templates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const templates = await db
       .select()
       .from(hiringJobTemplates)
       .where(
-        sql`${hiringJobTemplates.isGlobal} = true OR ${hiringJobTemplates.organizationId} = ${orgId(req)}`,
+        or(
+          eq(hiringJobTemplates.isGlobal, true),
+          eq(hiringJobTemplates.organizationId, orgId(req)),
+        ),
       )
       .orderBy(desc(hiringJobTemplates.createdAt));
     res.json(templates);
@@ -318,7 +328,7 @@ router.get("/job-templates", requireAuth, async (req: AuthRequest, res) => {
 router.post(
   "/job-templates",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const parsed = insertHiringJobTemplateSchema.safeParse({
@@ -336,10 +346,96 @@ router.post(
   },
 );
 
+/**
+ * POST /job-templates/seed — Seeds trade-specific job templates for this organization.
+ * Idempotent: skips templates that already exist (matched by title + org).
+ */
+router.post(
+  "/job-templates/seed",
+  requireAuth,
+  requireRole(...HIRING_FULL),
+  async (req: AuthRequest, res) => {
+    const { trade } = req.body;
+    const org = orgId(req);
+
+    const CONTRACTOR_TEMPLATES: Array<{ title: string; trade: string; employmentType: string; description: string; requirements: string }> = [
+      {
+        title: "General Laborer",
+        trade: trade || "GENERAL",
+        employmentType: "FULL_TIME",
+        description: "Assist with site preparation, material handling, and general construction tasks under supervisor direction.",
+        requirements: "Physical fitness required. Construction experience preferred. Valid driver license a plus.",
+      },
+      {
+        title: "Journeyman Carpenter",
+        trade: trade || "CARPENTRY",
+        employmentType: "FULL_TIME",
+        description: "Frame walls, install doors/windows, and complete finish carpentry on commercial and residential projects.",
+        requirements: "Journeyman card or equivalent 4+ years experience. OSHA 10 required. Must supply own hand tools.",
+      },
+      {
+        title: "Foreman",
+        trade: trade || "GENERAL",
+        employmentType: "FULL_TIME",
+        description: "Lead a crew of 4-10 field workers, coordinate daily tasks, enforce safety standards, and report to superintendent.",
+        requirements: "5+ years construction experience, 2+ years leadership. OSHA 30 preferred. Strong communication skills.",
+      },
+      {
+        title: "Apprentice Electrician",
+        trade: trade || "ELECTRICAL",
+        employmentType: "FULL_TIME",
+        description: "Assist journeyman electricians with conduit installation, wire pulling, and device installation on new construction.",
+        requirements: "Enrolled in or completed IBEW apprenticeship. Basic math skills. Valid driver license.",
+      },
+      {
+        title: "Project Superintendent",
+        trade: trade || "GENERAL",
+        employmentType: "FULL_TIME",
+        description: "Manage day-to-day operations on large-scale construction projects, coordinate subcontractors, and ensure schedule adherence.",
+        requirements: "10+ years construction experience. Proficient with project scheduling software. OSHA 30 required.",
+      },
+    ].filter((t) => !trade || t.trade === trade || t.trade === "GENERAL");
+
+    try {
+      const seeded: string[] = [];
+      const skipped: string[] = [];
+
+      for (const template of CONTRACTOR_TEMPLATES) {
+        const [existing] = await db
+          .select({ id: hiringJobTemplates.id })
+          .from(hiringJobTemplates)
+          .where(and(eq(hiringJobTemplates.organizationId, org), eq(hiringJobTemplates.title, template.title)))
+          .limit(1);
+
+        if (existing) {
+          skipped.push(template.title);
+          continue;
+        }
+
+        await db.insert(hiringJobTemplates).values({
+          organizationId: org,
+          title: template.title,
+          trade: template.trade,
+          employmentType: template.employmentType as Parameters<typeof hiringJobTemplates.$inferInsert.employmentType>[0],
+          description: template.description,
+          requirements: template.requirements,
+          isGlobal: false,
+        });
+        seeded.push(template.title);
+      }
+
+      res.json({ seeded, skipped, total: CONTRACTOR_TEMPLATES.length });
+    } catch (err) {
+      logError("POST /api/hiring/job-templates/seed", { error: String(err) });
+      res.status(500).json({ error: "Failed to seed job templates" });
+    }
+  },
+);
+
 router.delete(
   "/job-templates/:id",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [tpl] = await db
@@ -362,7 +458,7 @@ router.delete(
 // CANDIDATES
 // ============================================
 
-router.get("/candidates", requireAuth, async (req: AuthRequest, res) => {
+router.get("/candidates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const jobId = req.query.jobId as string | undefined;
@@ -373,16 +469,13 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res) => {
     if (jobId) conditions.push(eq(hiringCandidates.jobId, jobId));
     if (stage) conditions.push(eq(hiringCandidates.currentStage, stage as Parameters<typeof eq>[1]));
 
-    let query = db.select().from(hiringCandidates).where(and(...conditions));
-
     if (search) {
-      const searchQuery = db
+      const candidates = await db
         .select()
         .from(hiringCandidates)
         .where(
           and(
-            eq(hiringCandidates.organizationId, org),
-            ...(jobId ? [eq(hiringCandidates.jobId, jobId)] : []),
+            ...conditions,
             or(
               ilike(hiringCandidates.fullName, `%${search}%`),
               ilike(hiringCandidates.email, `%${search}%`),
@@ -390,8 +483,7 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res) => {
           ),
         )
         .orderBy(desc(hiringCandidates.appliedAt));
-      const results = await searchQuery;
-      return res.json(results);
+      return res.json(candidates);
     }
 
     const candidates = await db
@@ -407,7 +499,7 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-router.get("/candidates/:id", requireAuth, async (req: AuthRequest, res) => {
+router.get("/candidates/:id", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const [candidate] = await db
@@ -435,7 +527,7 @@ router.get("/candidates/:id", requireAuth, async (req: AuthRequest, res) => {
 router.post(
   "/candidates",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const body = req.body;
@@ -448,7 +540,6 @@ router.post(
       });
       if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
-      // Validate jobId belongs to org if provided
       if (parsed.data.jobId) {
         const [job] = await db
           .select({ id: hiringJobs.id })
@@ -519,14 +610,14 @@ async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameter
   }
 }
 
-router.patch("/candidates/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
-router.put("/candidates/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
+router.patch("/candidates/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
+router.put("/candidates/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
 
-// POST /candidates/:id/stage — stage transition
-router.post(
+// PUT /candidates/:id/stage — stage transition (spec requires PUT)
+router.put(
   "/candidates/:id/stage",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_REVIEW),
   async (req: AuthRequest, res) => {
     try {
       const { stage, reason } = req.body;
@@ -580,26 +671,6 @@ router.post(
             relatedEntityType: "hiring_candidate",
           });
         }
-      } else if (stage === "REJECTED") {
-        emitEvent({
-          type: "hiring.candidate_stage_changed",
-          version: 1,
-          orgId: orgId(req),
-          actorId: userId(req),
-          timestamp: new Date(),
-          payload: { candidateId: existing.id, fullName: existing.fullName, fromStage: fromStage ?? null, toStage: stage },
-        });
-        if (existing.reviewerUserId) {
-          void insertNotification({
-            userId: existing.reviewerUserId,
-            organizationId: orgId(req),
-            type: "GENERAL",
-            title: "Candidate Rejected",
-            message: `${existing.fullName} has been marked as rejected.`,
-            relatedEntityId: existing.id,
-            relatedEntityType: "hiring_candidate",
-          });
-        }
       } else {
         emitEvent({
           type: "hiring.candidate_stage_changed",
@@ -613,17 +684,17 @@ router.post(
 
       res.json(candidate);
     } catch (err) {
-      logError("POST /api/hiring/candidates/:id/stage", { error: String(err) });
+      logError("PUT /api/hiring/candidates/:id/stage", { error: String(err) });
       res.status(500).json({ error: "Failed to update candidate stage" });
     }
   },
 );
 
-// POST /candidates/:id/documents — register a document (file already uploaded to object storage)
+// POST /candidates/:id/documents — register a document (storage_key from GCS upload)
 router.post(
   "/candidates/:id/documents",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [candidate] = await db
@@ -653,7 +724,7 @@ router.post(
 router.delete(
   "/candidates/:candidateId/documents/:docId",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [doc] = await db
@@ -678,7 +749,7 @@ router.delete(
 router.post(
   "/candidates/:id/notes",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_REVIEW),
   async (req: AuthRequest, res) => {
     try {
       const [candidate] = await db
@@ -711,7 +782,7 @@ router.post(
 router.delete(
   "/candidates/:candidateId/notes/:noteId",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_REVIEW),
   async (req: AuthRequest, res) => {
     try {
       const [note] = await db
@@ -736,7 +807,7 @@ router.delete(
 // INTERVIEWS
 // ============================================
 
-router.get("/interviews", requireAuth, async (req: AuthRequest, res) => {
+router.get("/interviews", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
     const candidateId = req.query.candidateId as string | undefined;
@@ -760,10 +831,9 @@ router.get("/interviews", requireAuth, async (req: AuthRequest, res) => {
 router.post(
   "/interviews",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
-      // TENANT ISOLATION: Verify candidateId belongs to this org
       if (req.body.candidateId) {
         const [ownerCheck] = await db
           .select({ id: hiringCandidates.id })
@@ -773,7 +843,6 @@ router.post(
         if (!ownerCheck) return res.status(400).json({ error: "Invalid candidateId — candidate does not belong to your organization" });
       }
 
-      // TENANT ISOLATION: Verify jobId belongs to this org
       if (req.body.jobId) {
         const [jobCheck] = await db
           .select({ id: hiringJobs.id })
@@ -795,7 +864,6 @@ router.post(
 
       const [interview] = await db.insert(hiringInterviews).values(parsed.data).returning();
 
-      // Notify the candidate's reviewer
       if (parsed.data.candidateId) {
         const [candidate] = await db
           .select({ reviewerUserId: hiringCandidates.reviewerUserId, fullName: hiringCandidates.fullName })
@@ -818,6 +886,21 @@ router.post(
 
       void logCreate(userId(req), "hiring_interview", interview.id, interview, req);
       void logActivity(orgId(req), userId(req), userName(req), "INTERVIEW_SCHEDULED", "interview", interview.id, "Interview scheduled");
+
+      emitEvent({
+        type: "hiring.interview_scheduled",
+        version: 1,
+        orgId: orgId(req),
+        actorId: userId(req),
+        timestamp: new Date(),
+        payload: {
+          interviewId: interview.id,
+          candidateId: interview.candidateId ?? null,
+          jobId: interview.jobId ?? null,
+          scheduledAt: interview.startAt ? interview.startAt.toISOString() : null,
+          interviewType: interview.interviewType ?? null,
+        },
+      });
 
       res.status(201).json(interview);
     } catch (err) {
@@ -857,14 +940,13 @@ async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameter
   }
 }
 
-router.patch("/interviews/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
-router.put("/interviews/:id", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
+router.patch("/interviews/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
+router.put("/interviews/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
 
-// DELETE /interviews/:id — cancel an interview
 router.delete(
   "/interviews/:id",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [existing] = await db
@@ -891,7 +973,7 @@ router.delete(
 // HIRING TASKS
 // ============================================
 
-router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/tasks", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const tasks = await db
       .select()
@@ -908,10 +990,9 @@ router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
 router.post(
   "/tasks",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
-      // Validate candidateId belongs to org
       if (req.body.candidateId) {
         const [cand] = await db
           .select({ id: hiringCandidates.id })
@@ -954,7 +1035,7 @@ router.post(
 router.patch(
   "/tasks/:id",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "HR_MANAGER"),
+  requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
     try {
       const [existing] = await db
@@ -991,7 +1072,7 @@ router.patch(
 // ATS INTEGRATIONS
 // ============================================
 
-router.get("/integrations", requireAuth, requireRole("ADMIN", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/integrations", requireAuth, requireRole(...HIRING_INTEGRATION), async (req: AuthRequest, res) => {
   try {
     const integrations = await db
       .select({
@@ -1018,7 +1099,7 @@ router.get("/integrations", requireAuth, requireRole("ADMIN", "HR_MANAGER"), asy
 router.post(
   "/integrations",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_INTEGRATION),
   async (req: AuthRequest, res) => {
     try {
       const { providerName, credentials, defaultConfig } = req.body;
@@ -1040,6 +1121,7 @@ router.post(
         .where(and(eq(hiringIntegrations.organizationId, orgId(req)), eq(hiringIntegrations.providerName, providerName)))
         .limit(1);
 
+      let integration;
       if (existing) {
         const [updated] = await db
           .update(hiringIntegrations)
@@ -1052,23 +1134,33 @@ router.post(
           })
           .where(eq(hiringIntegrations.id, existing.id))
           .returning();
-
-        return res.json({ ...updated, encryptedCredentialsJson: undefined });
+        integration = updated;
+      } else {
+        const [created] = await db.insert(hiringIntegrations).values({
+          organizationId: orgId(req),
+          providerName: providerName,
+          encryptedCredentialsJson: encryptedCredentials,
+          status: "connected",
+          lastTestAt: new Date(),
+          defaultConfigJson: defaultConfig ? JSON.stringify(defaultConfig) : null,
+        }).returning();
+        integration = created;
       }
-
-      const [integration] = await db.insert(hiringIntegrations).values({
-        organizationId: orgId(req),
-        providerName: providerName,
-        encryptedCredentialsJson: encryptedCredentials,
-        status: "connected",
-        lastTestAt: new Date(),
-        defaultConfigJson: defaultConfig ? JSON.stringify(defaultConfig) : null,
-      }).returning();
 
       void logCreate(userId(req), "hiring_integration", integration.id, { provider: providerName }, req);
       void logActivity(orgId(req), userId(req), userName(req), "INTEGRATION_CONNECTED", "integration", integration.id, providerName);
 
-      res.status(201).json({ ...integration, encryptedCredentialsJson: undefined });
+      emitEvent({
+        type: "hiring.integration_connected",
+        version: 1,
+        orgId: orgId(req),
+        actorId: userId(req),
+        timestamp: new Date(),
+        payload: { integrationId: integration.id, providerName },
+      });
+
+      const { encryptedCredentialsJson: _, ...safeIntegration } = integration as typeof integration & { encryptedCredentialsJson?: string };
+      res.status(existing ? 200 : 201).json(safeIntegration);
     } catch (err) {
       logError("POST /api/hiring/integrations", { error: String(err) });
       res.status(500).json({ error: "Failed to connect ATS integration" });
@@ -1076,11 +1168,10 @@ router.post(
   },
 );
 
-// POST /integrations/:id/test — re-test an existing integration
 router.post(
   "/integrations/:id/test",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_INTEGRATION),
   async (req: AuthRequest, res) => {
     try {
       const [integration] = await db
@@ -1112,7 +1203,7 @@ router.post(
 router.delete(
   "/integrations/:id",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_INTEGRATION),
   async (req: AuthRequest, res) => {
     try {
       const [existing] = await db
@@ -1135,11 +1226,10 @@ router.delete(
   },
 );
 
-// POST /integrations/:id/sync — trigger full background sync
 router.post(
   "/integrations/:id/sync",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_INTEGRATION),
   async (req: AuthRequest, res) => {
     try {
       const [integration] = await db
@@ -1164,7 +1254,6 @@ router.post(
         startedAt: new Date(),
       }).returning();
 
-      // Capture values for the closure
       const capturedOrgId = orgId(req);
       const capturedIntegrationId = integration.id;
       const capturedProviderName = integration.providerName;
@@ -1228,11 +1317,7 @@ router.post(
           }
 
           await db.update(hiringSyncLogs)
-            .set({
-              status: "COMPLETED",
-              recordsProcessed: atsJobs.length + atsCandidates.length,
-              completedAt: new Date(),
-            })
+            .set({ status: "COMPLETED", recordsProcessed: atsJobs.length + atsCandidates.length, completedAt: new Date() })
             .where(eq(hiringSyncLogs.id, syncLog.id));
 
           await db.update(hiringIntegrations)
@@ -1256,8 +1341,7 @@ router.post(
   },
 );
 
-// GET /sync-logs
-router.get("/sync-logs", requireAuth, requireRole("ADMIN", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/sync-logs", requireAuth, requireRole(...HIRING_INTEGRATION), async (req: AuthRequest, res) => {
   try {
     const logs = await db
       .select()
@@ -1276,7 +1360,7 @@ router.get("/sync-logs", requireAuth, requireRole("ADMIN", "HR_MANAGER"), async 
 // PIPELINE CONFIG
 // ============================================
 
-router.get("/pipeline-config", requireAuth, async (req: AuthRequest, res) => {
+router.get("/pipeline-config", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const [config] = await db
       .select()
@@ -1293,7 +1377,7 @@ router.get("/pipeline-config", requireAuth, async (req: AuthRequest, res) => {
 router.put(
   "/pipeline-config",
   requireAuth,
-  requireRole("ADMIN", "HR_MANAGER"),
+  requireRole(...HIRING_INTEGRATION),
   async (req: AuthRequest, res) => {
     try {
       const { stages } = req.body;
@@ -1331,7 +1415,7 @@ router.put(
 // ACTIVITY LOG
 // ============================================
 
-router.get("/activity", requireAuth, async (req: AuthRequest, res) => {
+router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const limit = Math.min(Number(req.query.limit) || 50, 200);
     const logs = await db
@@ -1351,7 +1435,7 @@ router.get("/activity", requireAuth, async (req: AuthRequest, res) => {
 // ANALYTICS
 // ============================================
 
-router.get("/analytics", requireAuth, requireRole("ADMIN", "MANAGER", "HR_MANAGER"), async (req: AuthRequest, res) => {
+router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
 
