@@ -21,6 +21,7 @@ const STAGES = [
   { key: "IN_PERSON_INTERVIEW", label: "In-Person", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" },
   { key: "SKILLS_ASSESSMENT", label: "Skills Test", color: "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300" },
   { key: "BACKGROUND_CHECK", label: "Background", color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300" },
+  { key: "REFERENCE_CHECK", label: "References", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300" },
   { key: "OFFER_EXTENDED", label: "Offer Extended", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" },
   { key: "HIRED", label: "Hired", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
   { key: "REJECTED", label: "Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
