@@ -5,6 +5,7 @@ import {
   insertRfiActivitySchema,
   rfis,
   rfiActivity,
+  rfiAttachments,
   projects,
   users,
   crmOrganisations,
@@ -12,7 +13,8 @@ import {
   changeOrders,
   tmTickets,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -79,7 +81,12 @@ router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "
       conditions.push(eq(rfis.projectId, projectId));
     }
     if (status && typeof status === "string") {
-      conditions.push(eq(rfis.status, status as any));
+      if (status === "OVERDUE") {
+        conditions.push(inArray(rfis.status, ["SUBMITTED", "UNDER_REVIEW"]));
+        conditions.push(sql`${rfis.dateRequired} < NOW()`);
+      } else {
+        conditions.push(eq(rfis.status, status as any));
+      }
     }
 
     const results = await db
@@ -383,6 +390,7 @@ router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
         answerAttachmentsJson: answerAttachmentsJson || null,
         dateAnswered: new Date(),
         answeredById: user.id,
+        answeredByName: `${user.firstName} ${user.lastName}`,
         updatedAt: new Date(),
       })
       .where(eq(rfis.id, req.params.id))
@@ -621,116 +629,181 @@ router.delete("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
   }
 });
 
+// Legacy /files endpoints — kept for backward compatibility with sub-portal; return empty arrays / no-ops
 router.post("/rfi/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
-  try {
-    const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
-    if (denied) return res.status(403).json({ error: "Access denied" });
-    if (!rfi) return res.status(404).json({ error: "RFI not found" });
-
-    const fileSchema = z.object({
-      fileUrl: z.string(),
-      fileName: z.string(),
-      fileSize: z.number(),
-      mimeType: z.string(),
-      description: z.string().optional(),
-    });
-
-    const validationResult = fileSchema.safeParse(req.body);
-    if (!validationResult.success) {
-      return res.status(400).json({ error: "Invalid file metadata", details: validationResult.error.errors });
-    }
-
-    const { fileUrl, fileName, fileSize, mimeType, description } = validationResult.data;
-
-    const { ObjectStorageService } = await import("./objectStorage");
-    const objectStorageService = new ObjectStorageService();
-    const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(fileUrl, {
-      owner: req.user!.id,
-      organizationId: req.user!.organizationId!,
-      visibility: "private",
-    });
-
-    const [user] = await db.select().from(users).where(eq(users.id, req.user!.id)).limit(1);
-
-    const currentAttachments = rfi.attachmentsJson
-      ? JSON.parse(rfi.attachmentsJson)
-      : [];
-
-    const newAttachment = {
-      id: `file_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      fileUrl,
-      fileName,
-      fileSize,
-      mimeType,
-      description: description || "",
-      uploadedById: req.user!.id,
-      uploadedByName: `${user.firstName} ${user.lastName}`,
-      uploadedAt: new Date().toISOString(),
-      objectKey,
-    };
-
-    const updatedAttachments = [...currentAttachments, newAttachment];
-
-    await db.update(rfis).set({
-      attachmentsJson: JSON.stringify(updatedAttachments),
-      updatedAt: new Date(),
-    }).where(eq(rfis.id, req.params.id));
-
-    res.status(201).json(newAttachment);
-  } catch (error) {
-    console.error("Upload RFI file error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
+  if (denied) return res.status(403).json({ error: "Access denied" });
+  if (!rfi) return res.status(404).json({ error: "RFI not found" });
+  res.status(200).json([]);
 });
 
 router.get("/rfi/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
+  const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
+  if (denied) return res.status(403).json({ error: "Access denied" });
+  if (!rfi) return res.status(404).json({ error: "RFI not found" });
+  res.json([]);
+});
+
+router.delete("/rfi/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
+  const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
+  if (denied) return res.status(403).json({ error: "Access denied" });
+  if (!rfi) return res.status(404).json({ error: "RFI not found" });
+  res.status(204).send();
+});
+
+// ==================== Normalized RFI Attachments ====================
+
+router.get("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
     if (!rfi) return res.status(404).json({ error: "RFI not found" });
 
-    const attachments = rfi.attachmentsJson
-      ? JSON.parse(rfi.attachmentsJson)
-      : [];
+    const attachments = await db
+      .select()
+      .from(rfiAttachments)
+      .where(eq(rfiAttachments.rfiId, rfi.id))
+      .orderBy(desc(rfiAttachments.createdAt));
 
     res.json(attachments);
   } catch (error) {
-    console.error("Get RFI files error:", error);
+    console.error("Get RFI attachments error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.delete("/rfi/:id/files/:fileId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
     if (denied) return res.status(403).json({ error: "Access denied" });
     if (!rfi) return res.status(404).json({ error: "RFI not found" });
 
-    const currentAttachments = rfi.attachmentsJson
-      ? JSON.parse(rfi.attachmentsJson)
-      : [];
+    const user = req.user!;
+    const organizationId = rfi.organizationId;
 
-    const fileIndex = currentAttachments.findIndex((f: any) => f.id === req.params.fileId);
-    if (fileIndex === -1) {
-      return res.status(404).json({ error: "File not found" });
+    const uploadSchema = z.object({
+      fileName: z.string(),
+      fileSize: z.number().optional(),
+      mimeType: z.string().optional(),
+      fileUrl: z.string(),
+      description: z.string().optional(),
+      isAnswerAttachment: z.boolean().optional(),
+    });
+
+    const parseResult = uploadSchema.safeParse(req.body);
+    if (!parseResult.success) return res.status(400).json({ error: "Validation failed", details: parseResult.error.flatten() });
+
+    const { fileName, fileSize, mimeType, fileUrl, description, isAnswerAttachment } = parseResult.data;
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(fileUrl);
+    } catch {
+      return res.status(400).json({ error: "Invalid fileUrl" });
+    }
+    if (parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ error: "fileUrl must use https" });
+    }
+    const blockedHosts = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0|fd[0-9a-f]{2}:|fc[0-9a-f]{2}:)/i;
+    if (blockedHosts.test(parsedUrl.hostname)) {
+      return res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
     }
 
-    const file = currentAttachments[fileIndex];
-    const userRole = req.user!.role;
-    if (file.uploadedById !== req.user!.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole)) {
-      return res.status(403).json({ error: "You don't have permission to delete this file" });
+    const objectUUID = randomUUID();
+    const objectPath = `${organizationId}/rfis/${rfi.id}/${objectUUID}/${fileName}`;
+
+    let storageKey: string;
+    try {
+      const response = await fetch(`http://127.0.0.1:1106/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl, objectPath }),
+      });
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+        return res.status(502).json({ error: "File storage upload failed" });
+      }
+      const data = await response.json() as { storageKey?: string };
+      storageKey = data.storageKey || objectPath;
+    } catch (sidecarErr) {
+      console.error("GCS sidecar unreachable:", sidecarErr);
+      return res.status(502).json({ error: "File storage service unavailable" });
     }
 
-    const updatedAttachments = currentAttachments.filter((_: any, i: number) => i !== fileIndex);
+    const [dbUser] = await db
+      .select({ firstName: users.firstName, lastName: users.lastName })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
 
-    await db.update(rfis).set({
-      attachmentsJson: JSON.stringify(updatedAttachments),
-      updatedAt: new Date(),
-    }).where(eq(rfis.id, req.params.id));
+    const uploadedByName = dbUser ? `${dbUser.firstName} ${dbUser.lastName}` : user.id;
 
+    const [newAttachment] = await db.insert(rfiAttachments).values({
+      rfiId: rfi.id,
+      organizationId,
+      fileName,
+      fileSize: fileSize ?? null,
+      mimeType: mimeType ?? null,
+      storageKey,
+      uploadedById: user.id,
+      uploadedByName,
+      description: description ?? null,
+      isAnswerAttachment: isAnswerAttachment ?? false,
+    }).returning();
+
+    await createActivityEntry(rfi.id, user.id, uploadedByName, `Attachment uploaded: ${fileName}`);
+
+    res.status(201).json(newAttachment);
+  } catch (error) {
+    console.error("Upload RFI attachment error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "SAFETY_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { rfi, denied } = await getRfiWithOrgCheck(req.params.id, req);
+    if (denied) return res.status(403).json({ error: "Access denied" });
+    if (!rfi) return res.status(404).json({ error: "RFI not found" });
+
+    const { attachmentId } = req.params;
+
+    const [attachment] = await db
+      .select()
+      .from(rfiAttachments)
+      .where(and(eq(rfiAttachments.id, attachmentId), eq(rfiAttachments.rfiId, rfi.id)))
+      .limit(1);
+
+    if (!attachment) return res.status(404).json({ error: "Attachment not found" });
+
+    const user = req.user!;
+    if (attachment.uploadedById !== user.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "You don't have permission to delete this attachment" });
+    }
+
+    if (attachment.storageKey) {
+      try {
+        const delResponse = await fetch(`http://127.0.0.1:1106/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storageKey: attachment.storageKey }),
+        });
+        if (!delResponse.ok) {
+          const errBody = await delResponse.text().catch(() => "");
+          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          return res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
+        }
+      } catch (sidecarErr) {
+        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        return res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
+      }
+    }
+
+    await db.delete(rfiAttachments).where(eq(rfiAttachments.id, attachmentId));
     res.status(204).send();
   } catch (error) {
-    console.error("Delete RFI file error:", error);
+    console.error("Delete RFI attachment error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

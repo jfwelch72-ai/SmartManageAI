@@ -488,6 +488,7 @@ export const crewAvailabilityStatusEnum = pgEnum("crew_availability_status", ["A
 // Vendor Scores table - Vendor performance scoring by project
 export const rfiStatusEnum = pgEnum("rfi_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "ANSWERED", "CLOSED"]);
 export const rfiPriorityEnum = pgEnum("rfi_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
+export const rfiCategoryEnum = pgEnum("rfi_category", ["DESIGN_CLARIFICATION", "FIELD_CONDITION", "SUBSTITUTION_REQUEST", "SPECIFICATION_INTERPRETATION", "SCHEDULE", "ADMINISTRATIVE", "OTHER"]);
 
 export const transmittalStatusEnum = pgEnum("transmittal_status", ["DRAFT", "SENT", "ACKNOWLEDGED", "SUPERSEDED"]);
 

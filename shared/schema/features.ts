@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tmTickets } from "./operations";
 
@@ -4633,6 +4633,7 @@ export const rfis = pgTable("rfis", {
   question: text("question").notNull(),
   status: rfiStatusEnum("status").notNull().default("DRAFT"),
   priority: rfiPriorityEnum("priority").notNull().default("MEDIUM"),
+  category: rfiCategoryEnum("category"),
   submittedById: varchar("submitted_by_id").notNull().references(() => users.id),
   submittedByName: text("submitted_by_name"),
   subcontractorId: varchar("subcontractor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
@@ -4641,6 +4642,7 @@ export const rfis = pgTable("rfis", {
   dateRequired: timestamp("date_required"),
   dateAnswered: timestamp("date_answered"),
   answeredById: varchar("answered_by_id").references(() => users.id),
+  answeredByName: text("answered_by_name"),
   answer: text("answer"),
   answerAttachmentsJson: text("answer_attachments_json"),
   drawingReference: text("drawing_reference"),
@@ -4651,6 +4653,7 @@ export const rfis = pgTable("rfis", {
   attachmentsJson: text("attachments_json"),
   linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
   linkedTmTicketId: varchar("linked_tm_ticket_id").references(() => tmTickets.id, { onDelete: "set null" }),
+  linkedSubmittalId: varchar("linked_submittal_id").references(() => submittals.id, { onDelete: "set null" }),
   closedAt: timestamp("closed_at"),
   closedById: varchar("closed_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -4683,6 +4686,28 @@ export type Rfi = typeof rfis.$inferSelect;
 export const insertRfiActivitySchema = createInsertSchema(rfiActivity).omit({ id: true, createdAt: true });
 export type InsertRfiActivity = z.infer<typeof insertRfiActivitySchema>;
 export type RfiActivity = typeof rfiActivity.$inferSelect;
+
+export const rfiAttachments = pgTable("rfi_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  rfiId: varchar("rfi_id").notNull().references(() => rfis.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  storageKey: text("storage_key").notNull(),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  description: text("description"),
+  isAnswerAttachment: boolean("is_answer_attachment").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  rfiIdx: index("rfi_attachments_rfi_idx").on(table.rfiId),
+  orgIdx: index("rfi_attachments_org_idx").on(table.organizationId),
+}));
+
+export const insertRfiAttachmentSchema = createInsertSchema(rfiAttachments).omit({ id: true, createdAt: true });
+export type InsertRfiAttachment = z.infer<typeof insertRfiAttachmentSchema>;
+export type RfiAttachment = typeof rfiAttachments.$inferSelect;
 
 // ============================================================
 // Document Transmittal System
