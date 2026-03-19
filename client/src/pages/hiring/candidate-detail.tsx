@@ -675,7 +675,7 @@ export default function CandidateDetailPage() {
                           </p>
                           {persistedReview.promptVersion && (
                             <p className="text-xs text-muted-foreground" data-testid="text-ai-prompt-version">
-                              v{persistedReview.promptVersion}
+                              {persistedReview.promptVersion.startsWith("v") ? persistedReview.promptVersion : `v${persistedReview.promptVersion}`}
                             </p>
                           )}
                         </div>
