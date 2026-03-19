@@ -20,6 +20,7 @@ export interface RFI {
   answer: string | null;
   priority: string;
   status: string;
+  category: string | null;
   subcontractorId: string | null;
   contractId: string | null;
   drawingReference: string | null;
@@ -33,8 +34,13 @@ export interface RFI {
   submittedByName: string | null;
   answeredById: string | null;
   answeredByName: string | null;
+  closedById: string | null;
+  closedByName: string | null;
   linkedChangeOrderId: string | null;
   linkedTmTicketId: string | null;
+  linkedSubmittalId: string | null;
+  linkedSubmittalNumber: string | null;
+  linkedSubmittalSubject: string | null;
   createdAt: string;
   updatedAt: string | null;
   dateSubmitted: string | null;
@@ -73,7 +79,9 @@ export interface RFICreateForm {
   subject: string;
   question: string;
   priority: string;
+  category: string;
   subcontractorId: string;
+  assignedToId: string;
   drawingReference: string;
   specReference: string;
   dateRequired: string;
@@ -86,6 +94,7 @@ export interface RFIEditForm {
   subject: string;
   question: string;
   priority: string;
+  category: string;
   drawingReference: string;
   specReference: string;
   dateRequired: string;
@@ -99,7 +108,9 @@ export const DEFAULT_CREATE_FORM: RFICreateForm = {
   subject: "",
   question: "",
   priority: "MEDIUM",
+  category: "",
   subcontractorId: "",
+  assignedToId: "",
   drawingReference: "",
   specReference: "",
   dateRequired: "",
@@ -112,6 +123,7 @@ export const DEFAULT_EDIT_FORM: RFIEditForm = {
   subject: "",
   question: "",
   priority: "MEDIUM",
+  category: "",
   drawingReference: "",
   specReference: "",
   dateRequired: "",
@@ -190,7 +202,9 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
         costImpact: data.costImpact,
         scheduleImpact: data.scheduleImpact,
       };
+      if (data.category) body.category = data.category;
       if (data.subcontractorId) body.subcontractorId = data.subcontractorId;
+      if (data.assignedToId) body.assignedToId = data.assignedToId;
       if (data.drawingReference) body.drawingReference = data.drawingReference;
       if (data.specReference) body.specReference = data.specReference;
       if (data.dateRequired) body.dateRequired = data.dateRequired;
@@ -327,6 +341,18 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
     },
   });
 
+  const linkSubmittalMutation = useMutation({
+    mutationFn: async ({ id, submittalId }: { id: string; submittalId: string }) =>
+      await apiRequest("PATCH", `/api/rfi/${id}`, { linkedSubmittalId: submittalId }),
+    onSuccess: () => {
+      invalidateAll();
+      toast({ title: "Submittal linked" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to link submittal", description: error.message, variant: "destructive" });
+    },
+  });
+
   return {
     createMutation,
     updateMutation,
@@ -338,6 +364,7 @@ export function useRfiMutations(options: UseRfiMutationsOptions) {
     deleteMutation,
     linkCOMutation,
     linkTMMutation,
+    linkSubmittalMutation,
     addCommentMutation,
     invalidateAll,
   };

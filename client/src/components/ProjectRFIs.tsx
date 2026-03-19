@@ -23,7 +23,7 @@ interface ProjectRFIsProps { projectId: string; projectCode: string; userRole: s
 interface Subcontractor { id: string; companyName: string; }
 
 const EMPTY_CREATE: Omit<RFICreateForm, "projectId"> = {
-  subject: "", question: "", priority: "MEDIUM", subcontractorId: "",
+  subject: "", question: "", priority: "MEDIUM", category: "", subcontractorId: "", assignedToId: "",
   drawingReference: "", specReference: "", dateRequired: "",
   impactDescription: "", costImpact: false, scheduleImpact: false,
 };
@@ -45,7 +45,7 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
   const buildQueryString = () => {
     const params = new URLSearchParams();
     params.set("projectId", projectId);
-    if (filterStatus !== "all" && filterStatus !== "OVERDUE") params.set("status", filterStatus);
+    if (filterStatus !== "all") params.set("status", filterStatus);
     return `?${params.toString()}`;
   };
 
@@ -73,7 +73,6 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
 
   const filteredRFIs = rfis.filter((rfi) => {
     if (filterPriority !== "all" && rfi.priority !== filterPriority) return false;
-    if (filterStatus === "OVERDUE" && !isRfiOverdue(rfi)) return false;
     return true;
   });
 

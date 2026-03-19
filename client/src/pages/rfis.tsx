@@ -45,7 +45,7 @@ export default function RFIsPage() {
   const buildQueryString = () => {
     const params = new URLSearchParams();
     if (filterProject !== "all") params.set("projectId", filterProject);
-    if (filterStatus !== "all" && filterStatus !== "OVERDUE") params.set("status", filterStatus);
+    if (filterStatus !== "all") params.set("status", filterStatus);
     const qs = params.toString();
     return qs ? `?${qs}` : "";
   };
@@ -59,7 +59,6 @@ export default function RFIsPage() {
 
   const filteredRFIs = rfis.filter((rfi) => {
     if (filterPriority !== "all" && rfi.priority !== filterPriority) return false;
-    if (filterStatus === "OVERDUE" && !isRfiOverdue(rfi)) return false;
     return true;
   });
 

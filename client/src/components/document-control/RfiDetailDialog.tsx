@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import DocumentAttachments from "@/components/DocumentAttachments";
 import {
   Send,
   Play,
@@ -21,10 +22,31 @@ import {
   Edit,
   RotateCcw,
   Link2,
+  FileCheck,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { RFI, ActivityEntry, ChangeOrder, RFIEditForm } from "@/hooks/useRfiMutations";
 import { getStatusBadge, getPriorityBadge, DEFAULT_EDIT_FORM } from "@/hooks/useRfiMutations";
+
+const RFI_CATEGORIES = [
+  { value: "ARCHITECTURAL", label: "Architectural" },
+  { value: "STRUCTURAL", label: "Structural" },
+  { value: "MECHANICAL", label: "Mechanical" },
+  { value: "ELECTRICAL", label: "Electrical" },
+  { value: "PLUMBING", label: "Plumbing" },
+  { value: "CIVIL", label: "Civil" },
+  { value: "GEOTECHNICAL", label: "Geotechnical" },
+  { value: "FIRE_PROTECTION", label: "Fire Protection" },
+  { value: "SPEC_CLARIFICATION", label: "Spec Clarification" },
+  { value: "DRAWING_CONFLICT", label: "Drawing Conflict" },
+  { value: "SUBSTITUTION", label: "Substitution Request" },
+  { value: "OTHER", label: "Other" },
+];
+
+function getCategoryLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return RFI_CATEGORIES.find((c) => c.value === value)?.label || value;
+}
 
 interface TMTicket {
   id: string;
@@ -32,6 +54,13 @@ interface TMTicket {
   workDate: string;
   status: string;
   description: string | null;
+}
+
+interface Submittal {
+  id: string;
+  submittalNumber: string;
+  subject: string;
+  status: string;
 }
 
 interface RfiDetailDialogProps {
@@ -49,6 +78,7 @@ interface RfiDetailDialogProps {
     updateMutation: { mutate: (args: { id: string; data: Record<string, unknown> }) => void; isPending: boolean };
     linkCOMutation: { mutate: (args: { id: string; changeOrderId: string }) => void; isPending: boolean };
     linkTMMutation: { mutate: (args: { id: string; tmTicketId: string }) => void; isPending: boolean };
+    linkSubmittalMutation: { mutate: (args: { id: string; submittalId: string }) => void; isPending: boolean };
     addCommentMutation: { mutate: (args: { id: string; comment: string }) => void; isPending: boolean };
   };
   testIdPrefix?: string;
@@ -71,6 +101,8 @@ export default function RfiDetailDialog({
   const [selectedCOId, setSelectedCOId] = useState("");
   const [showLinkTMDialog, setShowLinkTMDialog] = useState(false);
   const [selectedTMId, setSelectedTMId] = useState("");
+  const [showLinkSubmittalDialog, setShowLinkSubmittalDialog] = useState(false);
+  const [selectedSubmittalId, setSelectedSubmittalId] = useState("");
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState<RFIEditForm>({ ...DEFAULT_EDIT_FORM });
 
@@ -96,6 +128,16 @@ export default function RfiDetailDialog({
     enabled: !!rfi?.projectId && showLinkTMDialog,
   });
 
+  const { data: submittals = [] } = useQuery<Submittal[]>({
+    queryKey: ["/api/submittals", { projectId: rfi?.projectId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/submittals?projectId=${rfi?.projectId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch submittals");
+      return res.json();
+    },
+    enabled: !!rfi?.projectId && showLinkSubmittalDialog,
+  });
+
   useEffect(() => {
     if (selectedRFIDetail && open) {
       onRfiUpdate(selectedRFIDetail);
@@ -117,6 +159,7 @@ export default function RfiDetailDialog({
       subject: rfi.subject,
       question: rfi.question,
       priority: rfi.priority,
+      category: rfi.category || "",
       drawingReference: rfi.drawingReference || "",
       specReference: rfi.specReference || "",
       dateRequired: rfi.dateRequired || "",
@@ -171,19 +214,35 @@ export default function RfiDetailDialog({
                       data-testid={`${p}input-edit-question`}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Priority</Label>
-                    <Select value={editForm.priority} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
-                      <SelectTrigger data-testid={`${p}select-edit-priority`}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="LOW">Low</SelectItem>
-                        <SelectItem value="MEDIUM">Medium</SelectItem>
-                        <SelectItem value="HIGH">High</SelectItem>
-                        <SelectItem value="URGENT">Urgent</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Priority</Label>
+                      <Select value={editForm.priority} onValueChange={(v) => setEditForm({ ...editForm, priority: v })}>
+                        <SelectTrigger data-testid={`${p}select-edit-priority`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="LOW">Low</SelectItem>
+                          <SelectItem value="MEDIUM">Medium</SelectItem>
+                          <SelectItem value="HIGH">High</SelectItem>
+                          <SelectItem value="URGENT">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Select value={editForm.category || "none"} onValueChange={(v) => setEditForm({ ...editForm, category: v === "none" ? "" : v })}>
+                        <SelectTrigger data-testid={`${p}select-edit-category`}>
+                          <SelectValue placeholder="Select category (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {RFI_CATEGORIES.map((cat) => (
+                            <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -256,6 +315,13 @@ export default function RfiDetailDialog({
                       <p className="mt-1 whitespace-pre-wrap" data-testid={`${p}text-detail-question`}>{rfi.question}</p>
                     </div>
 
+                    {rfi.category && (
+                      <div>
+                        <Label className="text-muted-foreground text-xs">Category</Label>
+                        <p className="mt-1" data-testid={`${p}text-detail-category`}>{getCategoryLabel(rfi.category)}</p>
+                      </div>
+                    )}
+
                     {(rfi.drawingReference || rfi.specReference) && (
                       <div className="flex gap-4 flex-wrap">
                         {rfi.drawingReference && (
@@ -321,16 +387,33 @@ export default function RfiDetailDialog({
                             Answer
                           </CardTitle>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="space-y-3">
                           <p className="whitespace-pre-wrap" data-testid={`${p}text-detail-answer`}>{rfi.answer}</p>
                           {rfi.answeredByName && (
-                            <p className="text-sm text-muted-foreground mt-2" data-testid={`${p}text-detail-answered-by`}>
+                            <p className="text-sm text-muted-foreground" data-testid={`${p}text-detail-answered-by`}>
                               Answered by {rfi.answeredByName}
                               {rfi.dateAnswered && ` on ${format(new Date(rfi.dateAnswered), "MMM d, yyyy")}`}
                             </p>
                           )}
+                          <DocumentAttachments
+                            entityType="rfi-answer"
+                            entityId={rfi.id}
+                            canUpload={rfi.status === "UNDER_REVIEW" || rfi.status === "ANSWERED"}
+                            canDelete={true}
+                            compact
+                          />
                         </CardContent>
                       </Card>
+                    )}
+
+                    {rfi.status === "CLOSED" && rfi.closedByName && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid={`${p}text-detail-closed-by`}>
+                        <XCircle className="h-4 w-4 shrink-0" />
+                        <span>
+                          Closed by {rfi.closedByName}
+                          {rfi.closedAt && ` on ${format(new Date(rfi.closedAt), "MMM d, yyyy")}`}
+                        </span>
+                      </div>
                     )}
 
                     {rfi.linkedChangeOrderId && (
@@ -345,10 +428,29 @@ export default function RfiDetailDialog({
 
                     {rfi.linkedTmTicketId && (
                       <div data-testid={`${p}linked-tm`}>
-                        <Label className="text-muted-foreground text-xs">Linked T&M Ticket</Label>
+                        <Label className="text-muted-foreground text-xs">Linked T&amp;M Ticket</Label>
                         <div className="mt-1 flex items-center gap-2">
                           <Link2 className="h-4 w-4 text-muted-foreground" />
                           <span className="text-sm" data-testid={`${p}text-linked-tm-id`}>{rfi.linkedTmTicketId}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {rfi.linkedSubmittalId && (
+                      <div data-testid={`${p}linked-submittal`}>
+                        <Label className="text-muted-foreground text-xs">Linked Submittal</Label>
+                        <div className="mt-1 flex items-center gap-2 p-2 rounded-md border bg-card">
+                          <FileCheck className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium" data-testid={`${p}text-linked-submittal-number`}>
+                              {rfi.linkedSubmittalNumber || rfi.linkedSubmittalId}
+                            </p>
+                            {rfi.linkedSubmittalSubject && (
+                              <p className="text-xs text-muted-foreground truncate" data-testid={`${p}text-linked-submittal-subject`}>
+                                {rfi.linkedSubmittalSubject}
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -452,7 +554,15 @@ export default function RfiDetailDialog({
                           data-testid={`${p}button-link-tm`}
                         >
                           <Link2 className="h-4 w-4 mr-2" />
-                          Link T&M
+                          Link T&amp;M
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setShowLinkSubmittalDialog(true)}
+                          data-testid={`${p}button-link-submittal`}
+                        >
+                          <FileCheck className="h-4 w-4 mr-2" />
+                          Link Submittal
                         </Button>
                       </>
                     )}
@@ -614,6 +724,55 @@ export default function RfiDetailDialog({
               data-testid={`${p}button-confirm-link-tm`}
             >
               {mutations.linkTMMutation.isPending ? "Linking..." : "Link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showLinkSubmittalDialog} onOpenChange={(o) => { setShowLinkSubmittalDialog(o); if (!o) setSelectedSubmittalId(""); }}>
+        <DialogContent data-testid={`${p}dialog-link-submittal`}>
+          <DialogHeader>
+            <DialogTitle>Link Submittal</DialogTitle>
+            <DialogDescription>Select a submittal to link to this RFI</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {submittals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No submittals found for this project.</p>
+            ) : (
+              <Select value={selectedSubmittalId} onValueChange={setSelectedSubmittalId}>
+                <SelectTrigger data-testid={`${p}select-link-submittal`}>
+                  <SelectValue placeholder="Select a submittal..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {submittals.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.submittalNumber} — {s.subject}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => { setShowLinkSubmittalDialog(false); setSelectedSubmittalId(""); }}
+              data-testid={`${p}button-cancel-link-submittal`}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (rfi && selectedSubmittalId) {
+                  mutations.linkSubmittalMutation.mutate({ id: rfi.id, submittalId: selectedSubmittalId });
+                  setShowLinkSubmittalDialog(false);
+                  setSelectedSubmittalId("");
+                }
+              }}
+              disabled={!selectedSubmittalId || mutations.linkSubmittalMutation.isPending}
+              data-testid={`${p}button-confirm-link-submittal`}
+            >
+              {mutations.linkSubmittalMutation.isPending ? "Linking..." : "Link"}
             </Button>
           </DialogFooter>
         </DialogContent>

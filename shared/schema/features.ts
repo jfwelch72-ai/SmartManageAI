@@ -4656,6 +4656,8 @@ export const rfis = pgTable("rfis", {
   linkedSubmittalId: varchar("linked_submittal_id").references(() => submittals.id, { onDelete: "set null" }),
   closedAt: timestamp("closed_at"),
   closedById: varchar("closed_by_id").references(() => users.id),
+  category: text("category"),
+  linkedSubmittalId: varchar("linked_submittal_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

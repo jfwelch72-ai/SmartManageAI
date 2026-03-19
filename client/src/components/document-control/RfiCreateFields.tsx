@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +11,13 @@ interface Subcontractor {
   companyName: string;
 }
 
+interface OrgUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+}
+
 interface RfiCreateFieldsProps {
   form: RFICreateForm | Omit<RFICreateForm, "projectId">;
   onChange: (updates: Partial<RFICreateForm>) => void;
@@ -17,8 +25,28 @@ interface RfiCreateFieldsProps {
   testIdPrefix?: string;
 }
 
+const RFI_CATEGORIES = [
+  { value: "ARCHITECTURAL", label: "Architectural" },
+  { value: "STRUCTURAL", label: "Structural" },
+  { value: "MECHANICAL", label: "Mechanical" },
+  { value: "ELECTRICAL", label: "Electrical" },
+  { value: "PLUMBING", label: "Plumbing" },
+  { value: "CIVIL", label: "Civil" },
+  { value: "GEOTECHNICAL", label: "Geotechnical" },
+  { value: "FIRE_PROTECTION", label: "Fire Protection" },
+  { value: "SPEC_CLARIFICATION", label: "Spec Clarification" },
+  { value: "DRAWING_CONFLICT", label: "Drawing Conflict" },
+  { value: "SUBSTITUTION", label: "Substitution Request" },
+  { value: "OTHER", label: "Other" },
+];
+
 export default function RfiCreateFields({ form, onChange, subcontractors, testIdPrefix = "" }: RfiCreateFieldsProps) {
   const p = testIdPrefix;
+
+  const { data: users = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/users"],
+  });
+
   return (
     <>
       <div className="space-y-2">
@@ -40,17 +68,50 @@ export default function RfiCreateFields({ form, onChange, subcontractors, testId
           data-testid={`${p}input-create-question`}
         />
       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Priority</Label>
+          <Select value={form.priority} onValueChange={(v) => onChange({ priority: v })}>
+            <SelectTrigger data-testid={`${p}select-create-priority`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="LOW">Low</SelectItem>
+              <SelectItem value="MEDIUM">Medium</SelectItem>
+              <SelectItem value="HIGH">High</SelectItem>
+              <SelectItem value="URGENT">Urgent</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Category</Label>
+          <Select value={form.category || "none"} onValueChange={(v) => onChange({ category: v === "none" ? "" : v })}>
+            <SelectTrigger data-testid={`${p}select-create-category`}>
+              <SelectValue placeholder="Select category (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              {RFI_CATEGORIES.map((cat) => (
+                <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
       <div className="space-y-2">
-        <Label>Priority</Label>
-        <Select value={form.priority} onValueChange={(v) => onChange({ priority: v })}>
-          <SelectTrigger data-testid={`${p}select-create-priority`}>
-            <SelectValue />
+        <Label>Assign To</Label>
+        <Select
+          value={(form as RFICreateForm).assignedToId || "none"}
+          onValueChange={(v) => onChange({ assignedToId: v === "none" ? "" : v })}
+        >
+          <SelectTrigger data-testid={`${p}select-create-assign-to`}>
+            <SelectValue placeholder="Assign to user (optional)" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="LOW">Low</SelectItem>
-            <SelectItem value="MEDIUM">Medium</SelectItem>
-            <SelectItem value="HIGH">High</SelectItem>
-            <SelectItem value="URGENT">Urgent</SelectItem>
+            <SelectItem value="none">Unassigned</SelectItem>
+            {users.map((u) => (
+              <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

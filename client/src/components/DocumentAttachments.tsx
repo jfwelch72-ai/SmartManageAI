@@ -31,7 +31,7 @@ interface FileAttachment {
 }
 
 interface DocumentAttachmentsProps {
-  entityType: "rfi" | "transmittals" | "submittals";
+  entityType: "rfi" | "rfi-answer" | "transmittals" | "submittals";
   entityId: string;
   canUpload: boolean;
   canDelete: boolean;
@@ -60,7 +60,12 @@ export default function DocumentAttachments({
   const { toast } = useToast();
   const [isUploading, setIsUploading] = useState(false);
 
-  const basePath = entityType === "rfi" ? `/api/rfi/${entityId}/files` : `/api/${entityType}/${entityId}/files`;
+  const isAnswerAttachment = entityType === "rfi-answer";
+  const baseApiPath = (entityType === "rfi" || entityType === "rfi-answer")
+    ? `/api/rfi/${entityId}/attachments`
+    : `/api/${entityType}/${entityId}/files`;
+  const queryParam = isAnswerAttachment ? "?isAnswerAttachment=true" : "";
+  const basePath = `${baseApiPath}${queryParam}`;
 
   const { data: files = [], isLoading } = useQuery<FileAttachment[]>({
     queryKey: [basePath],
@@ -84,7 +89,7 @@ export default function DocumentAttachments({
 
   const deleteMutation = useMutation({
     mutationFn: async (fileId: string) => {
-      return await apiRequest("DELETE", `${basePath}/${fileId}`);
+      return await apiRequest("DELETE", `${baseApiPath}/${fileId}${queryParam}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [basePath] });

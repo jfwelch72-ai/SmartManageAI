@@ -12,6 +12,7 @@ import {
   subcontractorContracts,
   changeOrders,
   tmTickets,
+  submittals,
 } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -113,6 +114,7 @@ router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "
       ...r.rfi,
       project: r.project,
       submittedBy: r.submittedBy,
+      submittedByName: r.submittedBy ? `${r.submittedBy.firstName} ${r.submittedBy.lastName}` : r.rfi.submittedByName,
     }));
 
     res.json(mapped);
@@ -179,7 +181,7 @@ router.get("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER
         .from(crmOrganisations)
         .where(eq(crmOrganisations.id, rfi.subcontractorId))
         .limit(1);
-      subcontractor = sub || null;
+      subcontractor = sub ? { companyName: sub.name } : null;
     }
 
     let linkedChangeOrder = null;
@@ -202,12 +204,50 @@ router.get("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER
       linkedTmTicket = tm || null;
     }
 
+    let answeredByName: string | null = rfi.answeredById ? null : null;
+    if (rfi.answeredById) {
+      const [answeredBy] = await db
+        .select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, rfi.answeredById))
+        .limit(1);
+      if (answeredBy) answeredByName = `${answeredBy.firstName} ${answeredBy.lastName}`;
+    }
+
+    let closedByName: string | null = null;
+    if (rfi.closedById) {
+      const [closedBy] = await db
+        .select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, rfi.closedById))
+        .limit(1);
+      if (closedBy) closedByName = `${closedBy.firstName} ${closedBy.lastName}`;
+    }
+
+    let linkedSubmittalNumber: string | null = null;
+    let linkedSubmittalSubject: string | null = null;
+    if (rfi.linkedSubmittalId) {
+      const [submittal] = await db
+        .select({ submittalNumber: submittals.submittalNumber, subject: submittals.subject })
+        .from(submittals)
+        .where(eq(submittals.id, rfi.linkedSubmittalId))
+        .limit(1);
+      if (submittal) {
+        linkedSubmittalNumber = submittal.submittalNumber;
+        linkedSubmittalSubject = submittal.subject;
+      }
+    }
+
     res.json({
       ...rfi,
       project,
       subcontractor,
       linkedChangeOrder,
       linkedTmTicket,
+      answeredByName,
+      closedByName,
+      linkedSubmittalNumber,
+      linkedSubmittalSubject,
       activity,
     });
   } catch (error) {
@@ -272,8 +312,9 @@ router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
     if (!rfi) return res.status(404).json({ error: "RFI not found" });
 
     const allowedFields = [
-      "subject", "question", "priority", "assignedToId", "dateRequired",
+      "subject", "question", "priority", "category", "assignedToId", "dateRequired",
       "drawingReference", "specReference", "impactDescription", "costImpact", "scheduleImpact",
+      "linkedSubmittalId",
     ];
 
     const updates: Record<string, any> = { updatedAt: new Date() };
