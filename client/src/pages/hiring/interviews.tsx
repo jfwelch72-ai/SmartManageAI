@@ -20,6 +20,7 @@ import {
 import {
   Calendar, Clock, MapPin, Video, Plus, Bell, RotateCcw,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useHiringInterviews, useScheduleInterview, useUpdateInterview } from "@/lib/hiring-api";
 import { HiringInterview } from "@/types/hiring";
 import { format, isPast, parseISO } from "date-fns";
@@ -50,6 +51,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 const DEFAULT_FORM = {
   candidateId: "",
+  jobId: undefined as string | undefined,
   startAt: "",
   endAt: "",
   timezone: "America/New_York",
@@ -72,6 +74,12 @@ export default function HiringInterviewsPage() {
   const [tab, setTab] = useState<"upcoming" | "past">("upcoming");
 
   const { data: allInterviews = [], isLoading } = useHiringInterviews();
+  const { data: candidatesList = [] } = useQuery<Array<{ id: string; fullName: string; currentStage: string }>>({
+    queryKey: ["/api/hiring/candidates"],
+  });
+  const { data: jobsList = [] } = useQuery<Array<{ id: string; title: string }>>({
+    queryKey: ["/api/hiring/jobs"],
+  });
   const scheduleMutation = useScheduleInterview();
   const cancelMutation = useUpdateInterview(cancelTarget?.id ?? "");
 
@@ -97,6 +105,7 @@ export default function HiringInterviewsPage() {
     scheduleMutation.mutate(
       {
         candidateId: form.candidateId,
+        jobId: form.jobId || undefined,
         startAt: new Date(form.startAt).toISOString(),
         endAt: form.endAt ? new Date(form.endAt).toISOString() : undefined,
         timezone: form.timezone || "America/New_York",
@@ -183,13 +192,31 @@ export default function HiringInterviewsPage() {
           </DialogHeader>
           <div className="space-y-4 py-1">
             <div className="space-y-1">
-              <Label>Candidate ID <span className="text-destructive">*</span></Label>
-              <Input
-                placeholder="Paste candidate ID"
-                value={form.candidateId}
-                onChange={(e) => setForm((f) => ({ ...f, candidateId: e.target.value }))}
-                data-testid="input-candidate-id"
-              />
+              <Label>Candidate <span className="text-destructive">*</span></Label>
+              <Select value={form.candidateId} onValueChange={(v) => setForm((f) => ({ ...f, candidateId: v }))}>
+                <SelectTrigger data-testid="select-candidate">
+                  <SelectValue placeholder="Select a candidate…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(candidatesList as Array<{ id: string; fullName: string; currentStage: string }>).map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.fullName} ({c.currentStage})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Job (optional)</Label>
+              <Select value={form.jobId ?? ""} onValueChange={(v) => setForm((f) => ({ ...f, jobId: v || undefined }))}>
+                <SelectTrigger data-testid="select-job">
+                  <SelectValue placeholder="Select a job…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No specific job</SelectItem>
+                  {(jobsList as Array<{ id: string; title: string }>).map((j) => (
+                    <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -341,7 +368,11 @@ function InterviewCard({
         <div className="flex flex-col sm:flex-row sm:items-start gap-3">
           <div className="flex-1 space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-medium">{typeLabel}</span>
+              <span className="font-semibold">{interview.candidateName ?? interview.candidateId}</span>
+              {interview.jobTitle && (
+                <span className="text-xs text-muted-foreground">· {interview.jobTitle}</span>
+              )}
+              <span className="text-xs text-muted-foreground">({typeLabel})</span>
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[interview.status] ?? "bg-muted text-muted-foreground"}`}
                 data-testid={`status-${interview.id}`}

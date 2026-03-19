@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, desc, sql, count, or, ilike, gte } from "drizzle-orm";
+import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import type { AuthRequest } from "./auth";
@@ -941,13 +941,36 @@ router.get("/interviews", requireAuth, requireRole(...HIRING_REVIEW), async (req
     const conditions = [eq(hiringInterviews.organizationId, org)];
     if (candidateId) conditions.push(eq(hiringInterviews.candidateId, candidateId));
 
-    const interviews = await db
-      .select()
+    const rows = await db
+      .select({
+        id: hiringInterviews.id,
+        organizationId: hiringInterviews.organizationId,
+        candidateId: hiringInterviews.candidateId,
+        jobId: hiringInterviews.jobId,
+        interviewType: hiringInterviews.interviewType,
+        startAt: hiringInterviews.startAt,
+        endAt: hiringInterviews.endAt,
+        timezone: hiringInterviews.timezone,
+        location: hiringInterviews.location,
+        videoLink: hiringInterviews.videoLink,
+        interviewerUserIdsJson: hiringInterviews.interviewerUserIdsJson,
+        status: hiringInterviews.status,
+        notes: hiringInterviews.notes,
+        reminderSentAt: hiringInterviews.reminderSentAt,
+        createdByUserId: hiringInterviews.createdByUserId,
+        updatedByUserId: hiringInterviews.updatedByUserId,
+        createdAt: hiringInterviews.createdAt,
+        updatedAt: hiringInterviews.updatedAt,
+        candidateName: hiringCandidates.fullName,
+        jobTitle: hiringJobs.title,
+      })
       .from(hiringInterviews)
+      .leftJoin(hiringCandidates, eq(hiringInterviews.candidateId, hiringCandidates.id))
+      .leftJoin(hiringJobs, eq(hiringInterviews.jobId, hiringJobs.id))
       .where(and(...conditions))
       .orderBy(desc(hiringInterviews.startAt));
 
-    res.json(interviews);
+    res.json(rows);
   } catch (err) {
     logError("GET /api/hiring/interviews", { error: String(err) });
     res.status(500).json({ error: "Failed to fetch interviews" });
@@ -1584,7 +1607,7 @@ function scrubProtectedCharacteristics(text: string): string {
 router.post(
   "/candidates/:id/ai-review",
   requireAuth,
-  requireRole(...HIRING_FULL),
+  requireRole("ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER"),
   async (req: AuthRequest, res) => {
     try {
       const aiEnabled = await isFeatureEnabled(orgId(req), "HIRING_AI_SCORING");
@@ -1788,7 +1811,10 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
     const org = orgId(req);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const [jobCounts, candidateStageCounts, interviewStatusCounts, recentActivity, candidatesPerRole] = await Promise.all([
+    const [
+      jobCounts, candidateStageCounts, interviewStatusCounts, recentActivity, candidatesPerRole,
+      sourceCounts, aiScoreRows, monthlyApplicants,
+    ] = await Promise.all([
       db
         .select({ status: hiringJobs.status, count: count() })
         .from(hiringJobs)
@@ -1810,7 +1836,7 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         .where(eq(hiringActivityLogs.organizationId, org))
         .orderBy(desc(hiringActivityLogs.createdAt))
         .limit(10),
-      // applicants per role: join candidates to jobs
+      // applicants per role (last 30 days)
       db
         .select({
           jobId: hiringCandidates.jobId,
@@ -1823,11 +1849,55 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         .groupBy(hiringCandidates.jobId, hiringJobs.title)
         .orderBy(desc(count()))
         .limit(10),
+      // source quality breakdown
+      db
+        .select({ source: hiringCandidates.source, count: count() })
+        .from(hiringCandidates)
+        .where(eq(hiringCandidates.organizationId, org))
+        .groupBy(hiringCandidates.source),
+      // ai score distribution (raw scores for histogram)
+      db
+        .select({ score: hiringCandidates.aiScore })
+        .from(hiringCandidates)
+        .where(and(eq(hiringCandidates.organizationId, org), isNotNull(hiringCandidates.aiScore))),
+      // monthly applicant trend (last 6 months)
+      db
+        .select({
+          month: sql<string>`to_char(applied_at, 'YYYY-MM')`,
+          count: count(),
+        })
+        .from(hiringCandidates)
+        .where(and(
+          eq(hiringCandidates.organizationId, org),
+          gte(hiringCandidates.appliedAt, new Date(Date.now() - 180 * 24 * 60 * 60 * 1000)),
+        ))
+        .groupBy(sql`to_char(applied_at, 'YYYY-MM')`)
+        .orderBy(sql`to_char(applied_at, 'YYYY-MM')`),
     ]);
 
     const jobsByStatus = Object.fromEntries(jobCounts.map((r) => [r.status, Number(r.count)]));
     const candidatesByStage = Object.fromEntries(candidateStageCounts.map((r) => [r.stage, Number(r.count)]));
     const interviewsByStatus = Object.fromEntries(interviewStatusCounts.map((r) => [r.status, Number(r.count)]));
+
+    // Build AI score histogram buckets: 0-20, 21-40, 41-60, 61-80, 81-100
+    const scoreBuckets = [
+      { range: "0-20", min: 0, max: 20, count: 0 },
+      { range: "21-40", min: 21, max: 40, count: 0 },
+      { range: "41-60", min: 41, max: 60, count: 0 },
+      { range: "61-80", min: 61, max: 80, count: 0 },
+      { range: "81-100", min: 81, max: 100, count: 0 },
+    ];
+    for (const row of aiScoreRows) {
+      if (row.score == null) continue;
+      const bucket = scoreBuckets.find((b) => row.score! >= b.min && row.score! <= b.max);
+      if (bucket) bucket.count++;
+    }
+
+    // Source quality: normalize null source to "Unknown"
+    const sourceBreakdown = sourceCounts.map((r) => ({
+      source: r.source ?? "Unknown",
+      count: Number(r.count),
+    })).sort((a, b) => b.count - a.count);
 
     res.json({
       jobs: {
@@ -1844,11 +1914,17 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
           jobTitle: r.jobTitle ?? "No Job",
           count: Number(r.count),
         })),
+        bySource: sourceBreakdown,
+        aiScoreHistogram: scoreBuckets.map(({ range, count: c }) => ({ range, count: c })),
       },
       interviews: {
         total: interviewStatusCounts.reduce((acc, r) => acc + Number(r.count), 0),
         byStatus: interviewsByStatus,
       },
+      monthlyTrend: monthlyApplicants.map((r) => ({
+        month: r.month,
+        count: Number(r.count),
+      })),
       recentActivity,
     });
   } catch (err) {

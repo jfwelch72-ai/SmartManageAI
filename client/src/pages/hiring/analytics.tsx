@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  PieChart, Pie, Cell, Legend, LineChart, Line,
 } from "recharts";
 import { Users, BriefcaseBusiness, CalendarClock, TrendingUp, UserCheck, UserX } from "lucide-react";
 
@@ -19,11 +19,14 @@ interface HiringAnalytics {
     hired: number;
     rejected: number;
     perRole: Array<{ jobId: string | null; jobTitle: string; count: number }>;
+    bySource: Array<{ source: string; count: number }>;
+    aiScoreHistogram: Array<{ range: string; count: number }>;
   };
   interviews: {
     total: number;
     byStatus: Record<string, number>;
   };
+  monthlyTrend: Array<{ month: string; count: number }>;
   recentActivity: Array<{
     id: string;
     activityType: string;
@@ -158,6 +161,12 @@ export default function HiringAnalyticsPage() {
     : 0;
 
   const perRoleData = analytics?.candidates.perRole ?? [];
+  const sourceData = analytics?.candidates.bySource ?? [];
+  const aiHistogramData = analytics?.candidates.aiScoreHistogram ?? [];
+  const monthlyTrendData = analytics?.monthlyTrend ?? [];
+
+  const SOURCE_COLORS = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#ec4899", "#06b6d4", "#eab308", "#6366f1"];
+  const AI_HISTOGRAM_COLORS = ["#ef4444", "#f97316", "#eab308", "#22c55e", "#3b82f6"];
 
   return (
     <div className="p-6 space-y-6">
@@ -336,6 +345,90 @@ export default function HiringAnalyticsPage() {
                   );
                 })}
               </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Monthly Applicant Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : monthlyTrendData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No trend data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={monthlyTrendData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={(v: string) => v.slice(5)} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" name="Applicants" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Applicant Source Quality</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : sourceData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No source data</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <PieChart>
+                  <Pie
+                    data={sourceData}
+                    cx="50%"
+                    cy="45%"
+                    outerRadius={90}
+                    dataKey="count"
+                    nameKey="source"
+                    label={({ name, value }) => `${name}: ${value}`}
+                    labelLine={false}
+                  >
+                    {sourceData.map((_, index) => (
+                      <Cell key={index} fill={SOURCE_COLORS[index % SOURCE_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Legend iconType="circle" iconSize={10} />
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">AI Score Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : aiHistogramData.every((b) => b.count === 0) ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No AI scores yet</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={aiHistogramData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="range" tick={{ fontSize: 11 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" name="Candidates" radius={[4, 4, 0, 0]}>
+                    {aiHistogramData.map((_, index) => (
+                      <Cell key={index} fill={AI_HISTOGRAM_COLORS[index % AI_HISTOGRAM_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>

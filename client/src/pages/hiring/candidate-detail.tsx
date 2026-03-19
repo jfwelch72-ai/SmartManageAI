@@ -143,6 +143,25 @@ export default function CandidateDetailPage() {
   } | null>(null);
 
   const { data: candidate, isLoading } = useHiringCandidate(candidateId);
+
+  const persistedReview = candidate?.latestAiReview ?? null;
+  const displayReview = aiResult ?? (persistedReview ? {
+    score: persistedReview.score ?? 0,
+    tradeFitScore: persistedReview.tradeFitScore ?? 0,
+    roleFitScore: persistedReview.roleFitScore ?? 0,
+    confidenceScore: persistedReview.confidenceScore ?? 0,
+    recommendation: persistedReview.recommendation ?? "MAYBE",
+    summary: persistedReview.summary ?? "",
+    strengths: JSON.parse(persistedReview.strengthsJson ?? "[]"),
+    concerns: JSON.parse(persistedReview.concernsJson ?? "[]"),
+    redFlags: JSON.parse(persistedReview.redFlagsJson ?? "[]"),
+    extractedSkills: JSON.parse(persistedReview.extractedSkillsJson ?? "[]"),
+    extractedCerts: JSON.parse(persistedReview.extractedCertsJson ?? "[]"),
+    extractedEquipment: JSON.parse(persistedReview.extractedEquipmentJson ?? "[]"),
+    interviewRecommendation: persistedReview.interviewRecommendation ?? "",
+    disclaimer: "",
+  } : null);
+
   const { data: activity = [] } = useCandidateActivity(candidateId);
   const { data: notes = [] } = useCandidateNotes(candidateId);
   const { data: tasks = [] } = useHiringTasks(candidateId);
@@ -466,89 +485,89 @@ export default function CandidateDetailPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {(aiResult || candidate.aiScore != null || candidate.aiRecommendation) ? (
+              {(displayReview || candidate.aiScore != null || candidate.aiRecommendation) ? (
                 <div className="space-y-4">
                   {/* Scores row */}
                   <div className="flex items-center gap-4 flex-wrap">
                     <div className="flex items-center gap-1.5">
                       <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-2xl font-bold">{aiResult?.score ?? candidate.aiScore ?? "—"}</span>
+                      <span className="text-2xl font-bold">{displayReview?.score ?? candidate.aiScore ?? "—"}</span>
                       <span className="text-sm text-muted-foreground">/100</span>
                     </div>
-                    {aiResult && (
+                    {displayReview && (
                       <>
-                        <div className="text-xs text-muted-foreground">Trade fit: <span className="font-medium text-foreground">{aiResult.tradeFitScore}</span></div>
-                        <div className="text-xs text-muted-foreground">Role fit: <span className="font-medium text-foreground">{aiResult.roleFitScore}</span></div>
-                        <div className="text-xs text-muted-foreground">Confidence: <span className="font-medium text-foreground">{aiResult.confidenceScore}</span></div>
+                        <div className="text-xs text-muted-foreground">Trade fit: <span className="font-medium text-foreground">{displayReview.tradeFitScore}</span></div>
+                        <div className="text-xs text-muted-foreground">Role fit: <span className="font-medium text-foreground">{displayReview.roleFitScore}</span></div>
+                        <div className="text-xs text-muted-foreground">Confidence: <span className="font-medium text-foreground">{displayReview.confidenceScore}</span></div>
                         <Badge
-                          variant={aiResult.recommendation === "YES" ? "default" : aiResult.recommendation === "NO" ? "destructive" : "secondary"}
+                          variant={displayReview.recommendation === "YES" ? "default" : displayReview.recommendation === "NO" ? "destructive" : "secondary"}
                           className="text-xs"
                         >
-                          {aiResult.recommendation}
+                          {displayReview.recommendation}
                         </Badge>
                       </>
                     )}
                   </div>
 
                   {/* Summary */}
-                  {(aiResult?.summary || candidate.aiRecommendation) && (
-                    <p className="text-sm">{aiResult?.summary ?? candidate.aiRecommendation}</p>
+                  {(displayReview?.summary || candidate.aiRecommendation) && (
+                    <p className="text-sm">{displayReview?.summary ?? candidate.aiRecommendation}</p>
                   )}
 
                   {/* Strengths */}
-                  {aiResult?.strengths && aiResult.strengths.length > 0 && (
+                  {displayReview?.strengths && displayReview.strengths.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">Strengths</p>
                       <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        {aiResult.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                        {displayReview.strengths.map((s, i) => <li key={i}>{s}</li>)}
                       </ul>
                     </div>
                   )}
 
                   {/* Concerns */}
-                  {aiResult?.concerns && aiResult.concerns.length > 0 && (
+                  {displayReview?.concerns && displayReview.concerns.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-orange-700 dark:text-orange-400 mb-1">Concerns</p>
                       <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        {aiResult.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                        {displayReview.concerns.map((c, i) => <li key={i}>{c}</li>)}
                       </ul>
                     </div>
                   )}
 
                   {/* Red flags */}
-                  {aiResult?.redFlags && aiResult.redFlags.length > 0 && (
+                  {displayReview?.redFlags && displayReview.redFlags.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-destructive mb-1">Red Flags</p>
                       <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        {aiResult.redFlags.map((f, i) => <li key={i}>{f}</li>)}
+                        {displayReview.redFlags.map((f, i) => <li key={i}>{f}</li>)}
                       </ul>
                     </div>
                   )}
 
                   {/* Extracted data chips */}
-                  {aiResult && (aiResult.extractedSkills.length > 0 || aiResult.extractedCerts.length > 0 || aiResult.extractedEquipment.length > 0) && (
+                  {displayReview && (displayReview.extractedSkills.length > 0 || displayReview.extractedCerts.length > 0 || displayReview.extractedEquipment.length > 0) && (
                     <div className="space-y-1.5">
-                      {aiResult.extractedSkills.length > 0 && (
+                      {displayReview.extractedSkills.length > 0 && (
                         <div>
                           <p className="text-xs font-medium mb-1 text-muted-foreground">Skills</p>
                           <div className="flex flex-wrap gap-1">
-                            {aiResult.extractedSkills.map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
+                            {displayReview.extractedSkills.map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
                           </div>
                         </div>
                       )}
-                      {aiResult.extractedCerts.length > 0 && (
+                      {displayReview.extractedCerts.length > 0 && (
                         <div>
                           <p className="text-xs font-medium mb-1 text-muted-foreground">Certifications</p>
                           <div className="flex flex-wrap gap-1">
-                            {aiResult.extractedCerts.map((c, i) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
+                            {displayReview.extractedCerts.map((c, i) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
                           </div>
                         </div>
                       )}
-                      {aiResult.extractedEquipment.length > 0 && (
+                      {displayReview.extractedEquipment.length > 0 && (
                         <div>
                           <p className="text-xs font-medium mb-1 text-muted-foreground">Equipment</p>
                           <div className="flex flex-wrap gap-1">
-                            {aiResult.extractedEquipment.map((e, i) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
+                            {displayReview.extractedEquipment.map((e, i) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
                           </div>
                         </div>
                       )}
@@ -556,20 +575,27 @@ export default function CandidateDetailPage() {
                   )}
 
                   {/* Interview recommendation */}
-                  {aiResult?.interviewRecommendation && (
+                  {displayReview?.interviewRecommendation && (
                     <div className="border-t pt-2">
                       <p className="text-xs font-medium text-muted-foreground mb-1">Interview Focus</p>
-                      <p className="text-xs">{aiResult.interviewRecommendation}</p>
+                      <p className="text-xs">{displayReview.interviewRecommendation}</p>
                     </div>
                   )}
 
                   {/* Disclaimer */}
-                  {aiResult?.disclaimer && (
-                    <p className="text-xs text-muted-foreground italic border-t pt-2">{aiResult.disclaimer}</p>
+                  {displayReview?.disclaimer && (
+                    <p className="text-xs text-muted-foreground italic border-t pt-2">{displayReview.disclaimer}</p>
+                  )}
+
+                  {/* Show when review came from persisted data */}
+                  {!aiResult && persistedReview?.generatedAt && (
+                    <p className="text-xs text-muted-foreground border-t pt-2">
+                      Last reviewed: {format(new Date(persistedReview.generatedAt), "MMM d, yyyy")}
+                    </p>
                   )}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No AI evaluation yet. Click "Run AI Score" to generate one.</p>
+                <p className="text-sm text-muted-foreground">No AI evaluation yet. Click "Run AI Review" to generate one.</p>
               )}
             </CardContent>
           </Card>

@@ -58,6 +58,27 @@ export interface HiringJob {
   updatedAt: string;
 }
 
+export interface HiringAiReview {
+  id: string;
+  candidateId: string;
+  score: number | null;
+  tradeFitScore: number | null;
+  roleFitScore: number | null;
+  confidenceScore: number | null;
+  recommendation: "YES" | "MAYBE" | "NO" | null;
+  summary: string | null;
+  strengthsJson: string | null;
+  concernsJson: string | null;
+  redFlagsJson: string | null;
+  extractedSkillsJson: string | null;
+  extractedCertsJson: string | null;
+  extractedEquipmentJson: string | null;
+  interviewRecommendation: string | null;
+  promptVersion: string | null;
+  modelName: string | null;
+  generatedAt: string | null;
+}
+
 export interface HiringCandidate {
   id: string;
   organizationId: string;
@@ -82,6 +103,7 @@ export interface HiringCandidate {
   externalProvider: ATSProvider | null;
   createdAt: string;
   updatedAt: string;
+  latestAiReview?: HiringAiReview | null;
 }
 
 export interface HiringIntegration {
@@ -128,6 +150,8 @@ export interface HiringInterview {
   createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
+  candidateName: string | null;
+  jobTitle: string | null;
 }
 
 export interface HiringActivityLog {
