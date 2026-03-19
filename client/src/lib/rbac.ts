@@ -370,6 +370,10 @@ export const RoutePermissions = {
 
   // Procurement Module
   PROCUREMENT: (role?: string) => hasProcurementAccess(role),
+
+  // Hiring Module
+  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+  HIRING_SETTINGS: (role?: string) => role === "ADMIN",
 };
 
 /**
@@ -776,6 +780,39 @@ export const NavigationConfig = {
       label: "Safety Training",
       testId: "nav-safety-training",
       visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
+    },
+  ],
+
+  hiringMenu: [
+    {
+      href: "/hiring",
+      label: "Dashboard",
+      testId: "nav-hiring-dashboard",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+    },
+    {
+      href: "/hiring/jobs",
+      label: "Jobs",
+      testId: "nav-hiring-jobs",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+    },
+    {
+      href: "/hiring/candidates",
+      label: "Candidates",
+      testId: "nav-hiring-candidates",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+    },
+    {
+      href: "/hiring/pipeline",
+      label: "Pipeline",
+      testId: "nav-hiring-pipeline",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+    },
+    {
+      href: "/hiring/settings",
+      label: "Settings",
+      testId: "nav-hiring-settings",
+      visible: (role?: string) => role === "ADMIN",
     },
   ],
 

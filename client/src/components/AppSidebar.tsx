@@ -52,11 +52,12 @@ import {
   HardHat,
   FileSearch,
   ShoppingCart,
+  Users,
+  Crown,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
 import { Button } from "@/components/ui/button";
-import { Crown } from "lucide-react";
 
 interface WalkthroughStatus {
   walkthroughCompleted: boolean;
@@ -90,6 +91,7 @@ export function AppSidebar() {
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [administrationOpen, setAdministrationOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const [hiringOpen, setHiringOpen] = useState(false);
 
   const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
@@ -128,6 +130,7 @@ export function AppSidebar() {
   const visibleInsightsItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole, perms));
   const visibleAdministrationItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole, perms));
   const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole, perms));
+  const visibleHiringItems = NavigationConfig.hiringMenu.filter(item => item.visible(userRole, perms));
 
   const hasProjectsMenu = visibleProjectsItems.length > 0;
   const hasOperationsMenu = visibleOperationsItems.length > 0 || visibleTimeClockItems.length > 0;
@@ -136,6 +139,7 @@ export function AppSidebar() {
   const hasInsightsMenu = visibleInsightsItems.length > 0;
   const hasAdministrationMenu = visibleAdministrationItems.length > 0;
   const hasToolsMenu = visibleToolsItems.length > 0;
+  const hasHiringMenu = visibleHiringItems.length > 0;
 
   const handleLogout = async () => {
     await logout();
@@ -499,7 +503,41 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
         
-        {/* 7. Administration group */}
+        {/* 7. Hiring group */}
+        {hasHiringMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={hiringOpen} onOpenChange={setHiringOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Hiring" data-testid="sidebar-hiring-group">
+                        <Users className="w-4 h-4" />
+                        <span>Hiring</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {visibleHiringItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href} data-testid={item.testId}>
+                                {item.label}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* 8. Administration group */}
         {hasAdministrationMenu && (
           <SidebarGroup>
             <SidebarGroupContent>

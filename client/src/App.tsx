@@ -127,6 +127,13 @@ const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
 const ProcurementModulePage = lazy(() => import("@/pages/procurement-module"));
 const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
+const HiringDashboardPage = lazy(() => import("@/pages/hiring/index"));
+const HiringJobsPage = lazy(() => import("@/pages/hiring/jobs"));
+const HiringJobDetailPage = lazy(() => import("@/pages/hiring/job-detail"));
+const HiringCandidatesPage = lazy(() => import("@/pages/hiring/candidates"));
+const HiringCandidateDetailPage = lazy(() => import("@/pages/hiring/candidate-detail"));
+const HiringPipelinePage = lazy(() => import("@/pages/hiring/pipeline"));
+const HiringSettingsPage = lazy(() => import("@/pages/hiring/settings"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -312,6 +319,15 @@ function Router() {
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
       <Route path="/procurement-module" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.PROCUREMENT} />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+
+      {/* Hiring Module routes */}
+      <Route path="/hiring/jobs/:id" component={() => <ProtectedRoute component={HiringJobDetailPage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/jobs" component={() => <ProtectedRoute component={HiringJobsPage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/candidates" component={() => <ProtectedRoute component={HiringCandidatesPage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/pipeline" component={() => <ProtectedRoute component={HiringPipelinePage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/settings" component={() => <ProtectedRoute component={HiringSettingsPage} permission={RoutePermissions.HIRING_SETTINGS} />} />
+      <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING} />} />
       
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />

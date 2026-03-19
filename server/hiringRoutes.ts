@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, and, desc, sql, count, or, ilike } from "drizzle-orm";
+import { eq, and, desc, sql, count, or, ilike, gte } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
 import type { AuthRequest } from "./auth";
@@ -836,6 +836,31 @@ router.delete(
   },
 );
 
+// GET /candidates/:id/activity — per-candidate activity log
+router.get(
+  "/candidates/:id/activity",
+  requireAuth,
+  requireRole(...HIRING_REVIEW),
+  async (req: AuthRequest, res) => {
+    try {
+      const org = orgId(req);
+      const logs = await db
+        .select()
+        .from(hiringActivityLogs)
+        .where(and(
+          eq(hiringActivityLogs.organizationId, org),
+          eq(hiringActivityLogs.entityId, req.params.id),
+        ))
+        .orderBy(desc(hiringActivityLogs.createdAt))
+        .limit(50);
+      res.json(logs);
+    } catch (err) {
+      logError("GET /api/hiring/candidates/:id/activity", { error: String(err) });
+      res.status(500).json({ error: "Failed to fetch activity" });
+    }
+  },
+);
+
 // ============================================
 // INTERVIEWS
 // ============================================
@@ -1467,6 +1492,47 @@ router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: 
 // ============================================
 // ANALYTICS
 // ============================================
+
+router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+  try {
+    const org = orgId(req);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [jobCounts, candidateStageCounts, interviewCounts, newCandidates] = await Promise.all([
+      db.select({ status: hiringJobs.status, count: count() })
+        .from(hiringJobs)
+        .where(eq(hiringJobs.organizationId, org))
+        .groupBy(hiringJobs.status),
+      db.select({ stage: hiringCandidates.currentStage, count: count() })
+        .from(hiringCandidates)
+        .where(eq(hiringCandidates.organizationId, org))
+        .groupBy(hiringCandidates.currentStage),
+      db.select({ count: count() })
+        .from(hiringInterviews)
+        .where(and(eq(hiringInterviews.organizationId, org), eq(hiringInterviews.status, "SCHEDULED"))),
+      db.select({ count: count() })
+        .from(hiringCandidates)
+        .where(and(eq(hiringCandidates.organizationId, org), gte(hiringCandidates.appliedAt, sevenDaysAgo))),
+    ]);
+
+    const jobsByStatus = Object.fromEntries(jobCounts.map((r) => [r.status, Number(r.count)]));
+    const candidatesByStage = Object.fromEntries(candidateStageCounts.map((r) => [r.stage, Number(r.count)]));
+
+    res.json({
+      openRoles: (jobsByStatus["PUBLISHED"] ?? 0) + (jobsByStatus["DRAFT"] ?? 0),
+      draftRoles: jobsByStatus["DRAFT"] ?? 0,
+      publishedRoles: jobsByStatus["PUBLISHED"] ?? 0,
+      totalApplicants: candidateStageCounts.reduce((acc, r) => acc + Number(r.count), 0),
+      newInLast7Days: Number(newCandidates[0]?.count ?? 0),
+      scheduledInterviews: Number(interviewCounts[0]?.count ?? 0),
+      offerReady: candidatesByStage["OFFER_EXTENDED"] ?? 0,
+      overdueHiringTasks: 0,
+    });
+  } catch (err) {
+    logError("GET /api/hiring/analytics/dashboard", { error: String(err) });
+    res.status(500).json({ error: "Failed to fetch dashboard stats" });
+  }
+});
 
 router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
