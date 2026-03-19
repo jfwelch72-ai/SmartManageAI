@@ -2,14 +2,20 @@ import { Router, Response } from "express";
 import { db } from "./db";
 import {
   insertSubmittalSchema,
+  insertSubmittalItemSchema,
+  insertSubmittalReviewSchema,
   submittals,
   submittalActivity,
+  submittalItems,
+  submittalReviews,
+  submittalAttachments,
   projects,
   users,
   crmOrganisations,
   rfis,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, asc, max } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { z } from "zod";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -688,6 +694,477 @@ router.delete("/submittals/:id/files/:fileId", requireAuth, requireRole("SUPER_A
     res.status(204).send();
   } catch (error) {
     console.error("Delete submittal file error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== Submittal Items ====================
+
+router.get("/submittals/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const items = await db
+      .select()
+      .from(submittalItems)
+      .where(eq(submittalItems.submittalId, id))
+      .orderBy(asc(submittalItems.itemNumber));
+
+    res.json(items);
+  } catch (error) {
+    console.error("Get submittal items error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/submittals/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const user = req.user!;
+    const organizationId = existing.submittal.organizationId;
+
+    const [maxResult] = await db
+      .select({ maxNum: max(submittalItems.itemNumber) })
+      .from(submittalItems)
+      .where(eq(submittalItems.submittalId, id));
+
+    const itemNumber = (maxResult?.maxNum ?? 0) + 1;
+
+    const body = { ...req.body, submittalId: id, organizationId, itemNumber };
+    const validation = insertSubmittalItemSchema.safeParse(body);
+    if (!validation.success) return res.status(400).json({ error: "Validation failed", details: validation.error.flatten() });
+
+    const [newItem] = await db.insert(submittalItems).values(validation.data).returning();
+
+    await db.insert(submittalActivity).values({
+      submittalId: id,
+      userId: user.id,
+      userName: `${user.firstName} ${user.lastName}`,
+      action: `Item ${itemNumber} added`,
+    });
+
+    res.status(201).json(newItem);
+  } catch (error) {
+    console.error("Create submittal item error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, itemId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [item] = await db.select().from(submittalItems).where(and(eq(submittalItems.id, itemId), eq(submittalItems.submittalId, id))).limit(1);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    const patchSchema = z.object({
+      description: z.string().optional(),
+      specSection: z.string().nullable().optional(),
+      submittalCategory: z.enum(["SHOP_DRAWING", "PRODUCT_DATA", "MATERIAL_APPROVAL", "ENGINEERING_APPROVAL", "SAMPLE", "OPERATION_AND_MAINTENANCE", "OTHER"]).nullable().optional(),
+      quantity: z.string().nullable().optional(),
+      unit: z.string().nullable().optional(),
+      manufacturer: z.string().nullable().optional(),
+      modelNumber: z.string().nullable().optional(),
+      notes: z.string().nullable().optional(),
+      status: z.string().optional(),
+    });
+
+    const patchResult = patchSchema.safeParse(req.body);
+    if (!patchResult.success) return res.status(400).json({ error: "Validation failed", details: patchResult.error.flatten() });
+
+    const patchData = patchResult.data;
+    const updates: Partial<typeof submittalItems.$inferInsert> & { updatedAt: Date } = { updatedAt: new Date() };
+    if (patchData.description !== undefined) updates.description = patchData.description;
+    if (patchData.specSection !== undefined) updates.specSection = patchData.specSection;
+    if (patchData.submittalCategory !== undefined) updates.submittalCategory = patchData.submittalCategory;
+    if (patchData.quantity !== undefined) updates.quantity = patchData.quantity;
+    if (patchData.unit !== undefined) updates.unit = patchData.unit;
+    if (patchData.manufacturer !== undefined) updates.manufacturer = patchData.manufacturer;
+    if (patchData.modelNumber !== undefined) updates.modelNumber = patchData.modelNumber;
+    if (patchData.notes !== undefined) updates.notes = patchData.notes;
+    if (patchData.status !== undefined) updates.status = patchData.status;
+
+    const [updated] = await db.update(submittalItems).set(updates).where(eq(submittalItems.id, itemId)).returning();
+    res.json(updated);
+  } catch (error) {
+    console.error("Update submittal item error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, itemId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    if (existing.submittal.status !== "DRAFT") return res.status(400).json({ error: "Items can only be deleted from DRAFT submittals" });
+
+    const [item] = await db.select().from(submittalItems).where(and(eq(submittalItems.id, itemId), eq(submittalItems.submittalId, id))).limit(1);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    await db.delete(submittalItems).where(eq(submittalItems.id, itemId));
+    res.status(204).send();
+  } catch (error) {
+    console.error("Delete submittal item error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== Submittal Reviews ====================
+
+router.get("/submittals/:id/reviews", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const reviews = await db
+      .select()
+      .from(submittalReviews)
+      .where(eq(submittalReviews.submittalId, id))
+      .orderBy(asc(submittalReviews.sequenceOrder));
+
+    res.json(reviews);
+  } catch (error) {
+    console.error("Get submittal reviews error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/submittals/:id/reviews", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const organizationId = existing.submittal.organizationId;
+    const body = { ...req.body, submittalId: id, organizationId };
+    const validation = insertSubmittalReviewSchema.safeParse(body);
+    if (!validation.success) return res.status(400).json({ error: "Validation failed", details: validation.error.flatten() });
+
+    const [newReview] = await db.insert(submittalReviews).values(validation.data).returning();
+
+    const user = req.user!;
+    await db.insert(submittalActivity).values({
+      submittalId: id,
+      userId: user.id,
+      userName: `${user.firstName} ${user.lastName}`,
+      action: `Reviewer added: ${newReview.reviewerName} (${newReview.reviewerRole})`,
+    });
+
+    res.status(201).json(newReview);
+  } catch (error) {
+    console.error("Create submittal review error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/submittals/:id/reviews/:reviewId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, reviewId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    if (existing.submittal.status !== "DRAFT") return res.status(400).json({ error: "Reviewers can only be removed from DRAFT submittals" });
+
+    const [review] = await db.select().from(submittalReviews).where(and(eq(submittalReviews.id, reviewId), eq(submittalReviews.submittalId, id))).limit(1);
+    if (!review) return res.status(404).json({ error: "Review not found" });
+
+    await db.delete(submittalReviews).where(eq(submittalReviews.id, reviewId));
+    res.status(204).send();
+  } catch (error) {
+    console.error("Delete submittal review error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ==================== Submittal Attachments ====================
+
+router.get("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const attachments = await db
+      .select()
+      .from(submittalAttachments)
+      .where(eq(submittalAttachments.submittalId, id))
+      .orderBy(desc(submittalAttachments.createdAt));
+
+    res.json(attachments);
+  } catch (error) {
+    console.error("Get submittal attachments error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const user = req.user!;
+    const organizationId = existing.submittal.organizationId;
+
+    const uploadSchema = z.object({
+      fileName: z.string(),
+      fileSize: z.number().optional(),
+      mimeType: z.string().optional(),
+      fileUrl: z.string(),
+      submittalItemId: z.string().optional(),
+      submittalReviewId: z.string().optional(),
+      description: z.string().optional(),
+    });
+
+    const parseResult = uploadSchema.safeParse(req.body);
+    if (!parseResult.success) return res.status(400).json({ error: "Validation failed", details: parseResult.error.flatten() });
+
+    const { fileName, fileSize, mimeType, fileUrl, submittalItemId, submittalReviewId, description } = parseResult.data;
+
+    // Validate fileUrl scheme to prevent SSRF — enforce HTTPS only
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(fileUrl);
+    } catch {
+      return res.status(400).json({ error: "Invalid fileUrl" });
+    }
+    if (parsedUrl.protocol !== "https:") {
+      return res.status(400).json({ error: "fileUrl must use https" });
+    }
+    // Block private/internal/link-local/cloud-metadata hostnames to prevent SSRF
+    const blockedHosts = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0|fd[0-9a-f]{2}:|fc[0-9a-f]{2}:)/i;
+    if (blockedHosts.test(parsedUrl.hostname)) {
+      return res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
+    }
+
+    // Validate cross-tenant FK references
+    if (submittalItemId) {
+      const [itemRef] = await db
+        .select({ id: submittalItems.id })
+        .from(submittalItems)
+        .where(and(eq(submittalItems.id, submittalItemId), eq(submittalItems.submittalId, id), eq(submittalItems.organizationId, organizationId)))
+        .limit(1);
+      if (!itemRef) return res.status(400).json({ error: "submittalItemId does not belong to this submittal" });
+    }
+
+    if (submittalReviewId) {
+      const [reviewRef] = await db
+        .select({ id: submittalReviews.id })
+        .from(submittalReviews)
+        .where(and(eq(submittalReviews.id, submittalReviewId), eq(submittalReviews.submittalId, id), eq(submittalReviews.organizationId, organizationId)))
+        .limit(1);
+      if (!reviewRef) return res.status(400).json({ error: "submittalReviewId does not belong to this submittal" });
+    }
+
+    // Generate a unique UUID-based object path to avoid collisions
+    const objectUUID = randomUUID();
+    const objectPath = `${organizationId}/submittals/${id}/${objectUUID}/${fileName}`;
+
+    // Upload via GCS sidecar — fail fast if sidecar is unavailable or returns error
+    let storageKey: string;
+    try {
+      const response = await fetch(`http://127.0.0.1:1106/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileUrl, objectPath }),
+      });
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+        return res.status(502).json({ error: "File storage upload failed" });
+      }
+      const data = await response.json() as { storageKey?: string };
+      storageKey = data.storageKey || objectPath;
+    } catch (sidecarErr) {
+      console.error("GCS sidecar unreachable:", sidecarErr);
+      return res.status(502).json({ error: "File storage service unavailable" });
+    }
+
+    const [dbUser] = await db
+      .select({ firstName: users.firstName, lastName: users.lastName })
+      .from(users)
+      .where(eq(users.id, user.id))
+      .limit(1);
+
+    const uploadedByName = dbUser ? `${dbUser.firstName} ${dbUser.lastName}` : user.id;
+
+    const [newAttachment] = await db.insert(submittalAttachments).values({
+      submittalId: id,
+      organizationId,
+      submittalItemId: submittalItemId ?? null,
+      submittalReviewId: submittalReviewId ?? null,
+      fileName,
+      fileSize: fileSize ?? null,
+      mimeType: mimeType ?? null,
+      storageKey,
+      uploadedById: user.id,
+      uploadedByName,
+      description: description ?? null,
+    }).returning();
+
+    await db.insert(submittalActivity).values({
+      submittalId: id,
+      userId: user.id,
+      userName: uploadedByName,
+      action: `Attachment uploaded: ${fileName}`,
+    });
+
+    res.status(201).json(newAttachment);
+  } catch (error) {
+    console.error("Upload submittal attachment error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, attachmentId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select({ submittal: submittals, gcOrganizationId: projects.gcOrganizationId })
+      .from(submittals)
+      .leftJoin(projects, eq(submittals.projectId, projects.id))
+      .where(eq(submittals.id, id))
+      .limit(1);
+
+    if (!existing) return res.status(404).json({ error: "Submittal not found" });
+    if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [attachment] = await db
+      .select()
+      .from(submittalAttachments)
+      .where(and(eq(submittalAttachments.id, attachmentId), eq(submittalAttachments.submittalId, id)))
+      .limit(1);
+
+    if (!attachment) return res.status(404).json({ error: "Attachment not found" });
+
+    const user = req.user!;
+    if (attachment.uploadedById !== user.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "You don't have permission to delete this attachment" });
+    }
+
+    if (attachment.storageKey) {
+      try {
+        const delResponse = await fetch(`http://127.0.0.1:1106/delete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storageKey: attachment.storageKey }),
+        });
+        if (!delResponse.ok) {
+          const errBody = await delResponse.text().catch(() => "");
+          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          return res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
+        }
+      } catch (sidecarErr) {
+        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        return res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
+      }
+    }
+
+    await db.delete(submittalAttachments).where(eq(submittalAttachments.id, attachmentId));
+    res.status(204).send();
+  } catch (error) {
+    console.error("Delete submittal attachment error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

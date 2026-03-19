@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalPhaseEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tmTickets } from "./operations";
 
@@ -4751,6 +4751,7 @@ export const submittals = pgTable("submittals", {
   status: submittalStatusEnum("status").notNull().default("DRAFT"),
   specSection: text("spec_section"),
   category: text("category"),
+  submittalCategory: submittalCategoryEnum("submittal_category"),
   subcontractorId: varchar("subcontractor_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
   submittedById: varchar("submitted_by_id").notNull().references(() => users.id),
   submittedByName: text("submitted_by_name"),
@@ -4797,6 +4798,83 @@ export type Submittal = typeof submittals.$inferSelect;
 export const insertSubmittalActivitySchema = createInsertSchema(submittalActivity).omit({ id: true, createdAt: true });
 export type InsertSubmittalActivity = z.infer<typeof insertSubmittalActivitySchema>;
 export type SubmittalActivity = typeof submittalActivity.$inferSelect;
+
+export const submittalItems = pgTable("submittal_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  submittalId: varchar("submittal_id").notNull().references(() => submittals.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  itemNumber: integer("item_number").notNull(),
+  description: text("description").notNull(),
+  specSection: text("spec_section"),
+  submittalCategory: submittalCategoryEnum("submittal_category"),
+  quantity: decimal("quantity", { precision: 10, scale: 3 }),
+  unit: text("unit"),
+  manufacturer: text("manufacturer"),
+  modelNumber: text("model_number"),
+  notes: text("notes"),
+  status: text("status").notNull().default("PENDING"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  submittalIdx: index("submittal_items_submittal_idx").on(table.submittalId),
+  orgIdx: index("submittal_items_org_idx").on(table.organizationId),
+  statusIdx: index("submittal_items_status_idx").on(table.status),
+  submittalItemNumberUnique: unique("submittal_items_submittal_item_number_unique").on(table.submittalId, table.itemNumber),
+}));
+
+export const insertSubmittalItemSchema = createInsertSchema(submittalItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubmittalItem = z.infer<typeof insertSubmittalItemSchema>;
+export type SubmittalItem = typeof submittalItems.$inferSelect;
+
+export const submittalReviews = pgTable("submittal_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  submittalId: varchar("submittal_id").notNull().references(() => submittals.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  reviewerRole: submittalReviewRoleEnum("reviewer_role").notNull(),
+  reviewerId: varchar("reviewer_id").references(() => users.id, { onDelete: "set null" }),
+  reviewerName: text("reviewer_name").notNull(),
+  sequenceOrder: integer("sequence_order").notNull(),
+  status: submittalReviewStatusEnum("status").notNull().default("PENDING"),
+  comments: text("comments"),
+  stampAction: text("stamp_action"),
+  dateAssigned: timestamp("date_assigned"),
+  dateReviewed: timestamp("date_reviewed"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  submittalIdx: index("submittal_reviews_submittal_idx").on(table.submittalId),
+  orgIdx: index("submittal_reviews_org_idx").on(table.organizationId),
+  statusIdx: index("submittal_reviews_status_idx").on(table.status),
+  seqIdx: index("submittal_reviews_seq_idx").on(table.sequenceOrder),
+}));
+
+export const insertSubmittalReviewSchema = createInsertSchema(submittalReviews).omit({ id: true, createdAt: true });
+export type InsertSubmittalReview = z.infer<typeof insertSubmittalReviewSchema>;
+export type SubmittalReview = typeof submittalReviews.$inferSelect;
+
+export const submittalAttachments = pgTable("submittal_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  submittalId: varchar("submittal_id").notNull().references(() => submittals.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  submittalItemId: varchar("submittal_item_id").references(() => submittalItems.id, { onDelete: "set null" }),
+  submittalReviewId: varchar("submittal_review_id").references(() => submittalReviews.id, { onDelete: "set null" }),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  storageKey: text("storage_key").notNull(),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  uploadedByName: text("uploaded_by_name"),
+  description: text("description"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  submittalIdx: index("submittal_attachments_submittal_idx").on(table.submittalId),
+  orgIdx: index("submittal_attachments_org_idx").on(table.organizationId),
+  itemIdx: index("submittal_attachments_item_idx").on(table.submittalItemId),
+  reviewIdx: index("submittal_attachments_review_idx").on(table.submittalReviewId),
+}));
+
+export const insertSubmittalAttachmentSchema = createInsertSchema(submittalAttachments).omit({ id: true, createdAt: true });
+export type InsertSubmittalAttachment = z.infer<typeof insertSubmittalAttachmentSchema>;
+export type SubmittalAttachment = typeof submittalAttachments.$inferSelect;
 
 // ==================== Employee Performance & Rewards System ====================
 
