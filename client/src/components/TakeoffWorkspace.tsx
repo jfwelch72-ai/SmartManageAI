@@ -50,6 +50,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   useEffect(() => {
     if (prevSheetRef.current !== null && prevSheetRef.current !== selectedSheet) {
       takeoffHistory.clear();
+      setHiddenCategoryIds(new Set());
     }
     prevSheetRef.current = selectedSheet;
   }, [selectedSheet, takeoffHistory]);
@@ -85,6 +86,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
+  const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Set<string>>(new Set());
   const [addendaOverlays, setAddendaOverlays] = useState<Record<string, { visible: boolean; opacity: number; imageUrl?: string }>>({});
   const [addendaImages, setAddendaImages] = useState<Record<string, HTMLImageElement>>({});
   const [verifyMode, setVerifyMode] = useState<"idle" | "first-point" | "second-point">("idle");
@@ -244,6 +246,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setCategoryColor("#3b82f6");
     }
   }, [editingCategory]);
+
+  const handleToggleCategoryVisibility = (categoryId: string) => {
+    setHiddenCategoryIds(prev => {
+      const next = new Set(prev);
+      if (next.has(categoryId)) {
+        next.delete(categoryId);
+      } else {
+        next.add(categoryId);
+        const selM = measurements.find(m => m.id === selectedMeasurementId);
+        if (selM && selM.categoryId === categoryId) {
+          setSelectedMeasurementId(null);
+        }
+      }
+      return next;
+    });
+  };
 
   const handleDeleteCategory = async (categoryId: string) => {
     if (!confirm("Delete this category? Measurements will not be deleted, but will lose their category assignment.")) {
@@ -542,6 +560,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 })}
 
                 {measurements.map((m) => {
+                  if (m.categoryId && hiddenCategoryIds.has(m.categoryId)) return null;
                   const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
                   const isSelected = selectedMeasurementId === m.id;
                   const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
@@ -916,6 +935,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setCategoryDialogOpen={setCategoryDialogOpen}
         setEditingCategory={setEditingCategory}
         onDeleteCategory={handleDeleteCategory}
+        hiddenCategoryIds={hiddenCategoryIds}
+        onToggleCategoryVisibility={handleToggleCategoryVisibility}
         pitchRatio={pitchRatio}
         setPitchRatio={setPitchRatio}
         dropDistance={dropDistance}
@@ -957,6 +978,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         deleteMeasurementMutation={deleteMeasurementMutation}
         updateMeasurementMutation={updateMeasurementMutation}
         aggregatedMeasurements={aggregatedMeasurements}
+        categories={categories}
+        hiddenCategoryIds={hiddenCategoryIds}
+        onToggleCategoryVisibility={handleToggleCategoryVisibility}
         renameDialogOpen={renameDialogOpen}
         setRenameDialogOpen={setRenameDialogOpen}
         renameValue={renameValue}

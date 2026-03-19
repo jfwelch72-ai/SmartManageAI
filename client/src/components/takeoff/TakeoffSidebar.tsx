@@ -61,6 +61,8 @@ interface TakeoffSidebarProps {
   setCategoryDialogOpen: (v: boolean) => void;
   setEditingCategory: (v: QuantityCategory | null) => void;
   onDeleteCategory: (id: string) => void;
+  hiddenCategoryIds: Set<string>;
+  onToggleCategoryVisibility: (id: string) => void;
   pitchRatio: string;
   setPitchRatio: (v: string) => void;
   dropDistance: string;
@@ -104,6 +106,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     units, setUnits, onSaveCalibration,
     activeTool, categories, selectedCategoryId, setSelectedCategoryId,
     setCategoryDialogOpen, setEditingCategory, onDeleteCategory,
+    hiddenCategoryIds, onToggleCategoryVisibility,
     pitchRatio, setPitchRatio, dropDistance, setDropDistance,
     measurements, selectedMeasurementId, setSelectedMeasurementId,
     deleteMeasurementMutation, updateMeasurementMutation, aggregatedMeasurements,
@@ -194,22 +197,30 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 ) : (
                   <ScrollArea className="max-h-[300px]">
                     <div className="space-y-2 pr-4">
-                      {categories.map((category) => (
-                        <div key={category.id} className="flex items-center justify-between p-2 rounded border hover-elevate" style={{ borderLeft: `4px solid ${category.color}` }}>
-                          <div className="flex items-center gap-2 flex-1 min-w-0">
-                            <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: category.color }} />
-                            <span className="text-sm truncate">{category.name}</span>
+                      {categories.map((category) => {
+                        const isHidden = hiddenCategoryIds.has(category.id);
+                        const categoryCount = (aggregatedMeasurements.byCategory[category.id] || []).length;
+                        return (
+                          <div key={category.id} className={cn("flex items-center justify-between p-2 rounded border hover-elevate", isHidden && "opacity-60")} style={{ borderLeft: `4px solid ${category.color}` }}>
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: isHidden ? "#9ca3af" : category.color }} />
+                              <span className={cn("text-sm truncate", isHidden && "line-through text-muted-foreground")}>{category.name}</span>
+                              {categoryCount > 0 && <Badge variant="secondary" className="text-xs shrink-0" data-testid={`badge-category-count-${category.id}`}>{categoryCount}</Badge>}
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleCategoryVisibility(category.id)} data-testid={`button-toggle-visibility-category-${category.id}`} title={isHidden ? "Show layer" : "Hide layer"}>
+                                {isHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingCategory(category); setCategoryDialogOpen(true); }} data-testid={`button-edit-category-${category.id}`}>
+                                <Pencil className="w-3 h-3" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onDeleteCategory(category.id)} data-testid={`button-delete-category-${category.id}`}>
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
                           </div>
-                          <div className="flex gap-1 flex-shrink-0">
-                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingCategory(category); setCategoryDialogOpen(true); }} data-testid={`button-edit-category-${category.id}`}>
-                              <Pencil className="w-3 h-3" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onDeleteCategory(category.id)} data-testid={`button-delete-category-${category.id}`}>
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </ScrollArea>
                 )}

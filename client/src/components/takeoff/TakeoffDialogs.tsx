@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { X, Loader2, FileText, Layers, Trash2 } from "lucide-react";
+import { X, Loader2, FileText, Layers, Trash2, Eye, EyeOff } from "lucide-react";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import type { PlanDocument } from "./types";
 
@@ -22,6 +22,9 @@ interface TakeoffDialogsProps {
   deleteMeasurementMutation: any;
   updateMeasurementMutation: any;
   aggregatedMeasurements: any;
+  categories: QuantityCategory[];
+  hiddenCategoryIds: Set<string>;
+  onToggleCategoryVisibility: (id: string) => void;
   renameDialogOpen: boolean;
   setRenameDialogOpen: (v: boolean) => void;
   renameValue: string;
@@ -65,6 +68,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
     mobileMeasurementsOpen, setMobileMeasurementsOpen,
     measurements, selectedMeasurementId, setSelectedMeasurementId,
     deleteMeasurementMutation, updateMeasurementMutation, aggregatedMeasurements,
+    categories, hiddenCategoryIds, onToggleCategoryVisibility,
     renameDialogOpen, setRenameDialogOpen, renameValue, setRenameValue, renameSheetMutation, selectedSheet,
     deleteSheetConfirmOpen, setDeleteSheetConfirmOpen, currentSheet, deleteSheetMutation,
     noteDialogOpen, setNoteDialogOpen, noteText, setNoteText, notePosition, setNotePosition, onSaveNote,
@@ -88,6 +92,24 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
           </SheetHeader>
           <ScrollArea className="flex-1">
             <div className="p-4 space-y-3">
+              {categories.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Layer Visibility</p>
+                  <div className="space-y-1">
+                    {categories.map((category) => {
+                      const isHidden = hiddenCategoryIds.has(category.id);
+                      return (
+                        <div key={category.id} className={cn("flex items-center justify-between px-2 py-1.5 rounded border", isHidden && "opacity-60")} style={{ borderLeft: `3px solid ${isHidden ? "#9ca3af" : category.color}` }}>
+                          <span className={cn("text-sm", isHidden && "line-through text-muted-foreground")}>{category.name}</span>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onToggleCategoryVisibility(category.id)} data-testid={`button-mobile-toggle-visibility-category-${category.id}`} title={isHidden ? "Show layer" : "Hide layer"}>
+                            {isHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {measurements.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No measurements yet. Use the drawing tools to create measurements.</p>
               ) : (
