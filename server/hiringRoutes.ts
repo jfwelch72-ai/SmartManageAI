@@ -44,8 +44,8 @@ const router = Router();
 const HIRING_FULL = ["ADMIN", "HUSTLER", "HR_MANAGER"] as const;
 /** Candidate-review (read candidates/interviews, approve stage moves) */
 const HIRING_REVIEW = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER", "OFFICE_MANAGER"] as const;
-/** Integration management restricted to ADMIN + HR_MANAGER */
-const HIRING_INTEGRATION = ["ADMIN", "HR_MANAGER"] as const;
+/** Integration management restricted to ADMIN only (ATS credentials are sensitive) */
+const HIRING_INTEGRATION = ["ADMIN"] as const;
 
 type UserRole = (typeof HIRING_FULL)[number] | (typeof HIRING_REVIEW)[number];
 
@@ -116,6 +116,37 @@ router.use(requireAuth, async (req: AuthRequest, res, next) => {
 // ============================================
 // JOBS
 // ============================================
+
+// /jobs/templates must be registered BEFORE /jobs/:id to prevent route shadowing
+router.get("/jobs/templates", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+  try {
+    const templates = await db
+      .select()
+      .from(hiringJobTemplates)
+      .where(or(eq(hiringJobTemplates.isGlobal, true), eq(hiringJobTemplates.organizationId, orgId(req))))
+      .orderBy(desc(hiringJobTemplates.createdAt));
+    res.json(templates);
+  } catch (err) {
+    logError("GET /api/hiring/jobs/templates", { error: String(err) });
+    res.status(500).json({ error: "Failed to fetch templates" });
+  }
+});
+
+router.post("/jobs/templates", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res) => {
+  try {
+    const parsed = insertHiringJobTemplateSchema.safeParse({
+      ...req.body,
+      organizationId: orgId(req),
+      isGlobal: false,
+    });
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const [tpl] = await db.insert(hiringJobTemplates).values(parsed.data).returning();
+    res.status(201).json(tpl);
+  } catch (err) {
+    logError("POST /api/hiring/jobs/templates", { error: String(err) });
+    res.status(500).json({ error: "Failed to create template" });
+  }
+});
 
 router.get("/jobs", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
@@ -416,7 +447,7 @@ router.post(
           organizationId: org,
           title: template.title,
           trade: template.trade,
-          employmentType: template.employmentType as Parameters<typeof hiringJobTemplates.$inferInsert.employmentType>[0],
+          employmentType: template.employmentType as typeof hiringJobs.$inferInsert.employmentType,
           description: template.description,
           requirements: template.requirements,
           isGlobal: false,
