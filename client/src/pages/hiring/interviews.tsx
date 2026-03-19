@@ -65,7 +65,7 @@ export default function HiringInterviewsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const role = user?.role;
-  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER";
+  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER";
 
   const [showSchedule, setShowSchedule] = useState(false);
   const [form, setForm] = useState(DEFAULT_FORM);
@@ -161,8 +161,8 @@ export default function HiringInterviewsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-3">
-          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        <div className="space-y-2">
+          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
         </div>
       ) : displayed.length === 0 ? (
         <Card>
@@ -171,17 +171,92 @@ export default function HiringInterviewsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {displayed.map((interview) => (
-            <InterviewCard
-              key={interview.id}
-              interview={interview}
-              canEdit={canEdit}
-              onUpdateStatus={(i) => setStatusTarget(i)}
-              onCancel={(i) => setCancelTarget(i)}
-            />
-          ))}
-        </div>
+        <Card>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" data-testid="interview-table">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="px-4 py-3 font-medium">Candidate</th>
+                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium">Type</th>
+                  <th className="px-4 py-3 font-medium">Date &amp; Time</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Location</th>
+                  {canEdit && <th className="px-4 py-3 font-medium">Actions</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {displayed.map((interview) => {
+                  const startDate = interview.startAt ? parseISO(interview.startAt) : null;
+                  const endDate = interview.endAt ? parseISO(interview.endAt) : null;
+                  const typeLabel = INTERVIEW_TYPES.find((t) => t.value === interview.interviewType)?.label ?? interview.interviewType;
+                  const hasReminder = !!interview.reminderSentAt;
+                  return (
+                    <tr key={interview.id} className="hover:bg-muted/30 transition-colors" data-testid={`interview-row-${interview.id}`}>
+                      <td className="px-4 py-3 font-medium">
+                        {interview.candidateName ?? interview.candidateId.slice(0, 8)}
+                        {hasReminder && <Bell className="inline w-3 h-3 ml-1 text-blue-500" />}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">{interview.jobTitle ?? "—"}</td>
+                      <td className="px-4 py-3">{typeLabel}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {startDate ? (
+                          <span>
+                            {format(startDate, "MMM d, yyyy")}
+                            <span className="text-muted-foreground ml-1">{format(startDate, "h:mm a")}</span>
+                            {endDate && <span className="text-muted-foreground"> – {format(endDate, "h:mm a")}</span>}
+                          </span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[interview.status] ?? "bg-muted text-muted-foreground"}`} data-testid={`status-${interview.id}`}>
+                          {interview.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground text-xs">
+                        {interview.videoLink ? (
+                          <a href={interview.videoLink} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                            <Video className="w-3 h-3" />Video Link
+                          </a>
+                        ) : interview.location ? (
+                          <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{interview.location}</span>
+                        ) : "—"}
+                      </td>
+                      {canEdit && (
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1">
+                            {interview.status === "SCHEDULED" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs"
+                                  onClick={() => setStatusTarget(interview)}
+                                  data-testid={`button-update-status-${interview.id}`}
+                                >
+                                  Update
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                  onClick={() => setCancelTarget(interview)}
+                                  data-testid={`button-cancel-${interview.id}`}
+                                >
+                                  Cancel
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* Schedule Dialog */}

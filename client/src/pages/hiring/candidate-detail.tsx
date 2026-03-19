@@ -23,6 +23,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowLeft, Mail, Phone, FileText, ChevronRight, Star, MessageSquare,
   Mail as MailIcon, ClipboardList, Plus, CheckCircle2, Circle, Sparkles,
@@ -116,7 +117,7 @@ export default function CandidateDetailPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const role = user?.role;
-  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER";
+  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER";
   const candidateId = params?.id ?? "";
 
   const [newNote, setNewNote] = useState("");
@@ -379,304 +380,347 @@ export default function CandidateDetailPage() {
           </Card>
         </div>
 
-        {/* Right column */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Resume attachment viewer */}
-          {candidate.resumeStorageKey ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileText className="w-4 h-4" />Resume
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {candidate.resumeStorageKey.match(/\.(pdf)$/i) ? (
-                  <object
-                    data={`/api/hiring/candidates/${candidate.id}/resume`}
-                    type="application/pdf"
-                    className="w-full h-96 rounded border"
-                    data-testid="resume-pdf-viewer"
-                  >
-                    <a
-                      href={`/api/hiring/candidates/${candidate.id}/resume`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline"
-                      data-testid="link-resume-download"
-                    >
-                      Download Resume
-                    </a>
-                  </object>
-                ) : candidate.resumeStorageKey.match(/\.(png|jpg|jpeg|gif|webp)$/i) ? (
-                  <div className="space-y-2">
-                    <img
-                      src={`/api/hiring/candidates/${candidate.id}/resume`}
-                      alt="Resume"
-                      className="w-full max-h-[600px] object-contain rounded border bg-muted"
-                      data-testid="resume-image-viewer"
-                    />
-                    <a
-                      href={`/api/hiring/candidates/${candidate.id}/resume`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline text-sm flex items-center gap-1"
-                      data-testid="link-resume-download-img"
-                    >
-                      <FileText className="w-4 h-4" />Open full size
-                    </a>
-                  </div>
-                ) : (
-                  <a
-                    href={`/api/hiring/candidates/${candidate.id}/resume`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline flex items-center gap-1"
-                    data-testid="link-resume-download"
-                  >
-                    <FileText className="w-4 h-4" />View Resume
-                  </a>
-                )}
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileText className="w-4 h-4" />Resume
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">No resume on file</p>
-              </CardContent>
-            </Card>
-          )}
+        {/* Right column — tabbed */}
+        <div className="lg:col-span-2">
+          <Tabs defaultValue="resume" data-testid="candidate-tabs">
+            <TabsList className="mb-4">
+              <TabsTrigger value="resume" data-testid="tab-resume"><FileText className="w-3.5 h-3.5 mr-1.5" />Resume</TabsTrigger>
+              {applicationAnswers && Object.keys(applicationAnswers).length > 0 && (
+                <TabsTrigger value="application" data-testid="tab-application">Application</TabsTrigger>
+              )}
+              <TabsTrigger value="ai-review" data-testid="tab-ai-review"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI Review</TabsTrigger>
+              <TabsTrigger value="tasks" data-testid="tab-tasks"><ClipboardList className="w-3.5 h-3.5 mr-1.5" />Tasks</TabsTrigger>
+              <TabsTrigger value="activity" data-testid="tab-activity"><MessageSquare className="w-3.5 h-3.5 mr-1.5" />Activity</TabsTrigger>
+            </TabsList>
 
-          {/* Application answers accordion */}
-          {applicationAnswers && Object.keys(applicationAnswers).length > 0 && (
-            <ApplicationAnswersAccordion answers={applicationAnswers} />
-          )}
-
-          {/* AI Recommendation */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-yellow-500" />AI Evaluation
-                </CardTitle>
-                {canEdit && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      aiScoreMutation.mutate(undefined, {
-                        onSuccess: (data) => {
-                          setAiResult(data);
-                          toast({ title: "AI review complete", description: `Score: ${data.score}/100 · ${data.recommendation}` });
-                        },
-                        onError: (err: Error) => toast({ title: "AI review failed", description: err.message, variant: "destructive" }),
-                      });
-                    }}
-                    disabled={aiScoreMutation.isPending}
-                    data-testid="button-ai-score"
-                  >
-                    {aiScoreMutation.isPending ? "Scoring..." : "Run AI Score"}
-                  </Button>
-                )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              {(displayReview || candidate.aiScore != null || candidate.aiRecommendation) ? (
-                <div className="space-y-4">
-                  {/* Scores row */}
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <div className="flex items-center gap-1.5">
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-2xl font-bold">{displayReview?.score ?? candidate.aiScore ?? "—"}</span>
-                      <span className="text-sm text-muted-foreground">/100</span>
-                    </div>
-                    {displayReview && (
-                      <>
-                        <div className="text-xs text-muted-foreground">Trade fit: <span className="font-medium text-foreground">{displayReview.tradeFitScore}</span></div>
-                        <div className="text-xs text-muted-foreground">Role fit: <span className="font-medium text-foreground">{displayReview.roleFitScore}</span></div>
-                        <div className="text-xs text-muted-foreground">Confidence: <span className="font-medium text-foreground">{displayReview.confidenceScore}</span></div>
-                        <Badge
-                          variant={displayReview.recommendation === "YES" ? "default" : displayReview.recommendation === "NO" ? "destructive" : "secondary"}
-                          className="text-xs"
+            {/* Resume tab */}
+            <TabsContent value="resume">
+              <Card>
+                <CardContent className="pt-5">
+                  {candidate.resumeStorageKey ? (
+                    candidate.resumeStorageKey.match(/\.(pdf)$/i) ? (
+                      <object
+                        data={`/api/hiring/candidates/${candidate.id}/resume`}
+                        type="application/pdf"
+                        className="w-full h-96 rounded border"
+                        data-testid="resume-pdf-viewer"
+                      >
+                        <a
+                          href={`/api/hiring/candidates/${candidate.id}/resume`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                          data-testid="link-resume-download"
                         >
-                          {displayReview.recommendation}
-                        </Badge>
-                      </>
+                          Download Resume
+                        </a>
+                      </object>
+                    ) : candidate.resumeStorageKey.match(/\.(png|jpg|jpeg|gif|webp)$/i) ? (
+                      <div className="space-y-2">
+                        <img
+                          src={`/api/hiring/candidates/${candidate.id}/resume`}
+                          alt="Resume"
+                          className="w-full max-h-[600px] object-contain rounded border bg-muted"
+                          data-testid="resume-image-viewer"
+                        />
+                        <a
+                          href={`/api/hiring/candidates/${candidate.id}/resume`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline text-sm flex items-center gap-1"
+                          data-testid="link-resume-download-img"
+                        >
+                          <FileText className="w-4 h-4" />Open full size
+                        </a>
+                      </div>
+                    ) : (
+                      <a
+                        href={`/api/hiring/candidates/${candidate.id}/resume`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline flex items-center gap-1"
+                        data-testid="link-resume-download"
+                      >
+                        <FileText className="w-4 h-4" />View Resume
+                      </a>
+                    )
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No resume on file</p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Application answers tab */}
+            {applicationAnswers && Object.keys(applicationAnswers).length > 0 && (
+              <TabsContent value="application">
+                <ApplicationAnswersAccordion answers={applicationAnswers} />
+              </TabsContent>
+            )}
+
+            {/* AI Review tab */}
+            <TabsContent value="ai-review">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-yellow-500" />AI Evaluation
+                    </CardTitle>
+                    {canEdit && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          aiScoreMutation.mutate(undefined, {
+                            onSuccess: (data) => {
+                              setAiResult(data);
+                              toast({ title: "AI review complete", description: `Score: ${data.score}/100 · ${data.recommendation}` });
+                            },
+                            onError: (err: Error) => toast({ title: "AI review failed", description: err.message, variant: "destructive" }),
+                          });
+                        }}
+                        disabled={aiScoreMutation.isPending}
+                        data-testid="button-run-ai-review"
+                      >
+                        {aiScoreMutation.isPending ? "Reviewing..." : "Run AI Review"}
+                      </Button>
                     )}
                   </div>
-
-                  {/* Summary */}
-                  {(displayReview?.summary || candidate.aiRecommendation) && (
-                    <p className="text-sm">{displayReview?.summary ?? candidate.aiRecommendation}</p>
-                  )}
-
-                  {/* Strengths */}
-                  {displayReview?.strengths && displayReview.strengths.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">Strengths</p>
-                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        {displayReview.strengths.map((s, i) => <li key={i}>{s}</li>)}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Concerns */}
-                  {displayReview?.concerns && displayReview.concerns.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-orange-700 dark:text-orange-400 mb-1">Concerns</p>
-                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        {displayReview.concerns.map((c, i) => <li key={i}>{c}</li>)}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Red flags */}
-                  {displayReview?.redFlags && displayReview.redFlags.length > 0 && (
-                    <div>
-                      <p className="text-xs font-medium text-destructive mb-1">Red Flags</p>
-                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                        {displayReview.redFlags.map((f, i) => <li key={i}>{f}</li>)}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Extracted data chips */}
-                  {displayReview && (displayReview.extractedSkills.length > 0 || displayReview.extractedCerts.length > 0 || displayReview.extractedEquipment.length > 0) && (
-                    <div className="space-y-1.5">
-                      {displayReview.extractedSkills.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium mb-1 text-muted-foreground">Skills</p>
-                          <div className="flex flex-wrap gap-1">
-                            {displayReview.extractedSkills.map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
-                          </div>
-                        </div>
-                      )}
-                      {displayReview.extractedCerts.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium mb-1 text-muted-foreground">Certifications</p>
-                          <div className="flex flex-wrap gap-1">
-                            {displayReview.extractedCerts.map((c, i) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
-                          </div>
-                        </div>
-                      )}
-                      {displayReview.extractedEquipment.length > 0 && (
-                        <div>
-                          <p className="text-xs font-medium mb-1 text-muted-foreground">Equipment</p>
-                          <div className="flex flex-wrap gap-1">
-                            {displayReview.extractedEquipment.map((e, i) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Interview recommendation */}
-                  {displayReview?.interviewRecommendation && (
-                    <div className="border-t pt-2">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">Interview Focus</p>
-                      <p className="text-xs">{displayReview.interviewRecommendation}</p>
-                    </div>
-                  )}
-
-                  {/* Disclaimer */}
-                  {displayReview?.disclaimer && (
-                    <p className="text-xs text-muted-foreground italic border-t pt-2">{displayReview.disclaimer}</p>
-                  )}
-
-                  {/* Show when review came from persisted data */}
-                  {!aiResult && persistedReview?.generatedAt && (
-                    <p className="text-xs text-muted-foreground border-t pt-2">
-                      Last reviewed: {format(new Date(persistedReview.generatedAt), "MMM d, yyyy")}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No AI evaluation yet. Click "Run AI Review" to generate one.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Communications log */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <MailIcon className="w-4 h-4" />Communications
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {communicationsLog.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No communications yet</p>
-              ) : (
-                <ul className="space-y-3">
-                  {communicationsLog.map((log) => (
-                    <li key={log.id} className="flex items-start gap-2 text-sm border-b pb-2 last:border-0" data-testid={`comm-log-${log.id}`}>
-                      <MailIcon className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                      <div>
-                        <span>{log.actorName ?? "System"}</span>
-                        <span className="text-muted-foreground"> · {log.activityType.replace(/_/g, " ").toLowerCase()}</span>
-                        {log.entityLabel && <span className="text-muted-foreground"> — {log.entityLabel}</span>}
-                        <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}</p>
+                </CardHeader>
+                <CardContent>
+                  {aiScoreMutation.isPending ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Sparkles className="w-4 h-4 animate-pulse text-yellow-500" />
+                        Analyzing candidate profile…
                       </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+                      <div className="space-y-2">
+                        <div className="h-4 bg-muted rounded animate-pulse" />
+                        <div className="h-4 bg-muted rounded animate-pulse w-3/4" />
+                        <div className="h-4 bg-muted rounded animate-pulse w-1/2" />
+                      </div>
+                    </div>
+                  ) : (displayReview || candidate.aiScore != null || candidate.aiRecommendation) ? (
+                    <div className="space-y-4">
+                      {/* Scores row */}
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <div className="flex items-center gap-1.5">
+                          <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                          <span className="text-2xl font-bold">{displayReview?.score ?? candidate.aiScore ?? "—"}</span>
+                          <span className="text-sm text-muted-foreground">/100</span>
+                        </div>
+                        {displayReview && (
+                          <>
+                            <div className="text-xs text-muted-foreground">Trade fit: <span className="font-medium text-foreground">{displayReview.tradeFitScore}</span></div>
+                            <div className="text-xs text-muted-foreground">Role fit: <span className="font-medium text-foreground">{displayReview.roleFitScore}</span></div>
+                            <div className="text-xs text-muted-foreground">Confidence: <span className="font-medium text-foreground">{displayReview.confidenceScore}</span></div>
+                            <Badge
+                              variant={displayReview.recommendation === "YES" ? "default" : displayReview.recommendation === "NO" ? "destructive" : "secondary"}
+                              className="text-xs"
+                              data-testid="badge-ai-recommendation"
+                            >
+                              {displayReview.recommendation}
+                            </Badge>
+                          </>
+                        )}
+                      </div>
 
-          {/* Tasks panel */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4" />Linked Tasks
-                </CardTitle>
-                {canEdit && (
-                  <Button size="sm" variant="outline" onClick={() => setShowTaskDialog(true)} data-testid="button-add-task">
-                    <Plus className="w-3.5 h-3.5 mr-1" />Add Task
-                  </Button>
-                )}
+                      {/* Summary */}
+                      {(displayReview?.summary || candidate.aiRecommendation) && (
+                        <p className="text-sm" data-testid="text-ai-summary">{displayReview?.summary ?? candidate.aiRecommendation}</p>
+                      )}
+
+                      {/* Strengths */}
+                      {displayReview?.strengths && displayReview.strengths.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">Strengths</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                            {displayReview.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Concerns */}
+                      {displayReview?.concerns && displayReview.concerns.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-orange-700 dark:text-orange-400 mb-1">Concerns</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                            {displayReview.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Red flags */}
+                      {displayReview?.redFlags && displayReview.redFlags.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-destructive mb-1">Red Flags</p>
+                          <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                            {displayReview.redFlags.map((f, i) => <li key={i}>{f}</li>)}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Extracted data chips */}
+                      {displayReview && (displayReview.extractedSkills.length > 0 || displayReview.extractedCerts.length > 0 || displayReview.extractedEquipment.length > 0) && (
+                        <div className="space-y-1.5">
+                          {displayReview.extractedSkills.length > 0 && (
+                            <div>
+                              <p className="text-xs font-medium mb-1 text-muted-foreground">Skills</p>
+                              <div className="flex flex-wrap gap-1">
+                                {displayReview.extractedSkills.map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
+                              </div>
+                            </div>
+                          )}
+                          {displayReview.extractedCerts.length > 0 && (
+                            <div>
+                              <p className="text-xs font-medium mb-1 text-muted-foreground">Certifications</p>
+                              <div className="flex flex-wrap gap-1">
+                                {displayReview.extractedCerts.map((c, i) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
+                              </div>
+                            </div>
+                          )}
+                          {displayReview.extractedEquipment.length > 0 && (
+                            <div>
+                              <p className="text-xs font-medium mb-1 text-muted-foreground">Equipment</p>
+                              <div className="flex flex-wrap gap-1">
+                                {displayReview.extractedEquipment.map((e, i) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Interview focus */}
+                      {displayReview?.interviewRecommendation && (
+                        <div className="border-t pt-2">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Interview Focus</p>
+                          <p className="text-xs">{displayReview.interviewRecommendation}</p>
+                        </div>
+                      )}
+
+                      {/* Disclaimer */}
+                      {displayReview?.disclaimer && (
+                        <p className="text-xs text-muted-foreground italic border-t pt-2">{displayReview.disclaimer}</p>
+                      )}
+
+                      {/* Show last reviewed date from persisted data */}
+                      {!aiResult && persistedReview?.generatedAt && (
+                        <p className="text-xs text-muted-foreground border-t pt-2">
+                          Last reviewed: {format(new Date(persistedReview.generatedAt), "MMM d, yyyy")}
+                        </p>
+                      )}
+
+                      <p className="text-xs text-muted-foreground italic">
+                        AI evaluation is advisory only. All hiring decisions must be made by a qualified human reviewer.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 space-y-3">
+                      <Sparkles className="w-8 h-8 text-muted-foreground mx-auto" />
+                      <div>
+                        <p className="font-medium">No AI evaluation yet</p>
+                        <p className="text-sm text-muted-foreground">Run an AI review to score this candidate's fit for the role.</p>
+                      </div>
+                      {canEdit && (
+                        <Button
+                          onClick={() => {
+                            aiScoreMutation.mutate(undefined, {
+                              onSuccess: (data) => {
+                                setAiResult(data);
+                                toast({ title: "AI review complete", description: `Score: ${data.score}/100 · ${data.recommendation}` });
+                              },
+                              onError: (err: Error) => toast({ title: "AI review failed", description: err.message, variant: "destructive" }),
+                            });
+                          }}
+                          data-testid="button-run-ai-review-empty"
+                        >
+                          <Sparkles className="w-4 h-4 mr-2" />Run AI Review
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Tasks tab */}
+            <TabsContent value="tasks">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <ClipboardList className="w-4 h-4" />Linked Tasks
+                    </CardTitle>
+                    {canEdit && (
+                      <Button size="sm" variant="outline" onClick={() => setShowTaskDialog(true)} data-testid="button-add-task">
+                        <Plus className="w-3.5 h-3.5 mr-1" />Add Task
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {(tasks as HiringTask[]).length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No tasks linked to this candidate yet.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {(tasks as HiringTask[]).map((task) => (
+                        <LinkedTask key={task.id} task={task} canEdit={canEdit} />
+                      ))}
+                    </ul>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Activity tab */}
+            <TabsContent value="activity">
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader><CardTitle className="text-base flex items-center gap-2"><MailIcon className="w-4 h-4" />Communications</CardTitle></CardHeader>
+                  <CardContent>
+                    {communicationsLog.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No communications yet</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {communicationsLog.map((log) => (
+                          <li key={log.id} className="flex items-start gap-2 text-sm border-b pb-2 last:border-0" data-testid={`comm-log-${log.id}`}>
+                            <MailIcon className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                            <div>
+                              <span>{log.actorName ?? "System"}</span>
+                              <span className="text-muted-foreground"> · {log.activityType.replace(/_/g, " ").toLowerCase()}</span>
+                              {log.entityLabel && <span className="text-muted-foreground"> — {log.entityLabel}</span>}
+                              <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader><CardTitle className="text-base">Activity Log</CardTitle></CardHeader>
+                  <CardContent>
+                    {activity.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No activity yet</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {activity.slice(0, 20).map((log) => (
+                          <li key={log.id} className="flex items-start gap-2 text-sm" data-testid={`activity-log-${log.id}`}>
+                            <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                            <div>
+                              <span>{log.actorName ?? "System"}</span>
+                              <span className="text-muted-foreground"> · {log.activityType.replace(/_/g, " ").toLowerCase()}</span>
+                              <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}</p>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
-            </CardHeader>
-            <CardContent>
-              {(tasks as HiringTask[]).length === 0 ? (
-                <p className="text-sm text-muted-foreground">No tasks linked to this candidate yet.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {(tasks as HiringTask[]).map((task) => (
-                    <LinkedTask key={task.id} task={task} canEdit={canEdit} />
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Activity log */}
-          <Card>
-            <CardHeader><CardTitle className="text-base">Activity Log</CardTitle></CardHeader>
-            <CardContent>
-              {activity.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet</p>
-              ) : (
-                <ul className="space-y-3">
-                  {activity.slice(0, 20).map((log) => (
-                    <li key={log.id} className="flex items-start gap-2 text-sm" data-testid={`activity-log-${log.id}`}>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                      <div>
-                        <span>{log.actorName ?? "System"}</span>
-                        <span className="text-muted-foreground"> · {log.activityType.replace(/_/g, " ").toLowerCase()}</span>
-                        <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
 

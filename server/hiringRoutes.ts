@@ -26,6 +26,7 @@ import {
   hiringAiReviews,
   hiringPipelineConfigs,
   hiringActivityLogs,
+  organizations,
   insertHiringJobSchema,
   insertHiringJobTemplateSchema,
   insertHiringCandidateSchema,
@@ -46,6 +47,8 @@ const router = Router();
 const HIRING_FULL = ["ADMIN", "HUSTLER", "HR_MANAGER"] as const;
 /** Candidate-review (read candidates/interviews, approve stage moves) */
 const HIRING_REVIEW = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER", "OFFICE_MANAGER"] as const;
+/** Manager-level hiring: can schedule interviews, run AI review, update stage — excludes OFFICE_MANAGER */
+const HIRING_MANAGER_LEVEL = ["ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER"] as const;
 /** Integration management restricted to ADMIN only (ATS credentials are sensitive) */
 const HIRING_INTEGRATION = ["ADMIN"] as const;
 
@@ -980,7 +983,7 @@ router.get("/interviews", requireAuth, requireRole(...HIRING_REVIEW), async (req
 router.post(
   "/interviews",
   requireAuth,
-  requireRole(...HIRING_FULL),
+  requireRole(...HIRING_MANAGER_LEVEL),
   async (req: AuthRequest, res) => {
     try {
       if (req.body.candidateId) {
@@ -1089,7 +1092,7 @@ async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameter
   }
 }
 
-router.patch("/interviews/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
+router.patch("/interviews/:id", requireAuth, requireRole(...HIRING_MANAGER_LEVEL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
 router.put("/interviews/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
 
 router.delete(
@@ -1615,12 +1618,21 @@ router.post(
         return res.status(403).json({ error: "HIRING_AI_SCORING feature is not enabled for this organization" });
       }
 
-      const [candidate] = await db
-        .select()
-        .from(hiringCandidates)
-        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
-        .limit(1);
+      const [[candidate], [orgRecord]] = await Promise.all([
+        db
+          .select()
+          .from(hiringCandidates)
+          .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+          .limit(1),
+        db
+          .select({ tradeType: organizations.tradeType })
+          .from(organizations)
+          .where(eq(organizations.id, orgId(req)))
+          .limit(1),
+      ]);
       if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+
+      const orgTradeType = orgRecord?.tradeType ?? "GENERAL_CONTRACTOR";
 
       let jobContext = "";
       let jobTitle = "construction trade position";
@@ -1641,23 +1653,27 @@ router.post(
         : "None provided";
 
       const screeningAnswers = scrubProtectedCharacteristics(rawAnswers);
+      const hasResume = !!candidate.resumeStorageKey;
+      const resumeNote = hasResume
+        ? "Note: A resume file is on record. Evaluate based on application answers and any skills/certs mentioned."
+        : "Note: No resume on file. Evaluate based on application answers only; assign a lower confidenceScore accordingly.";
 
-      const systemPrompt = `You are an expert construction HR analyst evaluating candidates for skilled trade roles. Your evaluation must be based solely on job-relevant skills, certifications, experience, and answers. Do NOT consider or reference any protected characteristics such as race, gender, religion, age, nationality, or disability. Return a JSON object with these exact keys:
+      const systemPrompt = `You are an expert construction HR analyst evaluating candidates for skilled trade roles in a ${orgTradeType.replace(/_/g, " ").toLowerCase()} company. Your evaluation must be based solely on job-relevant skills, certifications, experience, and answers. Do NOT consider or reference any protected characteristics such as race, gender, religion, age, nationality, disability, or any other characteristic protected by employment law. Return a JSON object with these exact keys:
 - "score": integer 0-100 overall fit score
-- "tradeFitScore": integer 0-100 score for trade/technical skill fit
+- "tradeFitScore": integer 0-100 score for trade/technical skill fit in the ${orgTradeType.replace(/_/g, " ")} sector
 - "roleFitScore": integer 0-100 score for this specific role's requirements
 - "confidenceScore": integer 0-100 how confident you are in this evaluation (lower if little data)
 - "recommendation": "YES" | "MAYBE" | "NO"
 - "summary": string, 2-4 sentences summarizing the candidate's fit
-- "strengths": array of strings (job-relevant strengths)
-- "concerns": array of strings (job-relevant concerns or gaps)
+- "strengths": array of strings (job-relevant strengths only)
+- "concerns": array of strings (job-relevant concerns or gaps only)
 - "redFlags": array of strings (serious disqualifying issues, empty if none)
-- "extractedSkills": array of strings (skills mentioned or implied)
+- "extractedSkills": array of strings (skills mentioned or implied from answers)
 - "extractedCerts": array of strings (certifications/licenses mentioned)
 - "extractedEquipment": array of strings (equipment or tools mentioned)
 - "interviewRecommendation": string, 1-2 sentences about what to probe in the interview`;
 
-      const userPrompt = `Evaluate this candidate for the role of ${jobTitle}.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}--- APPLICATION ANSWERS ---\n${screeningAnswers}\n\nIMPORTANT: Base your evaluation on skills, experience, and role requirements only. Do not reference protected characteristics.`;
+      const userPrompt = `Evaluate this candidate for the role of ${jobTitle} at a ${orgTradeType.replace(/_/g, " ").toLowerCase()} firm.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n${resumeNote}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}--- APPLICATION ANSWERS ---\n${screeningAnswers}\n\nIMPORTANT: Base your evaluation on job-relevant skills, experience, and role requirements only. Do not reference or consider any protected characteristics.`;
 
       const scored = await governedAiCall({
         orgId: orgId(req),
