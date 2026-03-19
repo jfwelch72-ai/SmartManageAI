@@ -316,6 +316,9 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   scalePxPerFoot: doublePrecision("scale_px_per_foot"),
   units: text("units").notNull().default("ft"),
   folderGroup: text("folder_group").notNull().default("Plans"),
+  revisionLabel: text("revision_label"),
+  isActive: boolean("is_active").notNull().default(true),
+  supersededById: varchar("superseded_by_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

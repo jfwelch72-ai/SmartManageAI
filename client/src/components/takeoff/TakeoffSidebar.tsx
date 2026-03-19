@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X
+  Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X,
+  History, ChevronDown, GitCompare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
@@ -93,6 +95,9 @@ interface TakeoffSidebarProps {
   workspaceRef: React.RefObject<HTMLDivElement | null>;
   aiPanelOpen: boolean;
   onApplyPresetScale: (scaleCategory: string, selectedPresetScale: string, resetFn: () => void) => void;
+  sheets?: any[];
+  onCompareRevisions?: () => void;
+  onSelectSheet?: (id: string) => void;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -116,7 +121,32 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     multiCalibMode, setMultiCalibMode, multiCalibPoints, setMultiCalibPoints,
     setCalibrationMode, setCalibrationPoints,
     workspaceRef, aiPanelOpen, onApplyPresetScale,
+    sheets = [], onCompareRevisions, onSelectSheet,
   } = props;
+
+  const revisionChain = (() => {
+    if (!currentSheet) return [];
+    const chain: any[] = [];
+    const allSheets = sheets as any[];
+    let s: any = allSheets.find((x: any) => x.id === currentSheet.id);
+    if (!s) return [];
+    chain.push(s);
+    while (s && (s as any).supersededById) {
+      const next = allSheets.find((x: any) => x.id === (s as any).supersededById);
+      if (!next) break;
+      chain.push(next);
+      s = next;
+    }
+    const predecessors: any[] = [];
+    let cursor: any = allSheets.find((x: any) => x.id === currentSheet.id);
+    while (cursor) {
+      const pred = allSheets.find((x: any) => x.supersededById === cursor.id);
+      if (!pred) break;
+      predecessors.unshift(pred);
+      cursor = pred;
+    }
+    return [...predecessors, ...chain];
+  })();
 
   return (
     <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0", aiPanelOpen && "hidden md:flex")}>
@@ -625,6 +655,62 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 )}
               </CardContent>
             </Card>
+          )}
+          {revisionChain.length > 1 && (
+            <Collapsible defaultOpen>
+              <Card>
+                <CardContent className="pt-4 pb-2">
+                  <CollapsibleTrigger asChild>
+                    <button className="w-full flex items-center justify-between mb-3 group" data-testid="button-revision-history-toggle">
+                      <div className="flex items-center gap-2">
+                        <History className="w-4 h-4 text-muted-foreground" />
+                        <h3 className="font-semibold text-sm">Revision History</h3>
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{revisionChain.length}</Badge>
+                      </div>
+                      <ChevronDown className="w-4 h-4 text-muted-foreground group-data-[state=open]:rotate-180 transition-transform" />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="space-y-1.5">
+                      {revisionChain.map((s: any, idx: number) => {
+                        const isCurrent = s.id === currentSheet?.id;
+                        const isSuperseded = s.isActive === false;
+                        return (
+                          <div
+                            key={s.id}
+                            className={cn(
+                              "flex items-center gap-2 p-2 rounded-md text-sm cursor-pointer hover:bg-muted transition-colors",
+                              isCurrent && "bg-primary/10 ring-1 ring-primary/30"
+                            )}
+                            onClick={() => !isCurrent && onSelectSheet?.(s.id)}
+                            data-testid={`revision-item-${s.id}`}
+                          >
+                            <span className="text-muted-foreground text-xs w-5 shrink-0">{idx + 1}.</span>
+                            <span className={cn("flex-1 truncate", isSuperseded && "text-muted-foreground")}>
+                              {s.sheetName}
+                            </span>
+                            {s.revisionLabel && (
+                              <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{s.revisionLabel}</Badge>
+                            )}
+                            {isSuperseded && !isCurrent && (
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Old</Badge>
+                            )}
+                            {isCurrent && (
+                              <Badge className="text-[10px] px-1 py-0 h-4 shrink-0">Current</Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {onCompareRevisions && (
+                      <Button variant="ghost" size="sm" className="w-full mt-2 gap-2 text-xs h-7" onClick={onCompareRevisions} data-testid="button-sidebar-compare">
+                        <GitCompare className="w-3.5 h-3.5" /> Compare Revisions
+                      </Button>
+                    )}
+                  </CollapsibleContent>
+                </CardContent>
+              </Card>
+            </Collapsible>
           )}
         </div>
       </ScrollArea>

@@ -12,7 +12,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
-  Maximize, Minimize, Trash2, Plus
+  Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -26,6 +26,7 @@ import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
+import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 
@@ -128,12 +129,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     projectAddenda, measurements, measurementsLoading,
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
-    importPlanMutation, createMeasurementMutation,
+    importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
     deleteSheetMutation, handleMoveSheet,
   } = data;
+
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+
+  const currentSheetIsSuperseded = currentSheet && (currentSheet as any).isActive === false;
+  const supersededBySheet = currentSheetIsSuperseded && (currentSheet as any).supersededById
+    ? sheets.find((s: any) => s.id === (currentSheet as any).supersededById)
+    : null;
+  const predecessorSheet = !currentSheetIsSuperseded && currentSheet
+    ? sheets.find((s: any) => s.supersededById === currentSheet.id)
+    : null;
+  const hasRevisionHistory = !!(predecessorSheet || supersededBySheet);
+  const compareOldSheet = predecessorSheet || currentSheet;
+  const compareNewSheet = supersededBySheet || (predecessorSheet ? currentSheet : null);
 
   const interactions = useTakeoffInteractions({
     projectId,
@@ -383,6 +397,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
+        {currentSheetIsSuperseded && (
+          <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200" data-testid="banner-sheet-superseded">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>This drawing has been updated — some measurements may reference the old revision.</span>
+            {compareNewSheet && (
+              <Button variant="ghost" size="sm" className="ml-auto text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30 h-7 px-2" onClick={() => setCompareDialogOpen(true)} data-testid="button-banner-compare">
+                <GitCompare className="w-3.5 h-3.5 mr-1" /> Compare Revisions
+              </Button>
+            )}
+          </div>
+        )}
         <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
             <Label className="text-xs sm:text-sm font-medium shrink-0">Sheet:</Label>
@@ -391,9 +416,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 <SelectValue placeholder="Select a sheet..." />
               </SelectTrigger>
               <SelectContent container={workspaceRef.current}>
-                {sheets.map((sheet) => (
+                {sheets.map((sheet: any) => (
                   <SelectItem key={sheet.id} value={sheet.id}>
-                    {sheet.sheetName}
+                    <span className="flex items-center gap-2">
+                      {sheet.sheetName}
+                      {sheet.revisionLabel && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{sheet.revisionLabel}</Badge>
+                      )}
+                      {sheet.isActive === false && (
+                        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Superseded</Badge>
+                      )}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -419,6 +452,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   >
                     <Copy className="h-4 w-4 mr-2" /> Duplicate
                   </DropdownMenuItem>
+                  {hasRevisionHistory && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => setCompareDialogOpen(true)}
+                        data-testid="menu-compare-revisions"
+                      >
+                        <GitCompare className="h-4 w-4 mr-2" /> Compare Revisions
+                      </DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => handleMoveSheet("up")}
@@ -967,6 +1011,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         workspaceRef={workspaceRef}
         aiPanelOpen={aiPanelOpen}
         onApplyPresetScale={handleApplyPresetScale}
+        sheets={sheets}
+        onCompareRevisions={hasRevisionHistory ? () => setCompareDialogOpen(true) : undefined}
+        onSelectSheet={setSelectedSheet}
       />
 
       <TakeoffDialogs
@@ -1016,8 +1063,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         documentsLoading={documentsLoading}
         sheets={sheets}
         importPlanMutation={importPlanMutation}
+        supersedeSheetMutation={supersedeSheetMutation}
         workspaceRef={workspaceRef}
       />
+
+      {compareDialogOpen && currentSheet && compareNewSheet && (
+        <TakeoffSheetCompareDialog
+          open={compareDialogOpen}
+          onOpenChange={setCompareDialogOpen}
+          oldSheet={compareOldSheet as any}
+          newSheet={compareNewSheet as any}
+          allSheets={sheets as any[]}
+        />
+      )}
 
       <PlanScaleModal
         open={scaleModalOpen}

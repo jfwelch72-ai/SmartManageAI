@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,9 +8,10 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { X, Loader2, FileText, Layers, Trash2, Eye, EyeOff } from "lucide-react";
+import { X, Loader2, FileText, Layers, Trash2, Eye, EyeOff, GitBranch, AlertTriangle } from "lucide-react";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import type { PlanDocument } from "./types";
 
@@ -60,6 +62,7 @@ interface TakeoffDialogsProps {
   documentsLoading: boolean;
   sheets: TakeoffSheet[];
   importPlanMutation: any;
+  supersedeSheetMutation: any;
   workspaceRef: React.RefObject<HTMLDivElement | null>;
 }
 
@@ -76,8 +79,56 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
     categoryName, setCategoryName, categoryColor, setCategoryColor, onSaveCategory, saveCategoryPending,
     shortcutsDialogOpen, setShortcutsDialogOpen,
     uploadDialogOpen, setUploadDialogOpen, planDocuments, documentsLoading, sheets, importPlanMutation,
+    supersedeSheetMutation,
     workspaceRef,
   } = props;
+
+  const [importStep, setImportStep] = useState<"select-doc" | "revision-prompt" | "select-supersede">("select-doc");
+  const [pendingDocId, setPendingDocId] = useState<string | null>(null);
+  const [supersedesSheetId, setSupersedesSheetId] = useState<string>("");
+  const [revisionLabel, setRevisionLabel] = useState<string>("");
+
+  const activeSheets = sheets.filter((s: any) => s.isActive !== false);
+
+  const resetImportState = () => {
+    setImportStep("select-doc");
+    setPendingDocId(null);
+    setSupersedesSheetId("");
+    setRevisionLabel("");
+  };
+
+  const handleDocClick = (docId: string) => {
+    if (importPlanMutation.isPending) return;
+    if (sheets.length === 0) {
+      importPlanMutation.mutate({ documentId: docId });
+    } else {
+      setPendingDocId(docId);
+      setImportStep("revision-prompt");
+    }
+  };
+
+  const handleNewSheet = () => {
+    if (!pendingDocId) return;
+    importPlanMutation.mutate({ documentId: pendingDocId });
+    resetImportState();
+  };
+
+  const handleRevision = () => {
+    setImportStep("select-supersede");
+  };
+
+  const handleConfirmRevision = async () => {
+    if (!pendingDocId || !supersedesSheetId) return;
+    const data = await importPlanMutation.mutateAsync({ documentId: pendingDocId, revisionLabel: revisionLabel || undefined });
+    if (data?.sheets?.[0]?.id && supersedesSheetId) {
+      supersedeSheetMutation.mutate({
+        oldSheetId: supersedesSheetId,
+        newSheetId: data.sheets[0].id,
+        revisionLabel: revisionLabel || undefined,
+      });
+    }
+    resetImportState();
+  };
 
   return (
     <>
@@ -307,41 +358,126 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+      <Dialog open={uploadDialogOpen} onOpenChange={(open) => { setUploadDialogOpen(open); if (!open) resetImportState(); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Import Plan Sheet</DialogTitle><DialogDescription>Select a plan document to import into the takeoff workspace</DialogDescription></DialogHeader>
-          <div className="space-y-4">
-            {documentsLoading ? (
-              <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
-            ) : planDocuments.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No plan documents found</p>
-                <p className="text-sm mt-2">Upload plan documents to the project first via the Documents section</p>
-              </div>
-            ) : (
-              <ScrollArea className="max-h-[300px]">
-                <div className="space-y-2">
-                  {planDocuments.map((doc) => {
-                    const isAlreadyImported = sheets.some((sheet: any) => sheet.documentId === doc.id);
-                    return (
-                      <div key={doc.id} className={cn("flex items-center gap-3 p-3 rounded-lg border", isAlreadyImported ? "bg-muted/50 cursor-not-allowed opacity-60" : "hover-elevate cursor-pointer")} onClick={() => { if (!isAlreadyImported && !importPlanMutation.isPending) importPlanMutation.mutate(doc.id); }} data-testid={`button-import-doc-${doc.id}`}>
-                        <FileText className="w-8 h-8 text-primary flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{doc.title || doc.fileName}</p>
-                          <p className="text-sm text-muted-foreground truncate">{doc.fileName}</p>
-                        </div>
-                        {isAlreadyImported ? <Badge variant="secondary">Imported</Badge> : importPlanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      </div>
-                    );
-                  })}
+          <DialogHeader>
+            <DialogTitle>Import Plan Sheet</DialogTitle>
+            <DialogDescription>
+              {importStep === "select-doc" && "Select a plan document to import into the takeoff workspace"}
+              {importStep === "revision-prompt" && "Is this a new sheet or a revision of an existing sheet?"}
+              {importStep === "select-supersede" && "Select the existing sheet this revision replaces"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {importStep === "select-doc" && (
+            <div className="space-y-4">
+              {documentsLoading ? (
+                <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 animate-spin" /></div>
+              ) : planDocuments.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                  <p>No plan documents found</p>
+                  <p className="text-sm mt-2">Upload plan documents to the project first via the Documents section</p>
                 </div>
-              </ScrollArea>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadDialogOpen(false)} data-testid="button-close-import-dialog">Close</Button>
-          </DialogFooter>
+              ) : (
+                <ScrollArea className="max-h-[300px]">
+                  <div className="space-y-2">
+                    {planDocuments.map((doc) => {
+                      const isAlreadyImported = sheets.some((sheet: any) => sheet.documentId === doc.id && (sheet.isActive !== false));
+                      return (
+                        <div key={doc.id} className={cn("flex items-center gap-3 p-3 rounded-lg border", isAlreadyImported ? "bg-muted/50 cursor-not-allowed opacity-60" : "hover-elevate cursor-pointer")} onClick={() => { if (!isAlreadyImported && !importPlanMutation.isPending) handleDocClick(doc.id); }} data-testid={`button-import-doc-${doc.id}`}>
+                          <FileText className="w-8 h-8 text-primary flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{doc.title || doc.fileName}</p>
+                            <p className="text-sm text-muted-foreground truncate">{doc.fileName}</p>
+                          </div>
+                          {isAlreadyImported ? <Badge variant="secondary">Imported</Badge> : importPlanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </div>
+          )}
+
+          {importStep === "revision-prompt" && (
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  className="flex flex-col items-center gap-3 p-4 rounded-lg border-2 border-muted hover:border-primary hover:bg-primary/5 transition-colors text-center"
+                  onClick={handleNewSheet}
+                  data-testid="button-new-sheet"
+                >
+                  <FileText className="w-8 h-8 text-primary" />
+                  <div>
+                    <p className="font-medium text-sm">New Sheet</p>
+                    <p className="text-xs text-muted-foreground mt-1">Add as a brand-new plan sheet</p>
+                  </div>
+                </button>
+                <button
+                  className="flex flex-col items-center gap-3 p-4 rounded-lg border-2 border-muted hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors text-center"
+                  onClick={handleRevision}
+                  disabled={activeSheets.length === 0}
+                  data-testid="button-revision-of-existing"
+                >
+                  <GitBranch className="w-8 h-8 text-amber-500" />
+                  <div>
+                    <p className="font-medium text-sm">Revision</p>
+                    <p className="text-xs text-muted-foreground mt-1">Supersedes an existing sheet</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {importStep === "select-supersede" && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Sheet this revision replaces</Label>
+                <Select value={supersedesSheetId} onValueChange={setSupersedesSheetId}>
+                  <SelectTrigger data-testid="select-supersedes-sheet">
+                    <SelectValue placeholder="Select existing sheet..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeSheets.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.sheetName || "Untitled"}{(s as any).revisionLabel ? ` (${(s as any).revisionLabel})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Revision Label <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  placeholder="e.g., Rev B, v2, 2025-03-19..."
+                  value={revisionLabel}
+                  onChange={(e) => setRevisionLabel(e.target.value)}
+                  data-testid="input-revision-label"
+                />
+                <p className="text-xs text-muted-foreground">A short label shown on the sheet badge. Leave blank to auto-generate.</p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" onClick={() => setImportStep("revision-prompt")} className="flex-1">Back</Button>
+                <Button
+                  onClick={handleConfirmRevision}
+                  disabled={!supersedesSheetId || importPlanMutation.isPending || supersedeSheetMutation.isPending}
+                  className="flex-1"
+                  data-testid="button-confirm-revision"
+                >
+                  {(importPlanMutation.isPending || supersedeSheetMutation.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Import as Revision
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {importStep === "select-doc" && (
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setUploadDialogOpen(false); resetImportState(); }} data-testid="button-close-import-dialog">Close</Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
     </>

@@ -68,11 +68,12 @@ export function useTakeoffData({
   });
 
   const importPlanMutation = useMutation({
-    mutationFn: async (documentId: string) => {
+    mutationFn: async ({ documentId, revisionLabel }: { documentId: string; revisionLabel?: string }) => {
       const url = isBid
         ? `/api/bids/${ctxId}/takeoff/import-plan`
         : `/api/projects/${ctxId}/takeoff/import-plan`;
-      return await apiRequest("POST", url, { documentId });
+      const res = await apiRequest("POST", url, { documentId, revisionLabel });
+      return res.json();
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
@@ -88,6 +89,20 @@ export function useTakeoffData({
         description: error?.message || "Failed to import plan sheet",
         variant: "destructive"
       });
+    },
+  });
+
+  const supersedeSheetMutation = useMutation({
+    mutationFn: async ({ oldSheetId, newSheetId, revisionLabel }: { oldSheetId: string; newSheetId: string; revisionLabel?: string }) => {
+      const res = await apiRequest("POST", `/api/takeoff/sheets/${oldSheetId}/supersede`, { newSheetId, revisionLabel });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      toast({ title: "Revision recorded", description: "The old sheet has been superseded by the new revision." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to mark sheet as superseded", variant: "destructive" });
     },
   });
 
@@ -373,6 +388,7 @@ export function useTakeoffData({
     currentSheet,
     aggregatedMeasurements,
     importPlanMutation,
+    supersedeSheetMutation,
     createMeasurementMutation,
     updateMeasurementMutation,
     deleteMeasurementMutation,

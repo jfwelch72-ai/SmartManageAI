@@ -363,6 +363,9 @@ router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: A
         sheetName: takeoffSheets.sheetName,
         scalePxPerFoot: takeoffSheets.scalePxPerFoot,
         units: takeoffSheets.units,
+        revisionLabel: takeoffSheets.revisionLabel,
+        isActive: takeoffSheets.isActive,
+        supersededById: takeoffSheets.supersededById,
         createdAt: takeoffSheets.createdAt,
         updatedAt: takeoffSheets.updatedAt,
         documentId: projectPlans.documentId,
@@ -375,6 +378,64 @@ router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: A
     res.json(sheets);
   } catch (error) {
     console.error("Error fetching takeoff sheets:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Supersede a sheet: mark old sheet as superseded, new sheet as active revision
+router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const { newSheetId, revisionLabel } = req.body;
+    const { takeoffSheets } = await import("@shared/schema");
+
+    if (!newSheetId) {
+      res.status(400).json({ error: "newSheetId is required" });
+      return;
+    }
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    const newAccess = await verifySheetAccess(newSheetId, req.user!);
+    if (!newAccess.allowed) {
+      res.status(newAccess.sheet ? 403 : 404).json({ error: newAccess.reason || "New sheet not found" });
+      return;
+    }
+
+    // Mark old sheet as superseded by new sheet, and inactive
+    await db.update(takeoffSheets)
+      .set({ supersededById: newSheetId, isActive: false, updatedAt: new Date() })
+      .where(eq(takeoffSheets.id, sheetId));
+
+    // Optionally set revision label on the new sheet
+    if (revisionLabel) {
+      await db.update(takeoffSheets)
+        .set({ revisionLabel: sanitizeShortText(revisionLabel), isActive: true, updatedAt: new Date() })
+        .where(eq(takeoffSheets.id, newSheetId));
+    } else {
+      await db.update(takeoffSheets)
+        .set({ isActive: true, updatedAt: new Date() })
+        .where(eq(takeoffSheets.id, newSheetId));
+    }
+
+    const [oldSheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, sheetId)).limit(1);
+    const [newSheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, newSheetId)).limit(1);
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "takeoff_sheet",
+      entityId: sheetId,
+      newValue: `Sheet superseded by ${newSheetId}`,
+    }, req);
+
+    res.json({ oldSheet, newSheet });
+  } catch (error: any) {
+    console.error("Error superseding sheet:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
