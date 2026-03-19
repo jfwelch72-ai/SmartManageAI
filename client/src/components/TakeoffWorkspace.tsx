@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect, useLayoutEffect, Fragment } from "react";
-import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect, Group } from "react-konva";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import {
@@ -27,6 +29,7 @@ import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
+import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 
@@ -169,6 +172,56 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   } = data;
 
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
+  const [hideResolvedIssues, setHideResolvedIssues] = useState(false);
+
+  const issuesQueryKey = selectedSheet ? [`/api/takeoff/sheets/${selectedSheet}/issues`] : null;
+  const { data: issuesData = [] } = useQuery({
+    queryKey: issuesQueryKey || ["__no_issues__"],
+    enabled: !!selectedSheet,
+  });
+  const issues: any[] = issuesData as any[];
+
+  const allSheetsIssuesQueryKey = ["__all_issues__", sheets.map((s: any) => s.id).join(",")];
+  const allSheetsIssues = useQuery({
+    queryKey: allSheetsIssuesQueryKey,
+    enabled: sheets.length > 0,
+    queryFn: async () => {
+      const results = await Promise.all(
+        sheets.map((sheet: any) =>
+          fetch(`/api/takeoff/sheets/${sheet.id}/issues`, { credentials: "include" })
+            .then(r => r.ok ? r.json() : [])
+            .catch(() => [])
+        )
+      );
+      return results.flat();
+    },
+    staleTime: 30000,
+  });
+  const allIssues: any[] = (allSheetsIssues.data || []) as any[];
+
+  const { data: orgUsersData = [] } = useQuery({ queryKey: ["/api/messaging/users"] });
+  const orgUsers: any[] = (orgUsersData as any[]).map((u: any) => ({
+    ...u,
+    name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email,
+  }));
+
+  const { data: currentUserData } = useQuery({ queryKey: ["/api/auth/me"] });
+  const currentUser: any = currentUserData;
+
+  const createIssueMutation = useMutation({
+    mutationFn: async (body: any) => {
+      const res = await apiRequest("POST", "/api/takeoff/issues", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      if (issuesQueryKey) queryClient.invalidateQueries({ queryKey: issuesQueryKey });
+      queryClient.invalidateQueries({ queryKey: allSheetsIssuesQueryKey });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to create issue", variant: "destructive" }),
+  });
+
+  const selectedIssue = issues.find((i: any) => i.id === selectedIssueId) || null;
 
   const currentSheetIsSuperseded = currentSheet && (currentSheet as any).isActive === false;
   const supersededBySheet = currentSheetIsSuperseded && (currentSheet as any).supersededById
@@ -595,6 +648,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             )}
           </div>
           <div className="flex items-center gap-2">
+            {selectedSheet && issues.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="hide-resolved-toggle">
+                <Switch
+                  id="hide-resolved"
+                  checked={hideResolvedIssues}
+                  onCheckedChange={setHideResolvedIssues}
+                  className="h-4 w-7 data-[state=checked]:bg-green-500"
+                />
+                <label htmlFor="hide-resolved" className="cursor-pointer select-none hidden sm:block">Hide Resolved</label>
+              </div>
+            )}
             {selectedSheet && (
               <Button
                 variant="outline"
@@ -656,7 +720,30 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               x={stagePosition.x}
               y={stagePosition.y}
               onMouseDown={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
-              onMouseUp={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleStageMouseUp(e); } }}
+              onMouseUp={(e: any) => {
+                if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); return; }
+                if (activeTool === "issue_pin" && selectedSheet) {
+                  const stage = e.target.getStage();
+                  const pointerPosition = stage.getPointerPosition();
+                  if (!pointerPosition) return;
+                  const transform = stage.getAbsoluteTransform().copy().invert();
+                  const point = transform.point(pointerPosition);
+                  createIssueMutation.mutate({
+                    sheetId: selectedSheet,
+                    position: JSON.stringify({ x: point.x, y: point.y }),
+                    category: "OBSERVATION",
+                    severity: "LOW",
+                    description: "",
+                  }, {
+                    onSuccess: (newIssue: any) => {
+                      setSelectedIssueId(newIssue.id);
+                      setActiveTool("select");
+                    },
+                  });
+                  return;
+                }
+                handleStageMouseUp(e);
+              }}
               onMouseMove={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleStageMouseMove(e); } }}
               onTouchStart={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
               onTouchEnd={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleTouchEnd(e); } }}
@@ -983,6 +1070,59 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   />
                 )}
 
+                {issues.map((issue: any) => {
+                  if (!issue.position) return null;
+                  if (hideResolvedIssues && issue.status === "RESOLVED") return null;
+                  let pos: { x: number; y: number };
+                  try { pos = typeof issue.position === "string" ? JSON.parse(issue.position) : issue.position; } catch { return null; }
+                  const x = pos.x;
+                  const y = pos.y;
+                  const isSelected = selectedIssueId === issue.id;
+                  const fill = issue.status === "RESOLVED" ? "#16a34a" : issue.status === "IN_REVIEW" ? "#d97706" : "#dc2626";
+                  const radius = 14 / stageScale;
+                  const fontSize = 10 / stageScale;
+                  const strokeWidth = isSelected ? 3 / stageScale : 2 / stageScale;
+                  return (
+                    <Group
+                      key={issue.id}
+                      x={x}
+                      y={y}
+                      onClick={(e: any) => {
+                        e.cancelBubble = true;
+                        setSelectedIssueId(issue.id === selectedIssueId ? null : issue.id);
+                      }}
+                      onTap={(e: any) => {
+                        e.cancelBubble = true;
+                        setSelectedIssueId(issue.id === selectedIssueId ? null : issue.id);
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <Circle
+                        radius={radius}
+                        fill={fill}
+                        stroke={isSelected ? "#ffffff" : "rgba(255,255,255,0.8)"}
+                        strokeWidth={strokeWidth}
+                        shadowColor="rgba(0,0,0,0.4)"
+                        shadowBlur={isSelected ? 8 / stageScale : 4 / stageScale}
+                        shadowOffset={{ x: 0, y: 2 / stageScale }}
+                      />
+                      <Text
+                        text={String(issue.issueNumber ?? "")}
+                        fontSize={fontSize}
+                        fontStyle="bold"
+                        fill="#ffffff"
+                        width={radius * 2}
+                        height={radius * 2}
+                        x={-radius}
+                        y={-radius}
+                        align="center"
+                        verticalAlign="middle"
+                        listening={false}
+                      />
+                    </Group>
+                  );
+                })}
+
                 {isMobile && cursorPosition && activeTool !== "select" && activeTool !== "pan" && (
                   <>
                     <Line
@@ -1217,6 +1357,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         </div>
       </div>
 
+      {selectedIssue && (
+        <IssueDetailPanel
+          issue={selectedIssue}
+          orgUsers={orgUsers}
+          currentUser={currentUser}
+          sheetId={selectedSheet!}
+          onClose={() => setSelectedIssueId(null)}
+          onDelete={() => {
+            setSelectedIssueId(null);
+            if (issuesQueryKey) queryClient.invalidateQueries({ queryKey: issuesQueryKey });
+            queryClient.invalidateQueries({ queryKey: allSheetsIssuesQueryKey });
+          }}
+        />
+      )}
+
       {aiPanelOpen && selectedSheet && (
         <div className="w-80 border-l bg-card shrink-0">
           <AiTakeoffPanel
@@ -1282,6 +1437,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onSelectSheet={setSelectedSheet}
         markups={markups}
         deleteMarkupMutation={deleteMarkupMutation}
+        issues={issues}
+        allSheetIssues={allIssues}
+        selectedIssueId={selectedIssueId}
+        onSelectIssue={(issue) => {
+          setSelectedIssueId(issue.id);
+          if (issue.sheetId && issue.sheetId !== selectedSheet) {
+            setSelectedSheet(issue.sheetId);
+          }
+        }}
       />
 
       <TakeoffDialogs

@@ -1,7 +1,7 @@
 import {
   MousePointer2, Hand, Ruler, Square, Circle as CircleIcon,
   Box, MapPin, StickyNote, MoveVertical, Triangle, Scaling, Grid3x3,
-  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine
+  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine, Flag
 } from "lucide-react";
 
 export type Tool =
@@ -23,7 +23,8 @@ export type Tool =
   | "markup_rectangle"
   | "markup_cloud"
   | "markup_highlight"
-  | "markup_freehand";
+  | "markup_freehand"
+  | "issue_pin";
 
 export type MarkupToolId = "markup_arrow" | "markup_text" | "markup_rectangle" | "markup_cloud" | "markup_highlight" | "markup_freehand";
 
@@ -69,6 +70,7 @@ export const TOOL_CONFIG = [
   { id: "markup_cloud", icon: MessageSquare, label: "Cloud/Bubble", color: "default", shortcut: null, group: "markup" },
   { id: "markup_highlight", icon: Highlighter, label: "Highlight", color: "default", shortcut: null, group: "markup" },
   { id: "markup_freehand", icon: PenLine, label: "Freehand Pen", color: "default", shortcut: null, group: "markup" },
+  { id: "issue_pin", icon: Flag, label: "Issue Pin", color: "destructive", shortcut: "I", group: "issues" },
 ] as const;
 
 export const COMMON_SCALES = {

@@ -60,7 +60,7 @@ export function TakeoffToolbar({
           const isMarkup = tool.group === "markup";
           const prevTool = TOOL_CONFIG[idx - 1];
           const showMarkupSeparator = isMarkup && (!prevTool || prevTool.group !== "markup");
-          const showSeparator = tool.id === "linear_with_drop";
+          const showSeparator = tool.id === "linear_with_drop" || tool.id === "issue_pin";
           const showZoomAfter = tool.id === "pan";
           return (
             <div key={tool.id} className="flex flex-col items-center">

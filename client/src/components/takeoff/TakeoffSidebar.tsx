@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X,
-  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline
+  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
@@ -19,6 +19,7 @@ import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
 import { computePixelDistance } from "@shared/utils/geometry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
+import { IssuesTab } from "./IssuesTab";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
 
@@ -101,6 +102,10 @@ interface TakeoffSidebarProps {
   onSelectSheet?: (id: string) => void;
   markups?: TakeoffMarkupWithAuthor[];
   deleteMarkupMutation?: any;
+  issues?: any[];
+  allSheetIssues?: any[];
+  selectedIssueId?: string | null;
+  onSelectIssue?: (issue: any) => void;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -126,9 +131,12 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     workspaceRef, aiPanelOpen, onApplyPresetScale,
     sheets = [], onCompareRevisions, onSelectSheet,
     markups = [], deleteMarkupMutation,
+    issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
   } = props;
 
   const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"tools" | "issues">("tools");
+  const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
 
   const revisionChain = (() => {
     if (!currentSheet) return [];
@@ -156,6 +164,42 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
   return (
     <div className={cn("hidden sm:flex w-72 sm:w-80 bg-card border-l flex-col shrink-0", aiPanelOpen && "hidden md:flex")}>
+      <div className="flex border-b shrink-0">
+        <button
+          className={cn("flex-1 py-2 text-xs font-medium transition-colors", sidebarTab === "tools" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
+          onClick={() => setSidebarTab("tools")}
+          data-testid="tab-tools"
+        >
+          Tools
+        </button>
+        <button
+          className={cn("flex-1 py-2 text-xs font-medium transition-colors relative", sidebarTab === "issues" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
+          onClick={() => setSidebarTab("issues")}
+          data-testid="tab-issues"
+        >
+          Issues
+          {openIssueCount > 0 && (
+            <span className="absolute -top-0.5 right-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full min-w-4 h-4 flex items-center justify-center px-1">
+              {openIssueCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {sidebarTab === "issues" && (
+        <div className="flex-1 overflow-y-auto p-4">
+          <IssuesTab
+            issues={allSheetIssues}
+            sheets={sheets}
+            selectedSheetId={selectedSheet}
+            onSelectIssue={(issue) => onSelectIssue?.(issue)}
+            onSelectSheet={(sheetId) => onSelectSheet?.(sheetId)}
+            selectedIssueId={selectedIssueId}
+          />
+        </div>
+      )}
+
+      {sidebarTab === "tools" && (
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {calibrationMode !== "idle" && (
@@ -776,6 +820,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           )}
         </div>
       </ScrollArea>
+      )}
     </div>
   );
 }

@@ -33,6 +33,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "CRM_STAGE_CHANGE", "CRM_IDLE_OPPORTUNITY",
   "TASK_MENTIONED",
   "DEADLINE_WARNING", "REMINDER",
+  "TAKEOFF_ISSUE_ASSIGNED", "TAKEOFF_ISSUE_STATUS_CHANGED",
 ]);
 
 // Messaging enums
@@ -474,6 +475,8 @@ export const bidResponseStatusEnum = pgEnum("bid_response_status", [
 export const voiceLogStatusEnum = pgEnum("voice_log_status", ["PENDING", "TRANSCRIBED", "FAILED"]);
 export const issueSeverityEnum = pgEnum("issue_severity", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
 export const issueStatusEnum = pgEnum("issue_status", ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]);
+export const takeoffIssueCategoryEnum = pgEnum("takeoff_issue_category", ["QUESTION", "CONFLICT", "RFI", "OBSERVATION"]);
+export const takeoffIssueStatusEnum = pgEnum("takeoff_issue_status", ["OPEN", "IN_REVIEW", "RESOLVED"]);
 export const offlineSyncStatusEnum = pgEnum("offline_sync_status", ["PENDING", "SYNCED", "FAILED"]);
 export const offlineOperationTypeEnum = pgEnum("offline_operation_type", ["CREATE", "UPDATE", "DELETE"]);
 export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO"]);

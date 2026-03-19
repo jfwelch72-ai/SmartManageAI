@@ -170,6 +170,7 @@ import auditBillingStorageRoutes from "./auditBillingStorageRoutes";
 import crewRoutes2 from "./crewRoutes2";
 import skillRoutes from "./skillRoutes";
 import takeoffSubRoutes from "./takeoffSubRoutes";
+import takeoffIssueRoutes from "./takeoffIssueRoutes";
 import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
@@ -524,6 +525,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Subcontractor, Data Quality, Takeoff/Estimating, Quantity Category routes
   app.use(takeoffSubRoutes);
+  app.use(takeoffIssueRoutes);
   app.use(assemblyRoutes);
 
   // Internal Messaging System Routes (extracted to messagingRoutes.ts)
