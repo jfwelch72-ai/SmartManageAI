@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,8 +11,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, Star } from "lucide-react";
-import type { HiringCandidate } from "@/types/hiring";
+import { Button } from "@/components/ui/button";
+import { Search, Star, X } from "lucide-react";
+import { useHiringCandidates, useHiringJobs } from "@/lib/hiring-api";
 import { format } from "date-fns";
 
 const STAGE_COLORS: Record<string, string> = {
@@ -55,25 +55,70 @@ const SOURCE_LABELS: Record<string, string> = {
   OTHER: "Other",
 };
 
+const AI_SCORE_FILTERS = [
+  { value: "ALL", label: "All Scores" },
+  { value: "HIGH", label: "High (80+)" },
+  { value: "MED", label: "Medium (50-79)" },
+  { value: "LOW", label: "Low (<50)" },
+  { value: "NONE", label: "Not Scored" },
+];
+
 function initials(name: string) {
   return name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
+}
+
+function matchesAiScore(score: number | null, filter: string): boolean {
+  if (filter === "ALL") return true;
+  if (filter === "NONE") return score == null;
+  if (filter === "HIGH") return score != null && score >= 80;
+  if (filter === "MED") return score != null && score >= 50 && score < 80;
+  if (filter === "LOW") return score != null && score < 50;
+  return true;
 }
 
 export default function HiringCandidatesPage() {
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("ALL");
   const [sourceFilter, setSourceFilter] = useState("ALL");
+  const [roleFilter, setRoleFilter] = useState("ALL");
+  const [aiScoreFilter, setAiScoreFilter] = useState("ALL");
 
-  const { data: candidates = [], isLoading } = useQuery<HiringCandidate[]>({
-    queryKey: ["/api/hiring/candidates"],
-  });
+  const { data: candidates = [], isLoading } = useHiringCandidates();
+  const { data: jobs = [] } = useHiringJobs();
+
+  const jobsById = Object.fromEntries(jobs.map((j) => [j.id, j]));
 
   const filtered = candidates.filter((c) => {
-    const matchSearch = !search || c.fullName.toLowerCase().includes(search.toLowerCase()) || (c.email ?? "").toLowerCase().includes(search.toLowerCase());
+    const matchSearch =
+      !search ||
+      c.fullName.toLowerCase().includes(search.toLowerCase()) ||
+      (c.email ?? "").toLowerCase().includes(search.toLowerCase());
     const matchStage = stageFilter === "ALL" || c.currentStage === stageFilter;
     const matchSource = sourceFilter === "ALL" || c.source === sourceFilter;
-    return matchSearch && matchStage && matchSource;
+    const matchRole =
+      roleFilter === "ALL" || (c.jobId ? jobsById[c.jobId]?.title === roleFilter : false);
+    const matchAi = matchesAiScore(c.aiScore, aiScoreFilter);
+    return matchSearch && matchStage && matchSource && matchRole && matchAi;
   });
+
+  const uniqueRoles = Array.from(new Set(
+    candidates.filter((c) => c.jobId && jobsById[c.jobId]).map((c) => jobsById[c.jobId!]?.title)
+  )).filter(Boolean) as string[];
+
+  const activeFilters =
+    (stageFilter !== "ALL" ? 1 : 0) +
+    (sourceFilter !== "ALL" ? 1 : 0) +
+    (roleFilter !== "ALL" ? 1 : 0) +
+    (aiScoreFilter !== "ALL" ? 1 : 0) +
+    (search ? 1 : 0);
+
+  function clearFilters() {
+    setSearch("");
+    setStageFilter("ALL");
+    setSourceFilter("ALL");
+    setRoleFilter("ALL");
+    setAiScoreFilter("ALL");
+  }
 
   return (
     <div className="p-6 space-y-5">
@@ -95,6 +140,17 @@ export default function HiringCandidatesPage() {
                 data-testid="input-candidate-search"
               />
             </div>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-44 h-8" data-testid="select-role-filter">
+                <SelectValue placeholder="All Roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Roles</SelectItem>
+                {uniqueRoles.map((r) => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="w-44 h-8" data-testid="select-stage-filter">
                 <SelectValue placeholder="All Stages" />
@@ -117,6 +173,21 @@ export default function HiringCandidatesPage() {
                 ))}
               </SelectContent>
             </Select>
+            <Select value={aiScoreFilter} onValueChange={setAiScoreFilter}>
+              <SelectTrigger className="w-36 h-8" data-testid="select-ai-score-filter">
+                <SelectValue placeholder="AI Score" />
+              </SelectTrigger>
+              <SelectContent>
+                {AI_SCORE_FILTERS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {activeFilters > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} className="h-8 px-2" data-testid="button-clear-filters">
+                <X className="w-3 h-3 mr-1" />Clear ({activeFilters})
+              </Button>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -131,6 +202,7 @@ export default function HiringCandidatesPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Candidate</TableHead>
+                  <TableHead>Role</TableHead>
                   <TableHead>Stage</TableHead>
                   <TableHead>Source</TableHead>
                   <TableHead>Applied</TableHead>
@@ -138,42 +210,48 @@ export default function HiringCandidatesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((c) => (
-                  <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" data-testid={`row-candidate-${c.id}`}>
-                    <TableCell>
-                      <Link href={`/hiring/candidates/${c.id}`} className="flex items-center gap-2" data-testid={`link-candidate-${c.id}`}>
-                        <Avatar className="w-8 h-8">
-                          <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm">{c.fullName}</p>
-                          {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
-                        </div>
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[c.currentStage] ?? ""}`}>
-                        {STAGE_LABELS[c.currentStage] ?? c.currentStage}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {SOURCE_LABELS[c.source ?? ""] ?? c.source ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {c.appliedAt ? format(new Date(c.appliedAt), "MMM d, yyyy") : "—"}
-                    </TableCell>
-                    <TableCell>
-                      {c.aiScore != null ? (
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
-                          <span className="text-sm font-medium">{c.aiScore}</span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {filtered.map((c) => {
+                  const job = c.jobId ? jobsById[c.jobId] : null;
+                  return (
+                    <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" data-testid={`row-candidate-${c.id}`}>
+                      <TableCell>
+                        <Link href={`/hiring/candidates/${c.id}`} className="flex items-center gap-2" data-testid={`link-candidate-${c.id}`}>
+                          <Avatar className="w-8 h-8">
+                            <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium text-sm">{c.fullName}</p>
+                            {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
+                          </div>
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {job?.title ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STAGE_COLORS[c.currentStage] ?? ""}`}>
+                          {STAGE_LABELS[c.currentStage] ?? c.currentStage}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {SOURCE_LABELS[c.source ?? ""] ?? c.source ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {c.appliedAt ? format(new Date(c.appliedAt), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {c.aiScore != null ? (
+                          <div className="flex items-center gap-1">
+                            <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
+                            <span className="text-sm font-medium">{c.aiScore}</span>
+                          </div>
+                        ) : (
+                          <Badge variant="outline" className="text-xs text-muted-foreground">Pending</Badge>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

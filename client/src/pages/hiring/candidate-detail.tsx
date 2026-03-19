@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -16,8 +17,12 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Mail, Phone, FileText, ChevronRight, Star, MessageSquare } from "lucide-react";
-import type { HiringCandidate, HiringActivityLog, HiringCandidateNote } from "@/types/hiring";
+import {
+  ArrowLeft, Mail, Phone, FileText, ChevronRight, Star, MessageSquare, Mail as MailIcon, ClipboardList,
+} from "lucide-react";
+import {
+  useHiringCandidate, useCandidateNotes, useCandidateActivity,
+} from "@/lib/hiring-api";
 import { format, formatDistanceToNow } from "date-fns";
 
 const STAGE_OPTIONS = [
@@ -57,26 +62,15 @@ export default function CandidateDetailPage() {
   const [, params] = useRoute("/hiring/candidates/:id");
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const candidateId = params?.id;
+  const candidateId = params?.id ?? "";
 
   const [newNote, setNewNote] = useState("");
   const [pendingStage, setPendingStage] = useState<string | null>(null);
   const [confirmStage, setConfirmStage] = useState(false);
 
-  const { data: candidate, isLoading } = useQuery<HiringCandidate>({
-    queryKey: ["/api/hiring/candidates", candidateId],
-    enabled: !!candidateId,
-  });
-
-  const { data: activity = [] } = useQuery<HiringActivityLog[]>({
-    queryKey: ["/api/hiring/candidates", candidateId, "activity"],
-    enabled: !!candidateId,
-  });
-
-  const { data: notes = [] } = useQuery<HiringCandidateNote[]>({
-    queryKey: ["/api/hiring/candidates", candidateId, "notes"],
-    enabled: !!candidateId,
-  });
+  const { data: candidate, isLoading } = useHiringCandidate(candidateId);
+  const { data: activity = [] } = useCandidateActivity(candidateId);
+  const { data: notes = [] } = useCandidateNotes(candidateId);
 
   const stageMutation = useMutation({
     mutationFn: async (stage: string) => {
@@ -145,6 +139,9 @@ export default function CandidateDetailPage() {
   const applicationAnswers = parseApplicationAnswers(candidate.applicationAnswersJson);
   const stageHistory = activity.filter((a) =>
     a.activityType === "CANDIDATE_STAGE_CHANGED" || a.activityType === "CANDIDATE_APPLIED"
+  );
+  const communicationsLog = activity.filter((a) =>
+    a.activityType === "EMAIL_SENT" || a.activityType === "EMAIL_RECEIVED" || a.activityType === "NOTE_ADDED"
   );
 
   return (
@@ -259,7 +256,9 @@ export default function CandidateDetailPage() {
                   {notes.map((note) => (
                     <div key={note.id} className="text-sm border rounded p-2">
                       <p className="whitespace-pre-line">{note.body}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{note.authorName} · {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {note.authorName} · {formatDistanceToNow(new Date(note.createdAt), { addSuffix: true })}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -285,7 +284,8 @@ export default function CandidateDetailPage() {
 
         {/* Right column */}
         <div className="lg:col-span-2 space-y-5">
-          {candidate.resumeStorageKey && (
+          {/* Resume attachment viewer */}
+          {candidate.resumeStorageKey ? (
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -293,14 +293,50 @@ export default function CandidateDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Resume file on record.{" "}
-                  <span className="text-xs font-mono bg-muted px-1 rounded">{candidate.resumeStorageKey}</span>
-                </p>
+                {candidate.resumeStorageKey.match(/\.(pdf)$/i) ? (
+                  <object
+                    data={`/api/hiring/candidates/${candidate.id}/resume`}
+                    type="application/pdf"
+                    className="w-full h-96 rounded border"
+                    data-testid="resume-pdf-viewer"
+                  >
+                    <a
+                      href={`/api/hiring/candidates/${candidate.id}/resume`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                      data-testid="link-resume-download"
+                    >
+                      Download Resume
+                    </a>
+                  </object>
+                ) : (
+                  <a
+                    href={`/api/hiring/candidates/${candidate.id}/resume`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:underline flex items-center gap-1"
+                    data-testid="link-resume-download"
+                  >
+                    <FileText className="w-4 h-4" />View Resume
+                  </a>
+                )}
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="w-4 h-4" />Resume
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">No resume on file</p>
               </CardContent>
             </Card>
           )}
 
+          {/* Application answers accordion */}
           {applicationAnswers && Object.keys(applicationAnswers).length > 0 && (
             <Card>
               <CardHeader><CardTitle className="text-base">Application Answers</CardTitle></CardHeader>
@@ -315,15 +351,62 @@ export default function CandidateDetailPage() {
             </Card>
           )}
 
+          {/* AI Recommendation */}
           {candidate.aiRecommendation && (
             <Card>
-              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500" />AI Recommendation</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-500" />AI Recommendation
+                </CardTitle>
+              </CardHeader>
               <CardContent>
                 <p className="text-sm whitespace-pre-line">{candidate.aiRecommendation}</p>
               </CardContent>
             </Card>
           )}
 
+          {/* Communications log */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <MailIcon className="w-4 h-4" />Communications
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {communicationsLog.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No communications yet</p>
+              ) : (
+                <ul className="space-y-3">
+                  {communicationsLog.map((log) => (
+                    <li key={log.id} className="flex items-start gap-2 text-sm border-b pb-2 last:border-0" data-testid={`comm-log-${log.id}`}>
+                      <MailIcon className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
+                      <div>
+                        <span>{log.actorName ?? "System"}</span>
+                        <span className="text-muted-foreground"> · {log.activityType.replace(/_/g, " ").toLowerCase()}</span>
+                        {log.entityName && <span className="text-muted-foreground"> — {log.entityName}</span>}
+                        <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Tasks panel */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ClipboardList className="w-4 h-4" />Linked Tasks
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">No tasks linked to this candidate yet.</p>
+              <Badge variant="outline" className="mt-2 text-xs">Coming in Phase 2</Badge>
+            </CardContent>
+          </Card>
+
+          {/* Activity log */}
           <Card>
             <CardHeader><CardTitle className="text-base">Activity Log</CardTitle></CardHeader>
             <CardContent>

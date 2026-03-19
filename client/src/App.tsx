@@ -323,11 +323,11 @@ function Router() {
       {/* Hiring Module routes */}
       <Route path="/hiring/jobs/:id" component={() => <ProtectedRoute component={HiringJobDetailPage} permission={RoutePermissions.HIRING} />} />
       <Route path="/hiring/jobs" component={() => <ProtectedRoute component={HiringJobsPage} permission={RoutePermissions.HIRING} />} />
-      <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING} />} />
-      <Route path="/hiring/candidates" component={() => <ProtectedRoute component={HiringCandidatesPage} permission={RoutePermissions.HIRING} />} />
-      <Route path="/hiring/pipeline" component={() => <ProtectedRoute component={HiringPipelinePage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING_REVIEW} />} />
+      <Route path="/hiring/candidates" component={() => <ProtectedRoute component={HiringCandidatesPage} permission={RoutePermissions.HIRING_REVIEW} />} />
+      <Route path="/hiring/pipeline" component={() => <ProtectedRoute component={HiringPipelinePage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/settings" component={() => <ProtectedRoute component={HiringSettingsPage} permission={RoutePermissions.HIRING_SETTINGS} />} />
-      <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING} />} />
+      <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />

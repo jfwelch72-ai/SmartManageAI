@@ -1,6 +1,4 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -17,7 +15,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Link2, RefreshCw, TestTube2, ShieldOff, AlertCircle, CheckCircle2, Clock } from "lucide-react";
-import type { HiringIntegration, HiringSyncLog } from "@/types/hiring";
+import {
+  useHiringIntegrations, useHiringSyncLogs, useConnectIntegration,
+  useDisconnectIntegration, useTestIntegration, useSyncIntegration,
+} from "@/lib/hiring-api";
 import { format } from "date-fns";
 import { Redirect } from "wouter";
 
@@ -45,72 +46,17 @@ export default function HiringSettingsPage() {
   const [autoTasksEnabled, setAutoTasksEnabled] = useState(false);
   const [interviewReminders, setInterviewReminders] = useState(true);
 
+  const { data: integrations = [], isLoading: intLoading } = useHiringIntegrations();
+  const { data: syncLogs = [], isLoading: logsLoading } = useHiringSyncLogs();
+
+  const connectMutation = useConnectIntegration();
+  const disconnectMutation = useDisconnectIntegration();
+  const testMutation = useTestIntegration();
+  const syncMutation = useSyncIntegration();
+
   if (user?.role !== "ADMIN") {
     return <Redirect to="/hiring" />;
   }
-
-  const { data: integrations = [], isLoading: intLoading } = useQuery<HiringIntegration[]>({
-    queryKey: ["/api/hiring/integrations"],
-  });
-
-  const { data: syncLogs = [], isLoading: logsLoading } = useQuery<HiringSyncLog[]>({
-    queryKey: ["/api/hiring/sync-logs"],
-  });
-
-  const connectMutation = useMutation({
-    mutationFn: async (data: ATSConnectForm) => {
-      const credentials: Record<string, string> = { apiToken: data.apiToken };
-      if (data.subdomain) credentials.subdomain = data.subdomain;
-      const res = await apiRequest("POST", "/api/hiring/integrations", {
-        providerName: data.providerName,
-        credentials,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hiring/integrations"] });
-      toast({ title: "ATS Integration connected" });
-      setShowConnect(false);
-      setConnectForm({ providerName: "WORKABLE", apiToken: "", subdomain: "" });
-    },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const disconnectMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/hiring/integrations/${id}`, undefined);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hiring/integrations"] });
-      toast({ title: "Disconnected" });
-    },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const testMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("POST", `/api/hiring/integrations/${id}/test`, {});
-      return res.json();
-    },
-    onSuccess: (data) => {
-      toast({ title: data.success ? "Connection OK" : "Connection failed", description: data.message });
-    },
-    onError: (err: Error) => toast({ title: "Test failed", description: err.message, variant: "destructive" }),
-  });
-
-  const syncMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("POST", `/api/hiring/integrations/${id}/sync`, {});
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/hiring/integrations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/hiring/sync-logs"] });
-      toast({ title: "Sync started" });
-    },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
 
   const activeIntegration = integrations[0];
   const integrationStatusVariant = (status: string) =>
@@ -152,7 +98,11 @@ export default function HiringSettingsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => testMutation.mutate(activeIntegration.id)}
+                  onClick={() => testMutation.mutate(activeIntegration.id, {
+                    onSuccess: (data: { success: boolean; message: string }) =>
+                      toast({ title: data.success ? "Connection OK" : "Connection failed", description: data.message }),
+                    onError: (err: Error) => toast({ title: "Test failed", description: err.message, variant: "destructive" }),
+                  })}
                   disabled={testMutation.isPending}
                   data-testid="button-test-connection"
                 >
@@ -162,7 +112,10 @@ export default function HiringSettingsPage() {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => syncMutation.mutate(activeIntegration.id)}
+                  onClick={() => syncMutation.mutate(activeIntegration.id, {
+                    onSuccess: () => toast({ title: "Sync started" }),
+                    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                  })}
                   disabled={syncMutation.isPending}
                   data-testid="button-sync-now"
                 >
@@ -173,7 +126,10 @@ export default function HiringSettingsPage() {
                   size="sm"
                   variant="ghost"
                   className="text-destructive hover:text-destructive"
-                  onClick={() => disconnectMutation.mutate(activeIntegration.id)}
+                  onClick={() => disconnectMutation.mutate(activeIntegration.id, {
+                    onSuccess: () => toast({ title: "Disconnected" }),
+                    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                  })}
                   disabled={disconnectMutation.isPending}
                   data-testid="button-disconnect-ats"
                 >
@@ -219,7 +175,25 @@ export default function HiringSettingsPage() {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <Button onClick={() => connectMutation.mutate(connectForm)} disabled={connectMutation.isPending || !connectForm.apiToken.trim()} data-testid="button-connect-ats">
+                <Button
+                  onClick={() => {
+                    const credentials: Record<string, string> = { apiToken: connectForm.apiToken };
+                    if (connectForm.subdomain) credentials.subdomain = connectForm.subdomain;
+                    connectMutation.mutate(
+                      { providerName: connectForm.providerName, credentials },
+                      {
+                        onSuccess: () => {
+                          toast({ title: "ATS Integration connected" });
+                          setShowConnect(false);
+                          setConnectForm({ providerName: "WORKABLE", apiToken: "", subdomain: "" });
+                        },
+                        onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                      }
+                    );
+                  }}
+                  disabled={connectMutation.isPending || !connectForm.apiToken.trim()}
+                  data-testid="button-connect-ats"
+                >
                   {connectMutation.isPending ? "Connecting..." : "Connect"}
                 </Button>
                 <Button variant="outline" onClick={() => setShowConnect(false)} data-testid="button-cancel-connect">Cancel</Button>
@@ -313,6 +287,31 @@ export default function HiringSettingsPage() {
             </div>
             <Switch checked={interviewReminders} onCheckedChange={setInterviewReminders} data-testid="toggle-interview-reminders" />
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Default Pipeline Stage Order</CardTitle>
+          <CardDescription>Configure the default order of stages in your hiring pipeline. Drag to reorder (future use).</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ul className="space-y-2" data-testid="pipeline-stage-order">
+            {[
+              "APPLIED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
+              "SKILLS_ASSESSMENT", "BACKGROUND_CHECK", "REFERENCE_CHECK",
+              "OFFER_EXTENDED", "HIRED", "REJECTED", "ARCHIVED",
+            ].map((stage, idx) => (
+              <li key={stage} className="flex items-center gap-3 p-2 rounded border bg-muted/30" data-testid={`stage-order-${stage}`}>
+                <span className="text-xs text-muted-foreground w-5 text-right">{idx + 1}</span>
+                <span className="text-sm font-medium">
+                  {stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                </span>
+                <Badge variant="outline" className="ml-auto text-xs">Default</Badge>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted-foreground mt-3">Drag-to-reorder will be available in a future update.</p>
         </CardContent>
       </Card>
     </div>

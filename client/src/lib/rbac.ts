@@ -372,7 +372,10 @@ export const RoutePermissions = {
   PROCUREMENT: (role?: string) => hasProcurementAccess(role),
 
   // Hiring Module
-  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+  // Full hiring management (jobs CRUD, integrations, pipeline management)
+  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER",
+  // Candidate review access (read candidates, pipeline board view, dashboard)
+  HIRING_REVIEW: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER",
   HIRING_SETTINGS: (role?: string) => role === "ADMIN",
 };
 
@@ -788,25 +791,25 @@ export const NavigationConfig = {
       href: "/hiring",
       label: "Dashboard",
       testId: "nav-hiring-dashboard",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
     {
       href: "/hiring/jobs",
       label: "Jobs",
       testId: "nav-hiring-jobs",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER",
     },
     {
       href: "/hiring/candidates",
       label: "Candidates",
       testId: "nav-hiring-candidates",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
     {
       href: "/hiring/pipeline",
       label: "Pipeline",
       testId: "nav-hiring-pipeline",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "HR_MANAGER",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
     {
       href: "/hiring/settings",

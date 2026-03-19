@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useHiringJobs, useJobTemplates } from "@/lib/hiring-api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -84,13 +85,8 @@ export default function HiringJobsPage() {
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState<JobForm>(EMPTY_FORM);
 
-  const { data: jobs = [], isLoading } = useQuery<HiringJob[]>({
-    queryKey: ["/api/hiring/jobs"],
-  });
-
-  const { data: templates = [] } = useQuery<HiringJobTemplate[]>({
-    queryKey: ["/api/hiring/jobs/templates"],
-  });
+  const { data: jobs = [], isLoading } = useHiringJobs();
+  const { data: templates = [] } = useJobTemplates();
 
   const createMutation = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {

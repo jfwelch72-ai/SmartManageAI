@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -11,7 +11,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Star } from "lucide-react";
-import type { HiringCandidate } from "@/types/hiring";
+import { useHiringCandidates } from "@/lib/hiring-api";
 import { format } from "date-fns";
 
 const STAGES = [
@@ -47,9 +47,7 @@ export default function HiringPipelinePage() {
   const [confirmMove, setConfirmMove] = useState<{ candidateId: string; toStage: string } | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
 
-  const { data: candidates = [], isLoading } = useQuery<HiringCandidate[]>({
-    queryKey: ["/api/hiring/candidates"],
-  });
+  const { data: candidates = [], isLoading } = useHiringCandidates();
 
   const stageMutation = useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {
