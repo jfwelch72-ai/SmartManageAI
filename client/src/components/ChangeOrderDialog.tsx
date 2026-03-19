@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { format, formatDistanceToNow } from "date-fns";
-import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send } from "lucide-react";
+import { format, formatDistanceToNow, isPast } from "date-fns";
+import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,6 +105,10 @@ interface ChangeOrder {
   voidReason?: string | null;
   // Client response due date
   clientResponseDueDate?: string | Date | null;
+  // Linked items (Task #70)
+  linkedTmTicketId?: string | null;
+  linkedRfiId?: string | null;
+  projectId?: string;
 }
 
 interface ChangeOrderDialogProps {
@@ -114,6 +118,12 @@ interface ChangeOrderDialogProps {
   projectCode: string;
   userRole: string;
 }
+
+const APPROVAL_ROLES = [
+  { value: "MANAGER", label: "Manager" },
+  { value: "ADMIN", label: "Admin" },
+  { value: "OFFICE_MANAGER", label: "Office Manager" },
+];
 
 export function ChangeOrderDialog({
   changeOrder,
@@ -129,8 +139,15 @@ export function ChangeOrderDialog({
   const [editedAmount, setEditedAmount] = useState("");
   const [lineItemsOpen, setLineItemsOpen] = useState(true);
   const [activeLineTab, setActiveLineTab] = useState("labor");
+  // Void dialog state (from HEAD)
   const [showVoidDialog, setShowVoidDialog] = useState(false);
   const [voidReason, setVoidReason] = useState("");
+  // Approval chain config state (from Task #70)
+  const [approvalChainOpen, setApprovalChainOpen] = useState(false);
+  const [newApprovalSteps, setNewApprovalSteps] = useState<Array<{ approverRole: string }>>([{ approverRole: "MANAGER" }]);
+  // T&M / RFI picker state (from Task #70)
+  const [showTmPicker, setShowTmPicker] = useState(false);
+  const [showRfiPicker, setShowRfiPicker] = useState(false);
   
   // Line items state
   const [laborEntries, setLaborEntries] = useState<LaborEntry[]>([]);
@@ -141,8 +158,11 @@ export function ChangeOrderDialog({
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
   const canReview = ["ADMIN", "MANAGER", "PROJECT_ENGINEER"].includes(userRole);
-  // Only ADMIN/MANAGER can edit change orders when in editable states
+  const isAdmin = userRole === "ADMIN";
+  // ADMIN/MANAGER can edit in DRAFT or PCO states
   const canEdit = canManage && (changeOrder?.status === "DRAFT" || changeOrder?.status === "PCO");
+  const nonTerminalStatuses = ["DRAFT", "PCO", "PENDING_APPROVAL", "SUBMITTED"];
+  const canLinkItems = canManage && nonTerminalStatuses.includes(changeOrder?.status || "");
   
   // Fetch line items for change order
   const { data: lineItemsData } = useQuery<LineItemsData>({
@@ -201,12 +221,41 @@ export function ChangeOrderDialog({
     enabled: !!changeOrder?.id && open,
   });
 
+  // Fetch T&M tickets for the project (for the picker)
+  const { data: tmTickets = [] } = useQuery<Array<{
+    id: string;
+    ticketNumber: string;
+    description: string;
+    status: string;
+    totalBillableAmount?: string;
+  }>>({
+    queryKey: ["/api/projects", changeOrder?.projectId, "tm-tickets"],
+    enabled: showTmPicker && !!changeOrder?.projectId,
+  });
+
+  // Fetch RFIs for the project (for the picker) - API returns flat array
+  const { data: projectRfis = [] } = useQuery<Array<{
+    id: string;
+    rfiNumber: string;
+    subject: string;
+    status: string;
+  }>>({
+    queryKey: ["/api/rfi", { projectId: changeOrder?.projectId }],
+    queryFn: async () => {
+      const res = await fetch(`/api/rfi?projectId=${encodeURIComponent(changeOrder?.projectId || "")}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch RFIs");
+      return res.json();
+    },
+    enabled: showRfiPicker && !!changeOrder?.projectId,
+  });
+
   useEffect(() => {
     if (changeOrder) {
       setEditedNumber(changeOrder.changeOrderNumber);
       setEditedDescription(changeOrder.description);
       setEditedAmount(changeOrder.amount);
       setIsEditing(false);
+      setNewApprovalSteps([{ approverRole: "MANAGER" }]);
     }
   }, [changeOrder]);
   
@@ -346,6 +395,7 @@ export function ChangeOrderDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/change-orders", changeOrder?.id, "approvals"] });
       toast({ title: "Success", description: "Change order submitted to client" });
       onOpenChange(false);
     },
@@ -403,6 +453,7 @@ export function ChangeOrderDialog({
     },
   });
 
+  // PCO workflow mutations (from HEAD)
   const promoteToReviewMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/promote-to-review`, {});
@@ -446,8 +497,8 @@ export function ChangeOrderDialog({
   });
 
   const voidMutation = useMutation({
-    mutationFn: async (voidReason: string) => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/void`, { voidReason });
+    mutationFn: async (reason: string) => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/void`, { voidReason: reason });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
@@ -474,6 +525,51 @@ export function ChangeOrderDialog({
     voidMutation.mutate(voidReason);
   };
 
+  // Setup approval chain mutation (from Task #70)
+  const setupApprovalChainMutation = useMutation({
+    mutationFn: async (steps: Array<{ approverRole: string }>) => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/setup-approval-chain`, { steps });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/change-orders", changeOrder?.id, "approvals"] });
+      toast({ title: "Success", description: "Approval chain configured" });
+      setApprovalChainOpen(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to configure approval chain", variant: "destructive" });
+    },
+  });
+
+  // Link T&M mutation (from Task #70)
+  const linkTmMutation = useMutation({
+    mutationFn: async (tmTicketId: string) => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-tm`, { tmTicketId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "T&M ticket linked" });
+      setShowTmPicker(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to link T&M ticket", variant: "destructive" });
+    },
+  });
+
+  // Link RFI mutation (from Task #70)
+  const linkRfiMutation = useMutation({
+    mutationFn: async (rfiId: string) => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-rfi`, { rfiId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "RFI linked" });
+      setShowRfiPicker(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to link RFI", variant: "destructive" });
+    },
+  });
+
   const handleSave = () => {
     if (!editedNumber || !editedDescription || !editedAmount) {
       toast({
@@ -492,6 +588,9 @@ export function ChangeOrderDialog({
   };
 
   if (!changeOrder) return null;
+
+  const isResponseOverdue = changeOrder.clientResponseDueDate && changeOrder.status === "SUBMITTED"
+    && isPast(new Date(changeOrder.clientResponseDueDate));
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -538,7 +637,7 @@ export function ChangeOrderDialog({
           </Badge>
         );
       default:
-        return <Badge variant={getStatusColor(status)}>{status.replace(/_/g, " ")}</Badge>;
+        return <Badge variant={getStatusColor(status) as any}>{status.replace(/_/g, " ")}</Badge>;
     }
   };
 
@@ -552,11 +651,65 @@ export function ChangeOrderDialog({
               <FileText className="w-5 h-5" />
               Change Order Details
             </DialogTitle>
-            {getStatusBadge(changeOrder.status)}
+            <div className="flex items-center gap-2">
+              {isResponseOverdue && (
+                <Badge variant="destructive" className="flex items-center gap-1" data-testid="badge-response-overdue">
+                  <AlertTriangle className="w-3 h-3" />
+                  Response Overdue
+                </Badge>
+              )}
+              {getStatusBadge(changeOrder.status)}
+            </div>
           </div>
         </DialogHeader>
 
         <div className="space-y-6">
+          {/* Void Panel - shown when voidReason is set (may also be VOIDED status) */}
+          {changeOrder.voidReason && (
+            <div className="p-4 bg-muted border rounded-md space-y-2" data-testid="panel-voided">
+              <div className="flex items-center gap-2">
+                <Ban className="w-4 h-4 text-destructive" />
+                <span className="text-sm font-medium text-destructive">Voided</span>
+              </div>
+              <p className="text-sm"><span className="text-muted-foreground">Reason:</span> {changeOrder.voidReason}</p>
+              {changeOrder.voidedAt && (
+                <p className="text-sm text-muted-foreground">
+                  {format(new Date(changeOrder.voidedAt), "MMM d, yyyy 'at' h:mm a")}
+                </p>
+              )}
+              {/* Voided-by from revision history */}
+              {revisions && (() => {
+                const voidRevision = revisions.find(r => r.revision.newStatus === "VOIDED");
+                if (voidRevision?.revisedBy) {
+                  return (
+                    <p className="text-sm text-muted-foreground" data-testid="text-voided-by">
+                      by {voidRevision.revisedBy.firstName} {voidRevision.revisedBy.lastName}
+                    </p>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+          )}
+
+          {/* Submitted state info panel with client response deadline */}
+          {changeOrder.status === "SUBMITTED" && changeOrder.clientResponseDueDate && (
+            <div className={`p-3 rounded-md border ${isResponseOverdue ? "bg-destructive/10 border-destructive/30" : "bg-muted/40"}`} data-testid="panel-submitted-info">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Client Response Due</span>
+                {isResponseOverdue && <Badge variant="destructive" className="text-xs">Overdue</Badge>}
+              </div>
+              <p className="text-sm mt-1">
+                {format(new Date(changeOrder.clientResponseDueDate), "MMMM d, yyyy")}
+                {" "}
+                <span className="text-muted-foreground">
+                  ({formatDistanceToNow(new Date(changeOrder.clientResponseDueDate), { addSuffix: true })})
+                </span>
+              </p>
+            </div>
+          )}
+
           {/* Basic Information */}
           <div className="space-y-4">
             <div>
@@ -639,7 +792,7 @@ export function ChangeOrderDialog({
                   )}
                   {changeOrder.scopeModifierNames && (() => {
                     try {
-                      const modifiers = JSON.parse(changeOrder.scopeModifierNames);
+                      const modifiers = JSON.parse(changeOrder.scopeModifierNames!);
                       if (Array.isArray(modifiers) && modifiers.length > 0) {
                         return (
                           <p><span className="text-muted-foreground">Modifiers:</span> {modifiers.join(", ")}</p>
@@ -652,6 +805,52 @@ export function ChangeOrderDialog({
                     <p className="text-xs text-muted-foreground">Code: {changeOrder.workTypeCode}</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Linked T&M Ticket */}
+            {changeOrder.linkedTmTicketId && (
+              <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-tm">
+                <div className="flex items-center gap-2">
+                  <Link className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Linked T&M Ticket</span>
+                </div>
+                <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedTmTicketId}</p>
+              </div>
+            )}
+
+            {/* Linked RFI */}
+            {changeOrder.linkedRfiId && (
+              <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-rfi">
+                <div className="flex items-center gap-2">
+                  <Link className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Linked RFI</span>
+                </div>
+                <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedRfiId}</p>
+              </div>
+            )}
+
+            {/* Link T&M / Link RFI buttons */}
+            {canLinkItems && (
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowTmPicker(true)}
+                  data-testid="button-link-tm"
+                >
+                  <Link className="w-4 h-4 mr-2" />
+                  {changeOrder.linkedTmTicketId ? "Change T&M Ticket" : "Link T&M Ticket"}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowRfiPicker(true)}
+                  data-testid="button-link-rfi"
+                >
+                  <Link className="w-4 h-4 mr-2" />
+                  {changeOrder.linkedRfiId ? "Change RFI" : "Link RFI"}
+                </Button>
               </div>
             )}
           </div>
@@ -679,60 +878,82 @@ export function ChangeOrderDialog({
             </div>
           )}
 
-          {/* SUBMITTED: client response due date */}
-          {changeOrder.status === "SUBMITTED" && changeOrder.clientResponseDueDate && (
-            <div className="p-3 bg-muted/30 border border-border rounded-md" data-testid="panel-client-due-date">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Client Response Due</span>
-                </div>
-                {new Date(changeOrder.clientResponseDueDate) < new Date() && (
-                  <Badge variant="destructive" className="text-xs" data-testid="badge-overdue">Overdue</Badge>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground mt-1">
-                {format(new Date(changeOrder.clientResponseDueDate), "MMM d, yyyy 'at' h:mm a")}
-              </p>
-            </div>
-          )}
-
-          {/* VOIDED: read-only void metadata panel */}
-          {changeOrder.status === "VOIDED" && (
-            <div className="p-3 bg-muted/50 border border-border rounded-md space-y-2" data-testid="panel-void-info">
-              <div className="flex items-center gap-2">
-                <Ban className="w-4 h-4 text-muted-foreground" />
-                <span className="text-sm font-semibold">Void Information</span>
-              </div>
-              {changeOrder.voidReason && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Void Reason:</p>
-                  <p className="text-sm" data-testid="text-void-reason">{changeOrder.voidReason}</p>
-                </div>
-              )}
-              {changeOrder.voidedAt && (
-                <div>
-                  <p className="text-xs text-muted-foreground">Voided At:</p>
-                  <p className="text-sm" data-testid="text-voided-at">{format(new Date(changeOrder.voidedAt), "MMM d, yyyy 'at' h:mm a")}</p>
-                </div>
-              )}
-              {/* Voided-by from revision history */}
-              {revisions && (() => {
-                const voidRevision = revisions.find(r => r.revision.newStatus === "VOIDED");
-                if (voidRevision?.revisedBy) {
-                  return (
-                    <div>
-                      <p className="text-xs text-muted-foreground">Voided By:</p>
-                      <p className="text-sm" data-testid="text-voided-by">{voidRevision.revisedBy.firstName} {voidRevision.revisedBy.lastName}</p>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-          )}
-
           <Separator />
+
+          {/* Configure Approval Chain (ADMIN only, non-terminal editable statuses) */}
+          {isAdmin && ["DRAFT", "PCO", "PENDING_APPROVAL"].includes(changeOrder.status) && (
+            <>
+              <Collapsible open={approvalChainOpen} onOpenChange={setApprovalChainOpen}>
+                <div className="flex items-center justify-between">
+                  <CollapsibleTrigger asChild>
+                    <Button variant="ghost" className="flex items-center gap-2 p-0 hover:bg-transparent" data-testid="toggle-approval-chain-config">
+                      {approvalChainOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      <Shield className="w-4 h-4" />
+                      <h3 className="text-sm font-medium">Configure Approval Chain</h3>
+                      {approvals && approvals.length > 0 && (
+                        <Badge variant="outline" className="ml-2 text-xs">{approvals.length} step{approvals.length !== 1 ? "s" : ""}</Badge>
+                      )}
+                    </Button>
+                  </CollapsibleTrigger>
+                </div>
+                <CollapsibleContent className="mt-3 space-y-3">
+                  {newApprovalSteps.map((step, idx) => (
+                    <div key={idx} className="flex items-center gap-2" data-testid={`approval-step-config-${idx}`}>
+                      <span className="text-sm text-muted-foreground w-6 shrink-0">#{idx + 1}</span>
+                      <Select
+                        value={step.approverRole}
+                        onValueChange={(v) => {
+                          const updated = [...newApprovalSteps];
+                          updated[idx] = { approverRole: v };
+                          setNewApprovalSteps(updated);
+                        }}
+                      >
+                        <SelectTrigger className="flex-1" data-testid={`select-approver-role-${idx}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {APPROVAL_ROLES.map((role) => (
+                            <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {newApprovalSteps.length > 1 && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => setNewApprovalSteps(newApprovalSteps.filter((_, i) => i !== idx))}
+                          data-testid={`button-remove-step-${idx}`}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    {newApprovalSteps.length < 3 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setNewApprovalSteps([...newApprovalSteps, { approverRole: "MANAGER" }])}
+                        data-testid="button-add-approval-step"
+                      >
+                        <Plus className="w-4 h-4 mr-1" /> Add Step
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => setupApprovalChainMutation.mutate(newApprovalSteps)}
+                      disabled={setupApprovalChainMutation.isPending}
+                      data-testid="button-save-approval-chain"
+                    >
+                      {setupApprovalChainMutation.isPending ? "Saving..." : "Save Chain"}
+                    </Button>
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+              <Separator />
+            </>
+          )}
 
           {/* Line Items Breakdown - Only visible to managers */}
           {hasManagementAccess(userRole) && (
@@ -865,8 +1086,8 @@ export function ChangeOrderDialog({
                     {equipmentEntries.map((entry, index) => (
                       <Card key={index} className="p-3">
                         <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-2">
-                            <Label className="text-xs">Type</Label>
+                          <div className="col-span-3">
+                            <Label className="text-xs">Equipment Type</Label>
                             <Input
                               placeholder="Type"
                               value={entry.equipmentType}
@@ -875,10 +1096,10 @@ export function ChangeOrderDialog({
                               data-testid={`input-equip-type-${index}`}
                             />
                           </div>
-                          <div className="col-span-2">
+                          <div className="col-span-3">
                             <Label className="text-xs">Description</Label>
                             <Input
-                              placeholder="Details"
+                              placeholder="Description"
                               value={entry.description}
                               onChange={(e) => updateEquipmentEntry(index, "description", e.target.value)}
                               disabled={!canEdit}
@@ -920,12 +1141,6 @@ export function ChangeOrderDialog({
                               data-testid={`input-equip-rate-${index}`}
                             />
                           </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Total</Label>
-                            <div className="h-9 flex items-center font-mono text-sm">
-                              ${((entry.quantity || 1) * parseFloat(entry.hoursUsed || "0") * parseFloat(entry.hourlyRate || "0")).toFixed(2)}
-                            </div>
-                          </div>
                           <div className="col-span-1">
                             {canEdit && (
                               <Button
@@ -954,7 +1169,7 @@ export function ChangeOrderDialog({
                   {/* Materials Tab */}
                   <TabsContent value="materials" className="space-y-3 mt-3">
                     {materialEntries.map((entry, index) => (
-                      <Card key={index} className="p-3 space-y-2">
+                      <Card key={index} className="p-3">
                         <div className="grid grid-cols-12 gap-2 items-end">
                           <div className="col-span-2">
                             <Label className="text-xs">Category</Label>
@@ -1276,7 +1491,7 @@ export function ChangeOrderDialog({
                 </>
               )}
 
-              {/* Legacy DRAFT: request approval */}
+              {/* DRAFT: request approval */}
               {changeOrder.status === "DRAFT" && (
                 <Button
                   onClick={() => requestApprovalMutation.mutate()}
@@ -1288,7 +1503,7 @@ export function ChangeOrderDialog({
                 </Button>
               )}
 
-              {/* Legacy PENDING_APPROVAL */}
+              {/* PENDING_APPROVAL */}
               {canManage && changeOrder.status === "PENDING_APPROVAL" && (
                 <>
                   <Button
@@ -1366,6 +1581,74 @@ export function ChangeOrderDialog({
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* T&M Ticket Picker Dialog */}
+      <Dialog open={showTmPicker} onOpenChange={setShowTmPicker}>
+        <DialogContent className="max-w-lg" data-testid="dialog-tm-picker">
+          <DialogHeader>
+            <DialogTitle>Link T&M Ticket</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {tmTickets.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No T&M tickets found for this project</p>
+            ) : (
+              tmTickets.map((ticket) => (
+                <Card
+                  key={ticket.id}
+                  className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => linkTmMutation.mutate(ticket.id)}
+                  data-testid={`button-select-tm-${ticket.id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm font-mono">{ticket.ticketNumber}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{ticket.description}</p>
+                    </div>
+                    <Badge variant="outline" className="text-xs shrink-0">{ticket.status}</Badge>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTmPicker(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* RFI Picker Dialog */}
+      <Dialog open={showRfiPicker} onOpenChange={setShowRfiPicker}>
+        <DialogContent className="max-w-lg" data-testid="dialog-rfi-picker">
+          <DialogHeader>
+            <DialogTitle>Link RFI</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {projectRfis.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No RFIs found for this project</p>
+            ) : (
+              projectRfis.map((rfi) => (
+                <Card
+                  key={rfi.id}
+                  className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => linkRfiMutation.mutate(rfi.id)}
+                  data-testid={`button-select-rfi-${rfi.id}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm font-mono">{rfi.rfiNumber}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{rfi.subject}</p>
+                    </div>
+                    <Badge variant="outline" className="text-xs shrink-0">{rfi.status}</Badge>
+                  </div>
+                </Card>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRfiPicker(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
 
     {/* Void Confirmation Dialog */}
@@ -1379,22 +1662,22 @@ export function ChangeOrderDialog({
         </DialogHeader>
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
-            Voiding this change order will mark it as cancelled. This action requires a reason and cannot be undone without re-creating the change order.
+            Voiding a change order is permanent. Please provide a reason for voiding this change order.
           </p>
-          <div className="space-y-2">
-            <Label htmlFor="void-reason">Void Reason <span className="text-destructive">*</span></Label>
+          <div>
+            <Label htmlFor="void-reason">Void Reason</Label>
             <Textarea
               id="void-reason"
               value={voidReason}
               onChange={(e) => setVoidReason(e.target.value)}
-              placeholder="Explain why this change order is being voided..."
+              placeholder="Enter reason for voiding..."
               rows={3}
               data-testid="input-void-reason"
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => { setShowVoidDialog(false); setVoidReason(""); }} data-testid="button-cancel-void">
+          <Button variant="outline" onClick={() => { setShowVoidDialog(false); setVoidReason(""); }}>
             Cancel
           </Button>
           <Button

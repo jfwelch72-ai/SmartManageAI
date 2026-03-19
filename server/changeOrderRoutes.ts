@@ -309,6 +309,27 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
+    // Auto-bootstrap default approval chain if none has been configured
+    try {
+      const existingApprovals = await db
+        .select({ id: changeOrderApprovals.id })
+        .from(changeOrderApprovals)
+        .where(eq(changeOrderApprovals.changeOrderId, req.params.id))
+        .limit(1);
+
+      if (existingApprovals.length === 0) {
+        await db.insert(changeOrderApprovals).values({
+          changeOrderId: req.params.id,
+          approverRole: "MANAGER",
+          status: "PENDING",
+          stepOrder: 1,
+          approverId: null,
+        });
+      }
+    } catch (approvalErr) {
+      console.error("Failed to auto-bootstrap approval chain:", approvalErr);
+    }
+
     await createRevision(order.id, order.status, "SUBMITTED", req.user!.id, "Submitted to client", order.amount);
 
     // Audit log

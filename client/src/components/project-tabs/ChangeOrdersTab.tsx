@@ -2,14 +2,14 @@ import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban } from "lucide-react";
+import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban, AlertTriangle, Calendar } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { format, isPast } from "date-fns";
 import type { ChangeOrder } from "@shared/schema";
 import { useCreateChangeOrder, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder } from "@/hooks/use-data";
 import { ChangeOrderFiles } from "@/components/ChangeOrderFiles";
@@ -17,6 +17,7 @@ import { ChangeOrderDialog } from "@/components/ChangeOrderDialog";
 import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import AiChangeOrderGenerator from "@/components/AiChangeOrderGenerator";
 import { hasManagementAccess } from "@/lib/rbac";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -31,19 +32,21 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedChangeOrder, setSelectedChangeOrder] = useState<ChangeOrder | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
-  const [changeOrderNumber, setChangeOrderNumber] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
   const [scopeQuantity, setScopeQuantity] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  // Submit with deadline state (Task #70)
+  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [pendingSubmitId, setPendingSubmitId] = useState<string | null>(null);
+  const [clientResponseDueDate, setClientResponseDueDate] = useState("");
   const { toast } = useToast();
 
   const createMutation = useCreateChangeOrder();
   const requestApprovalMutation = useRequestApprovalChangeOrder();
   const approveMutation = useApproveChangeOrder();
   const rejectMutation = useRejectChangeOrder();
-  const submitMutation = useSubmitChangeOrder();
   const returnToDraftMutation = useReturnToDraftChangeOrder();
 
   const handleCreate = async () => {
@@ -53,7 +56,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     }
 
     try {
-      await createMutation.mutateAsync({
+      const result = await createMutation.mutateAsync({
         projectId,
         projectCode,
         description,
@@ -68,9 +71,12 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         scopeUnit: scopeSelection?.unit || undefined,
         scopeQuantity: scopeQuantity || undefined,
       });
-      toast({ title: "Success", description: "Change order created" });
+      const generatedNumber = (result as any)?.changeOrderNumber || "";
+      toast({
+        title: "Change order created",
+        description: generatedNumber ? `CO #${generatedNumber} has been created` : "Change order created successfully",
+      });
       setShowCreateDialog(false);
-      setChangeOrderNumber("");
       setDescription("");
       setAmount("");
       setScopeSelection(null);
@@ -101,10 +107,23 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     }
   };
 
-  const handleSubmit = async (id: string) => {
+  const openSubmitDialog = (id: string) => {
+    setPendingSubmitId(id);
+    setClientResponseDueDate("");
+    setShowSubmitDialog(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!pendingSubmitId) return;
     try {
-      await submitMutation.mutateAsync({ id, projectCode });
+      await apiRequest("POST", `/api/change-orders/${pendingSubmitId}/submit`, {
+        clientResponseDueDate: clientResponseDueDate || undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Success", description: "Change order submitted to client" });
+      setShowSubmitDialog(false);
+      setPendingSubmitId(null);
     } catch (error) {
       toast({ title: "Error", description: "Failed to submit", variant: "destructive" });
     }
@@ -137,6 +156,11 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     return changeOrders.filter(co => co.status === statusFilter);
   }, [changeOrders, statusFilter]);
 
+  const isResponseOverdue = (co: ChangeOrder) => {
+    const coAny = co as any;
+    return co.status === "SUBMITTED" && coAny.clientResponseDueDate && isPast(new Date(coAny.clientResponseDueDate));
+  };
+
   return (
     <>
       <Card>
@@ -156,20 +180,22 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
               </DialogHeader>
               <div className="space-y-4">
                 <p className="text-xs text-muted-foreground">Creates a new Potential Change Order (PCO). A CO number will be auto-assigned.</p>
-                <div>
-                  <Label htmlFor="co-amount">Amount ($)</Label>
-                  <Input
-                    id="co-amount"
-                    type="number"
-                    step="0.01"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="2500.00"
-                    data-testid="input-change-order-amount"
-                  />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Enter positive for additions or negative for deductions
-                  </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="co-amount">Amount ($)</Label>
+                    <Input
+                      id="co-amount"
+                      type="number"
+                      step="0.01"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="2500.00"
+                      data-testid="input-change-order-amount"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Enter positive for additions or negative for deductions
+                    </p>
+                  </div>
                 </div>
 
                 <Card className="p-4 bg-muted/30">
@@ -279,7 +305,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
                           <Badge variant="outline" className="font-mono">{co.changeOrderNumber}</Badge>
                           {co.status === "PCO" ? (
                             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300" data-testid={`status-pco-${co.id}`}>
@@ -306,6 +332,12 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                               {co.status?.replace(/_/g, " ")}
                             </Badge>
                           )}
+                          {isResponseOverdue(co) && (
+                            <Badge variant="destructive" className="flex items-center gap-1" data-testid={`badge-overdue-${co.id}`}>
+                              <AlertTriangle className="w-3 h-3" />
+                              Response Overdue
+                            </Badge>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -323,6 +355,12 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                         <p className="text-sm text-muted-foreground">
                           Created {format(new Date(co.createdAt), "MMM d, yyyy")}
                         </p>
+                        {(co as any).clientResponseDueDate && co.status === "SUBMITTED" && (
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            Response due: {format(new Date((co as any).clientResponseDueDate), "MMM d, yyyy")}
+                          </p>
+                        )}
                         {co.rejectionReason && (
                           <p className="text-sm text-destructive mt-2">
                             Rejected: {co.rejectionReason}
@@ -342,13 +380,12 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                             </p>
                           </>
                         )}
-                        {canManage && co.status === "DRAFT" && (
+                        {canManage && (co.status === "DRAFT" || co.status === "PCO") && (
                           <div className="flex gap-2 mt-2">
                             <Button
                               size="sm"
                               variant="default"
-                              onClick={() => handleSubmit(co.id)}
-                              disabled={submitMutation.isPending}
+                              onClick={() => openSubmitDialog(co.id)}
                               data-testid={`button-submit-${co.id}`}
                             >
                               <CheckCircle className="w-4 h-4 mr-1" />
@@ -406,7 +443,6 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
             projectId={projectId}
             projectName={projectName}
             onCreateChangeOrder={(draft) => {
-              setChangeOrderNumber(`CO-${Date.now().toString().slice(-4)}`);
               setAmount(draft.suggestedAmount.toString());
               setDescription(draft.aiGeneratedDescription);
               setShowCreateDialog(true);
@@ -425,6 +461,39 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         projectCode={projectCode}
         userRole={userRole}
       />
+
+      {/* Submit with deadline dialog */}
+      <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+        <DialogContent className="max-w-sm" data-testid="dialog-submit-co">
+          <DialogHeader>
+            <DialogTitle>Submit to Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Optionally set a client response deadline for this change order.
+            </p>
+            <div>
+              <Label htmlFor="client-response-due-date" className="flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                Client Response Due Date (optional)
+              </Label>
+              <Input
+                id="client-response-due-date"
+                type="date"
+                value={clientResponseDueDate}
+                onChange={(e) => setClientResponseDueDate(e.target.value)}
+                data-testid="input-client-response-due-date"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSubmitDialog(false)}>Cancel</Button>
+            <Button onClick={handleSubmit} data-testid="button-confirm-submit">
+              Submit to Client
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
