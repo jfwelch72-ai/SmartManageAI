@@ -1,0 +1,844 @@
+You are a senior full-stack architect and implementation engineer. Your task is to add Phase 1 and Phase 2 of the SmartManageAI Hiring Module into the existing application WITHOUT breaking, removing, refactoring away, visually disrupting, or functionally altering any current features, integrations, security layers, database relationships, permissions, layouts, workflows, routes, or automations unless explicitly required for this new module.
+
+CRITICAL IMPLEMENTATION RULES
+1. Preserve all current code structure, naming conventions, UI styling patterns, RBAC logic, multi-tenant safeguards, middleware, environment handling, and existing data flows.
+2. Do not remove or overwrite any current modules, dashboards, menus, pages, API routes, cron jobs, webhooks, automations, or database tables.
+3. All new work must be additive, modular, backward-compatible, and safely feature-flagged.
+4. If any migration or dependency introduces risk, implement a fallback path and keep the old path fully operational.
+5. If uncertain whether a file or function is currently used elsewhere, assume it is mission-critical and extend it non-destructively.
+6. Maintain the current visual design language, spacing, component patterns, table behavior, filters, navigation logic, and permissions structure.
+7. Do not break development logins, test accounts, impersonation tools, demo organization flows, or current admin testing shortcuts.
+8. Respect existing organization isolation. No organization can ever see another organization’s jobs, candidates, workflows, communications, or settings.
+9. Build this so it can scale later into direct Indeed/LinkedIn/ZipRecruiter partner integrations, but for now use an ATS-backed architecture for Phase 1.
+10. All implementation must be production-minded, auditable, secure, and clean.
+
+PROJECT GOAL
+Build Phase 1 and Phase 2 of a Hiring Module for SmartManageAI.
+
+PHASE 1 = ATS-Backed Hiring Distribution + Applicant Tracking
+PHASE 2 = AI-Powered Candidate Review, Workflow Automation, and Interview Coordination
+
+Current strategic direction:
+- SmartManageAI is a multi-tenant contractor management platform.
+- Hiring should plug into existing roles, organization settings, dashboard logic, and operational workflows.
+- This should feel native to the platform, not bolted on.
+- Architecture must support future expansion into onboarding, employee record creation, payroll triggers, training checklists, and crew assignment.
+
+PRIMARY STRATEGY
+For Phase 1, integrate a third-party ATS backend such as Workable via API abstraction layer. Do not hard-code the app so it depends permanently on one vendor. Build a provider abstraction system now so future ATS providers or direct job board integrations can be added later with minimal rewrites.
+
+HIGH-LEVEL DELIVERABLES
+You must implement all of the following thoroughly and safely:
+
+A. FRONT-END HIRING MODULE
+B. BACK-END HIRING MODULE
+C. ATS PROVIDER ABSTRACTION LAYER
+D. DATABASE SCHEMA EXTENSIONS
+E. AI CANDIDATE ANALYSIS ENGINE
+F. AUTOMATION + TASK CREATION ENGINE
+G. INTERVIEW SCHEDULING + COMMUNICATION WORKFLOWS
+H. RBAC + TENANT SAFETY
+I. AUDIT LOGGING + ERROR HANDLING
+J. FEATURE FLAGS + SETTINGS
+K. TESTING + MIGRATION SAFETY
+L. DEVELOPER DOCUMENTATION
+
+==================================================
+A. FRONT-END HIRING MODULE
+==================================================
+
+Create a complete, native Hiring module in the front end that fits the existing SmartManageAI design and navigation system.
+
+Add a new top-level or contextually correct navigation item:
+- Hiring
+
+Inside Hiring, create these views:
+1. Hiring Dashboard
+2. Job Requisitions / Open Roles
+3. Candidates
+4. Pipeline Board
+5. Interviews
+6. Hiring Tasks
+7. Hiring Analytics
+8. Settings / Integrations
+
+1. Hiring Dashboard
+Build a dashboard showing:
+- Open roles
+- Draft roles
+- Published roles
+- Total applicants
+- New applicants in last 7 days
+- Applicants by stage
+- Interviews scheduled
+- Offer-ready candidates
+- Average days in pipeline
+- Source breakdown
+- Hiring tasks overdue
+- AI-flagged top candidates
+- AI-flagged concerns
+- Recent hiring activity feed
+
+2. Job Requisitions / Open Roles
+Each organization should be able to:
+- Create a new job posting
+- Save as draft
+- Publish to ATS provider
+- Archive role
+- Duplicate role
+- Edit role safely
+- Assign hiring owner
+- Assign related department/division/project/trade
+- Set location
+- Set role type: full-time, part-time, seasonal, subcontractor, intern, temporary
+- Set compensation structure: salary, hourly, prevailing wage note, bonus eligible, etc.
+- Add job description
+- Add requirements
+- Add preferred qualifications
+- Add trade tags
+- Add equipment/skill tags
+- Add certifications/licenses
+- Add travel requirements
+- Add schedule requirements
+- Add internal notes
+- Add screening questions
+- Add custom knockout questions
+- Add visibility settings
+- Add posting destinations
+- Track published status and sync status
+
+Include templates for contractor-focused roles such as:
+- Foreman
+- Superintendent
+- Project Manager
+- Estimator
+- Office Admin / Office Manager
+- Laborer
+- Operator
+- CDL Driver
+- Concrete Finisher
+- Carpenter
+- Maintenance Tech
+- Sales / Biz Dev
+
+3. Candidates
+Create a candidate list with:
+- Name
+- Role applied for
+- Source
+- Stage
+- Location
+- Applied date
+- Assigned reviewer
+- AI score / ranking
+- AI summary preview
+- Certifications matched
+- Trade match confidence
+- Interview status
+- Red flags indicator
+- Notes indicator
+
+Filters:
+- Role
+- Stage
+- Source
+- Date range
+- Hiring owner
+- Trade
+- Certifications
+- AI score band
+- Interview status
+- New / reviewed / flagged
+- Search by name/email/phone/skill
+
+Candidate profile page must include:
+- Contact info
+- Resume / attachment viewer
+- ATS sync metadata
+- Full application answers
+- AI-generated summary
+- AI strengths
+- AI concerns
+- Skill/certification extraction
+- Employment history section
+- Notes
+- Stage history timeline
+- Communications log
+- Interview history
+- Internal rating
+- Recommended next action
+- Tasks tied to candidate
+- Offer readiness snapshot
+- Audit log summary
+
+4. Pipeline Board
+Create Kanban-style board with drag-and-drop stages:
+- Applied
+- Screened
+- Review
+- Phone Screen
+- Interview
+- Final Review
+- Offer
+- Hired
+- Rejected
+- Archived
+
+Rules:
+- Drag/drop updates stage in database and syncs upstream if needed
+- All stage changes are logged
+- Optional confirmation on destructive changes like reject/archive
+- Role-specific pipeline supported
+- Organization can customize stage labels later, but include safe default config now
+
+5. Interviews
+Build interview scheduler view:
+- Upcoming interviews
+- Candidate
+- Role
+- Interview type
+- Date/time
+- Assigned interviewers
+- Location or video link
+- Status
+- Notes
+- Reminder status
+- Reschedule / cancel controls
+
+6. Hiring Tasks
+Tasks generated from hiring actions:
+- Review resume
+- Call candidate
+- Schedule interview
+- Request references
+- Request certifications
+- Send offer
+- Follow up after interview
+- Prepare onboarding
+- Add to employee system after hire
+
+This should tie into existing task systems if one exists. If there is already a task engine, extend it instead of building a conflicting second task system.
+
+7. Hiring Analytics
+Include:
+- Applicants per role
+- Conversion by stage
+- Time to first review
+- Time to interview
+- Time to hire
+- Source quality
+- Rejection reasons
+- AI score distribution
+- Role fill velocity
+- Hiring team responsiveness
+
+8. Settings / Integrations
+Allow org admins to configure:
+- ATS provider connection
+- API credentials
+- Default posting destinations
+- Default pipeline stages
+- AI scoring on/off
+- Auto-task creation on/off
+- Interview reminder rules
+- Candidate reviewer defaults
+- Hiring access by role
+- Candidate retention policy
+- Resume parsing settings
+- Email templates
+
+==================================================
+B. BACK-END HIRING MODULE
+==================================================
+
+Build all backend services required to support the front end.
+
+Create modular services for:
+- Hiring jobs service
+- Candidates service
+- ATS sync service
+- Interview service
+- Hiring automation service
+- AI evaluation service
+- Notes and communications service
+- Audit service
+- Settings service
+
+Build API endpoints or equivalent server actions for:
+- Create/update/archive jobs
+- Publish job to ATS
+- Pull jobs from ATS
+- Pull candidates from ATS
+- Update candidate stage
+- Add candidate notes
+- Generate AI analysis
+- Schedule/reschedule/cancel interview
+- Trigger candidate communications
+- Generate hiring tasks
+- Mark candidate hired
+- Reject/archive candidate
+- Load analytics
+- Save integration settings
+- Run sync now
+- View sync logs
+
+All endpoints must:
+- Enforce tenant scope
+- Enforce RBAC
+- Validate payloads
+- Log failures
+- Return user-safe error messages
+- Retry external API failures intelligently where appropriate
+
+==================================================
+C. ATS PROVIDER ABSTRACTION LAYER
+==================================================
+
+This is critical.
+
+Do NOT build directly against a single ATS in a tightly coupled way.
+
+Create an abstraction interface like:
+- ATSProvider
+  - createJob()
+  - updateJob()
+  - publishJob()
+  - archiveJob()
+  - listJobs()
+  - listCandidates()
+  - getCandidate()
+  - moveCandidateStage()
+  - listSources()
+  - testConnection()
+  - webhookHandler()
+  - normalizeJob()
+  - normalizeCandidate()
+
+Then create first implementation:
+- WorkableProvider
+
+The rest of the app must talk only to the abstraction layer, not directly to Workable API calls.
+
+Build provider registry so future additions can include:
+- GreenhouseProvider
+- LeverProvider
+- DirectIndeedPartnerProvider
+- LinkedInPartnerProvider
+
+All ATS data should be normalized into SmartManageAI internal models before being stored or rendered.
+
+==================================================
+D. DATABASE SCHEMA EXTENSIONS
+==================================================
+
+Extend the database safely and add migrations carefully.
+
+Create new tables or equivalent models for:
+1. hiring_jobs
+2. hiring_job_templates
+3. hiring_candidates
+4. hiring_candidate_applications
+5. hiring_candidate_documents
+6. hiring_candidate_notes
+7. hiring_candidate_stage_history
+8. hiring_interviews
+9. hiring_tasks
+10. hiring_integrations
+11. hiring_sync_logs
+12. hiring_ai_reviews
+13. hiring_email_templates
+14. hiring_pipeline_configs
+15. hiring_activity_logs
+
+Suggested core fields include:
+
+hiring_jobs
+- id
+- organization_id
+- external_provider
+- external_job_id
+- title
+- slug
+- department
+- trade
+- employment_type
+- location
+- compensation_type
+- compensation_min
+- compensation_max
+- description
+- requirements
+- preferred_qualifications
+- certifications_required
+- screening_questions_json
+- status
+- publish_status
+- assigned_owner_user_id
+- created_by
+- updated_by
+- published_at
+- archived_at
+- created_at
+- updated_at
+
+hiring_candidates
+- id
+- organization_id
+- external_provider
+- external_candidate_id
+- job_id
+- first_name
+- last_name
+- full_name
+- email
+- phone
+- city
+- state
+- source
+- current_stage
+- applied_at
+- reviewer_user_id
+- ai_score
+- ai_recommendation
+- status
+- raw_payload_json
+- created_at
+- updated_at
+
+hiring_ai_reviews
+- id
+- organization_id
+- candidate_id
+- model_name
+- score
+- summary
+- strengths_json
+- concerns_json
+- extracted_skills_json
+- extracted_certs_json
+- extracted_equipment_json
+- trade_fit_score
+- role_fit_score
+- red_flags_json
+- recommendation
+- generated_at
+- prompt_version
+- confidence_score
+
+hiring_interviews
+- id
+- organization_id
+- candidate_id
+- job_id
+- interview_type
+- start_at
+- end_at
+- timezone
+- location
+- video_link
+- interviewer_user_ids_json
+- status
+- notes
+- reminder_sent_at
+- created_by
+- updated_by
+
+hiring_integrations
+- id
+- organization_id
+- provider_name
+- encrypted_credentials_json
+- status
+- last_sync_at
+- last_test_at
+- default_config_json
+- created_at
+- updated_at
+
+Also create indexes for:
+- organization_id
+- external ids
+- status
+- current_stage
+- reviewer_user_id
+- applied_at
+- created_at
+
+Use existing ORM patterns and migrations style already in the codebase. Do not invent conflicting patterns.
+
+==================================================
+E. AI CANDIDATE ANALYSIS ENGINE
+==================================================
+
+Phase 2 requires AI.
+
+Build an AI review engine that can analyze candidate data and generate structured hiring insights.
+
+AI should process:
+- Resume text
+- Application answers
+- Role requirements
+- Required certifications
+- Trade type
+- Experience signals
+- Equipment familiarity
+- Management experience
+- Travel availability
+- CDL / OSHA / equipment certifications where mentioned
+- Leadership indicators
+- Reliability indicators
+- Red flags like job hopping if configured
+- Skill match to role template
+
+AI outputs must include:
+1. Score from 1-100
+2. Plain-English summary
+3. Key strengths
+4. Potential concerns
+5. Extracted certifications
+6. Extracted trade skills
+7. Extracted equipment familiarity
+8. Suggested next step
+9. Confidence score
+10. Role-fit score
+11. Trade-fit score
+12. Interview recommendation yes/no/maybe
+
+Important:
+- AI recommendations are advisory only, not final decisions
+- Display a disclaimer in UI that AI assists review and does not replace human hiring decisions
+- Do not make unlawful or protected-class-based analysis
+- Do not score based on race, religion, gender, age, disability, or any protected category
+- Build prompts and post-processing to minimize biased outputs
+- Store AI prompt version for auditability
+- Make AI rerunnable if job requirements change
+
+Add queue or background-safe processing if the architecture supports it, but do not break current request flow if queues do not yet exist. If queues are not available, implement robust deferred processing pattern.
+
+==================================================
+F. AUTOMATION + TASK CREATION ENGINE
+==================================================
+
+Build automations that tie into existing workflows.
+
+When candidate events occur, optionally trigger tasks:
+- New applicant received -> task to reviewer
+- Candidate moved to Phone Screen -> task to schedule call
+- Candidate moved to Interview -> task to confirm interview panel
+- Candidate marked Offer -> task to prepare offer materials
+- Candidate marked Hired -> task to begin onboarding workflow
+- Candidate marked Rejected -> close open tasks
+- Missing certification -> task to request documentation
+- AI flags top candidate -> notify assigned reviewer
+- AI flags concern -> create follow-up review task
+
+If SmartManageAI already has:
+- Task engine
+- Notifications
+- Dashboard reminders
+- Email review AI
+- User assignments
+Then extend those existing systems cleanly rather than duplicating them.
+
+==================================================
+G. INTERVIEW SCHEDULING + COMMUNICATION WORKFLOWS
+==================================================
+
+Build interview scheduling support that is modular and future-ready.
+
+Phase 2 core requirements:
+- Manual internal scheduling
+- Candidate interview records
+- Reminder statuses
+- Interview notes
+- Reschedule / cancel workflows
+- Internal interviewer assignments
+
+If calendar integrations already exist, connect safely.
+If not, architect adapters for future:
+- Google Calendar
+- Outlook Calendar
+
+Also prepare communication layer for:
+- Candidate invitation email
+- Interview confirmation email
+- Reminder email
+- Rejection email
+- Next-step follow-up email
+
+Do not hardwire sending immediately if communications infrastructure is still evolving. Use the app’s existing communications pattern if present.
+
+==================================================
+H. RBAC + TENANT SAFETY
+==================================================
+
+This must align with current SmartManageAI role architecture.
+
+Respect and extend current roles such as:
+- SUPER_ADMIN
+- ADMIN
+- HUSTLER
+- MANAGER
+- SUPERINTENDENT
+- ESTIMATOR
+- OFFICE_MANAGER
+- MAINTENANCE_MANAGER
+- HOURLY_EMPLOYEE
+- VENDOR
+
+Define hiring permissions carefully, for example:
+- SUPER_ADMIN: global oversight
+- ADMIN: full org hiring access
+- HUSTLER: full effective admin hiring access
+- MANAGER: can review applicants, update stages, schedule interviews if allowed
+- OFFICE_MANAGER: can manage communications, documents, scheduling, onboarding prep if allowed
+- ESTIMATOR / SUPERINTENDENT / MAINTENANCE_MANAGER: limited role-based access if org enables
+- HOURLY_EMPLOYEE / VENDOR: no hiring admin access unless explicitly configured for referrals in future
+
+Build permission matrix so hiring access is configurable per org.
+
+No candidate record should ever leak across tenants.
+
+==================================================
+I. AUDIT LOGGING + ERROR HANDLING
+==================================================
+
+Implement full audit logging for:
+- Job created
+- Job edited
+- Job published
+- Job archived
+- Candidate imported
+- Candidate stage changed
+- Candidate AI review generated
+- Candidate note added
+- Interview scheduled/rescheduled/cancelled
+- Integration connected/disconnected/tested
+- Sync run started/completed/failed
+
+Create admin-viewable sync logs:
+- provider
+- time
+- entity type
+- status
+- records processed
+- failures
+- retry status
+- raw error summary sanitized for UI
+
+Use robust try/catch and centralized error handling.
+
+==================================================
+J. FEATURE FLAGS + SETTINGS
+==================================================
+
+Add feature flags so deployment is safe.
+
+Flags should allow:
+- Enable hiring module
+- Enable ATS sync
+- Enable AI scoring
+- Enable interview scheduler
+- Enable hiring analytics
+- Enable automated task creation
+
+Allow org-level and possibly platform-level enablement.
+
+This lets the team roll out in phases without risking the rest of the platform.
+
+==================================================
+K. TESTING + MIGRATION SAFETY
+==================================================
+
+You must implement safely and verify thoroughly.
+
+Create:
+1. Schema migration plan
+2. Seed data for demo/testing
+3. Unit tests for service layer
+4. Integration tests for ATS abstraction
+5. Permission tests
+6. Tenant isolation tests
+7. AI parsing tests
+8. UI smoke tests for hiring flows
+9. Regression checklist to verify no current modules broke
+
+Regression checklist must explicitly verify no disruption to:
+- Existing auth
+- Existing org switching
+- Existing dashboard loading
+- Existing task systems
+- Existing CRM
+- Existing estimating features
+- Existing project management
+- Existing time clock
+- Existing financial areas
+- Existing equipment systems
+- Existing email/AI systems
+- Existing dev login shortcuts
+- Existing notification flows
+
+==================================================
+L. DEVELOPER DOCUMENTATION
+==================================================
+
+Generate internal documentation files for the dev team:
+1. Hiring architecture overview
+2. ATS provider interface guide
+3. Database schema notes
+4. AI review logic overview
+5. Permission matrix
+6. Environment variable guide
+7. Rollout checklist
+8. Future roadmap for direct job board integrations
+
+==================================================
+TECHNICAL IMPLEMENTATION REQUIREMENTS
+==================================================
+
+Use the existing application’s exact stack, conventions, and patterns.
+You must inspect the codebase and extend current:
+- folder structure
+- route style
+- state management
+- component library
+- ORM usage
+- API handler conventions
+- auth middleware
+- environment config
+- error handling patterns
+- styling conventions
+- logging conventions
+
+If the project uses:
+- TypeScript: keep strong typing throughout
+- React: build typed components and reusable hooks
+- Drizzle or Prisma: follow existing model and migration patterns
+- Express / Next / server actions: match current conventions exactly
+- Zod or validators: validate all external input
+- Existing design system: reuse it, do not visually fork
+
+==================================================
+ENVIRONMENT + SECRET MANAGEMENT
+==================================================
+
+Add secure environment handling for ATS provider credentials and AI integration.
+
+Examples:
+- ATS_PROVIDER_ENABLED
+- WORKABLE_API_TOKEN
+- WORKABLE_SUBDOMAIN
+- AI_HIRING_REVIEW_ENABLED
+- AI_HIRING_MODEL
+- HIRING_MODULE_ENABLED
+
+Do not expose secrets to the client.
+Do not leak provider payloads in logs.
+
+Credentials stored per organization must be encrypted at rest using existing encryption utilities if present. If not present, create a safe encryption utility consistent with project standards.
+
+==================================================
+SYNC + WEBHOOK DESIGN
+==================================================
+
+Support both:
+- Manual sync now
+- Scheduled sync
+- Provider webhooks if supported
+
+Build idempotent sync logic:
+- avoid duplicate jobs
+- avoid duplicate candidates
+- safely update changed records
+- track last sync timestamps
+- log partial failures without corrupting data
+
+==================================================
+UI/UX EXPECTATIONS
+==================================================
+
+The module must feel polished and native to SmartManageAI:
+- consistent cards, tables, filters, dialogs, badges, tabs, drawers, spacing
+- no generic rough admin layout
+- contractor-friendly language where helpful
+- fast navigation between role, candidate, and interview views
+- mobile/tablet tolerance if current app supports it
+- clear statuses and stage colors
+- no disruption to current navigation hierarchy
+
+==================================================
+CONTRACTOR-SPECIFIC HIRING INTELLIGENCE
+==================================================
+
+Where appropriate, tailor the module for construction and trades businesses:
+- trade tags
+- equipment familiarity
+- OSHA/CDL/certification extraction
+- prevailing wage awareness note fields
+- seasonal role support
+- project-based role association
+- foreman/superintendent/crew-based hiring workflows
+- role templates relevant to self-perform contractors
+
+==================================================
+IMPLEMENTATION ORDER
+==================================================
+
+Implement in this safe order:
+
+STEP 1: Inspect current codebase and identify:
+- auth model
+- RBAC structure
+- org isolation pattern
+- routing pattern
+- ORM schema pattern
+- task/notification systems
+- current UI component system
+- existing AI service utilities
+- existing calendar/email systems
+- existing settings/config tables
+
+STEP 2: Create feature flags and safe stubs.
+
+STEP 3: Add database schema and migrations.
+
+STEP 4: Add ATS provider abstraction layer and Workable provider implementation.
+
+STEP 5: Add backend services and sync logic.
+
+STEP 6: Add front-end Hiring module screens incrementally.
+
+STEP 7: Add AI review engine.
+
+STEP 8: Add automations, interview workflows, and analytics.
+
+STEP 9: Add tests, audit logging, and documentation.
+
+STEP 10: Produce a final implementation report.
+
+==================================================
+FINAL OUTPUT REQUIRED FROM YOU
+==================================================
+
+Do not just describe the plan. Execute the implementation.
+
+At the end, provide:
+1. Summary of all files created
+2. Summary of all files modified
+3. Database changes made
+4. Environment variables added
+5. Routes/endpoints added
+6. Any migrations required
+7. Any follow-up manual steps for the team
+8. Any risks or deferred items
+9. Full regression checklist results
+10. Notes on how Phase 3 can later support direct Indeed/LinkedIn/ZipRecruiter partner integrations
+
+IMPORTANT FINAL CONSTRAINT
+This implementation must be additive, stable, and seamless. It must preserve all current SmartManageAI behavior while cleanly introducing a scalable Hiring Module for Phase 1 and Phase 2.
+
+Do not simplify this task.
+Do not replace existing systems with generic boilerplate.
+Do not ignore tenant safety.
+Do not make assumptions that risk current functionality.
+Inspect first, then implement carefully, then verify thoroughly.
