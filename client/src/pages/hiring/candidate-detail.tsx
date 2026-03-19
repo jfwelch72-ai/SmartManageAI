@@ -125,7 +125,22 @@ export default function CandidateDetailPage() {
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskDue, setNewTaskDue] = useState("");
-  const [aiResult, setAiResult] = useState<{ score: number; recommendation: string; strengths: string[]; concerns: string[] } | null>(null);
+  const [aiResult, setAiResult] = useState<{
+    score: number;
+    tradeFitScore: number;
+    roleFitScore: number;
+    confidenceScore: number;
+    recommendation: string;
+    summary: string;
+    strengths: string[];
+    concerns: string[];
+    redFlags: string[];
+    extractedSkills: string[];
+    extractedCerts: string[];
+    extractedEquipment: string[];
+    interviewRecommendation: string;
+    disclaimer: string;
+  } | null>(null);
 
   const { data: candidate, isLoading } = useHiringCandidate(candidateId);
   const { data: activity = [] } = useCandidateActivity(candidateId);
@@ -436,10 +451,10 @@ export default function CandidateDetailPage() {
                     onClick={() => {
                       aiScoreMutation.mutate(undefined, {
                         onSuccess: (data) => {
-                          setAiResult({ score: data.score, recommendation: data.recommendation, strengths: data.strengths, concerns: data.concerns });
-                          toast({ title: "AI evaluation complete", description: `Score: ${data.score}/100` });
+                          setAiResult(data);
+                          toast({ title: "AI review complete", description: `Score: ${data.score}/100 · ${data.recommendation}` });
                         },
-                        onError: (err: Error) => toast({ title: "AI scoring failed", description: err.message, variant: "destructive" }),
+                        onError: (err: Error) => toast({ title: "AI review failed", description: err.message, variant: "destructive" }),
                       });
                     }}
                     disabled={aiScoreMutation.isPending}
@@ -452,32 +467,105 @@ export default function CandidateDetailPage() {
             </CardHeader>
             <CardContent>
               {(aiResult || candidate.aiScore != null || candidate.aiRecommendation) ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1">
+                <div className="space-y-4">
+                  {/* Scores row */}
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-1.5">
                       <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-xl font-bold">{aiResult?.score ?? candidate.aiScore ?? "—"}</span>
+                      <span className="text-2xl font-bold">{aiResult?.score ?? candidate.aiScore ?? "—"}</span>
                       <span className="text-sm text-muted-foreground">/100</span>
                     </div>
+                    {aiResult && (
+                      <>
+                        <div className="text-xs text-muted-foreground">Trade fit: <span className="font-medium text-foreground">{aiResult.tradeFitScore}</span></div>
+                        <div className="text-xs text-muted-foreground">Role fit: <span className="font-medium text-foreground">{aiResult.roleFitScore}</span></div>
+                        <div className="text-xs text-muted-foreground">Confidence: <span className="font-medium text-foreground">{aiResult.confidenceScore}</span></div>
+                        <Badge
+                          variant={aiResult.recommendation === "YES" ? "default" : aiResult.recommendation === "NO" ? "destructive" : "secondary"}
+                          className="text-xs"
+                        >
+                          {aiResult.recommendation}
+                        </Badge>
+                      </>
+                    )}
                   </div>
-                  {(aiResult?.recommendation || candidate.aiRecommendation) && (
-                    <p className="text-sm">{aiResult?.recommendation ?? candidate.aiRecommendation}</p>
+
+                  {/* Summary */}
+                  {(aiResult?.summary || candidate.aiRecommendation) && (
+                    <p className="text-sm">{aiResult?.summary ?? candidate.aiRecommendation}</p>
                   )}
+
+                  {/* Strengths */}
                   {aiResult?.strengths && aiResult.strengths.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-green-700 mb-1">Strengths</p>
+                      <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">Strengths</p>
                       <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
                         {aiResult.strengths.map((s, i) => <li key={i}>{s}</li>)}
                       </ul>
                     </div>
                   )}
+
+                  {/* Concerns */}
                   {aiResult?.concerns && aiResult.concerns.length > 0 && (
                     <div>
-                      <p className="text-xs font-medium text-destructive mb-1">Concerns</p>
+                      <p className="text-xs font-medium text-orange-700 dark:text-orange-400 mb-1">Concerns</p>
                       <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
                         {aiResult.concerns.map((c, i) => <li key={i}>{c}</li>)}
                       </ul>
                     </div>
+                  )}
+
+                  {/* Red flags */}
+                  {aiResult?.redFlags && aiResult.redFlags.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-destructive mb-1">Red Flags</p>
+                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                        {aiResult.redFlags.map((f, i) => <li key={i}>{f}</li>)}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Extracted data chips */}
+                  {aiResult && (aiResult.extractedSkills.length > 0 || aiResult.extractedCerts.length > 0 || aiResult.extractedEquipment.length > 0) && (
+                    <div className="space-y-1.5">
+                      {aiResult.extractedSkills.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium mb-1 text-muted-foreground">Skills</p>
+                          <div className="flex flex-wrap gap-1">
+                            {aiResult.extractedSkills.map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
+                          </div>
+                        </div>
+                      )}
+                      {aiResult.extractedCerts.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium mb-1 text-muted-foreground">Certifications</p>
+                          <div className="flex flex-wrap gap-1">
+                            {aiResult.extractedCerts.map((c, i) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
+                          </div>
+                        </div>
+                      )}
+                      {aiResult.extractedEquipment.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium mb-1 text-muted-foreground">Equipment</p>
+                          <div className="flex flex-wrap gap-1">
+                            {aiResult.extractedEquipment.map((e, i) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Interview recommendation */}
+                  {aiResult?.interviewRecommendation && (
+                    <div className="border-t pt-2">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Interview Focus</p>
+                      <p className="text-xs">{aiResult.interviewRecommendation}</p>
+                    </div>
+                  )}
+
+                  {/* Disclaimer */}
+                  {aiResult?.disclaimer && (
+                    <p className="text-xs text-muted-foreground italic border-t pt-2">{aiResult.disclaimer}</p>
                   )}
                 </div>
               ) : (

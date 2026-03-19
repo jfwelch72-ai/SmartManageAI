@@ -715,6 +715,46 @@ router.put(
             relatedEntityType: "hiring_candidate",
           });
         }
+      } else if (existing.reviewerUserId && existing.reviewerUserId !== userId(req)) {
+        // Notify reviewer of any other stage change so they stay informed
+        void insertNotification({
+          userId: existing.reviewerUserId,
+          organizationId: orgId(req),
+          type: "GENERAL",
+          title: "Candidate Stage Updated",
+          message: `${existing.fullName} has moved from ${fromStage} to ${stage}.`,
+          relatedEntityId: existing.id,
+          relatedEntityType: "hiring_candidate",
+        });
+      }
+
+      // Auto-create a follow-up task in hiring_tasks when HIRING_AUTO_TASKS is enabled
+      const autoTasksEnabled = await isFeatureEnabled(orgId(req), "HIRING_AUTO_TASKS");
+      if (autoTasksEnabled) {
+        const STAGE_TASK_MAP: Record<string, string> = {
+          SCREENING: `Review application for ${existing.fullName}`,
+          PHONE_INTERVIEW: `Schedule phone interview with ${existing.fullName}`,
+          IN_PERSON_INTERVIEW: `Schedule in-person interview with ${existing.fullName}`,
+          SKILLS_ASSESSMENT: `Send skills assessment to ${existing.fullName}`,
+          BACKGROUND_CHECK: `Initiate background check for ${existing.fullName}`,
+          REFERENCE_CHECK: `Complete reference checks for ${existing.fullName}`,
+          OFFER_EXTENDED: `Follow up on offer status with ${existing.fullName}`,
+        };
+        const taskTitle = STAGE_TASK_MAP[stage];
+        if (taskTitle) {
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + 3); // 3-day default deadline
+          void db.insert(hiringTasks).values({
+            organizationId: orgId(req),
+            candidateId: existing.id,
+            jobId: existing.jobId ?? null,
+            title: taskTitle,
+            status: "open",
+            assignedUserId: existing.reviewerUserId ?? userId(req),
+            dueDate,
+            createdByUserId: userId(req),
+          });
+        }
       }
 
       res.json(candidate);
@@ -1522,11 +1562,27 @@ router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: 
 });
 
 // ============================================
-// AI SCORING
+// AI REVIEW (structured persist to hiring_ai_reviews)
 // ============================================
 
+const AI_REVIEW_PROMPT_VERSION = "v1.0";
+
+/**
+ * Strips protected-class indicators from candidate text before sending to AI.
+ * Removes explicit references to race, religion, national origin, sex, age, disability.
+ */
+function scrubProtectedCharacteristics(text: string): string {
+  return text
+    .replace(/\b(male|female|man|woman|gender|sex)\b/gi, "[REDACTED]")
+    .replace(/\b(age|born in|year of birth|years old|dob|date of birth)\b/gi, "[REDACTED]")
+    .replace(/\b(race|ethnicity|color|nationality|national origin|hispanic|latino|asian|black|white|caucasian|african american)\b/gi, "[REDACTED]")
+    .replace(/\b(religion|christian|muslim|jewish|catholic|protestant|hindu|buddhist|atheist|church|mosque|synagogue)\b/gi, "[REDACTED]")
+    .replace(/\b(disability|disabled|wheelchair|handicap|impairment)\b/gi, "[REDACTED]")
+    .replace(/\b(pregnant|pregnancy|maternity|paternity)\b/gi, "[REDACTED]");
+}
+
 router.post(
-  "/candidates/:id/ai-score",
+  "/candidates/:id/ai-review",
   requireAuth,
   requireRole(...HIRING_FULL),
   async (req: AuthRequest, res) => {
@@ -1544,6 +1600,7 @@ router.post(
       if (!candidate) return res.status(404).json({ error: "Candidate not found" });
 
       let jobContext = "";
+      let jobTitle = "construction trade position";
       if (candidate.jobId) {
         const [job] = await db
           .select({ title: hiringJobs.title, description: hiringJobs.description, requirements: hiringJobs.requirements, certificationsRequired: hiringJobs.certificationsRequired })
@@ -1551,17 +1608,33 @@ router.post(
           .where(eq(hiringJobs.id, candidate.jobId))
           .limit(1);
         if (job) {
+          jobTitle = job.title;
           jobContext = `Job Title: ${job.title}\nRequirements: ${job.requirements ?? "N/A"}\nCertifications Required: ${job.certificationsRequired ?? "N/A"}\nDescription: ${job.description ?? "N/A"}`;
         }
       }
 
-      const screeningAnswers = candidate.applicationAnswersJson
-        ? (() => { try { return JSON.stringify(JSON.parse(candidate.applicationAnswersJson!), null, 2); } catch { return candidate.applicationAnswersJson; } })()
+      const rawAnswers = candidate.applicationAnswersJson
+        ? (() => { try { return JSON.stringify(JSON.parse(candidate.applicationAnswersJson!), null, 2); } catch { return candidate.applicationAnswersJson ?? ""; } })()
         : "None provided";
 
-      const systemPrompt = `You are an expert construction HR analyst. Score a job candidate on a 0-100 scale based on their application for a construction trade position. Be objective and concise. Return a JSON object with keys: "score" (integer 0-100), "recommendation" (string, 2-4 sentences summarizing fit and key strengths/concerns), "strengths" (array of strings), "concerns" (array of strings).`;
+      const screeningAnswers = scrubProtectedCharacteristics(rawAnswers);
 
-      const userPrompt = `Evaluate this candidate:\n\nCandidate Name: ${candidate.fullName}\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}--- APPLICATION ANSWERS ---\n${screeningAnswers}`;
+      const systemPrompt = `You are an expert construction HR analyst evaluating candidates for skilled trade roles. Your evaluation must be based solely on job-relevant skills, certifications, experience, and answers. Do NOT consider or reference any protected characteristics such as race, gender, religion, age, nationality, or disability. Return a JSON object with these exact keys:
+- "score": integer 0-100 overall fit score
+- "tradeFitScore": integer 0-100 score for trade/technical skill fit
+- "roleFitScore": integer 0-100 score for this specific role's requirements
+- "confidenceScore": integer 0-100 how confident you are in this evaluation (lower if little data)
+- "recommendation": "YES" | "MAYBE" | "NO"
+- "summary": string, 2-4 sentences summarizing the candidate's fit
+- "strengths": array of strings (job-relevant strengths)
+- "concerns": array of strings (job-relevant concerns or gaps)
+- "redFlags": array of strings (serious disqualifying issues, empty if none)
+- "extractedSkills": array of strings (skills mentioned or implied)
+- "extractedCerts": array of strings (certifications/licenses mentioned)
+- "extractedEquipment": array of strings (equipment or tools mentioned)
+- "interviewRecommendation": string, 1-2 sentences about what to probe in the interview`;
+
+      const userPrompt = `Evaluate this candidate for the role of ${jobTitle}.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}--- APPLICATION ANSWERS ---\n${screeningAnswers}\n\nIMPORTANT: Base your evaluation on skills, experience, and role requirements only. Do not reference protected characteristics.`;
 
       const scored = await governedAiCall({
         orgId: orgId(req),
@@ -1576,11 +1649,25 @@ router.post(
               { role: "user", content: userPrompt },
             ],
             response_format: { type: "json_object" },
-            temperature: 0.3,
-            max_tokens: 800,
+            temperature: 0.2,
+            max_tokens: 1200,
           });
           const content = completion.choices[0]?.message?.content ?? "{}";
-          const parsed = JSON.parse(content) as { score: number; recommendation: string; strengths: string[]; concerns: string[] };
+          const parsed = JSON.parse(content) as {
+            score: number;
+            tradeFitScore: number;
+            roleFitScore: number;
+            confidenceScore: number;
+            recommendation: string;
+            summary: string;
+            strengths: string[];
+            concerns: string[];
+            redFlags: string[];
+            extractedSkills: string[];
+            extractedCerts: string[];
+            extractedEquipment: string[];
+            interviewRecommendation: string;
+          };
           return { result: parsed, completion };
         },
       });
@@ -1589,22 +1676,64 @@ router.post(
         return res.status(429).json({ error: scored.reason ?? "AI usage limit reached" });
       }
 
-      const aiResult = scored.result;
-      const score = Math.max(0, Math.min(100, Number(aiResult.score) || 0));
-      const recommendation = aiResult.recommendation ?? "";
+      const r = scored.result;
+      const score = Math.max(0, Math.min(100, Number(r.score) || 0));
+      const tradeFitScore = Math.max(0, Math.min(100, Number(r.tradeFitScore) || 0));
+      const roleFitScore = Math.max(0, Math.min(100, Number(r.roleFitScore) || 0));
+      const confidenceScore = Math.max(0, Math.min(100, Number(r.confidenceScore) || 0));
+      const recommendation = ["YES", "MAYBE", "NO"].includes(r.recommendation) ? r.recommendation : "MAYBE";
 
-      const [updated] = await db
-        .update(hiringCandidates)
-        .set({ aiScore: score, aiRecommendation: recommendation, updatedAt: new Date() })
-        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+      const [aiReview] = await db
+        .insert(hiringAiReviews)
+        .values({
+          organizationId: orgId(req),
+          candidateId: candidate.id,
+          modelName: AI_MODEL_GPT4O,
+          score,
+          tradeFitScore,
+          roleFitScore,
+          confidenceScore,
+          recommendation,
+          summary: r.summary ?? null,
+          strengthsJson: JSON.stringify(r.strengths ?? []),
+          concernsJson: JSON.stringify(r.concerns ?? []),
+          redFlagsJson: JSON.stringify(r.redFlags ?? []),
+          extractedSkillsJson: JSON.stringify(r.extractedSkills ?? []),
+          extractedCertsJson: JSON.stringify(r.extractedCerts ?? []),
+          extractedEquipmentJson: JSON.stringify(r.extractedEquipment ?? []),
+          interviewRecommendation: r.interviewRecommendation ?? null,
+          promptVersion: AI_REVIEW_PROMPT_VERSION,
+        })
         .returning();
 
-      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_COMPLETED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT4O });
+      await db
+        .update(hiringCandidates)
+        .set({ aiScore: score, aiRecommendation: r.summary ?? recommendation, updatedAt: new Date() })
+        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))));
 
-      res.json({ score, recommendation, strengths: aiResult.strengths ?? [], concerns: aiResult.concerns ?? [], candidate: updated });
+      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_COMPLETED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT4O, promptVersion: AI_REVIEW_PROMPT_VERSION });
+
+      res.json({
+        score,
+        tradeFitScore,
+        roleFitScore,
+        confidenceScore,
+        recommendation,
+        summary: r.summary ?? "",
+        strengths: r.strengths ?? [],
+        concerns: r.concerns ?? [],
+        redFlags: r.redFlags ?? [],
+        extractedSkills: r.extractedSkills ?? [],
+        extractedCerts: r.extractedCerts ?? [],
+        extractedEquipment: r.extractedEquipment ?? [],
+        interviewRecommendation: r.interviewRecommendation ?? "",
+        promptVersion: AI_REVIEW_PROMPT_VERSION,
+        aiReviewId: aiReview.id,
+        disclaimer: "This AI evaluation is one data point and must be reviewed by a human before any hiring decision is made. All final decisions must comply with applicable employment law.",
+      });
     } catch (err) {
-      logError("POST /api/hiring/candidates/:id/ai-score", { error: String(err) });
-      res.status(500).json({ error: "Failed to score candidate" });
+      logError("POST /api/hiring/candidates/:id/ai-review", { error: String(err) });
+      res.status(500).json({ error: "Failed to generate AI review" });
     }
   },
 );
@@ -1657,8 +1786,9 @@ router.get("/analytics/dashboard", requireAuth, requireRole(...HIRING_REVIEW), a
 router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
     const org = orgId(req);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-    const [jobCounts, candidateStageCounts, interviewStatusCounts, recentActivity] = await Promise.all([
+    const [jobCounts, candidateStageCounts, interviewStatusCounts, recentActivity, candidatesPerRole] = await Promise.all([
       db
         .select({ status: hiringJobs.status, count: count() })
         .from(hiringJobs)
@@ -1680,6 +1810,19 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         .where(eq(hiringActivityLogs.organizationId, org))
         .orderBy(desc(hiringActivityLogs.createdAt))
         .limit(10),
+      // applicants per role: join candidates to jobs
+      db
+        .select({
+          jobId: hiringCandidates.jobId,
+          jobTitle: hiringJobs.title,
+          count: count(),
+        })
+        .from(hiringCandidates)
+        .leftJoin(hiringJobs, eq(hiringCandidates.jobId, hiringJobs.id))
+        .where(and(eq(hiringCandidates.organizationId, org), gte(hiringCandidates.appliedAt, thirtyDaysAgo)))
+        .groupBy(hiringCandidates.jobId, hiringJobs.title)
+        .orderBy(desc(count()))
+        .limit(10),
     ]);
 
     const jobsByStatus = Object.fromEntries(jobCounts.map((r) => [r.status, Number(r.count)]));
@@ -1696,6 +1839,11 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         byStage: candidatesByStage,
         hired: candidatesByStage["HIRED"] ?? 0,
         rejected: candidatesByStage["REJECTED"] ?? 0,
+        perRole: candidatesPerRole.map((r) => ({
+          jobId: r.jobId,
+          jobTitle: r.jobTitle ?? "No Job",
+          count: Number(r.count),
+        })),
       },
       interviews: {
         total: interviewStatusCounts.reduce((acc, r) => acc + Number(r.count), 0),

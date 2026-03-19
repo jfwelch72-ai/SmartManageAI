@@ -115,13 +115,17 @@ export interface HiringInterview {
   organizationId: string;
   candidateId: string;
   jobId: string | null;
-  scheduledAt: string;
-  durationMinutes: number | null;
-  interviewType: string | null;
+  startAt: string | null;
+  endAt: string | null;
+  timezone: string;
+  interviewType: string;
   status: HiringInterviewStatus;
   location: string | null;
+  videoLink: string | null;
   notes: string | null;
-  interviewerUserIds: string[] | null;
+  interviewerUserIdsJson: string | null;
+  reminderSentAt: string | null;
+  createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 }

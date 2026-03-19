@@ -302,13 +302,24 @@ export function useUpdateHiringTask(id: string) {
 export function useAiScoreCandidate(candidateId: string) {
   return useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/hiring/candidates/${candidateId}/ai-score`, {});
+      const res = await apiRequest("POST", `/api/hiring/candidates/${candidateId}/ai-review`, {});
       return res.json() as Promise<{
         score: number;
+        tradeFitScore: number;
+        roleFitScore: number;
+        confidenceScore: number;
         recommendation: string;
+        summary: string;
         strengths: string[];
         concerns: string[];
-        candidate: unknown;
+        redFlags: string[];
+        extractedSkills: string[];
+        extractedCerts: string[];
+        extractedEquipment: string[];
+        interviewRecommendation: string;
+        promptVersion: string;
+        aiReviewId: string;
+        disclaimer: string;
       }>;
     },
     onSuccess: () => {
