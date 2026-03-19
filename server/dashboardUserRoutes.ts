@@ -2628,15 +2628,21 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
     const summaryResult = await db.execute(sql`
       SELECT
         COUNT(*)::int as count,
-        COALESCE(SUM(co."amount"::numeric), 0) as total_value
+        COALESCE(SUM(co."amount"::numeric), 0) as total_value,
+        COUNT(*) FILTER (WHERE co."status"::text = 'PCO')::int as pco_count,
+        COUNT(*) FILTER (WHERE co."status"::text = 'PRICING_REVIEW')::int as pricing_review_count,
+        COUNT(*) FILTER (WHERE co."status"::text = 'SUBMITTED')::int as submitted_count
       FROM "change_orders" co
       JOIN "projects" p ON co."project_id" = p."id"
-      WHERE co."status"::text = 'SUBMITTED'
+      WHERE co."status"::text IN ('PCO', 'PRICING_REVIEW', 'SUBMITTED')
         ${orgCond}
         ${projectCond}
     `);
     const count = (summaryResult.rows[0] as any)?.count || 0;
     const totalValue = parseFloat((summaryResult.rows[0] as any)?.total_value || "0");
+    const pcoCount = (summaryResult.rows[0] as any)?.pco_count || 0;
+    const pricingReviewCount = (summaryResult.rows[0] as any)?.pricing_review_count || 0;
+    const submittedCount = (summaryResult.rows[0] as any)?.submitted_count || 0;
 
     const itemsResult = await db.execute(sql`
       SELECT
@@ -2644,13 +2650,14 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
         co."change_order_number",
         co."description",
         co."amount",
+        co."status",
         co."created_at",
         p."id" as project_id,
         p."name" as project_name,
         ${now.toISOString()}::timestamp - co."created_at" as age_interval
       FROM "change_orders" co
       JOIN "projects" p ON co."project_id" = p."id"
-      WHERE co."status"::text = 'SUBMITTED'
+      WHERE co."status"::text IN ('PCO', 'PRICING_REVIEW', 'SUBMITTED')
         ${orgCond}
         ${projectCond}
       ORDER BY co."created_at" DESC
@@ -2662,12 +2669,13 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       coNumber: r.change_order_number,
       description: (r.description || "").substring(0, 60),
       amount: parseFloat(r.amount || "0"),
+      status: r.status,
       projectName: r.project_name,
       projectId: r.project_id,
       daysPending: Math.floor((now.getTime() - new Date(r.created_at).getTime()) / (1000 * 60 * 60 * 24)),
     }));
 
-    return { count, totalValue, items };
+    return { count, totalValue, items, pcoCount, pricingReviewCount, submittedCount };
     });
 
     res.json(coResult);

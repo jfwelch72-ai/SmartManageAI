@@ -17,13 +17,18 @@ import { notifyApprovers, notifySubmitter } from "./services/approvalNotificatio
 const router = Router();
 
 // Valid state transitions for change orders
-// Simplified workflow: DRAFT → SUBMITTED → APPROVED/REJECTED
+// Full PCO workflow: PCO → PRICING_REVIEW → SUBMITTED → APPROVED/REJECTED
 const VALID_TRANSITIONS: Record<string, string[]> = {
-  DRAFT: ["SUBMITTED"],  // Submit directly to client
-  SUBMITTED: ["DRAFT", "APPROVED", "REJECTED"],  // Client approves/rejects or return for revision
-  APPROVED: [],  // Terminal state - no further transitions
-  REJECTED: ["DRAFT"],  // Can be revised and resubmitted
-  PENDING_APPROVAL: ["SUBMITTED", "DRAFT"],  // Legacy support: allow transition from old status
+  // New PCO workflow
+  PCO: ["PRICING_REVIEW"],                        // Issue priced, sent for internal review
+  PRICING_REVIEW: ["SUBMITTED", "PCO"],           // Approved to client, or returned for revision
+  SUBMITTED: ["APPROVED", "REJECTED"],            // Client approves or rejects
+  APPROVED: ["VOIDED"],                           // Re-scope path
+  REJECTED: ["PCO"],                              // Returned to re-price
+  VOIDED: [],                                     // Terminal state
+  // Legacy backward-compatibility entries
+  DRAFT: ["SUBMITTED"],
+  PENDING_APPROVAL: ["SUBMITTED", "DRAFT"],
 };
 
 /**
@@ -552,6 +557,318 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Reject change order error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Promote a PCO to pricing review
+ * PCO -> PRICING_REVIEW
+ */
+router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "PRICING_REVIEW")) {
+      res.status(400).json({ error: `Cannot promote to pricing review from ${order.status} status` });
+      return;
+    }
+
+    const now = new Date();
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({ status: "PRICING_REVIEW", updatedAt: now })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    await createRevision(order.id, order.status, "PRICING_REVIEW", req.user!.id, "Promoted to pricing review", order.amount);
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "PRICING_REVIEW" }),
+    }, req);
+
+    if (project?.gcOrganizationId) {
+      try {
+        // Notify org ADMINs who should review pricing (excluding the person who promoted it)
+        const admins = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.organizationId, project.gcOrganizationId), eq(users.role, "ADMIN"), eq(users.isActive, true)));
+        const reviewers = admins.filter(u => u.id !== req.user!.id);
+        if (reviewers.length > 0) {
+          await insertNotifications(reviewers.map(u => ({
+            userId: u.id,
+            type: "CHANGE_ORDER_PENDING" as const,
+            title: "Change Order Awaiting Pricing Review",
+            message: `CO ${updatedOrder.changeOrderNumber} has been promoted to pricing review`,
+            relatedEntityId: updatedOrder.id,
+            relatedEntityType: "changeOrder" as const,
+          })));
+        }
+      } catch (e) { /* non-blocking */ }
+    }
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Promote to review error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Approve pricing and submit to client
+ * PRICING_REVIEW -> SUBMITTED
+ */
+router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "SUBMITTED")) {
+      res.status(400).json({ error: `Cannot approve pricing from ${order.status} status` });
+      return;
+    }
+
+    const clientResponseDueDate = req.body.clientResponseDueDate ? new Date(req.body.clientResponseDueDate) : undefined;
+
+    const now = new Date();
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "SUBMITTED",
+        submittedAt: now,
+        updatedAt: now,
+        ...(clientResponseDueDate ? { clientResponseDueDate } : {}),
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    await createRevision(order.id, order.status, "SUBMITTED", req.user!.id, "Pricing approved, submitted to client", order.amount);
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "SUBMIT",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "SUBMITTED" }),
+    }, req);
+
+    // Notify the requester that pricing was approved and CO was submitted to client
+    if (updatedOrder.requestedById && updatedOrder.requestedById !== req.user!.id) {
+      try {
+        await notifySubmitter(updatedOrder.requestedById, {
+          type: "CHANGE_ORDER_PENDING",
+          title: "Change Order Submitted to Client",
+          message: `Change order ${updatedOrder.changeOrderNumber} pricing was approved and has been submitted to the client`,
+          relatedEntityId: updatedOrder.id,
+          relatedEntityType: "changeOrder",
+        });
+      } catch (e) { /* non-blocking */ }
+    }
+
+    // Also notify approvers (admins/managers in org)
+    if (project?.gcOrganizationId) {
+      await notifyApprovers(
+        project.gcOrganizationId,
+        updatedOrder.requestedById,
+        {
+          type: "CHANGE_ORDER_PENDING",
+          title: "Change Order Submitted to Client",
+          message: `Change order ${updatedOrder.changeOrderNumber} has been submitted to client`,
+          relatedEntityId: updatedOrder.id,
+          relatedEntityType: "changeOrder",
+        }
+      );
+    }
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Approve pricing error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Return a change order from pricing review back to PCO
+ * PRICING_REVIEW -> PCO
+ */
+router.post("/:id/return-to-pco", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;
+
+    const result = await getChangeOrderById(req.params.id);
+
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "PCO")) {
+      res.status(400).json({ error: `Cannot return to PCO from ${order.status} status` });
+      return;
+    }
+
+    const now = new Date();
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({ status: "PCO", submittedAt: null, updatedAt: now })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    await createRevision(order.id, order.status, "PCO", req.user!.id, reason ? `Returned to PCO: ${reason}` : "Returned to PCO for revision", order.amount, reason ? { reason } : undefined);
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "PCO", reason }),
+    }, req);
+
+    await notifyStatusChange(updatedOrder, "PCO", `Change order ${updatedOrder.changeOrderNumber} has been returned to PCO for revision${reason ? `: ${reason}` : ""}`, true);
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Return to PCO error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * Void an approved change order
+ * APPROVED -> VOIDED
+ */
+router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const voidReason = req.body.voidReason ? sanitizeText(req.body.voidReason) : undefined;
+
+    if (!voidReason || voidReason.trim().length === 0) {
+      res.status(400).json({ error: "Void reason is required" });
+      return;
+    }
+
+    const result = await getChangeOrderById(req.params.id);
+
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (!isValidTransition(order.status, "VOIDED")) {
+      res.status(400).json({ error: `Cannot void from ${order.status} status. Only APPROVED change orders can be voided.` });
+      return;
+    }
+
+    const now = new Date();
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({
+        status: "VOIDED",
+        voidReason,
+        voidedAt: now,
+        voidedById: req.user!.id,
+        updatedAt: now,
+      })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    if (!updatedOrder) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    await createRevision(order.id, order.status, "VOIDED", req.user!.id, `Voided: ${voidReason}`, order.amount, { voidReason, voidedById: req.user!.id });
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "changeOrder",
+      entityId: order.id,
+      oldValue: JSON.stringify({ status: order.status }),
+      newValue: JSON.stringify({ status: "VOIDED", voidReason }),
+    }, req);
+
+    await notifyStatusChange(updatedOrder, "VOIDED", `Change order ${updatedOrder.changeOrderNumber} has been voided: ${voidReason}`, true);
+
+    if (order.approvedById && order.approvedById !== req.user!.id) {
+      try {
+        await insertNotifications([{
+          userId: order.approvedById,
+          type: "GENERAL" as const,
+          title: "Change Order Voided",
+          message: `CO ${updatedOrder.changeOrderNumber} that you approved has been voided: ${voidReason}`,
+          relatedEntityId: updatedOrder.id,
+          relatedEntityType: "changeOrder" as const,
+        }]);
+      } catch (e) { /* non-blocking */ }
+    }
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Void change order error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

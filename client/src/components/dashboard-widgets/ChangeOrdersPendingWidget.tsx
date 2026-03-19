@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { FileEdit, DollarSign, CheckCircle2, Lock, AlertCircle } from "lucide-react";
+import { FileEdit, DollarSign, CheckCircle2, Lock, AlertCircle, Flag, ClipboardCheck, Send } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ interface ChangeOrderItem {
   coNumber: number;
   description: string;
   amount: number;
+  status: string;
   projectName: string;
   projectId?: string;
   daysPending: number;
@@ -23,6 +24,9 @@ interface ChangeOrdersPendingData {
   count: number;
   totalValue: number;
   items: ChangeOrderItem[];
+  pcoCount?: number;
+  pricingReviewCount?: number;
+  submittedCount?: number;
 }
 
 function formatCurrency(value: number): string {
@@ -141,7 +145,7 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
                   <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Pending</span>
                 </div>
                 <p className="text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400">{d.count}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">awaiting approval</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">awaiting action</p>
               </div>
               <div className="rounded-lg bg-green-500/10 p-3" data-testid="metric-co-value">
                 <div className="flex items-center gap-1.5 mb-1">
@@ -149,9 +153,30 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
                   <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Total Value</span>
                 </div>
                 <p className="text-xl font-bold tabular-nums text-green-600 dark:text-green-400">{formatCurrency(d.totalValue)}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">pending approval</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">pending action</p>
               </div>
             </div>
+
+            {/* Breakdown by stage */}
+            {(d.pcoCount || d.pricingReviewCount || d.submittedCount) && (
+              <div className="flex gap-2 flex-wrap" data-testid="co-stage-breakdown">
+                {(d.pcoCount || 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300" data-testid="co-pco-count">
+                    <Flag className="w-3 h-3" />{d.pcoCount} PCO
+                  </span>
+                )}
+                {(d.pricingReviewCount || 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300" data-testid="co-pricing-review-count">
+                    <ClipboardCheck className="w-3 h-3" />{d.pricingReviewCount} In Review
+                  </span>
+                )}
+                {(d.submittedCount || 0) > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" data-testid="co-submitted-count">
+                    <Send className="w-3 h-3" />{d.submittedCount} Submitted
+                  </span>
+                )}
+              </div>
+            )}
 
             <div className="space-y-1.5 max-h-[180px] overflow-y-auto">
               {d.items.slice(0, cfg.showLimit).map((item) => {
@@ -165,6 +190,9 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-xs font-medium">CO-{item.coNumber}</span>
+                        {item.status === "PCO" && <Flag className="w-3 h-3 text-amber-500 shrink-0" />}
+                        {item.status === "PRICING_REVIEW" && <ClipboardCheck className="w-3 h-3 text-purple-500 shrink-0" />}
+                        {item.status === "SUBMITTED" && <Send className="w-3 h-3 text-blue-500 shrink-0" />}
                         <span className="text-[11px] text-muted-foreground truncate">· {item.projectName}</span>
                       </div>
                       {item.description && (

@@ -1006,9 +1006,11 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
 
     const validationResult = insertChangeOrderSchema.extend({
       requestedById: z.string().optional(),
+      changeOrderNumber: z.string().optional(),
     }).safeParse({
       ...sanitizedBody,
       requestedById: req.user!.id,
+      changeOrderNumber: sanitizedBody.changeOrderNumber || "AUTO",
     });
     
     if (!validationResult.success) {
@@ -1065,6 +1067,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       ...validationResult.data,
       changeOrderNumber,
       requestedById: req.user!.id,
+      status: "PCO" as const,
       workTypeId: workTypeId || null,
       workTypeCode: workTypeCode || null,
       workTypeName: workTypeName || null,

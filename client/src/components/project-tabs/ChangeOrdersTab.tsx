@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, CheckCircle, XCircle, Eye, Ruler } from "lucide-react";
+import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +36,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const [amount, setAmount] = useState("");
   const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
   const [scopeQuantity, setScopeQuantity] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const { toast } = useToast();
 
   const createMutation = useCreateChangeOrder();
@@ -45,8 +47,8 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const returnToDraftMutation = useReturnToDraftChangeOrder();
 
   const handleCreate = async () => {
-    if (!changeOrderNumber || !description || !amount) {
-      toast({ title: "Error", description: "All fields are required", variant: "destructive" });
+    if (!description || !amount) {
+      toast({ title: "Error", description: "Description and amount are required", variant: "destructive" });
       return;
     }
 
@@ -54,7 +56,6 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       await createMutation.mutateAsync({
         projectId,
         projectCode,
-        changeOrderNumber,
         description,
         amount,
         workTypeId: scopeSelection?.workTypeId || undefined,
@@ -131,6 +132,11 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
 
+  const filteredChangeOrders = useMemo(() => {
+    if (statusFilter === "ALL") return changeOrders;
+    return changeOrders.filter(co => co.status === statusFilter);
+  }, [changeOrders, statusFilter]);
+
   return (
     <>
       <Card>
@@ -149,32 +155,21 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                 <DialogTitle>Create Change Order</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="co-number">Change Order Number</Label>
-                    <Input
-                      id="co-number"
-                      value={changeOrderNumber}
-                      onChange={(e) => setChangeOrderNumber(e.target.value)}
-                      placeholder="CO-001"
-                      data-testid="input-change-order-number"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="co-amount">Amount ($)</Label>
-                    <Input
-                      id="co-amount"
-                      type="number"
-                      step="0.01"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="2500.00"
-                      data-testid="input-change-order-amount"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Enter positive for additions or negative for deductions
-                    </p>
-                  </div>
+                <p className="text-xs text-muted-foreground">Creates a new Potential Change Order (PCO). A CO number will be auto-assigned.</p>
+                <div>
+                  <Label htmlFor="co-amount">Amount ($)</Label>
+                  <Input
+                    id="co-amount"
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="2500.00"
+                    data-testid="input-change-order-amount"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter positive for additions or negative for deductions
+                  </p>
                 </div>
 
                 <Card className="p-4 bg-muted/30">
@@ -246,29 +241,71 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
           </div>
         </CardHeader>
         <CardContent>
+          {!isLoading && changeOrders.length > 0 && (
+            <div className="flex items-center gap-2 mb-4">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-48" data-testid="select-status-filter">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Statuses</SelectItem>
+                  <SelectItem value="PCO">PCO</SelectItem>
+                  <SelectItem value="PRICING_REVIEW">Pricing Review</SelectItem>
+                  <SelectItem value="SUBMITTED">Submitted</SelectItem>
+                  <SelectItem value="APPROVED">Approved</SelectItem>
+                  <SelectItem value="REJECTED">Rejected</SelectItem>
+                  <SelectItem value="VOIDED">Voided</SelectItem>
+                  <SelectItem value="DRAFT">Draft</SelectItem>
+                  <SelectItem value="PENDING_APPROVAL">Pending Approval</SelectItem>
+                </SelectContent>
+              </Select>
+              {statusFilter !== "ALL" && (
+                <span className="text-xs text-muted-foreground">
+                  {filteredChangeOrders.length} of {changeOrders.length} shown
+                </span>
+              )}
+            </div>
+          )}
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading change orders...</div>
-          ) : changeOrders.length === 0 ? (
+          ) : filteredChangeOrders.length === 0 && changeOrders.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">No change orders yet</div>
+          ) : filteredChangeOrders.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">No change orders match the selected filter</div>
           ) : (
             <div className="space-y-3">
-              {changeOrders.map((co) => (
+              {filteredChangeOrders.map((co) => (
                 <Card key={co.id} data-testid={`change-order-${co.id}`}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <Badge variant="outline" className="font-mono">{co.changeOrderNumber}</Badge>
-                          <Badge
-                            variant={
-                              co.status === "APPROVED" ? "default" :
-                              co.status === "REJECTED" ? "destructive" :
-                              co.status === "SUBMITTED" ? "secondary" :
-                              "outline"
-                            }
-                          >
-                            {co.status?.replace("_", " ")}
-                          </Badge>
+                          {co.status === "PCO" ? (
+                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300" data-testid={`status-pco-${co.id}`}>
+                              <Flag className="w-3 h-3 mr-1" />PCO
+                            </Badge>
+                          ) : co.status === "PRICING_REVIEW" ? (
+                            <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950 dark:text-purple-300" data-testid={`status-pricing-review-${co.id}`}>
+                              <ClipboardCheck className="w-3 h-3 mr-1" />Pricing Review
+                            </Badge>
+                          ) : co.status === "VOIDED" ? (
+                            <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-900 dark:text-gray-400" data-testid={`status-voided-${co.id}`}>
+                              <Ban className="w-3 h-3 mr-1" />Voided
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant={
+                                co.status === "APPROVED" ? "default" :
+                                co.status === "REJECTED" ? "destructive" :
+                                co.status === "SUBMITTED" ? "secondary" :
+                                "outline"
+                              }
+                              data-testid={`status-badge-${co.id}`}
+                            >
+                              {co.status?.replace(/_/g, " ")}
+                            </Badge>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -342,6 +379,16 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                               Reject
                             </Button>
                           </div>
+                        )}
+                        {co.status === "PCO" && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                            <Flag className="w-3 h-3 inline mr-1" />Open in details to advance workflow
+                          </p>
+                        )}
+                        {co.status === "PRICING_REVIEW" && (
+                          <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                            <ClipboardCheck className="w-3 h-3 inline mr-1" />Awaiting internal pricing review
+                          </p>
                         )}
                       </div>
                     </div>

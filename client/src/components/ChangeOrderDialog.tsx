@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight, History, ArrowRight, Shield } from "lucide-react";
+import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,6 +99,12 @@ interface ChangeOrder {
   canonicalName?: string | null;
   scopeUnit?: string | null;
   scopeQuantity?: string | null;
+  // Void fields
+  voidedAt?: string | Date | null;
+  voidedById?: string | null;
+  voidReason?: string | null;
+  // Client response due date
+  clientResponseDueDate?: string | Date | null;
 }
 
 interface ChangeOrderDialogProps {
@@ -123,6 +129,8 @@ export function ChangeOrderDialog({
   const [editedAmount, setEditedAmount] = useState("");
   const [lineItemsOpen, setLineItemsOpen] = useState(true);
   const [activeLineTab, setActiveLineTab] = useState("labor");
+  const [showVoidDialog, setShowVoidDialog] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
   
   // Line items state
   const [laborEntries, setLaborEntries] = useState<LaborEntry[]>([]);
@@ -132,8 +140,9 @@ export function ChangeOrderDialog({
   const [catalogState, setCatalogState] = useState<{ index: number; category: string } | null>(null);
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
-  // Only ADMIN/MANAGER can edit change orders (enforced by backend)
-  const canEdit = canManage && changeOrder?.status === "DRAFT";
+  const canReview = ["ADMIN", "MANAGER", "PROJECT_ENGINEER"].includes(userRole);
+  // Only ADMIN/MANAGER can edit change orders when in editable states
+  const canEdit = canManage && (changeOrder?.status === "DRAFT" || changeOrder?.status === "PCO");
   
   // Fetch line items for change order
   const { data: lineItemsData } = useQuery<LineItemsData>({
@@ -394,6 +403,77 @@ export function ChangeOrderDialog({
     },
   });
 
+  const promoteToReviewMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/promote-to-review`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "Change order promoted to pricing review" });
+      onOpenChange(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to promote to pricing review", variant: "destructive" });
+    },
+  });
+
+  const approvePricingMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/approve-pricing`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "Pricing approved, change order submitted to client" });
+      onOpenChange(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to approve pricing", variant: "destructive" });
+    },
+  });
+
+  const returnToPcoMutation = useMutation({
+    mutationFn: async (reason?: string) => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/return-to-pco`, { reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "Change order returned to PCO" });
+      onOpenChange(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to return to PCO", variant: "destructive" });
+    },
+  });
+
+  const voidMutation = useMutation({
+    mutationFn: async (voidReason: string) => {
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/void`, { voidReason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "Change order voided" });
+      setShowVoidDialog(false);
+      setVoidReason("");
+      onOpenChange(false);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to void change order", variant: "destructive" });
+    },
+  });
+
+  const handleReturnToPco = async () => {
+    const reason = prompt("Reason for returning to PCO (optional):");
+    returnToPcoMutation.mutate(reason || undefined);
+  };
+
+  const handleVoid = () => {
+    if (!voidReason.trim()) {
+      toast({ title: "Error", description: "Please provide a void reason", variant: "destructive" });
+      return;
+    }
+    voidMutation.mutate(voidReason);
+  };
+
   const handleSave = () => {
     if (!editedNumber || !editedDescription || !editedAmount) {
       toast({
@@ -423,12 +503,47 @@ export function ChangeOrderDialog({
         return "destructive";
       case "SUBMITTED":
         return "secondary";
+      case "PCO":
+        return "outline";
+      case "PRICING_REVIEW":
+        return "secondary";
+      case "VOIDED":
+        return "outline";
       default:
         return "secondary";
     }
   };
 
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "PCO":
+        return (
+          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300" data-testid="status-badge-pco">
+            <Flag className="w-3 h-3 mr-1" />
+            PCO
+          </Badge>
+        );
+      case "PRICING_REVIEW":
+        return (
+          <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950 dark:text-purple-300" data-testid="status-badge-pricing-review">
+            <ClipboardCheck className="w-3 h-3 mr-1" />
+            Pricing Review
+          </Badge>
+        );
+      case "VOIDED":
+        return (
+          <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-900 dark:text-gray-400" data-testid="status-badge-voided">
+            <Ban className="w-3 h-3 mr-1" />
+            Voided
+          </Badge>
+        );
+      default:
+        return <Badge variant={getStatusColor(status)}>{status.replace(/_/g, " ")}</Badge>;
+    }
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-view-change-order">
         <DialogHeader>
@@ -437,9 +552,7 @@ export function ChangeOrderDialog({
               <FileText className="w-5 h-5" />
               Change Order Details
             </DialogTitle>
-            <Badge variant={getStatusColor(changeOrder.status)}>
-              {changeOrder.status.replace("_", " ")}
-            </Badge>
+            {getStatusBadge(changeOrder.status)}
           </div>
         </DialogHeader>
 
@@ -559,10 +672,63 @@ export function ChangeOrderDialog({
             )}
           </div>
 
-          {changeOrder.rejectionReason && (
+          {changeOrder.rejectionReason && changeOrder.status !== "VOIDED" && (
             <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
               <p className="text-sm font-medium text-destructive mb-1">Rejection Reason:</p>
               <p className="text-sm text-destructive/90">{changeOrder.rejectionReason}</p>
+            </div>
+          )}
+
+          {/* SUBMITTED: client response due date */}
+          {changeOrder.status === "SUBMITTED" && changeOrder.clientResponseDueDate && (
+            <div className="p-3 bg-muted/30 border border-border rounded-md" data-testid="panel-client-due-date">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">Client Response Due</span>
+                </div>
+                {new Date(changeOrder.clientResponseDueDate) < new Date() && (
+                  <Badge variant="destructive" className="text-xs" data-testid="badge-overdue">Overdue</Badge>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">
+                {format(new Date(changeOrder.clientResponseDueDate), "MMM d, yyyy 'at' h:mm a")}
+              </p>
+            </div>
+          )}
+
+          {/* VOIDED: read-only void metadata panel */}
+          {changeOrder.status === "VOIDED" && (
+            <div className="p-3 bg-muted/50 border border-border rounded-md space-y-2" data-testid="panel-void-info">
+              <div className="flex items-center gap-2">
+                <Ban className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-semibold">Void Information</span>
+              </div>
+              {changeOrder.voidReason && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Void Reason:</p>
+                  <p className="text-sm" data-testid="text-void-reason">{changeOrder.voidReason}</p>
+                </div>
+              )}
+              {changeOrder.voidedAt && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Voided At:</p>
+                  <p className="text-sm" data-testid="text-voided-at">{format(new Date(changeOrder.voidedAt), "MMM d, yyyy 'at' h:mm a")}</p>
+                </div>
+              )}
+              {/* Voided-by from revision history */}
+              {revisions && (() => {
+                const voidRevision = revisions.find(r => r.revision.newStatus === "VOIDED");
+                if (voidRevision?.revisedBy) {
+                  return (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Voided By:</p>
+                      <p className="text-sm" data-testid="text-voided-by">{voidRevision.revisedBy.firstName} {voidRevision.revisedBy.lastName}</p>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           )}
 
@@ -1075,6 +1241,42 @@ export function ChangeOrderDialog({
                 </Button>
               )}
 
+              {/* PCO: promote to pricing review */}
+              {canReview && changeOrder.status === "PCO" && (
+                <Button
+                  onClick={() => promoteToReviewMutation.mutate()}
+                  disabled={promoteToReviewMutation.isPending}
+                  data-testid="button-promote-to-review"
+                >
+                  <ClipboardCheck className="w-4 h-4 mr-2" />
+                  {promoteToReviewMutation.isPending ? "Promoting..." : "Promote to Pricing Review"}
+                </Button>
+              )}
+
+              {/* PRICING_REVIEW: approve pricing or return to PCO */}
+              {canManage && changeOrder.status === "PRICING_REVIEW" && (
+                <>
+                  <Button
+                    onClick={() => approvePricingMutation.mutate()}
+                    disabled={approvePricingMutation.isPending}
+                    data-testid="button-approve-pricing"
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    {approvePricingMutation.isPending ? "Submitting..." : "Approve Pricing → Submit to Client"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleReturnToPco}
+                    disabled={returnToPcoMutation.isPending}
+                    data-testid="button-return-to-pco"
+                  >
+                    <Flag className="w-4 h-4 mr-2" />
+                    {returnToPcoMutation.isPending ? "Returning..." : "Return to PCO"}
+                  </Button>
+                </>
+              )}
+
+              {/* Legacy DRAFT: request approval */}
               {changeOrder.status === "DRAFT" && (
                 <Button
                   onClick={() => requestApprovalMutation.mutate()}
@@ -1086,6 +1288,7 @@ export function ChangeOrderDialog({
                 </Button>
               )}
 
+              {/* Legacy PENDING_APPROVAL */}
               {canManage && changeOrder.status === "PENDING_APPROVAL" && (
                 <>
                   <Button
@@ -1108,6 +1311,7 @@ export function ChangeOrderDialog({
                 </>
               )}
 
+              {/* SUBMITTED: approve or reject */}
               {canManage && changeOrder.status === "SUBMITTED" && (
                 <>
                   <Button
@@ -1130,6 +1334,31 @@ export function ChangeOrderDialog({
                 </>
               )}
 
+              {/* REJECTED: return to PCO for re-pricing */}
+              {canManage && changeOrder.status === "REJECTED" && (
+                <Button
+                  variant="outline"
+                  onClick={handleReturnToPco}
+                  disabled={returnToPcoMutation.isPending}
+                  data-testid="button-return-to-pco-from-rejected"
+                >
+                  <Flag className="w-4 h-4 mr-2" />
+                  {returnToPcoMutation.isPending ? "Returning..." : "Return to PCO"}
+                </Button>
+              )}
+
+              {/* APPROVED: void (ADMIN only) */}
+              {userRole === "ADMIN" && changeOrder.status === "APPROVED" && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowVoidDialog(true)}
+                  data-testid="button-void-change-order"
+                >
+                  <Ban className="w-4 h-4 mr-2" />
+                  Void CO
+                </Button>
+              )}
+
               <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-close-dialog">
                 Close
               </Button>
@@ -1138,5 +1367,47 @@ export function ChangeOrderDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {/* Void Confirmation Dialog */}
+    <Dialog open={showVoidDialog} onOpenChange={setShowVoidDialog}>
+      <DialogContent className="max-w-md" data-testid="dialog-void-change-order">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Ban className="w-5 h-5 text-destructive" />
+            Void Change Order
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <p className="text-sm text-muted-foreground">
+            Voiding this change order will mark it as cancelled. This action requires a reason and cannot be undone without re-creating the change order.
+          </p>
+          <div className="space-y-2">
+            <Label htmlFor="void-reason">Void Reason <span className="text-destructive">*</span></Label>
+            <Textarea
+              id="void-reason"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+              placeholder="Explain why this change order is being voided..."
+              rows={3}
+              data-testid="input-void-reason"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => { setShowVoidDialog(false); setVoidReason(""); }} data-testid="button-cancel-void">
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleVoid}
+            disabled={voidMutation.isPending || !voidReason.trim()}
+            data-testid="button-confirm-void"
+          >
+            {voidMutation.isPending ? "Voiding..." : "Void Change Order"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
