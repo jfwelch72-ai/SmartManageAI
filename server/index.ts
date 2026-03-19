@@ -144,6 +144,23 @@ app.use((req, res, next) => {
   // theoretical startup race where a request could arrive before listeners are wired.
   initializeEventBus();
 
+  server.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`Port ${port} is in use. Attempting to free it...`);
+      const { execSync } = require("child_process");
+      try {
+        execSync(`fuser -k ${port}/tcp`, { stdio: "ignore" });
+      } catch (_) { /* ignore */ }
+      setTimeout(() => {
+        server.close();
+        server.listen({ port, host: "0.0.0.0", reusePort: true });
+      }, 1500);
+    } else {
+      console.error("Server error:", err);
+      process.exit(1);
+    }
+  });
+
   server.listen({
     port,
     host: "0.0.0.0",
