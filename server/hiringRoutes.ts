@@ -10,6 +10,8 @@ import { getATSProvider, listATSProviders } from "./integrations/ats/registry";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { eventBus } from "./events";
 import { logError, logInfo } from "./utils/logger";
+import { governedAiCall } from "./services/aiGovernance";
+import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import {
   hiringJobs,
   hiringJobTemplates,
@@ -1059,10 +1061,14 @@ router.delete(
 
 router.get("/tasks", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
   try {
+    const candidateId = req.query.candidateId as string | undefined;
+    const conditions = [eq(hiringTasks.organizationId, orgId(req))];
+    if (candidateId) conditions.push(eq(hiringTasks.candidateId, candidateId));
+
     const tasks = await db
       .select()
       .from(hiringTasks)
-      .where(eq(hiringTasks.organizationId, orgId(req)))
+      .where(and(...conditions))
       .orderBy(desc(hiringTasks.createdAt));
     res.json(tasks);
   } catch (err) {
@@ -1514,6 +1520,94 @@ router.get("/activity", requireAuth, requireRole(...HIRING_REVIEW), async (req: 
     res.status(500).json({ error: "Failed to fetch activity log" });
   }
 });
+
+// ============================================
+// AI SCORING
+// ============================================
+
+router.post(
+  "/candidates/:id/ai-score",
+  requireAuth,
+  requireRole(...HIRING_FULL),
+  async (req: AuthRequest, res) => {
+    try {
+      const aiEnabled = await isFeatureEnabled(orgId(req), "HIRING_AI_SCORING");
+      if (!aiEnabled) {
+        return res.status(403).json({ error: "HIRING_AI_SCORING feature is not enabled for this organization" });
+      }
+
+      const [candidate] = await db
+        .select()
+        .from(hiringCandidates)
+        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+        .limit(1);
+      if (!candidate) return res.status(404).json({ error: "Candidate not found" });
+
+      let jobContext = "";
+      if (candidate.jobId) {
+        const [job] = await db
+          .select({ title: hiringJobs.title, description: hiringJobs.description, requirements: hiringJobs.requirements, certificationsRequired: hiringJobs.certificationsRequired })
+          .from(hiringJobs)
+          .where(eq(hiringJobs.id, candidate.jobId))
+          .limit(1);
+        if (job) {
+          jobContext = `Job Title: ${job.title}\nRequirements: ${job.requirements ?? "N/A"}\nCertifications Required: ${job.certificationsRequired ?? "N/A"}\nDescription: ${job.description ?? "N/A"}`;
+        }
+      }
+
+      const screeningAnswers = candidate.applicationAnswersJson
+        ? (() => { try { return JSON.stringify(JSON.parse(candidate.applicationAnswersJson!), null, 2); } catch { return candidate.applicationAnswersJson; } })()
+        : "None provided";
+
+      const systemPrompt = `You are an expert construction HR analyst. Score a job candidate on a 0-100 scale based on their application for a construction trade position. Be objective and concise. Return a JSON object with keys: "score" (integer 0-100), "recommendation" (string, 2-4 sentences summarizing fit and key strengths/concerns), "strengths" (array of strings), "concerns" (array of strings).`;
+
+      const userPrompt = `Evaluate this candidate:\n\nCandidate Name: ${candidate.fullName}\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}--- APPLICATION ANSWERS ---\n${screeningAnswers}`;
+
+      const scored = await governedAiCall({
+        orgId: orgId(req),
+        userId: userId(req),
+        actionType: "HIRING_AI_SCORE",
+        inputRefs: { candidateId: candidate.id, jobId: candidate.jobId },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.3,
+            max_tokens: 800,
+          });
+          const content = completion.choices[0]?.message?.content ?? "{}";
+          const parsed = JSON.parse(content) as { score: number; recommendation: string; strengths: string[]; concerns: string[] };
+          return { result: parsed, completion };
+        },
+      });
+
+      if (scored.blocked) {
+        return res.status(429).json({ error: scored.reason ?? "AI usage limit reached" });
+      }
+
+      const aiResult = scored.result;
+      const score = Math.max(0, Math.min(100, Number(aiResult.score) || 0));
+      const recommendation = aiResult.recommendation ?? "";
+
+      const [updated] = await db
+        .update(hiringCandidates)
+        .set({ aiScore: score, aiRecommendation: recommendation, updatedAt: new Date() })
+        .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))))
+        .returning();
+
+      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_COMPLETED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT4O });
+
+      res.json({ score, recommendation, strengths: aiResult.strengths ?? [], concerns: aiResult.concerns ?? [], candidate: updated });
+    } catch (err) {
+      logError("POST /api/hiring/candidates/:id/ai-score", { error: String(err) });
+      res.status(500).json({ error: "Failed to score candidate" });
+    }
+  },
+);
 
 // ============================================
 // ANALYTICS

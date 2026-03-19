@@ -218,3 +218,101 @@ export function useSyncIntegration() {
     },
   });
 }
+
+// ============================================================
+// Interviews
+// ============================================================
+
+export function useHiringInterviews(candidateId?: string) {
+  const qs = candidateId ? `?candidateId=${candidateId}` : "";
+  return useQuery({
+    queryKey: ["/api/hiring/interviews", candidateId ?? "all"],
+    queryFn: () => fetch(`/api/hiring/interviews${qs}`, { credentials: "include" }).then((r) => r.json()),
+  });
+}
+
+export function useScheduleInterview() {
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/hiring/interviews", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/interviews"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/analytics/dashboard"] });
+    },
+  });
+}
+
+export function useUpdateInterview(id: string) {
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("PATCH", `/api/hiring/interviews/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/interviews"] });
+    },
+  });
+}
+
+// ============================================================
+// Hiring Tasks
+// ============================================================
+
+export function useHiringTasks(candidateId?: string) {
+  const qs = candidateId ? `?candidateId=${candidateId}` : "";
+  return useQuery({
+    queryKey: ["/api/hiring/tasks", candidateId ?? "all"],
+    queryFn: () => fetch(`/api/hiring/tasks${qs}`, { credentials: "include" }).then((r) => r.json()),
+  });
+}
+
+export function useCreateHiringTask() {
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/hiring/tasks", data);
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/tasks"] });
+      if (variables.candidateId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/hiring/tasks", variables.candidateId as string] });
+      }
+    },
+  });
+}
+
+export function useUpdateHiringTask(id: string) {
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("PATCH", `/api/hiring/tasks/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/tasks"] });
+    },
+  });
+}
+
+// ============================================================
+// AI Scoring
+// ============================================================
+
+export function useAiScoreCandidate(candidateId: string) {
+  return useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/hiring/candidates/${candidateId}/ai-score`, {});
+      return res.json() as Promise<{
+        score: number;
+        recommendation: string;
+        strengths: string[];
+        concerns: string[];
+        candidate: unknown;
+      }>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/candidates", candidateId] });
+    },
+  });
+}

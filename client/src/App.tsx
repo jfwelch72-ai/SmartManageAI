@@ -133,6 +133,9 @@ const HiringJobDetailPage = lazy(() => import("@/pages/hiring/job-detail"));
 const HiringCandidatesPage = lazy(() => import("@/pages/hiring/candidates"));
 const HiringCandidateDetailPage = lazy(() => import("@/pages/hiring/candidate-detail"));
 const HiringPipelinePage = lazy(() => import("@/pages/hiring/pipeline"));
+const HiringInterviewsPage = lazy(() => import("@/pages/hiring/interviews"));
+const HiringAnalyticsPage = lazy(() => import("@/pages/hiring/analytics"));
+const HiringTasksPage = lazy(() => import("@/pages/hiring/tasks"));
 const HiringSettingsPage = lazy(() => import("@/pages/hiring/settings"));
 
 function ProtectedRoute({ 
@@ -326,6 +329,9 @@ function Router() {
       <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/candidates" component={() => <ProtectedRoute component={HiringCandidatesPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/pipeline" component={() => <ProtectedRoute component={HiringPipelinePage} permission={RoutePermissions.HIRING_REVIEW} />} />
+      <Route path="/hiring/interviews" component={() => <ProtectedRoute component={HiringInterviewsPage} permission={RoutePermissions.HIRING_REVIEW} />} />
+      <Route path="/hiring/tasks" component={() => <ProtectedRoute component={HiringTasksPage} permission={RoutePermissions.HIRING_REVIEW} />} />
+      <Route path="/hiring/analytics" component={() => <ProtectedRoute component={HiringAnalyticsPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/settings" component={() => <ProtectedRoute component={HiringSettingsPage} permission={RoutePermissions.HIRING_SETTINGS} />} />
       <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       

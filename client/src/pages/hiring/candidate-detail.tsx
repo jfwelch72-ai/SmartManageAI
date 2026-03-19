@@ -2,10 +2,13 @@ import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -16,12 +19,17 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import {
-  ArrowLeft, Mail, Phone, FileText, ChevronRight, Star, MessageSquare, Mail as MailIcon, ClipboardList,
+  ArrowLeft, Mail, Phone, FileText, ChevronRight, Star, MessageSquare,
+  Mail as MailIcon, ClipboardList, Plus, CheckCircle2, Circle, Sparkles,
 } from "lucide-react";
 import {
   useHiringCandidate, useCandidateNotes, useCandidateActivity,
+  useHiringTasks, useCreateHiringTask, useUpdateHiringTask, useAiScoreCandidate,
 } from "@/lib/hiring-api";
 import { format, formatDistanceToNow } from "date-fns";
 
@@ -92,19 +100,39 @@ function ApplicationAnswersAccordion({ answers }: { answers: Record<string, unkn
   );
 }
 
+interface HiringTask {
+  id: string;
+  title: string;
+  status: string;
+  dueDate: string | null;
+  assignedUserId: string | null;
+  candidateId: string | null;
+  createdAt: string;
+}
+
 export default function CandidateDetailPage() {
   const [, params] = useRoute("/hiring/candidates/:id");
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const role = user?.role;
+  const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER";
   const candidateId = params?.id ?? "";
 
   const [newNote, setNewNote] = useState("");
   const [pendingStage, setPendingStage] = useState<string | null>(null);
   const [confirmStage, setConfirmStage] = useState(false);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDue, setNewTaskDue] = useState("");
+  const [aiResult, setAiResult] = useState<{ score: number; recommendation: string; strengths: string[]; concerns: string[] } | null>(null);
 
   const { data: candidate, isLoading } = useHiringCandidate(candidateId);
   const { data: activity = [] } = useCandidateActivity(candidateId);
   const { data: notes = [] } = useCandidateNotes(candidateId);
+  const { data: tasks = [] } = useHiringTasks(candidateId);
+  const createTaskMutation = useCreateHiringTask();
+  const aiScoreMutation = useAiScoreCandidate(candidateId);
 
   const stageMutation = useMutation({
     mutationFn: async (stage: string) => {
@@ -395,18 +423,68 @@ export default function CandidateDetailPage() {
           )}
 
           {/* AI Recommendation */}
-          {candidate.aiRecommendation && (
-            <Card>
-              <CardHeader>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Star className="w-4 h-4 text-yellow-500" />AI Recommendation
+                  <Sparkles className="w-4 h-4 text-yellow-500" />AI Evaluation
                 </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm whitespace-pre-line">{candidate.aiRecommendation}</p>
-              </CardContent>
-            </Card>
-          )}
+                {canEdit && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      aiScoreMutation.mutate(undefined, {
+                        onSuccess: (data) => {
+                          setAiResult({ score: data.score, recommendation: data.recommendation, strengths: data.strengths, concerns: data.concerns });
+                          toast({ title: "AI evaluation complete", description: `Score: ${data.score}/100` });
+                        },
+                        onError: (err: Error) => toast({ title: "AI scoring failed", description: err.message, variant: "destructive" }),
+                      });
+                    }}
+                    disabled={aiScoreMutation.isPending}
+                    data-testid="button-ai-score"
+                  >
+                    {aiScoreMutation.isPending ? "Scoring..." : "Run AI Score"}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {(aiResult || candidate.aiScore != null || candidate.aiRecommendation) ? (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1">
+                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                      <span className="text-xl font-bold">{aiResult?.score ?? candidate.aiScore ?? "—"}</span>
+                      <span className="text-sm text-muted-foreground">/100</span>
+                    </div>
+                  </div>
+                  {(aiResult?.recommendation || candidate.aiRecommendation) && (
+                    <p className="text-sm">{aiResult?.recommendation ?? candidate.aiRecommendation}</p>
+                  )}
+                  {aiResult?.strengths && aiResult.strengths.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-green-700 mb-1">Strengths</p>
+                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                        {aiResult.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {aiResult?.concerns && aiResult.concerns.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-destructive mb-1">Concerns</p>
+                      <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
+                        {aiResult.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No AI evaluation yet. Click "Run AI Score" to generate one.</p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Communications log */}
           <Card>
@@ -439,13 +517,27 @@ export default function CandidateDetailPage() {
           {/* Tasks panel */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <ClipboardList className="w-4 h-4" />Linked Tasks
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4" />Linked Tasks
+                </CardTitle>
+                {canEdit && (
+                  <Button size="sm" variant="outline" onClick={() => setShowTaskDialog(true)} data-testid="button-add-task">
+                    <Plus className="w-3.5 h-3.5 mr-1" />Add Task
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground">No tasks linked to this candidate yet.</p>
-              <Badge variant="outline" className="mt-2 text-xs">Coming in Phase 2</Badge>
+              {(tasks as HiringTask[]).length === 0 ? (
+                <p className="text-sm text-muted-foreground">No tasks linked to this candidate yet.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {(tasks as HiringTask[]).map((task) => (
+                    <LinkedTask key={task.id} task={task} canEdit={canEdit} />
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
 
@@ -494,6 +586,98 @@ export default function CandidateDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1">
+              <Label>Task Title</Label>
+              <Input
+                placeholder="e.g. Schedule reference check"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                data-testid="input-task-title"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Due Date (optional)</Label>
+              <Input
+                type="date"
+                value={newTaskDue}
+                onChange={(e) => setNewTaskDue(e.target.value)}
+                data-testid="input-task-due"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTaskDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!newTaskTitle.trim()) return;
+                createTaskMutation.mutate(
+                  {
+                    title: newTaskTitle.trim(),
+                    candidateId,
+                    dueDate: newTaskDue ? new Date(newTaskDue).toISOString() : undefined,
+                  },
+                  {
+                    onSuccess: () => {
+                      toast({ title: "Task created" });
+                      setShowTaskDialog(false);
+                      setNewTaskTitle("");
+                      setNewTaskDue("");
+                    },
+                    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+                  }
+                );
+              }}
+              disabled={!newTaskTitle.trim() || createTaskMutation.isPending}
+              data-testid="button-save-task"
+            >
+              Add Task
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function LinkedTask({ task, canEdit }: { task: HiringTask; canEdit: boolean }) {
+  const { toast } = useToast();
+  const isDone = task.status === "completed";
+  const updateMutation = useUpdateHiringTask(task.id);
+
+  return (
+    <li className="flex items-start gap-2 text-sm" data-testid={`task-row-${task.id}`}>
+      <button
+        type="button"
+        onClick={() => {
+          if (!canEdit) return;
+          updateMutation.mutate(
+            { status: isDone ? "pending" : "completed" },
+            { onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }) }
+          );
+        }}
+        className="mt-0.5 shrink-0 hover:opacity-70 transition-opacity"
+        data-testid={`button-toggle-task-${task.id}`}
+        disabled={!canEdit || updateMutation.isPending}
+      >
+        {isDone
+          ? <CheckCircle2 className="w-4 h-4 text-green-600" />
+          : <Circle className="w-4 h-4 text-muted-foreground" />}
+      </button>
+      <div className="flex-1 min-w-0">
+        <p className={isDone ? "line-through text-muted-foreground" : ""}>{task.title}</p>
+        {task.dueDate && (
+          <p className="text-xs text-muted-foreground">
+            Due {format(new Date(task.dueDate), "MMM d, yyyy")}
+          </p>
+        )}
+      </div>
+    </li>
   );
 }

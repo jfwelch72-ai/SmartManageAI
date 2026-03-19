@@ -812,6 +812,24 @@ export const NavigationConfig = {
       visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
     {
+      href: "/hiring/interviews",
+      label: "Interviews",
+      testId: "nav-hiring-interviews",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
+    },
+    {
+      href: "/hiring/tasks",
+      label: "Tasks",
+      testId: "nav-hiring-tasks",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+    },
+    {
+      href: "/hiring/analytics",
+      label: "Analytics",
+      testId: "nav-hiring-analytics",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
+    },
+    {
       href: "/hiring/settings",
       label: "Settings",
       testId: "nav-hiring-settings",

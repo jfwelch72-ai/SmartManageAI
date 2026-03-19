@@ -53,7 +53,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Approval Workflow Notifications**: In-app notifications across 6 approval workflows, notifying approvers and submitters.
 *   **Submittal Items & Attachments**: Normalized `submittal_items` and `submittal_attachments` tables with `submittalCategory` and `submittalItemStatus` enums, featuring a tabbed interface in the SubmittalDetailDialog.
 *   **Vendor & Sub RFQ Flow**: Enables sending RFQ emails to subcontractors and material suppliers directly from bid steps, with tracking of RFQ status and in-app notifications for Bid Network events.
-*   **Hiring Module (ATS)**: Full Applicant Tracking System with job posting lifecycle, 10-stage candidate pipeline, interview scheduling, hiring task management, ATS provider abstraction with AES-256-GCM encrypted credentials and async background sync, and analytics dashboard.
+*   **Hiring Module (ATS)**: Full Applicant Tracking System with job posting lifecycle, 10-stage candidate pipeline, interview scheduling, hiring task management, ATS provider abstraction with AES-256-GCM encrypted credentials and async background sync, AI candidate scoring (GPT-4o via governed AI call with `HIRING_AI_SCORING` feature flag), and analytics dashboard with Recharts visualizations (stage breakdown, job status, interview outcomes, hire rate). Dedicated pages for Interviews (`/hiring/interviews`), Tasks (`/hiring/tasks`), and Analytics (`/hiring/analytics`). Candidate detail includes real linked-tasks panel with toggle completion, and AI Evaluation card showing score/recommendation/strengths/concerns.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
