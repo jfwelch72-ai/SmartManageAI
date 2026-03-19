@@ -41,7 +41,11 @@ import {
   Star,
   CheckCircle2,
   Bell,
-  Video
+  Video,
+  UserCheck,
+  BriefcaseBusiness,
+  ListChecks,
+  Award
 } from "lucide-react";
 import heroImage from "../assets/images/landing/hero-construction.jpg";
 import teamImage from "../assets/images/landing/team-planning.jpg";
@@ -104,6 +108,13 @@ const painPoints = [
     description: "Great intentions but limited execution. Bids are won but not converted efficiently. Opportunities slip away due to slow response times.",
     stat: "35%",
     statLabel: "of leads go cold"
+  },
+  {
+    icon: UserCheck,
+    title: "Hard to Find Good Crews",
+    description: "Skilled labor shortages leave jobs understaffed and timelines blown. Posting jobs, reviewing resumes, and scheduling interviews drains hours you don't have.",
+    stat: "73%",
+    statLabel: "of contractors struggle to find skilled workers"
   }
 ];
 
@@ -143,6 +154,12 @@ const solutions = [
     solution: "One-Click Time & Materials",
     description: "GPS time clock, digital T&M tickets, and automated payroll reports. What took hours now takes minutes.",
     icon: Zap
+  },
+  {
+    problem: "Hard to Find Good Crews",
+    solution: "AI-Powered Hiring",
+    description: "AI posts jobs, scores resumes, flags top candidates, and schedules interviews automatically. Find skilled workers faster without the manual grind.",
+    icon: UserCheck
   }
 ];
 
@@ -212,6 +229,17 @@ const features = [
       { name: "Website Builder", description: "Professional company website", icon: Globe },
       { name: "White-Label Branding", description: "Your brand throughout", icon: Building2 }
     ]
+  },
+  {
+    category: "Hiring & Recruiting",
+    items: [
+      { name: "AI Job Posting", description: "Auto-generate and post job listings", icon: BriefcaseBusiness },
+      { name: "Candidate Pipeline Board", description: "Visual kanban for every applicant", icon: ListChecks },
+      { name: "AI Candidate Review", description: "Resume scoring and strengths/concerns", icon: Brain },
+      { name: "Interview Scheduling", description: "Automated scheduling with calendar sync", icon: Calendar },
+      { name: "Hiring Analytics", description: "Track time-to-hire and pipeline metrics", icon: BarChart3 },
+      { name: "Offer Management", description: "Send and track offers digitally", icon: Award }
+    ]
   }
 ];
 
@@ -239,6 +267,12 @@ const aiCapabilities = [
     title: "AI Schedule Generator",
     description: "Analyzes your scope of work, crew availability, and historical production rates to generate realistic construction schedules. No more guessing at timelines.",
     features: ["Automatic Scheduling", "Resource Optimization", "Dependency Mapping", "Timeline Predictions"],
+    image: null
+  },
+  {
+    title: "AI Hiring Assistant",
+    description: "Automates the entire recruiting workflow. AI writes and posts job listings, scores incoming resumes, highlights candidate strengths and concerns, and triggers stage-change automations so qualified workers move through your pipeline without manual effort.",
+    features: ["AI Job Posting", "Resume Scoring", "Strengths & Concerns Flags", "Stage Automation"],
     image: null
   }
 ];
@@ -333,7 +367,8 @@ const addons = [
   { name: "AI Email Pack", price: 29, description: "Email categorization, task extraction, follow-ups" },
   { name: "AI Vision Pack", price: 79, description: "AI-powered plan takeoff and material estimation", comingSoon: true },
   { name: "Website + SEO Pack", price: 39, description: "Website builder, SEO optimization, blog & gallery" },
-  { name: "Bid Network Pack", price: 49, description: "Competitive vendor bidding marketplace" }
+  { name: "Bid Network Pack", price: 49, description: "Competitive vendor bidding marketplace" },
+  { name: "AI Hiring Pack", price: 49, description: "AI job posting, resume scoring, and candidate pipeline automation" }
 ];
 
 const tradeTypes = [
