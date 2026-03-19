@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -95,6 +95,7 @@ function reviewerDisplay(candidate: HiringCandidate): string | null {
 }
 
 export default function HiringCandidatesPage() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [selectedStages, setSelectedStages] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState("ALL");
@@ -278,8 +279,16 @@ export default function HiringCandidatesPage() {
                   const job = c.jobId ? jobsById[c.jobId] : null;
                   const rev = reviewerDisplay(c);
                   return (
-                    <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" data-testid={`row-candidate-${c.id}`}>
-                      <TableCell>
+                    <TableRow
+                      key={c.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      data-testid={`row-candidate-${c.id}`}
+                      onClick={() => navigate(`/hiring/candidates/${c.id}`)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") navigate(`/hiring/candidates/${c.id}`); }}
+                      tabIndex={0}
+                      role="link"
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Link href={`/hiring/candidates/${c.id}`} className="flex items-center gap-2" data-testid={`link-candidate-${c.id}`}>
                           <Avatar className="w-8 h-8">
                             <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>

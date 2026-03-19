@@ -6105,6 +6105,7 @@ export const hiringJobs = pgTable("hiring_jobs", {
   preferredQualifications: text("preferred_qualifications"),
   certificationsRequired: text("certifications_required"),
   screeningQuestionsJson: text("screening_questions_json"),
+  postingDestinationsJson: text("posting_destinations_json"),
   internalNotes: text("internal_notes"),
   status: hiringJobStatusEnum("status").notNull().default("DRAFT"),
   assignedOwnerUserId: varchar("assigned_owner_user_id").references(() => users.id, { onDelete: "set null" }),

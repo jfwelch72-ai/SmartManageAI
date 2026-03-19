@@ -46,6 +46,7 @@ export interface HiringJob {
   preferredQualifications: string | null;
   certificationsRequired: string | null;
   screeningQuestionsJson: string | null;
+  postingDestinationsJson: string | null;
   internalNotes: string | null;
   status: HiringJobStatus;
   assignedOwnerUserId: string | null;

@@ -797,7 +797,7 @@ export const NavigationConfig = {
       href: "/hiring/jobs",
       label: "Jobs",
       testId: "nav-hiring-jobs",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER",
+      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
     {
       href: "/hiring/candidates",

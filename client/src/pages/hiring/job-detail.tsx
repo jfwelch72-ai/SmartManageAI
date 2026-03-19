@@ -73,11 +73,15 @@ export default function HiringJobDetailPage() {
         (q) => (typeof q === "string" ? q : q.question ?? "")
       );
     } catch { sqList = []; }
+    let destList: string[] = [];
+    try {
+      destList = job.postingDestinationsJson ? JSON.parse(job.postingDestinationsJson) : [];
+    } catch { destList = []; }
     return {
       ...job,
       certificationsList: certsList,
       screeningQuestionsList: sqList,
-      postingDestinationsList: [],
+      postingDestinationsList: destList,
     };
   }
 
@@ -102,7 +106,10 @@ export default function HiringJobDetailPage() {
         );
         delete payload.screeningQuestionsList;
       }
-      delete payload.postingDestinationsList;
+      if (data.postingDestinationsList !== undefined) {
+        payload.postingDestinationsJson = JSON.stringify(data.postingDestinationsList.filter(Boolean));
+        delete payload.postingDestinationsList;
+      }
       const res = await apiRequest("PATCH", `/api/hiring/jobs/${jobId}`, payload);
       return res.json();
     },
