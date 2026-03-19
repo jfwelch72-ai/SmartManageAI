@@ -30,12 +30,16 @@ import {
   Image,
   X,
   Loader2,
+  ChevronRight,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { Submittal, RFI, SubmittalCreateForm, SubmittalItem, SubmittalAttachment } from "@/hooks/useSubmittalMutations";
+import type { Submittal, RFI, SubmittalCreateForm, SubmittalItem, SubmittalAttachment, SubmittalReview } from "@/hooks/useSubmittalMutations";
 import { SUBMITTAL_CATEGORIES, SUBMITTAL_CATEGORY_LABELS, type SubmittalCategory } from "@/hooks/useSubmittalMutations";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 export function getStatusBadge(status: string, prefix = "") {
   switch (status) {
@@ -104,6 +108,25 @@ function getItemStatusBadge(status: string) {
   }
 }
 
+function getReviewStatusBadge(status: string) {
+  switch (status) {
+    case "PENDING":
+      return <Badge variant="secondary" className="text-xs"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+    case "IN_REVIEW":
+      return <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 text-xs"><Eye className="h-3 w-3 mr-1" />In Review</Badge>;
+    case "APPROVED":
+      return <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />Approved</Badge>;
+    case "APPROVED_AS_NOTED":
+      return <Badge variant="outline" className="border-green-500 text-green-700 dark:text-green-400 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />Approved As Noted</Badge>;
+    case "REJECTED":
+      return <Badge variant="destructive" className="text-xs"><XCircle className="h-3 w-3 mr-1" />Rejected</Badge>;
+    case "REVISE_AND_RESUBMIT":
+      return <Badge variant="secondary" className="bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 text-xs"><AlertTriangle className="h-3 w-3 mr-1" />Revise & Resubmit</Badge>;
+    default:
+      return <Badge variant="outline" className="text-xs">{status}</Badge>;
+  }
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -116,6 +139,8 @@ function getFileIcon(mimeType: string | null) {
   if (mt.includes("pdf")) return FileText;
   return File;
 }
+
+const REVIEW_ROLES = ["ARCHITECT", "ENGINEER", "OWNER", "GC_MANAGER"] as const;
 
 interface SubmittalItemsTabProps {
   submittal: Submittal;
@@ -630,6 +655,10 @@ interface SubmittalDetailDialogProps {
     addCommentMutation: { mutate: (args: { id: string; comment: string }) => void; isPending: boolean };
     reviewMutation: { mutate: (args: { id: string; action: string; comments: string }) => void; isPending: boolean };
     linkRfiMutation: { mutate: (args: { id: string; rfiId: string }) => void; isPending: boolean };
+    addReviewerMutation?: { mutate: (args: { submittalId: string; data: Record<string, unknown> }) => void; isPending: boolean };
+    removeReviewerMutation?: { mutate: (args: { submittalId: string; reviewId: string }) => void; isPending: boolean };
+    startChainMutation?: { mutate: (args: { submittalId: string; reviewId: string }) => void; isPending: boolean };
+    stampMutation?: { mutate: (args: { submittalId: string; reviewId: string; action: string; comments: string }) => void; isPending: boolean };
   };
   onEdit?: (submittal: Submittal) => void;
   userRole?: string;
@@ -649,6 +678,7 @@ export function SubmittalDetailDialog({
   currentUserId = "",
   attachmentsSlot
 }: SubmittalDetailDialogProps) {
+  const { user, permissionRole } = useAuth();
   const [showReviewDialog, setShowReviewDialog] = useState(false);
   const [showLinkRfiDialog, setShowLinkRfiDialog] = useState(false);
   const [reviewAction, setReviewAction] = useState("");
@@ -656,22 +686,87 @@ export function SubmittalDetailDialog({
   const [newComment, setNewComment] = useState("");
   const [selectedRfiId, setSelectedRfiId] = useState("");
 
+  const [showAddReviewer, setShowAddReviewer] = useState(false);
+  const [newReviewerRole, setNewReviewerRole] = useState<string>("");
+  const [newReviewerName, setNewReviewerName] = useState("");
+  const [newReviewerUserId, setNewReviewerUserId] = useState("");
+
+  const [stampingReviewId, setStampingReviewId] = useState<string | null>(null);
+  const [stampAction, setStampAction] = useState<string>("");
+  const [stampComments, setStampComments] = useState("");
+
+  const detail = selectedDetail || submittal;
+
+  const canManageChain = ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(permissionRole || "");
+  const canManageItems = ["ADMIN", "MANAGER", "PROJECT_ENGINEER", "SUPER_ADMIN"].includes(userRole);
+  const canUploadAttachments = ["ADMIN", "MANAGER", "PROJECT_ENGINEER", "SUPERINTENDENT", "SUPER_ADMIN"].includes(userRole);
+  const canDeleteAnyAttachment = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(userRole);
+
+  const { data: reviews = [] } = useQuery<SubmittalReview[]>({
+    queryKey: ["/api/submittals", detail?.id, "reviews"],
+    queryFn: async () => {
+      const res = await fetch(`/api/submittals/${detail!.id}/reviews`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch reviews");
+      return res.json();
+    },
+    enabled: !!detail?.id && open,
+  });
+
+  const { data: orgUsers = [] } = useQuery<{ id: string; firstName: string; lastName: string; role: string }[]>({
+    queryKey: ["/api/users"],
+    enabled: !!detail?.id && open && canManageChain && detail?.status === "DRAFT",
+  });
+
+  const hasReviewChain = reviews.length > 0;
+
   const { data: rfis = [] } = useQuery<RFI[]>({
     queryKey: ["/api/rfi", submittal?.projectId ? `?projectId=${submittal.projectId}` : ""],
     enabled: !!submittal?.projectId && showLinkRfiDialog
   });
-
-  const detail = selectedDetail || submittal;
-
-  const canManageItems = ["ADMIN", "MANAGER", "PROJECT_ENGINEER", "SUPER_ADMIN"].includes(userRole);
-  const canUploadAttachments = ["ADMIN", "MANAGER", "PROJECT_ENGINEER", "SUPERINTENDENT", "SUPER_ADMIN"].includes(userRole);
-  const canDeleteAnyAttachment = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(userRole);
 
   const openReviewDialog = (action: string) => {
     setReviewAction(action);
     setReviewComments("");
     setShowReviewDialog(true);
   };
+
+  const handleAddReviewer = () => {
+    if (!detail || !newReviewerRole || !newReviewerName.trim()) return;
+    const nextSeq = reviews.length > 0 ? Math.max(...reviews.map(r => r.sequenceOrder)) + 1 : 1;
+    const data: Record<string, unknown> = {
+      reviewerRole: newReviewerRole,
+      reviewerName: newReviewerName.trim(),
+      sequenceOrder: nextSeq,
+    };
+    if (newReviewerUserId) data.reviewerId = newReviewerUserId;
+    mutations.addReviewerMutation?.mutate({ submittalId: detail.id, data });
+    setNewReviewerRole("");
+    setNewReviewerName("");
+    setNewReviewerUserId("");
+    setShowAddReviewer(false);
+  };
+
+  const handleStartChain = () => {
+    if (!detail || reviews.length === 0) return;
+    const firstPending = [...reviews].sort((a, b) => a.sequenceOrder - b.sequenceOrder).find(r => r.status === "PENDING");
+    if (!firstPending) return;
+    mutations.startChainMutation?.mutate({ submittalId: detail.id, reviewId: firstPending.id });
+  };
+
+  const handleStamp = () => {
+    if (!detail || !stampingReviewId || !stampAction) return;
+    mutations.stampMutation?.mutate({
+      submittalId: detail.id,
+      reviewId: stampingReviewId,
+      action: stampAction,
+      comments: stampComments,
+    });
+    setStampingReviewId(null);
+    setStampAction("");
+    setStampComments("");
+  };
+
+  const myActiveReview = reviews.find(r => r.status === "IN_REVIEW" && r.reviewerId === user?.id);
 
   return (
     <>
@@ -759,7 +854,7 @@ export function SubmittalDetailDialog({
                   )}
                 </div>
 
-                {detail.reviewerName && (
+                {!hasReviewChain && detail.reviewerName && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <Label className="text-muted-foreground text-xs">Reviewer</Label>
@@ -774,14 +869,14 @@ export function SubmittalDetailDialog({
                   </div>
                 )}
 
-                {detail.reviewComments && (
+                {!hasReviewChain && detail.reviewComments && (
                   <div>
                     <Label className="text-muted-foreground text-xs">Review Comments</Label>
                     <p className="bg-muted p-3 rounded-md text-sm" data-testid={`${testIdPrefix}text-detail-review-comments`}>{detail.reviewComments}</p>
                   </div>
                 )}
 
-                {detail.stampAction && (
+                {!hasReviewChain && detail.stampAction && (
                   <div>
                     <Label className="text-muted-foreground text-xs">Stamp</Label>
                     <p data-testid={`${testIdPrefix}text-detail-stamp`}>{detail.stampAction}</p>
@@ -811,6 +906,243 @@ export function SubmittalDetailDialog({
                   </div>
                 )}
 
+                {/* ==================== Review Chain Panel ==================== */}
+                <div className="border rounded-lg p-4 space-y-4" data-testid={`${testIdPrefix}review-chain-panel`}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium flex items-center gap-2">
+                      <FileCheck className="h-4 w-4" />
+                      Review Chain
+                    </h3>
+                    {canManageChain && detail.status === "DRAFT" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowAddReviewer(!showAddReviewer)}
+                        data-testid={`${testIdPrefix}button-add-reviewer-toggle`}
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Reviewer
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Add Reviewer Form */}
+                  {showAddReviewer && canManageChain && detail.status === "DRAFT" && (
+                    <div className="border rounded-md p-3 space-y-3 bg-muted/50" data-testid={`${testIdPrefix}add-reviewer-form`}>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Role</Label>
+                          <Select value={newReviewerRole} onValueChange={setNewReviewerRole}>
+                            <SelectTrigger className="h-8 text-sm" data-testid={`${testIdPrefix}select-reviewer-role`}>
+                              <SelectValue placeholder="Select role..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {REVIEW_ROLES.map(role => (
+                                <SelectItem key={role} value={role}>{role.replace(/_/g, " ")}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">User (optional)</Label>
+                          <Select value={newReviewerUserId || "__external__"} onValueChange={(val) => {
+                            const userId = val === "__external__" ? "" : val;
+                            setNewReviewerUserId(userId);
+                            if (userId) {
+                              const found = orgUsers.find(u => u.id === userId);
+                              if (found) setNewReviewerName(`${found.firstName} ${found.lastName}`);
+                            }
+                          }}>
+                            <SelectTrigger className="h-8 text-sm" data-testid={`${testIdPrefix}select-reviewer-user`}>
+                              <SelectValue placeholder="Select user..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__external__">External / No User</SelectItem>
+                              {orgUsers.map(u => (
+                                <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Reviewer Name</Label>
+                        <Input
+                          value={newReviewerName}
+                          onChange={e => setNewReviewerName(e.target.value)}
+                          placeholder="Reviewer name..."
+                          className="h-8 text-sm"
+                          data-testid={`${testIdPrefix}input-reviewer-name`}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          onClick={handleAddReviewer}
+                          disabled={!newReviewerRole || !newReviewerName.trim() || mutations.addReviewerMutation?.isPending}
+                          data-testid={`${testIdPrefix}button-confirm-add-reviewer`}
+                        >
+                          Add
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setShowAddReviewer(false)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stepper */}
+                  {hasReviewChain ? (
+                    <div className="space-y-2" data-testid={`${testIdPrefix}review-chain-stepper`}>
+                      {/* Contractor step (always first) */}
+                      <div className="flex items-start gap-3">
+                        <div className="flex flex-col items-center">
+                          <div className="w-7 h-7 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
+                            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                          </div>
+                          {reviews.length > 0 && <div className="w-px h-4 bg-border mt-1" />}
+                        </div>
+                        <div className="flex-1 pb-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{detail.submittedByName || "Contractor"}</span>
+                            <Badge variant="outline" className="text-xs">Contractor</Badge>
+                            <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 text-xs">
+                              <CheckCircle2 className="h-3 w-3 mr-1" />Submitted
+                            </Badge>
+                          </div>
+                          {detail.dateSubmitted && (
+                            <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(detail.dateSubmitted), "MMM d, yyyy")}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {reviews.map((review, idx) => {
+                        const isLast = idx === reviews.length - 1;
+                        const isActive = review.status === "IN_REVIEW";
+                        const isCompleted = ["APPROVED", "APPROVED_AS_NOTED", "REJECTED", "REVISE_AND_RESUBMIT"].includes(review.status);
+                        return (
+                          <div key={review.id} className="flex items-start gap-3" data-testid={`${testIdPrefix}review-step-${review.id}`}>
+                            <div className="flex flex-col items-center">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center ${
+                                isCompleted
+                                  ? review.status === "APPROVED" || review.status === "APPROVED_AS_NOTED"
+                                    ? "bg-green-100 dark:bg-green-900"
+                                    : "bg-red-100 dark:bg-red-900"
+                                  : isActive
+                                    ? "bg-blue-100 dark:bg-blue-900"
+                                    : "bg-muted"
+                              }`}>
+                                {isCompleted && (review.status === "APPROVED" || review.status === "APPROVED_AS_NOTED") && <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />}
+                                {isCompleted && (review.status === "REJECTED" || review.status === "REVISE_AND_RESUBMIT") && <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />}
+                                {isActive && <Eye className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                                {!isCompleted && !isActive && <Clock className="h-4 w-4 text-muted-foreground" />}
+                              </div>
+                              {!isLast && <div className="w-px h-4 bg-border mt-1" />}
+                            </div>
+                            <div className="flex-1 pb-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm">{review.reviewerName}</span>
+                                <Badge variant="outline" className="text-xs">{review.reviewerRole.replace(/_/g, " ")}</Badge>
+                                {getReviewStatusBadge(review.status)}
+                                {canManageChain && detail.status === "DRAFT" && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1 text-xs text-destructive hover:text-destructive"
+                                    onClick={() => mutations.removeReviewerMutation?.mutate({ submittalId: detail.id, reviewId: review.id })}
+                                    data-testid={`${testIdPrefix}button-remove-reviewer-${review.id}`}
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                              {review.dateReviewed && (
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  {format(new Date(review.dateReviewed), "MMM d, yyyy")}
+                                </p>
+                              )}
+                              {review.comments && (
+                                <p className="text-xs text-muted-foreground mt-1 italic">"{review.comments}"</p>
+                              )}
+
+                              {/* Stamp Decision UI — shown to reviewer whose row is IN_REVIEW */}
+                              {review.status === "IN_REVIEW" && (review.reviewerId === user?.id || canManageChain) && (
+                                <div className="mt-2">
+                                  {stampingReviewId === review.id ? (
+                                    <div className="space-y-2 border rounded-md p-2 bg-muted/50" data-testid={`${testIdPrefix}stamp-form-${review.id}`}>
+                                      <Select value={stampAction} onValueChange={setStampAction}>
+                                        <SelectTrigger className="h-8 text-sm" data-testid={`${testIdPrefix}select-stamp-action-${review.id}`}>
+                                          <SelectValue placeholder="Select decision..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="APPROVED">Approve</SelectItem>
+                                          <SelectItem value="APPROVED_AS_NOTED">Approve As Noted</SelectItem>
+                                          <SelectItem value="REJECTED">Reject</SelectItem>
+                                          <SelectItem value="REVISE_AND_RESUBMIT">Revise & Resubmit</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Textarea
+                                        value={stampComments}
+                                        onChange={e => setStampComments(e.target.value)}
+                                        placeholder={stampAction === "APPROVED" ? "Comments (optional)..." : "Comments required..."}
+                                        rows={2}
+                                        className="text-sm"
+                                        data-testid={`${testIdPrefix}input-stamp-comments-${review.id}`}
+                                      />
+                                      <div className="flex gap-2">
+                                        <Button
+                                          size="sm"
+                                          onClick={handleStamp}
+                                          disabled={
+                                            !stampAction ||
+                                            (stampAction !== "APPROVED" && !stampComments.trim()) ||
+                                            mutations.stampMutation?.isPending
+                                          }
+                                          data-testid={`${testIdPrefix}button-confirm-stamp-${review.id}`}
+                                        >
+                                          {mutations.stampMutation?.isPending ? "Stamping..." : "Confirm Stamp"}
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={() => { setStampingReviewId(null); setStampAction(""); setStampComments(""); }}>Cancel</Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="mt-1"
+                                      onClick={() => { setStampingReviewId(review.id); setStampAction(""); setStampComments(""); }}
+                                      data-testid={`${testIdPrefix}button-stamp-decision-${review.id}`}
+                                    >
+                                      <FileCheck className="h-3 w-3 mr-1" />
+                                      Stamp Decision
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground" data-testid={`${testIdPrefix}text-no-review-chain`}>
+                      No review chain configured.
+                      {canManageChain && detail.status === "DRAFT" && " Add reviewers above to set up a sequential review chain."}
+                    </p>
+                  )}
+
+                  {/* Start Chain button — only when SUBMITTED and chain has pending items */}
+                  {hasReviewChain && detail.status === "SUBMITTED" && canManageChain && reviews.some(r => r.status === "PENDING") && !reviews.some(r => r.status === "IN_REVIEW") && (
+                    <Button
+                      size="sm"
+                      onClick={handleStartChain}
+                      disabled={mutations.startChainMutation?.isPending}
+                      data-testid={`${testIdPrefix}button-start-chain`}
+                    >
+                      <ChevronRight className="h-4 w-4 mr-1" />
+                      {mutations.startChainMutation?.isPending ? "Starting..." : "Start Review Chain"}
+                    </Button>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-2 flex-wrap border-t pt-4">
                   {detail.status === "DRAFT" && (
                     <>
@@ -839,7 +1171,7 @@ export function SubmittalDetailDialog({
                       </Button>
                     </>
                   )}
-                  {detail.status === "SUBMITTED" && (
+                  {detail.status === "SUBMITTED" && !hasReviewChain && (
                     <Button
                       onClick={() => mutations.startReviewMutation.mutate(detail.id)}
                       disabled={mutations.startReviewMutation.isPending}
@@ -849,7 +1181,7 @@ export function SubmittalDetailDialog({
                       Start Review
                     </Button>
                   )}
-                  {detail.status === "UNDER_REVIEW" && (
+                  {detail.status === "UNDER_REVIEW" && !hasReviewChain && (
                     <>
                       <Button
                         variant="default"
@@ -988,6 +1320,7 @@ export function SubmittalDetailDialog({
         </DialogContent>
       </Dialog>
 
+      {/* Legacy Review Dialog */}
       <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>

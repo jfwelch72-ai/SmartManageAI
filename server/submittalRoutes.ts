@@ -908,6 +908,7 @@ router.post("/submittals/:id/reviews", requireAuth, requireRole("SUPER_ADMIN", "
 
     if (!existing) return res.status(404).json({ error: "Submittal not found" });
     if (shouldFilter && orgId && existing.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    if (existing.submittal.status !== "DRAFT") return res.status(400).json({ error: "Reviewers can only be added to DRAFT submittals" });
 
     const organizationId = existing.submittal.organizationId;
     const body = { ...req.body, submittalId: id, organizationId };

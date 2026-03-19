@@ -77,6 +77,22 @@ export interface SubmittalAttachment {
   createdAt: string;
 }
 
+export interface SubmittalReview {
+  id: string;
+  submittalId: string;
+  organizationId: string;
+  reviewerRole: string;
+  reviewerId: string | null;
+  reviewerName: string;
+  sequenceOrder: number;
+  status: string;
+  comments: string | null;
+  stampAction: string | null;
+  dateAssigned: string | null;
+  dateReviewed: string | null;
+  createdAt: string;
+}
+
 export interface Submittal {
   id: string;
   projectId: string;
@@ -146,6 +162,10 @@ export function useSubmittalMutations(callbacks?: {
   onCommentSuccess?: () => void;
   onDeleteSuccess?: () => void;
   onUpdateSuccess?: () => void;
+  onAddReviewerSuccess?: () => void;
+  onRemoveReviewerSuccess?: () => void;
+  onStartChainSuccess?: () => void;
+  onStampSuccess?: () => void;
 }) {
   const { toast } = useToast();
 
@@ -356,6 +376,64 @@ export function useSubmittalMutations(callbacks?: {
     }
   });
 
+  const addReviewerMutation = useMutation({
+    mutationFn: async ({ submittalId, data }: { submittalId: string; data: Record<string, unknown> }) => {
+      return await apiRequest("POST", `/api/submittals/${submittalId}/reviews`, data);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "reviews"] });
+      toast({ title: "Reviewer added" });
+      callbacks?.onAddReviewerSuccess?.();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to add reviewer", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const removeReviewerMutation = useMutation({
+    mutationFn: async ({ submittalId, reviewId }: { submittalId: string; reviewId: string }) => {
+      return await apiRequest("DELETE", `/api/submittals/${submittalId}/reviews/${reviewId}`);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "reviews"] });
+      toast({ title: "Reviewer removed" });
+      callbacks?.onRemoveReviewerSuccess?.();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to remove reviewer", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const startChainMutation = useMutation({
+    mutationFn: async ({ submittalId, reviewId }: { submittalId: string; reviewId: string }) => {
+      return await apiRequest("POST", `/api/submittals/${submittalId}/reviews/${reviewId}/start`);
+    },
+    onSuccess: (_data, variables) => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "reviews"] });
+      toast({ title: "Review chain started" });
+      callbacks?.onStartChainSuccess?.();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to start review chain", description: error.message, variant: "destructive" });
+    }
+  });
+
+  const stampMutation = useMutation({
+    mutationFn: async ({ submittalId, reviewId, action, comments }: { submittalId: string; reviewId: string; action: string; comments: string }) => {
+      return await apiRequest("POST", `/api/submittals/${submittalId}/reviews/${reviewId}/stamp`, { action, comments });
+    },
+    onSuccess: (_data, variables) => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["/api/submittals", variables.submittalId, "reviews"] });
+      toast({ title: "Stamp applied" });
+      callbacks?.onStampSuccess?.();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to stamp review", description: error.message, variant: "destructive" });
+    }
+  });
+
   return {
     createMutation,
     submitMutation,
@@ -371,5 +449,9 @@ export function useSubmittalMutations(callbacks?: {
     deleteItemMutation,
     addAttachmentMutation,
     deleteAttachmentMutation,
+    addReviewerMutation,
+    removeReviewerMutation,
+    startChainMutation,
+    stampMutation,
   };
 }
