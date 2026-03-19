@@ -29,6 +29,7 @@ interface HiringAnalytics {
     byStatus: Record<string, number>;
   };
   monthlyTrend: Array<{ month: string; count: number }>;
+  monthlyTimeToHire: Array<{ month: string; avgDays: number }>;
   summaryStats: {
     avgDaysToHire: number | null;
     fillRate: number | null;
@@ -174,6 +175,7 @@ export default function HiringAnalyticsPage() {
   const sourceData = analytics?.candidates.bySource ?? [];
   const aiHistogramData = analytics?.candidates.aiScoreHistogram ?? [];
   const monthlyTrendData = analytics?.monthlyTrend ?? [];
+  const monthlyTimeToHireData = analytics?.monthlyTimeToHire ?? [];
   const funnelData = (analytics?.candidates.funnelConversion ?? []).map((d) => ({
     ...d,
     name: STAGE_LABELS[d.stage] ?? d.stage,
@@ -447,6 +449,40 @@ export default function HiringAnalyticsPage() {
                   <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Line type="monotone" dataKey="count" name="Applicants" stroke="#3b82f6" strokeWidth={2} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Time-to-Hire Trend</CardTitle>
+            <p className="text-xs text-muted-foreground">Average days from application to hire, by month</p>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <Skeleton className="h-64 w-full" />
+            ) : monthlyTimeToHireData.length === 0 ? (
+              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
+                No hire data available yet
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={monthlyTimeToHireData} margin={{ top: 5, right: 10, bottom: 5, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} tickFormatter={(v: string) => v.slice(5)} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11 }} unit="d" />
+                  <Tooltip formatter={(v: number) => [`${v} days`, "Avg Days to Hire"]} />
+                  <Line
+                    type="monotone"
+                    dataKey="avgDays"
+                    name="Avg Days to Hire"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
                 </LineChart>
               </ResponsiveContainer>
             )}

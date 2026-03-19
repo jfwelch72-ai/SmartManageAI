@@ -1619,7 +1619,7 @@ function scrubProtectedCharacteristics(text: string): string {
 router.post(
   "/candidates/:id/ai-review",
   requireAuth,
-  requireRole("ADMIN", "HUSTLER", "HR_MANAGER", "MANAGER"),
+  requireRole("ADMIN", "MANAGER"),
   async (req: AuthRequest, res) => {
     try {
       const aiEnabled = await isFeatureEnabled(orgId(req), "HIRING_AI_SCORING");
@@ -1879,6 +1879,7 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
       monthlyApplicants,
       rejectionReasonRows,
       hiredCandidatesForDays,
+      monthlyTimeToHireRows,
     ] = await Promise.all([
       db
         .select({ status: hiringJobs.status, count: count() })
@@ -1958,6 +1959,21 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
         })
         .from(hiringCandidates)
         .where(and(eq(hiringCandidates.organizationId, org), eq(hiringCandidates.currentStage, "HIRED"))),
+      // monthly time-to-hire trend (avg days from applied to hired, by month, last 6 months)
+      db
+        .select({
+          month: sql<string>`to_char(updated_at, 'YYYY-MM')`,
+          avgDays: sql<number>`round(avg(extract(epoch from (updated_at - applied_at)) / 86400))`,
+        })
+        .from(hiringCandidates)
+        .where(and(
+          eq(hiringCandidates.organizationId, org),
+          eq(hiringCandidates.currentStage, "HIRED"),
+          isNotNull(hiringCandidates.appliedAt),
+          gte(hiringCandidates.updatedAt, sixMonthsAgo),
+        ))
+        .groupBy(sql`to_char(updated_at, 'YYYY-MM')`)
+        .orderBy(sql`to_char(updated_at, 'YYYY-MM')`),
     ]);
 
     const jobsByStatus = Object.fromEntries(jobCounts.map((r) => [r.status, Number(r.count)]));
@@ -2061,6 +2077,10 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_REVIEW), async (req:
       monthlyTrend: monthlyApplicants.map((r) => ({
         month: r.month,
         count: Number(r.count),
+      })),
+      monthlyTimeToHire: monthlyTimeToHireRows.map((r) => ({
+        month: r.month,
+        avgDays: Number(r.avgDays),
       })),
       summaryStats: {
         avgDaysToHire,

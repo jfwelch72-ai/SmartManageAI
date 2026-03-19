@@ -120,6 +120,7 @@ export default function CandidateDetailPage() {
   const { user } = useAuth();
   const role = user?.role;
   const canEdit = role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER";
+  const canRunAiReview = role === "ADMIN" || role === "MANAGER";
   const candidateId = params?.id ?? "";
 
   const [newNote, setNewNote] = useState("");
@@ -492,7 +493,7 @@ export default function CandidateDetailPage() {
                     <CardTitle className="text-base flex items-center gap-2">
                       <Sparkles className="w-4 h-4 text-yellow-500" />AI Evaluation
                     </CardTitle>
-                    {canEdit && (
+                    {canRunAiReview && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -691,7 +692,7 @@ export default function CandidateDetailPage() {
                         <p className="font-medium">No AI evaluation yet</p>
                         <p className="text-sm text-muted-foreground">Run an AI review to score this candidate's fit for the role.</p>
                       </div>
-                      {canEdit && (
+                      {canRunAiReview && (
                         <Button
                           onClick={() => {
                             aiScoreMutation.mutate(undefined, {

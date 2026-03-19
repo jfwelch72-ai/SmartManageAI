@@ -255,7 +255,7 @@ export default function HiringInterviewsPage() {
                       {canEdit && (
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
-                            {interview.status === "SCHEDULED" && (
+                            {(interview.status === "SCHEDULED" || interview.status === "RESCHEDULED") && (
                               <>
                                 <Button
                                   size="sm"
