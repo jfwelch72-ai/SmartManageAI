@@ -21,6 +21,8 @@ import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization"
 import { emailVerificationTokens } from "@shared/schema";
 import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from "./email";
 import { insertNotification } from "./services/notificationService";
+import { setAllFeatureFlags } from "./services/featureFlagService";
+import { FEATURE_FLAG_KEYS } from "@shared/schema";
 
 const router = Router();
 
@@ -315,6 +317,10 @@ const upload = multer({
           }).returning();
           console.log("[DEV] Created sandbox organization:", devOrg.id);
         }
+
+        // Always ensure all feature flags are enabled for the dev sandbox org
+        const allFlagsOn = Object.fromEntries(FEATURE_FLAG_KEYS.map(k => [k, true]));
+        await setAllFeatureFlags(devOrg.id, allFlagsOn);
       }
 
       // Create test user email based on role
