@@ -113,7 +113,20 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
   const gapSov = sovs.find(s => {
     const contract = parseFloat(s.contractAmount ?? "0");
     const scheduled = parseFloat(s.totalScheduledValue ?? "0");
-    return scheduled > 0 && contract > scheduled + 0.01;
+    if (scheduled <= 0 || contract <= scheduled + 0.01) return false;
+    const isUnbilled =
+      s.lineItems.length > 0 &&
+      s.lineItems.every(li => {
+        const anyLi = li as any;
+        const completed = parseFloat(
+          anyLi.totalCompletedAndStored ?? anyLi.totalCompleted ?? "0"
+        );
+        const current = parseFloat(
+          anyLi.thisPeriodCompleted ?? anyLi.currentBilled ?? "0"
+        );
+        return completed === 0 && current === 0;
+      });
+    return isUnbilled;
   });
   const sovGapAmount = gapSov
     ? parseFloat(gapSov.contractAmount ?? "0") - parseFloat(gapSov.totalScheduledValue ?? "0")
@@ -161,9 +174,18 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
           {gapSov && (
             <div className="flex items-start gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30" data-testid="banner-sov-gap">
               <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
-              <div className="text-sm text-blue-800 dark:text-blue-300 space-y-0.5">
+              <div className="flex-1 min-w-0 text-sm text-blue-800 dark:text-blue-300 space-y-1">
                 <p className="font-medium">Scheduled values are {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(sovGapAmount)} below the contract amount.</p>
-                <p className="text-xs">The SOV was seeded from the estimate's direct costs. The gap represents overhead and profit markup. Open the SOV to adjust line items so they sum to the full contract value.</p>
+                <p className="text-xs">The SOV was seeded from the estimate's direct costs. The gap represents overhead and profit markup — open the SOV to distribute these amounts across line items so they sum to the full contract value.</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-1 h-7 text-xs border-blue-300 text-blue-800 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900"
+                  onClick={() => { setSelectedSOV(gapSov); setShowDetailDialog(true); }}
+                  data-testid="button-sov-gap-review"
+                >
+                  Review SOV Line Items
+                </Button>
               </div>
             </div>
           )}

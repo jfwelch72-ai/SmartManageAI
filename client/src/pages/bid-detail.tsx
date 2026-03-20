@@ -590,7 +590,11 @@ export default function BidDetailPage() {
           : "Bid has been awarded and moved to Active Projects!",
       });
       setShowAwardDialog(false);
-      setLocation(`/projects/${newProject?.code ?? ""}`);
+      if (newProject?.code) {
+        setLocation(`/projects/${newProject.code}`);
+      } else {
+        setLocation("/projects");
+      }
     } catch (error: any) {
       toast({
         title: "Error",
