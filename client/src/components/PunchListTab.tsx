@@ -830,7 +830,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                       Mark In Progress
                     </Button>
                   )}
-                  {(selected.status === "OPEN" || selected.status === "IN_PROGRESS") && canChangeStatus(userRole) && (
+                  {selected.status === "IN_PROGRESS" && canChangeStatus(userRole) && (
                     <Button
                       size="sm"
                       variant="outline"
