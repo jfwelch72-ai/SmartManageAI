@@ -35,17 +35,41 @@ import { format, parseISO } from "date-fns";
 interface AiCoDraft {
   id: string;
   projectId: string;
-  relatedDelayId?: string;
-  relatedInspectionId?: string;
-  sourceType: "DELAY" | "INSPECTION" | "MANUAL" | "SCOPE_CHANGE";
-  aiGeneratedDescription: string;
-  aiGeneratedJustification: string;
-  suggestedAmount: number;
-  suggestedTimeDays?: number;
-  confidenceScore: number;
+  tradeType?: string;
+  aiConfidence?: number;
+  aiNotes?: string;
+  draftContentJson?: string;
+  pricingJson?: string;
   status: "DRAFT" | "REVIEWED" | "CONVERTED" | "REJECTED";
-  finalChangeOrderId?: string;
   createdAt: string;
+}
+
+interface GeneratedDraftResult {
+  draftId: string;
+  aiConfidence: number;
+  aiNotes: string;
+  draft: {
+    title: string;
+    description: string;
+    justification: string;
+    scopeOfWork: string;
+    exclusions: string;
+    terms: string;
+    lineItems: {
+      labor: Array<{ description: string; hours: number; rate: number; amount: number }>;
+      materials: Array<{ description: string; quantity: number; unit: string; unitPrice: number; amount: number }>;
+      equipment: Array<{ description: string; days: number; dailyRate: number; amount: number }>;
+    };
+    subtotals: {
+      labor: number;
+      materials: number;
+      equipment: number;
+      subtotal: number;
+      overhead: number;
+      profit: number;
+      total: number;
+    };
+  };
 }
 
 interface AiChangeOrderGeneratorProps {
@@ -63,7 +87,7 @@ const SOURCE_TYPE_CONFIG = {
 
 export default function AiChangeOrderGenerator({ projectId, projectName, onCreateChangeOrder }: AiChangeOrderGeneratorProps) {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
-  const [selectedDraft, setSelectedDraft] = useState<AiCoDraft | null>(null);
+  const [selectedDraft, setSelectedDraft] = useState<GeneratedDraftResult | null>(null);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [sourceType, setSourceType] = useState<"DELAY" | "INSPECTION" | "SCOPE_CHANGE" | "MANUAL">("SCOPE_CHANGE");
   const [description, setDescription] = useState("");
@@ -121,7 +145,7 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
         title: "Change Order Draft Generated",
         description: `AI has created a draft with suggested amount of $${(data.draft?.subtotals?.total ?? 0).toLocaleString()}`,
       });
-      setSelectedDraft(data.draft);
+      setSelectedDraft(data as GeneratedDraftResult);
       setReviewDialogOpen(true);
     },
     onError: (error: any) => {
@@ -161,11 +185,8 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
     });
   };
 
-  const handleConvertToCO = (draft: AiCoDraft) => {
-    updateDraftMutation.mutate({ draftId: draft.id, status: "CONVERTED" });
-    if (onCreateChangeOrder) {
-      onCreateChangeOrder(draft);
-    }
+  const handleConvertToCO = (draft: GeneratedDraftResult) => {
+    updateDraftMutation.mutate({ draftId: draft.draftId, status: "CONVERTED" });
     setReviewDialogOpen(false);
     toast({
       title: "Ready to Create",
@@ -173,8 +194,8 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
     });
   };
 
-  const handleRejectDraft = (draft: AiCoDraft) => {
-    updateDraftMutation.mutate({ draftId: draft.id, status: "REJECTED" });
+  const handleRejectDraft = (draft: GeneratedDraftResult) => {
+    updateDraftMutation.mutate({ draftId: draft.draftId, status: "REJECTED" });
     setReviewDialogOpen(false);
   };
 
@@ -354,38 +375,57 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
           ) : (
             <ScrollArea className="h-[300px]">
               <div className="space-y-3">
-                {pendingDrafts.map(draft => (
+                {pendingDrafts.map(draft => {
+                  const parsedContent = draft.draftContentJson ? (() => { try { return JSON.parse(draft.draftContentJson!); } catch { return null; } })() : null;
+                  return (
                   <div
                     key={draft.id}
                     className="flex items-start justify-between p-4 rounded-lg border hover-elevate cursor-pointer"
                     onClick={() => {
-                      setSelectedDraft(draft);
+                      setSelectedDraft({
+                        draftId: draft.id,
+                        aiConfidence: draft.aiConfidence ?? 82,
+                        aiNotes: draft.aiNotes ?? "",
+                        draft: parsedContent ?? {
+                          title: "Saved Draft",
+                          description: draft.aiNotes ?? "AI-generated change order draft",
+                          justification: "",
+                          scopeOfWork: "",
+                          exclusions: "",
+                          terms: "",
+                          lineItems: { labor: [], materials: [], equipment: [] },
+                          subtotals: { labor: 0, materials: 0, equipment: 0, subtotal: 0, overhead: 0, profit: 0, total: 0 },
+                        },
+                      });
                       setReviewDialogOpen(true);
                     }}
                     data-testid={`draft-${draft.id}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-2">
-                        <Badge className={SOURCE_TYPE_CONFIG[draft.sourceType].color}>
-                          {SOURCE_TYPE_CONFIG[draft.sourceType].label}
+                        <Badge className="bg-purple-100 text-purple-700">
+                          AI Draft
                         </Badge>
-                        <Badge variant="outline">
-                          {Math.round(draft.confidenceScore * 100)}% confidence
-                        </Badge>
+                        {draft.aiConfidence != null && (
+                          <Badge variant="outline">
+                            {draft.aiConfidence}% confidence
+                          </Badge>
+                        )}
                       </div>
-                      <p className="text-sm line-clamp-2">{draft.aiGeneratedDescription}</p>
+                      <p className="text-sm line-clamp-2">{parsedContent?.description ?? draft.aiNotes ?? "AI-generated change order draft"}</p>
                       <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-                        <span className="font-medium text-foreground">
-                          ${draft.suggestedAmount.toLocaleString()}
-                        </span>
-                        {draft.suggestedTimeDays && (
-                          <span>{draft.suggestedTimeDays} days extension</span>
+                        {parsedContent?.subtotals?.total != null && (
+                          <span className="font-medium text-foreground">
+                            ${parsedContent.subtotals.total.toLocaleString()}
+                          </span>
                         )}
                         <span>{format(parseISO(draft.createdAt), "MMM d, yyyy")}</span>
                       </div>
                     </div>
                     <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 ml-4" />
                   </div>
+                  );
+                }
                 ))}
               </div>
             </ScrollArea>
@@ -404,47 +444,58 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
           {selectedDraft && (
             <div className="space-y-4 py-4">
               <div className="flex items-center gap-2">
-                <Badge className={SOURCE_TYPE_CONFIG[selectedDraft.sourceType].color}>
-                  {SOURCE_TYPE_CONFIG[selectedDraft.sourceType].label}
+                <Badge variant="outline" className="bg-purple-100 text-purple-700">
+                  AI Generated
                 </Badge>
                 <Badge variant="outline">
-                  AI Confidence: {Math.round(selectedDraft.confidenceScore * 100)}%
+                  AI Confidence: {selectedDraft.aiConfidence}%
                 </Badge>
+              </div>
+
+              <div>
+                <Label className="text-muted-foreground">Title</Label>
+                <p className="mt-1 text-sm font-medium">{selectedDraft.draft.title}</p>
               </div>
 
               <div>
                 <Label className="text-muted-foreground">Description</Label>
                 <p className="mt-1 text-sm bg-muted p-3 rounded-lg">
-                  {selectedDraft.aiGeneratedDescription}
+                  {selectedDraft.draft.description}
                 </p>
               </div>
 
               <div>
                 <Label className="text-muted-foreground">Justification</Label>
                 <p className="mt-1 text-sm bg-muted p-3 rounded-lg">
-                  {selectedDraft.aiGeneratedJustification}
+                  {selectedDraft.draft.justification}
                 </p>
               </div>
 
               <Separator />
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 rounded-lg border">
-                  <div className="flex items-center gap-2 mb-2">
-                    <DollarSign className="w-4 h-4 text-muted-foreground" />
-                    <Label className="text-muted-foreground">Suggested Amount</Label>
-                  </div>
-                  <p className="text-2xl font-bold">${selectedDraft.suggestedAmount.toLocaleString()}</p>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg border text-center">
+                  <Label className="text-muted-foreground text-xs">Labor</Label>
+                  <p className="text-lg font-bold">${selectedDraft.draft.subtotals.labor.toLocaleString()}</p>
                 </div>
-                {selectedDraft.suggestedTimeDays && (
-                  <div className="p-4 rounded-lg border">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-muted-foreground" />
-                      <Label className="text-muted-foreground">Time Extension</Label>
-                    </div>
-                    <p className="text-2xl font-bold">{selectedDraft.suggestedTimeDays} days</p>
+                <div className="p-3 rounded-lg border text-center">
+                  <Label className="text-muted-foreground text-xs">Materials</Label>
+                  <p className="text-lg font-bold">${selectedDraft.draft.subtotals.materials.toLocaleString()}</p>
+                </div>
+                <div className="p-3 rounded-lg border text-center">
+                  <Label className="text-muted-foreground text-xs">Equipment</Label>
+                  <p className="text-lg font-bold">${selectedDraft.draft.subtotals.equipment.toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg border bg-muted/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-muted-foreground" />
+                    <Label className="text-muted-foreground">Total (incl. OH &amp; Profit)</Label>
                   </div>
-                )}
+                  <p className="text-2xl font-bold">${selectedDraft.draft.subtotals.total.toLocaleString()}</p>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
