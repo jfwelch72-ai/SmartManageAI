@@ -246,19 +246,21 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
   });
 
   const createPunchItemFromInspection = useMutation({
-    mutationFn: async ({ inspectionId, title, description }: { inspectionId: string; title: string; description: string }) => {
+    mutationFn: async ({ inspectionId }: { inspectionId: string }) => {
       return apiRequest("POST", `/api/projects/${projectCode}/inspections/${inspectionId}/punch-list`, {
-        title,
-        description,
         trade: "GENERAL",
         priority: "HIGH",
       });
     },
-    onSuccess: () => {
-      toast({ title: "Punch list item created", description: "Item added to the project punch list." });
+    onSuccess: (data: any) => {
+      const count = Array.isArray(data) ? data.length : 1;
+      toast({
+        title: `${count} punch list item${count !== 1 ? "s" : ""} created`,
+        description: "Items added to the project punch list.",
+      });
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "Failed to create punch list item", variant: "destructive" });
+      toast({ title: "Error", description: error.message || "Failed to create punch list items", variant: "destructive" });
     },
   });
 
@@ -940,13 +942,8 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
                       className="mt-2 text-orange-700 border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20"
                       disabled={createPunchItemFromInspection.isPending}
                       onClick={() => {
-                        const firstLine = selectedInspection.punchListItems
-                          ? selectedInspection.punchListItems.split("\n")[0].trim()
-                          : "Deficiency from failed inspection";
                         createPunchItemFromInspection.mutate({
                           inspectionId: selectedInspection.id,
-                          title: firstLine.substring(0, 200) || "Deficiency from failed inspection",
-                          description: selectedInspection.punchListItems || "",
                         });
                       }}
                       data-testid="button-create-punch-from-inspection"

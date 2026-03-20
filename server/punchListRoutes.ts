@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
 import {
-  punchListItems, projects,
+  punchListItems, projects, projectInspections,
   insertPunchListItemSchema, type PunchListItem,
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
@@ -269,34 +269,60 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
     if (req.body.dueDate !== undefined) update.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
     if (req.body.inspectionId !== undefined) update.inspectionId = req.body.inspectionId ?? null;
 
-    // Status transitions with server-side role enforcement
+    // Status transitions with server-side role enforcement and explicit source→target matrix
     if (req.body.status !== undefined && req.body.status !== item.status) {
       const newStatus = req.body.status as PunchListItem["status"];
+      const fromStatus = item.status;
+      const role = getUserRole(req);
 
-      // Determine allowed transitions per role
-      // REJECTED and VERIFIED are terminal — no further transitions allowed
-      if (item.status === "REJECTED") {
+      // REJECTED is terminal — no transitions out of it
+      if (fromStatus === "REJECTED") {
         return res.status(409).json({ error: "REJECTED is a terminal status and cannot be changed." });
       }
 
-      const role = getUserRole(req);
-      const canDoTransition = (() => {
-        if (newStatus === "IN_PROGRESS" || newStatus === "RESOLVED") {
-          return hasRole(req, WORKER_ROLES);
-        }
-        if (newStatus === "VERIFIED" || newStatus === "REJECTED") {
-          return hasRole(req, VERIFY_ROLES);
-        }
-        if (newStatus === "OPEN") {
-          // Only VERIFIED items can be reopened; REJECTED is terminal
-          if (item.status === "REJECTED") return false;
-          return hasRole(req, VERIFY_ROLES); // reopen requires manager+
-        }
-        return false;
-      })();
+      // Explicit source→target transition matrix with role requirements
+      // OPEN      → IN_PROGRESS (worker+)
+      // IN_PROGRESS → RESOLVED  (worker+)
+      // IN_PROGRESS → OPEN      (reopen by admin/manager/super only)
+      // RESOLVED  → VERIFIED    (admin/manager/super only)
+      // RESOLVED  → IN_PROGRESS (reopen by admin/manager/super only)
+      // RESOLVED  → OPEN        (reopen by admin/manager/super only)
+      // VERIFIED  → OPEN        (reopen by admin/manager/super only)
+      // VERIFIED  → REJECTED    (admin/manager/super only)
+      // * → REJECTED only from RESOLVED or IN_PROGRESS (admin/manager/super)
+      const ALLOWED_TRANSITIONS: Record<string, { targets: string[]; roles: UserRole[] }[]> = {
+        OPEN: [
+          { targets: ["IN_PROGRESS"], roles: WORKER_ROLES },
+        ],
+        IN_PROGRESS: [
+          { targets: ["RESOLVED"], roles: WORKER_ROLES },
+          { targets: ["OPEN"], roles: VERIFY_ROLES },
+          { targets: ["REJECTED"], roles: VERIFY_ROLES },
+        ],
+        RESOLVED: [
+          { targets: ["VERIFIED"], roles: VERIFY_ROLES },
+          { targets: ["IN_PROGRESS", "OPEN"], roles: VERIFY_ROLES },
+          { targets: ["REJECTED"], roles: VERIFY_ROLES },
+        ],
+        VERIFIED: [
+          { targets: ["OPEN", "IN_PROGRESS"], roles: VERIFY_ROLES },
+          { targets: ["REJECTED"], roles: VERIFY_ROLES },
+        ],
+      };
 
-      if (!canDoTransition) {
-        return res.status(403).json({ error: `Role '${role}' cannot set status to '${newStatus}'` });
+      const allowedForSource = ALLOWED_TRANSITIONS[fromStatus] ?? [];
+      const matchingRule = allowedForSource.find((rule) => rule.targets.includes(newStatus));
+
+      if (!matchingRule) {
+        return res.status(422).json({
+          error: `Transition from '${fromStatus}' to '${newStatus}' is not permitted.`,
+        });
+      }
+
+      if (!hasRole(req, matchingRule.roles)) {
+        return res.status(403).json({
+          error: `Role '${role}' cannot transition from '${fromStatus}' to '${newStatus}'.`,
+        });
       }
 
       update.status = newStatus;
@@ -309,17 +335,24 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
         note: req.body.statusNote || undefined,
       };
 
+      // Normalize timestamps based on target state
       if (newStatus === "RESOLVED") {
         update.resolvedAt = new Date();
+        // Clear verification data since it's no longer verified
+        update.verifiedAt = null;
+        update.verifiedById = null;
       } else if (newStatus === "VERIFIED") {
         update.verifiedAt = new Date();
         update.verifiedById = userId;
       } else if (newStatus === "OPEN" || newStatus === "IN_PROGRESS") {
-        if (item.status === "RESOLVED" || item.status === "VERIFIED") {
-          update.resolvedAt = null;
-          update.verifiedAt = null;
-          update.verifiedById = null;
-        }
+        // Reopening — clear all terminal timestamps
+        update.resolvedAt = null;
+        update.verifiedAt = null;
+        update.verifiedById = null;
+      } else if (newStatus === "REJECTED") {
+        // Keep resolvedAt if it was previously resolved; clear verifiedAt
+        update.verifiedAt = null;
+        update.verifiedById = null;
       }
 
       update.statusHistory = [...currentHistory, historyEntry];
@@ -551,7 +584,9 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: Aut
 });
 
 // ─── CREATE FROM FAILED INSPECTION ────────────────────────────────────────────
-// Converts a failed inspection's punch list note into a tracked punch list item
+// Parses the inspection's punchListItems text blob into one or more punch list items.
+// Validates: inspection exists, belongs to this project (same org), is in FAILED status,
+// and has punch list text to convert.
 router.post(
   "/projects/:code/inspections/:inspectionId/punch-list",
   requireAuth,
@@ -561,59 +596,105 @@ router.post(
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
+      // Verify project exists and org access
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
       if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const userId = req.user!.id;
-      const itemNumber = await generateItemNumber(req.params.code);
+      // Verify the inspection exists, belongs to this project, is FAILED, and has text
+      const [inspection] = await db
+        .select()
+        .from(projectInspections)
+        .where(eq(projectInspections.id, req.params.inspectionId))
+        .limit(1);
 
-      const initialHistory: StatusEntry[] = [{
-        status: "OPEN",
-        changedBy: `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId,
-        changedAt: new Date().toISOString(),
-        note: `Created from failed inspection #${req.params.inspectionId}`,
-      }];
-
-      const body = {
-        projectId: project.id,
-        inspectionId: req.params.inspectionId,
-        itemNumber,
-        createdById: userId,
-        title: req.body.title ? sanitizeShortText(req.body.title) : "Deficiency from failed inspection",
-        description: req.body.description ? sanitizeText(req.body.description) : null,
-        location: req.body.location ? sanitizeShortText(req.body.location) : null,
-        trade: req.body.trade || "GENERAL",
-        priority: req.body.priority || "MEDIUM",
-        status: "OPEN" as const,
-        assignedToName: req.body.assignedToName ? sanitizeShortText(req.body.assignedToName) : null,
-        assignedToEmail: req.body.assignedToEmail ? sanitizeShortText(req.body.assignedToEmail) : null,
-        dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
-        attachments: [],
-        statusHistory: initialHistory,
-      };
-
-      const parsed = insertPunchListItemSchema.safeParse(body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
+      if (!inspection) {
+        return res.status(404).json({ error: "Inspection not found" });
+      }
+      if (inspection.projectId !== project.id) {
+        return res.status(403).json({ error: "Inspection does not belong to this project" });
+      }
+      if (inspection.status !== "FAILED") {
+        return res.status(422).json({ error: "Punch list items can only be generated from FAILED inspections" });
+      }
+      if (!inspection.punchListItems || !inspection.punchListItems.trim()) {
+        return res.status(422).json({ error: "This inspection has no punch list text to convert" });
       }
 
-      const [item] = await db.insert(punchListItems).values(parsed.data).returning();
+      const userId = req.user!.id;
+      const userName = `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId;
+      const trade = req.body.trade || "GENERAL";
+      const priority = req.body.priority || "HIGH";
+      const dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
 
-      await logAudit({
-        userId,
-        action: "CREATE",
-        entityType: "punchListItem",
-        entityId: item.id,
-        newValue: JSON.stringify({ itemNumber, inspectionId: req.params.inspectionId, projectId: project.id }),
-      }, req);
+      // Parse the text blob into individual items by splitting on newlines and bullet patterns
+      // Blank lines and empty entries are skipped; each non-empty line becomes an item
+      const rawLines = inspection.punchListItems
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^[\s•\-*\d.)\]]+/, "").trim())
+        .filter((line) => line.length > 0);
 
-      res.status(201).json(enrichItem(item));
+      // Fallback: if the blob has no newlines, treat the whole thing as one item
+      const linesToCreate = rawLines.length > 0 ? rawLines : [inspection.punchListItems.trim()];
+
+      const createdItems: PunchListItem[] = [];
+
+      for (const line of linesToCreate) {
+        const itemNumber = await generateItemNumber(req.params.code);
+        const initialHistory: StatusEntry[] = [{
+          status: "OPEN",
+          changedBy: userName,
+          changedAt: new Date().toISOString(),
+          note: `Generated from failed inspection ${inspection.inspectionNumber}`,
+        }];
+
+        const body = {
+          projectId: project.id,
+          inspectionId: req.params.inspectionId,
+          itemNumber,
+          createdById: userId,
+          title: sanitizeShortText(line.substring(0, 200)),
+          description: null,
+          location: null,
+          trade,
+          priority,
+          status: "OPEN" as const,
+          assignedToName: null,
+          assignedToEmail: null,
+          assignedToUserId: null,
+          dueDate,
+          attachments: [],
+          statusHistory: initialHistory,
+        };
+
+        const parsed = insertPunchListItemSchema.safeParse(body);
+        if (!parsed.success) {
+          return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
+        }
+
+        const [item] = await db.insert(punchListItems).values(parsed.data).returning();
+        createdItems.push(item);
+
+        await logAudit({
+          userId,
+          action: "CREATE",
+          entityType: "punchListItem",
+          entityId: item.id,
+          newValue: JSON.stringify({
+            itemNumber,
+            inspectionId: req.params.inspectionId,
+            inspectionNumber: inspection.inspectionNumber,
+            projectId: project.id,
+          }),
+        }, req);
+      }
+
+      res.status(201).json(createdItems.map(enrichItem));
     } catch (err) {
-      console.error("Error creating punch list item from inspection:", err);
-      res.status(500).json({ error: "Failed to create punch list item from inspection" });
+      console.error("Error creating punch list items from inspection:", err);
+      res.status(500).json({ error: "Failed to create punch list items from inspection" });
     }
   },
 );
