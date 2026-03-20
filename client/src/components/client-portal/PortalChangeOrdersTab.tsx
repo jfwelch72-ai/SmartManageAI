@@ -21,11 +21,8 @@ interface PortalChangeOrdersTabProps {
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  DRAFT:            { label: "Draft",            className: "bg-gray-100 text-gray-700" },
   PENDING_APPROVAL: { label: "Pending Approval", className: "bg-yellow-100 text-yellow-700" },
   APPROVED:         { label: "Approved",         className: "bg-green-100 text-green-700" },
-  REJECTED:         { label: "Rejected",         className: "bg-red-100 text-red-700" },
-  VOIDED:           { label: "Voided",           className: "bg-gray-100 text-gray-500" },
 };
 
 function fmtCurrency(amount: string): string {

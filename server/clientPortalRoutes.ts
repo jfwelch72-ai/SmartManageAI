@@ -683,7 +683,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
         .where(
           and(
             eq(changeOrders.projectId, projectId),
-            inArray(changeOrders.status, ["PENDING_APPROVAL", "APPROVED", "REJECTED", "VOIDED"])
+            inArray(changeOrders.status, ["PENDING_APPROVAL", "APPROVED"])
           )
         )
         .orderBy(desc(changeOrders.createdAt))
