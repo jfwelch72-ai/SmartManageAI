@@ -1299,13 +1299,13 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
         sql`${tmTickets.status} = 'SUBMITTED'`
       ));
 
-    // Count SOV pay applications that are unresolved (not APPROVED, PAID, or ARCHIVED)
+    // Count SOV pay applications in active billing states (DRAFT = not yet submitted, SUBMITTED = awaiting client payment)
     const pendingPayApps = await db
       .select({ cnt: count() })
       .from(scheduleOfValues)
       .where(and(
         eq(scheduleOfValues.projectId, project.id),
-        sql`${scheduleOfValues.status} NOT IN ('APPROVED', 'PAID', 'ARCHIVED')`
+        sql`${scheduleOfValues.status} IN ('DRAFT', 'SUBMITTED')`
       ));
 
     res.json({

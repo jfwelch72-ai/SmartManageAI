@@ -910,7 +910,7 @@ export default function ProjectDetailPage() {
                   <div className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20">
                     <div className="flex items-center gap-2">
                       <XCircle className="w-4 h-4 text-amber-600" />
-                      <span className="text-sm font-medium">Unpaid SOV Pay Applications</span>
+                      <span className="text-sm font-medium">Open SOV Pay Applications (Draft / Submitted)</span>
                     </div>
                     <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
                       {closeoutReadiness.pendingPayApplications}
