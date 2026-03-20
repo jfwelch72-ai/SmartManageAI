@@ -781,7 +781,7 @@ export default function BidDetailPage() {
               {bid.submittedAt && (
                 <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 text-xs">
                   <Send className="w-3 h-3 mr-1" />
-                  Submitted {format(new Date(bid.submittedAt), "MMM d, yyyy")}
+                  Submitted {format(new Date(bid.submittedAt), "MMM d, yyyy h:mm a")}
                 </Badge>
               )}
               {canEdit ? (

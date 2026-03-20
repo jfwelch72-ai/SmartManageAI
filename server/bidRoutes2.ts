@@ -2049,10 +2049,8 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
     const bid = await db.query.bids.findFirst({ where: eq(bids.code, req.params.code) });
     if (!bid) return res.status(404).json({ error: "Bid not found" });
 
-    const orgId = req.user!.organizationId;
-    if (bid.gcOrganizationId && bid.gcOrganizationId !== orgId) {
-      return res.status(403).json({ error: "Access denied" });
-    }
+    const { verifyOrgAccess } = await import("./orgFilter");
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
     const { recipientEmail } = req.body;
     const toEmail = recipientEmail || bid.clientContactEmail;

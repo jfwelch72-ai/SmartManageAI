@@ -837,52 +837,57 @@ export default function ProjectDetailPage() {
           </DialogHeader>
 
           <div className="space-y-3 py-2">
-            {closeoutReadiness ? (
-              <>
-                <div className={`flex items-center justify-between p-3 rounded-lg border ${closeoutReadiness.openPunchListItems > 0 ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : "border-green-200 bg-green-50 dark:bg-green-950/20"}`}>
-                  <div className="flex items-center gap-2">
-                    {closeoutReadiness.openPunchListItems > 0
-                      ? <XCircle className="w-4 h-4 text-amber-600" />
-                      : <CheckCircle2 className="w-4 h-4 text-green-600" />}
-                    <span className="text-sm font-medium">Open Punch List Items</span>
-                  </div>
-                  <span className={`text-sm font-bold ${closeoutReadiness.openPunchListItems > 0 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
-                    {closeoutReadiness.openPunchListItems === 0 ? "None" : closeoutReadiness.openPunchListItems}
-                  </span>
-                </div>
-
-                <div className={`flex items-center justify-between p-3 rounded-lg border ${closeoutReadiness.pendingChangeOrders > 0 ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : "border-green-200 bg-green-50 dark:bg-green-950/20"}`}>
-                  <div className="flex items-center gap-2">
-                    {closeoutReadiness.pendingChangeOrders > 0
-                      ? <XCircle className="w-4 h-4 text-amber-600" />
-                      : <CheckCircle2 className="w-4 h-4 text-green-600" />}
-                    <span className="text-sm font-medium">Pending Change Orders</span>
-                  </div>
-                  <span className={`text-sm font-bold ${closeoutReadiness.pendingChangeOrders > 0 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
-                    {closeoutReadiness.pendingChangeOrders === 0 ? "None" : closeoutReadiness.pendingChangeOrders}
-                  </span>
-                </div>
-
-                <div className={`flex items-center justify-between p-3 rounded-lg border ${closeoutReadiness.submittedTmTickets > 0 ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : "border-green-200 bg-green-50 dark:bg-green-950/20"}`}>
-                  <div className="flex items-center gap-2">
-                    {closeoutReadiness.submittedTmTickets > 0
-                      ? <XCircle className="w-4 h-4 text-amber-600" />
-                      : <CheckCircle2 className="w-4 h-4 text-green-600" />}
-                    <span className="text-sm font-medium">Unapproved T&M Tickets</span>
-                  </div>
-                  <span className={`text-sm font-bold ${closeoutReadiness.submittedTmTickets > 0 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
-                    {closeoutReadiness.submittedTmTickets === 0 ? "None" : closeoutReadiness.submittedTmTickets}
-                  </span>
-                </div>
-
-                {(closeoutReadiness.openPunchListItems > 0 || closeoutReadiness.pendingChangeOrders > 0 || closeoutReadiness.submittedTmTickets > 0) && (
-                  <p className="text-xs text-muted-foreground pt-1">
-                    These items are still open. You can still mark the project complete, but it is recommended to resolve them first.
-                  </p>
-                )}
-              </>
-            ) : (
+            {!closeoutReadiness ? (
               <div className="text-sm text-muted-foreground py-2">Checking project status...</div>
+            ) : (closeoutReadiness.openPunchListItems === 0 && closeoutReadiness.pendingChangeOrders === 0 && closeoutReadiness.submittedTmTickets === 0) ? (
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+                <p className="text-sm text-green-800 dark:text-green-300">
+                  All checklist items are resolved. This project is ready to be marked complete.
+                </p>
+              </div>
+            ) : (
+              <>
+                {closeoutReadiness.openPunchListItems > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-medium">Open Punch List Items</span>
+                    </div>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                      {closeoutReadiness.openPunchListItems}
+                    </span>
+                  </div>
+                )}
+
+                {closeoutReadiness.pendingChangeOrders > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-medium">Pending Change Orders</span>
+                    </div>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                      {closeoutReadiness.pendingChangeOrders}
+                    </span>
+                  </div>
+                )}
+
+                {closeoutReadiness.submittedTmTickets > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-medium">Unapproved T&M Tickets</span>
+                    </div>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                      {closeoutReadiness.submittedTmTickets}
+                    </span>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground pt-1">
+                  These items are still open. You can still mark the project complete, but it is recommended to resolve them first.
+                </p>
+              </>
             )}
           </div>
 
