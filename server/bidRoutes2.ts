@@ -741,6 +741,57 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${newProject.code}`);
     }
 
+    // Seed budget line items from estimate line items grouped by cost type
+    if (sovSeedLineItems.length > 0) {
+      const { budgetLineItems } = await import("@shared/schema");
+
+      // Aggregate by cost type across all estimate line items
+      let totalLabor = 0;
+      let totalMaterial = 0;
+      let totalEquipment = 0;
+      let totalSubcontract = 0;
+      let totalOther = 0;
+
+      for (const li of sovSeedLineItems) {
+        totalLabor += Number(li.laborCost || 0);
+        totalMaterial += Number(li.materialCost || 0);
+        totalEquipment += Number(li.equipmentCost || 0);
+        totalSubcontract += Number(li.subcontractCost || 0);
+        totalOther += Number(li.consumablesCost || 0) + Number(li.overheadAllocation || 0) + Number(li.profitAllocation || 0);
+      }
+
+      const seededAt = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const budgetSeedRows: { projectId: string; costCode: string; description: string; division: string; laborBudget: string; materialBudget: string; subcontractorBudget: string; equipmentBudget: string; otherBudget: string; totalBudget: string }[] = [];
+
+      const addBudgetRow = (costCode: string, description: string, division: string, labor: number, material: number, subcontractor: number, equipment: number, other: number) => {
+        const total = labor + material + subcontractor + equipment + other;
+        if (total <= 0) return;
+        budgetSeedRows.push({
+          projectId: newProject.id,
+          costCode,
+          description: `${description} — Seeded from estimate on ${seededAt}`,
+          division,
+          laborBudget: labor.toFixed(2),
+          materialBudget: material.toFixed(2),
+          subcontractorBudget: subcontractor.toFixed(2),
+          equipmentBudget: equipment.toFixed(2),
+          otherBudget: other.toFixed(2),
+          totalBudget: total.toFixed(2),
+        });
+      };
+
+      addBudgetRow("01-600", "Labor", "Division 01 — General Requirements", totalLabor, 0, 0, 0, 0);
+      addBudgetRow("01-100", "Materials", "Division 01 — General Requirements", 0, totalMaterial, 0, 0, 0);
+      addBudgetRow("01-900", "Subcontractors", "Division 01 — General Requirements", 0, 0, totalSubcontract, 0, 0);
+      addBudgetRow("01-500", "Equipment", "Division 01 — General Requirements", 0, 0, 0, totalEquipment, 0);
+      addBudgetRow("01-800", "Other (Consumables / Overhead / Profit)", "Division 01 — General Requirements", 0, 0, 0, 0, totalOther);
+
+      if (budgetSeedRows.length > 0) {
+        await db.insert(budgetLineItems).values(budgetSeedRows).onConflictDoNothing();
+        console.log(`[Bid Conversion] Seeded ${budgetSeedRows.length} budget line(s) for project ${newProject.code}`);
+      }
+    }
+
     const { bidSubcontractorQuotes: subQuotesTable } = await import("@shared/schema");
     
     const allSubQuotes = await db

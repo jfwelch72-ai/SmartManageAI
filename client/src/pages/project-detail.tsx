@@ -394,6 +394,8 @@ export default function ProjectDetailPage() {
     pendingChangeOrders: number;
     submittedTmTickets: number;
     pendingPayApplications: number;
+    openRfis: number;
+    unpaidVendorInvoices: number;
   }>({
     queryKey: ["/api/projects", projectCode, "closeout-readiness"],
     enabled: !!projectCode && project?.status === "ACTIVE" && hasManagementAccess(user?.role),
@@ -861,7 +863,7 @@ export default function ProjectDetailPage() {
           <div className="space-y-3 py-2">
             {!closeoutReadiness ? (
               <div className="text-sm text-muted-foreground py-2">Checking project status...</div>
-            ) : (closeoutReadiness.openPunchListItems === 0 && closeoutReadiness.pendingChangeOrders === 0 && closeoutReadiness.submittedTmTickets === 0 && closeoutReadiness.pendingPayApplications === 0) ? (
+            ) : (closeoutReadiness.openPunchListItems === 0 && closeoutReadiness.pendingChangeOrders === 0 && closeoutReadiness.submittedTmTickets === 0 && closeoutReadiness.pendingPayApplications === 0 && closeoutReadiness.openRfis === 0 && closeoutReadiness.unpaidVendorInvoices === 0) ? (
               <div className="flex items-center gap-3 p-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-950/20">
                 <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
                 <p className="text-sm text-green-800 dark:text-green-300">
@@ -914,6 +916,30 @@ export default function ProjectDetailPage() {
                     </div>
                     <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
                       {closeoutReadiness.pendingPayApplications}
+                    </span>
+                  </div>
+                )}
+
+                {closeoutReadiness.openRfis > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-medium">Open RFIs (Submitted / Under Review)</span>
+                    </div>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                      {closeoutReadiness.openRfis}
+                    </span>
+                  </div>
+                )}
+
+                {closeoutReadiness.unpaidVendorInvoices > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="w-4 h-4 text-amber-600" />
+                      <span className="text-sm font-medium">Unpaid Vendor Invoices</span>
+                    </div>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                      {closeoutReadiness.unpaidVendorInvoices}
                     </span>
                   </div>
                 )}

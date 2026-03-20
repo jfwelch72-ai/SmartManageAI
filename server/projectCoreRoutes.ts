@@ -1272,7 +1272,7 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
     const { verifyOrgAccess } = await import("./orgFilter");
     if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
-    const { punchListItems } = await import("@shared/schema");
+    const { punchListItems, rfis, vendorInvoices, purchaseOrders } = await import("@shared/schema");
     const { count } = await import("drizzle-orm");
 
     const openPunchListItems = await db
@@ -1308,11 +1308,33 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
         sql`${scheduleOfValues.status} IN ('DRAFT', 'SUBMITTED')`
       ));
 
+    // Count open RFIs (not yet answered or closed)
+    const openRfis = await db
+      .select({ cnt: count() })
+      .from(rfis)
+      .where(and(
+        eq(rfis.projectId, project.id),
+        sql`${rfis.status} IN ('SUBMITTED', 'UNDER_REVIEW', 'FORWARDED')`
+      ));
+
+    // Count unpaid vendor invoices linked to this project via purchase orders
+    // Terminal state is only PAID; PENDING, MATCHED, APPROVED, DISPUTED are open
+    const unpaidVendorInvoices = await db
+      .select({ cnt: count() })
+      .from(vendorInvoices)
+      .innerJoin(purchaseOrders, eq(vendorInvoices.poId, purchaseOrders.id))
+      .where(and(
+        eq(purchaseOrders.projectId, project.id),
+        sql`${vendorInvoices.status} != 'PAID'`
+      ));
+
     res.json({
       openPunchListItems: Number(openPunchListItems[0]?.cnt ?? 0),
       pendingChangeOrders: Number(pendingChangeOrders[0]?.cnt ?? 0),
       submittedTmTickets: Number(submittedTmTickets[0]?.cnt ?? 0),
       pendingPayApplications: Number(pendingPayApps[0]?.cnt ?? 0),
+      openRfis: Number(openRfis[0]?.cnt ?? 0),
+      unpaidVendorInvoices: Number(unpaidVendorInvoices[0]?.cnt ?? 0),
     });
   } catch (error) {
     console.error("Closeout readiness error:", error);
