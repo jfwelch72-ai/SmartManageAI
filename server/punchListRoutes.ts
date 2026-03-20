@@ -5,7 +5,7 @@ import {
   insertPunchListItemSchema, type PunchListItem,
 } from "@shared/schema";
 import { eq, desc, sql, and } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, type AuthRequest, type UserRole } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -16,9 +16,64 @@ const PRIORITY_ORDER: Record<string, number> = {
   CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3,
 };
 
+// Roles that can manage items (create/edit)
+const MANAGEMENT_ROLES: UserRole[] = [
+  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
+  "OFFICE_MANAGER", "SAFETY_MANAGER",
+];
+
+// Roles that can verify/reject (close out phase gate)
+const VERIFY_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
+
+// Roles that can mark in-progress / resolved
+const WORKER_ROLES: UserRole[] = [
+  "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
+  "OFFICE_MANAGER", "SAFETY_MANAGER", "HOURLY_EMPLOYEE",
+];
+
 async function getProjectByCode(code: string) {
   const [project] = await db.select().from(projects).where(eq(projects.code, code)).limit(1);
   return project;
+}
+
+// Verify the item belongs to a project in the user's org; returns project + item or sends 403/404
+async function resolveItem(id: string, req: AuthRequest, res: Response) {
+  const [item] = await db
+    .select()
+    .from(punchListItems)
+    .where(eq(punchListItems.id, id))
+    .limit(1);
+
+  if (!item) {
+    res.status(404).json({ error: "Punch list item not found" });
+    return null;
+  }
+
+  // Check project org membership
+  const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+  if (mustDenyAccess) {
+    res.status(403).json({ error: "Access denied" });
+    return null;
+  }
+
+  if (shouldFilter && orgId) {
+    const [project] = await db.select().from(projects).where(eq(projects.id, item.projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== orgId) {
+      res.status(403).json({ error: "Access denied" });
+      return null;
+    }
+  }
+
+  return item;
+}
+
+function getUserRole(req: AuthRequest): string {
+  return (req.user!.effectiveRole || req.user!.role) as string;
+}
+
+function hasRole(req: AuthRequest, roles: UserRole[]): boolean {
+  const role = getUserRole(req);
+  return roles.includes(role as UserRole);
 }
 
 async function generateItemNumber(projectCode: string): Promise<string> {
@@ -35,10 +90,14 @@ function enrichItem(item: PunchListItem) {
   return {
     ...item,
     attachments: item.attachments ?? [],
+    statusHistory: item.statusHistory ?? [],
   };
 }
 
-// ─── LIST ────────────────────────────────────────────────────────────────────
+type AttachmentEntry = { url: string; filename: string; mimeType: string; uploadedAt: string };
+type StatusEntry = { status: string; changedBy: string; changedAt: string; note?: string };
+
+// ─── LIST ─────────────────────────────────────────────────────────────────────
 router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -79,7 +138,6 @@ router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, r
       );
     }
 
-    // Sort by priority within date order
     items.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
     res.json(items.map(enrichItem));
@@ -93,14 +151,28 @@ router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, r
 router.post(
   "/projects/:code/punch-list",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER", "SAFETY_MANAGER"),
+  requireRole(...MANAGEMENT_ROLES),
   async (req: AuthRequest, res: Response) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
       const project = await getProjectByCode(req.params.code);
       if (!project) return res.status(404).json({ error: "Project not found" });
 
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
       const userId = req.user!.id;
       const itemNumber = await generateItemNumber(req.params.code);
+
+      const initialHistory: StatusEntry[] = [{
+        status: "OPEN",
+        changedBy: `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId,
+        changedAt: new Date().toISOString(),
+        note: "Item created",
+      }];
 
       const body = {
         ...req.body,
@@ -114,6 +186,8 @@ router.post(
         assignedToEmail: req.body.assignedToEmail ? sanitizeShortText(req.body.assignedToEmail) : null,
         dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
         attachments: [],
+        statusHistory: initialHistory,
+        status: "OPEN",
       };
 
       const parsed = insertPunchListItemSchema.safeParse(body);
@@ -139,11 +213,16 @@ router.post(
   },
 );
 
-// ─── GET ONE ──────────────────────────────────────────────────────────────────
-router.get("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+// ─── GET ONE (project-scoped) ─────────────────────────────────────────────────
+router.get("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const [item] = await db.select().from(punchListItems).where(eq(punchListItems.id, req.params.id)).limit(1);
-    if (!item) return res.status(404).json({ error: "Punch list item not found" });
+    const item = await resolveItem(req.params.id, req, res);
+    if (!item) return;
+    // Verify item belongs to this project code
+    const project = await getProjectByCode(req.params.code);
+    if (!project || project.id !== item.projectId) {
+      return res.status(404).json({ error: "Punch list item not found" });
+    }
     res.json(enrichItem(item));
   } catch (err) {
     console.error("Error fetching punch list item:", err);
@@ -151,14 +230,33 @@ router.get("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Respons
   }
 });
 
-// ─── UPDATE ───────────────────────────────────────────────────────────────────
-router.patch("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+// ─── UPDATE (project-scoped) ──────────────────────────────────────────────────
+router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const item = await resolveItem(req.params.id, req, res);
+    if (!item) return;
+
+    const project = await getProjectByCode(req.params.code);
+    if (!project || project.id !== item.projectId) {
+      return res.status(404).json({ error: "Punch list item not found" });
+    }
+
     const userId = req.user!.id;
-    const [item] = await db.select().from(punchListItems).where(eq(punchListItems.id, req.params.id)).limit(1);
-    if (!item) return res.status(404).json({ error: "Punch list item not found" });
+    const userName = `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId;
 
     const update: Partial<PunchListItem> & { updatedAt: Date } = { updatedAt: new Date() };
+
+    // Field edits — require management role
+    const isEditingFields = req.body.status === undefined &&
+      (req.body.title !== undefined || req.body.description !== undefined ||
+       req.body.location !== undefined || req.body.trade !== undefined ||
+       req.body.priority !== undefined || req.body.assignedToUserId !== undefined ||
+       req.body.assignedToName !== undefined || req.body.assignedToEmail !== undefined ||
+       req.body.dueDate !== undefined);
+
+    if (isEditingFields && !hasRole(req, MANAGEMENT_ROLES)) {
+      return res.status(403).json({ error: "Insufficient permissions to edit punch list items" });
+    }
 
     if (req.body.title !== undefined) update.title = sanitizeShortText(req.body.title);
     if (req.body.description !== undefined) update.description = sanitizeText(req.body.description);
@@ -171,10 +269,38 @@ router.patch("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Respo
     if (req.body.dueDate !== undefined) update.dueDate = req.body.dueDate ? new Date(req.body.dueDate) : null;
     if (req.body.inspectionId !== undefined) update.inspectionId = req.body.inspectionId ?? null;
 
-    // Status transitions
+    // Status transitions with server-side role enforcement
     if (req.body.status !== undefined && req.body.status !== item.status) {
       const newStatus = req.body.status as PunchListItem["status"];
+
+      // Determine allowed transitions per role
+      const role = getUserRole(req);
+      const canDoTransition = (() => {
+        if (newStatus === "IN_PROGRESS" || newStatus === "RESOLVED") {
+          return hasRole(req, WORKER_ROLES);
+        }
+        if (newStatus === "VERIFIED" || newStatus === "REJECTED") {
+          return hasRole(req, VERIFY_ROLES);
+        }
+        if (newStatus === "OPEN") {
+          return hasRole(req, VERIFY_ROLES); // reopen requires manager+
+        }
+        return false;
+      })();
+
+      if (!canDoTransition) {
+        return res.status(403).json({ error: `Role '${role}' cannot set status to '${newStatus}'` });
+      }
+
       update.status = newStatus;
+
+      const currentHistory = (item.statusHistory ?? []) as StatusEntry[];
+      const historyEntry: StatusEntry = {
+        status: newStatus,
+        changedBy: userName,
+        changedAt: new Date().toISOString(),
+        note: req.body.statusNote || undefined,
+      };
 
       if (newStatus === "RESOLVED") {
         update.resolvedAt = new Date();
@@ -182,13 +308,14 @@ router.patch("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Respo
         update.verifiedAt = new Date();
         update.verifiedById = userId;
       } else if (newStatus === "OPEN" || newStatus === "IN_PROGRESS") {
-        // Reopen — clear resolution timestamps
         if (item.status === "RESOLVED" || item.status === "VERIFIED") {
           update.resolvedAt = null;
           update.verifiedAt = null;
           update.verifiedById = null;
         }
       }
+
+      update.statusHistory = [...currentHistory, historyEntry];
     }
 
     const [updated] = await db
@@ -202,7 +329,7 @@ router.patch("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Respo
       action: "UPDATE",
       entityType: "punchListItem",
       entityId: updated.id,
-      newValue: JSON.stringify({ changes: Object.keys(update) }),
+      newValue: JSON.stringify({ changes: Object.keys(update), projectCode: req.params.code }),
     }, req);
 
     res.json(enrichItem(updated));
@@ -212,21 +339,25 @@ router.patch("/punch-list/:id", requireAuth, async (req: AuthRequest, res: Respo
   }
 });
 
-// ─── DELETE ───────────────────────────────────────────────────────────────────
+// ─── DELETE (project-scoped) ──────────────────────────────────────────────────
 router.delete(
-  "/punch-list/:id",
+  "/projects/:code/punch-list/:id",
   requireAuth,
-  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  requireRole(...VERIFY_ROLES),
   async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user!.id;
-      const [item] = await db.select().from(punchListItems).where(eq(punchListItems.id, req.params.id)).limit(1);
-      if (!item) return res.status(404).json({ error: "Punch list item not found" });
+      const item = await resolveItem(req.params.id, req, res);
+      if (!item) return;
+
+      const project = await getProjectByCode(req.params.code);
+      if (!project || project.id !== item.projectId) {
+        return res.status(404).json({ error: "Punch list item not found" });
+      }
 
       await db.delete(punchListItems).where(eq(punchListItems.id, req.params.id));
 
       await logAudit({
-        userId,
+        userId: req.user!.id,
         action: "DELETE",
         entityType: "punchListItem",
         entityId: item.id,
@@ -241,59 +372,89 @@ router.delete(
   },
 );
 
-// ─── ADD ATTACHMENT (URL-based — client uploads to object storage, sends URL) ─
-router.post("/punch-list/:id/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const [item] = await db.select().from(punchListItems).where(eq(punchListItems.id, req.params.id)).limit(1);
-    if (!item) return res.status(404).json({ error: "Punch list item not found" });
+// ─── ADD ATTACHMENT (project-scoped, uses object storage URL from ObjectUploader) ─
+router.post(
+  "/projects/:code/punch-list/:id/attachments",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const item = await resolveItem(req.params.id, req, res);
+      if (!item) return;
 
-    const { url, filename, mimeType } = req.body;
-    if (!url || !filename) return res.status(400).json({ error: "url and filename are required" });
+      const project = await getProjectByCode(req.params.code);
+      if (!project || project.id !== item.projectId) {
+        return res.status(404).json({ error: "Punch list item not found" });
+      }
 
-    const current = (item.attachments ?? []) as Array<{ url: string; filename: string; mimeType: string; uploadedAt: string }>;
-    const newAttachment = { url, filename, mimeType: mimeType || "application/octet-stream", uploadedAt: new Date().toISOString() };
-    const updated = [...current, newAttachment];
+      const { url, filename, mimeType } = req.body;
+      if (!url || !filename) return res.status(400).json({ error: "url and filename are required" });
 
-    const [updatedItem] = await db
-      .update(punchListItems)
-      .set({ attachments: updated, updatedAt: new Date() })
-      .where(eq(punchListItems.id, req.params.id))
-      .returning();
+      const current = (item.attachments ?? []) as AttachmentEntry[];
+      const newAttachment: AttachmentEntry = {
+        url,
+        filename,
+        mimeType: mimeType || "application/octet-stream",
+        uploadedAt: new Date().toISOString(),
+      };
+      const updated = [...current, newAttachment];
 
-    res.json(enrichItem(updatedItem));
-  } catch (err) {
-    console.error("Error adding attachment:", err);
-    res.status(500).json({ error: "Failed to add attachment" });
-  }
-});
+      const [updatedItem] = await db
+        .update(punchListItems)
+        .set({ attachments: updated, updatedAt: new Date() })
+        .where(eq(punchListItems.id, req.params.id))
+        .returning();
 
-// ─── REMOVE ATTACHMENT ────────────────────────────────────────────────────────
-router.delete("/punch-list/:id/attachments/:filename", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const [item] = await db.select().from(punchListItems).where(eq(punchListItems.id, req.params.id)).limit(1);
-    if (!item) return res.status(404).json({ error: "Punch list item not found" });
+      res.json(enrichItem(updatedItem));
+    } catch (err) {
+      console.error("Error adding attachment:", err);
+      res.status(500).json({ error: "Failed to add attachment" });
+    }
+  },
+);
 
-    const current = (item.attachments ?? []) as Array<{ url: string; filename: string; mimeType: string; uploadedAt: string }>;
-    const filtered = current.filter((a) => a.filename !== req.params.filename);
+// ─── REMOVE ATTACHMENT (project-scoped) ───────────────────────────────────────
+router.delete(
+  "/projects/:code/punch-list/:id/attachments/:filename",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const item = await resolveItem(req.params.id, req, res);
+      if (!item) return;
 
-    const [updatedItem] = await db
-      .update(punchListItems)
-      .set({ attachments: filtered, updatedAt: new Date() })
-      .where(eq(punchListItems.id, req.params.id))
-      .returning();
+      const project = await getProjectByCode(req.params.code);
+      if (!project || project.id !== item.projectId) {
+        return res.status(404).json({ error: "Punch list item not found" });
+      }
 
-    res.json(enrichItem(updatedItem));
-  } catch (err) {
-    console.error("Error removing attachment:", err);
-    res.status(500).json({ error: "Failed to remove attachment" });
-  }
-});
+      const current = (item.attachments ?? []) as AttachmentEntry[];
+      const filtered = current.filter((a) => a.filename !== req.params.filename);
 
-// ─── PDF EXPORT ───────────────────────────────────────────────────────────────
+      const [updatedItem] = await db
+        .update(punchListItems)
+        .set({ attachments: filtered, updatedAt: new Date() })
+        .where(eq(punchListItems.id, req.params.id))
+        .returning();
+
+      res.json(enrichItem(updatedItem));
+    } catch (err) {
+      console.error("Error removing attachment:", err);
+      res.status(500).json({ error: "Failed to remove attachment" });
+    }
+  },
+);
+
+// ─── PDF EXPORT (browser-printable HTML — consistent with other modules) ──────
 router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
     const project = await getProjectByCode(req.params.code);
     if (!project) return res.status(404).json({ error: "Project not found" });
+
+    if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
 
     const items = await db
       .select()
@@ -301,18 +462,17 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: Aut
       .where(eq(punchListItems.projectId, project.id))
       .orderBy(desc(punchListItems.createdAt));
 
-    // Build a simple HTML → PDF approach using browser-printable HTML
     const rows = items
-      .map(
-        (i) => `
+      .sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99))
+      .map((i) => `
         <tr>
           <td>${i.itemNumber}</td>
-          <td>${i.title}</td>
-          <td>${i.location ?? ""}</td>
+          <td>${i.title.replace(/</g, "&lt;")}</td>
+          <td>${(i.location ?? "").replace(/</g, "&lt;")}</td>
           <td>${i.trade}</td>
-          <td>${i.priority}</td>
-          <td>${i.status}</td>
-          <td>${i.assignedToName ?? ""}</td>
+          <td class="${i.priority}">${i.priority}</td>
+          <td class="status-${i.status}">${i.status.replace("_", " ")}</td>
+          <td>${(i.assignedToName ?? "").replace(/</g, "&lt;")}</td>
           <td>${i.dueDate ? new Date(i.dueDate).toLocaleDateString() : ""}</td>
         </tr>`,
       )
@@ -331,22 +491,31 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: Aut
     th { background: #1e293b; color: #fff; padding: 6px 8px; text-align: left; font-size: 10px; }
     td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
     tr:nth-child(even) td { background: #f8fafc; }
-    .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: bold; text-transform: uppercase; }
-    .CRITICAL { background: #fee2e2; color: #991b1b; }
-    .HIGH { background: #ffedd5; color: #9a3412; }
-    .MEDIUM { background: #fef9c3; color: #92400e; }
-    .LOW { background: #dcfce7; color: #166534; }
-    .OPEN { background: #dbeafe; color: #1e40af; }
-    .IN_PROGRESS { background: #fef9c3; color: #92400e; }
-    .RESOLVED { background: #d1fae5; color: #065f46; }
-    .VERIFIED { background: #f0fdf4; color: #166534; }
-    .REJECTED { background: #fee2e2; color: #991b1b; }
-    @media print { @page { margin: 15mm; } }
+    .CRITICAL { background: #fee2e2; color: #991b1b; font-weight: bold; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+    .HIGH { background: #ffedd5; color: #9a3412; font-weight: bold; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+    .MEDIUM { background: #fef9c3; color: #92400e; font-weight: bold; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+    .LOW { background: #dcfce7; color: #166534; font-weight: bold; padding: 2px 6px; border-radius: 3px; display: inline-block; }
+    .status-OPEN { color: #1e40af; }
+    .status-IN_PROGRESS { color: #92400e; }
+    .status-RESOLVED { color: #065f46; }
+    .status-VERIFIED { color: #166534; font-weight: bold; }
+    .status-REJECTED { color: #991b1b; }
+    .summary { display: flex; gap: 20px; margin-bottom: 16px; }
+    .stat { background: #f1f5f9; padding: 8px 14px; border-radius: 6px; text-align: center; }
+    .stat-num { font-size: 18px; font-weight: bold; color: #334155; }
+    .stat-lbl { font-size: 9px; color: #64748b; text-transform: uppercase; }
+    @media print { @page { margin: 15mm; } body { margin: 0; } }
   </style>
 </head>
 <body>
   <h1>Punch List – ${project.name}</h1>
-  <h2>Project: ${project.code} &nbsp;|&nbsp; Generated: ${new Date().toLocaleDateString()}</h2>
+  <h2>Project: ${project.code} &nbsp;|&nbsp; Generated: ${new Date().toLocaleDateString()} &nbsp;|&nbsp; Total: ${items.length} items</h2>
+  <div class="summary">
+    ${["OPEN","IN_PROGRESS","RESOLVED","VERIFIED","REJECTED"].map(s => {
+      const count = items.filter(i => i.status === s).length;
+      return `<div class="stat"><div class="stat-num">${count}</div><div class="stat-lbl">${s.replace("_"," ")}</div></div>`;
+    }).join("")}
+  </div>
   <table>
     <thead>
       <tr>
@@ -362,7 +531,6 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: Aut
     </thead>
     <tbody>${rows}</tbody>
   </table>
-  <p style="margin-top:16px;color:#888;font-size:10px;">Total items: ${items.length}</p>
 </body>
 </html>`;
 
@@ -374,5 +542,73 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: Aut
     res.status(500).json({ error: "Failed to export punch list" });
   }
 });
+
+// ─── CREATE FROM FAILED INSPECTION ────────────────────────────────────────────
+// Converts a failed inspection's punch list note into a tracked punch list item
+router.post(
+  "/projects/:code/inspections/:inspectionId/punch-list",
+  requireAuth,
+  requireRole(...MANAGEMENT_ROLES),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const userId = req.user!.id;
+      const itemNumber = await generateItemNumber(req.params.code);
+
+      const initialHistory: StatusEntry[] = [{
+        status: "OPEN",
+        changedBy: `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId,
+        changedAt: new Date().toISOString(),
+        note: `Created from failed inspection #${req.params.inspectionId}`,
+      }];
+
+      const body = {
+        projectId: project.id,
+        inspectionId: req.params.inspectionId,
+        itemNumber,
+        createdById: userId,
+        title: req.body.title ? sanitizeShortText(req.body.title) : "Deficiency from failed inspection",
+        description: req.body.description ? sanitizeText(req.body.description) : null,
+        location: req.body.location ? sanitizeShortText(req.body.location) : null,
+        trade: req.body.trade || "GENERAL",
+        priority: req.body.priority || "MEDIUM",
+        status: "OPEN" as const,
+        assignedToName: req.body.assignedToName ? sanitizeShortText(req.body.assignedToName) : null,
+        assignedToEmail: req.body.assignedToEmail ? sanitizeShortText(req.body.assignedToEmail) : null,
+        dueDate: req.body.dueDate ? new Date(req.body.dueDate) : null,
+        attachments: [],
+        statusHistory: initialHistory,
+      };
+
+      const parsed = insertPunchListItemSchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
+      }
+
+      const [item] = await db.insert(punchListItems).values(parsed.data).returning();
+
+      await logAudit({
+        userId,
+        action: "CREATE",
+        entityType: "punchListItem",
+        entityId: item.id,
+        newValue: JSON.stringify({ itemNumber, inspectionId: req.params.inspectionId, projectId: project.id }),
+      }, req);
+
+      res.status(201).json(enrichItem(item));
+    } catch (err) {
+      console.error("Error creating punch list item from inspection:", err);
+      res.status(500).json({ error: "Failed to create punch list item from inspection" });
+    }
+  },
+);
 
 export default router;

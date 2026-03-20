@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,9 +13,10 @@ import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import {
   Plus, ClipboardList, CheckCircle2, XCircle, Clock, Loader2,
-  AlertTriangle, MapPin, Wrench, User, Calendar, Trash2,
-  Edit2, ChevronRight, FileDown, Shield, RefreshCcw,
+  MapPin, User, Calendar, Trash2, Edit2, ChevronRight, FileDown,
+  Shield, RefreshCcw, Paperclip, History, ChevronDown,
 } from "lucide-react";
+import { ObjectUploader } from "@/components/ObjectUploader";
 import type { PunchListItem } from "@shared/schema";
 
 interface PunchListTabProps {
@@ -100,6 +100,20 @@ function canVerify(role: string) {
   return ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role);
 }
 
+function canChangeStatus(role: string) {
+  return ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER",
+    "OFFICE_MANAGER", "SAFETY_MANAGER", "HOURLY_EMPLOYEE"].includes(role);
+}
+
+// ─── User Type ────────────────────────────────────────────────────────────────
+interface OrgUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+}
+
 // ─── Empty State ─────────────────────────────────────────────────────────────
 function EmptyState({ canCreate, onAdd }: { canCreate: boolean; onAdd: () => void }) {
   return (
@@ -114,6 +128,47 @@ function EmptyState({ canCreate, onAdd }: { canCreate: boolean; onAdd: () => voi
           <Plus className="h-4 w-4 mr-2" />
           Add First Item
         </Button>
+      )}
+    </div>
+  );
+}
+
+// ─── Status History Panel ─────────────────────────────────────────────────────
+type StatusHistoryEntry = { status: string; changedBy: string; changedAt: string; note?: string };
+
+function StatusHistory({ history }: { history: StatusHistoryEntry[] }) {
+  const [open, setOpen] = useState(false);
+  if (!history || history.length === 0) return null;
+  return (
+    <div className="border-t pt-4">
+      <button
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        onClick={() => setOpen((o) => !o)}
+        data-testid="button-toggle-history"
+      >
+        <History className="h-3.5 w-3.5" />
+        Status History ({history.length})
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <ol className="mt-3 space-y-2 border-l-2 border-muted ml-2 pl-4">
+          {[...history].reverse().map((h, idx) => {
+            const Icon = STATUS_ICONS[h.status] ?? Clock;
+            return (
+              <li key={idx} className="text-xs">
+                <div className="flex items-center gap-2">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${STATUS_COLORS[h.status] ?? ""}`}>
+                    <Icon className="h-2.5 w-2.5 inline mr-0.5" />
+                    {STATUS_OPTIONS.find((s) => s.value === h.status)?.label ?? h.status}
+                  </span>
+                  <span className="text-muted-foreground">by {h.changedBy}</span>
+                </div>
+                <div className="text-muted-foreground mt-0.5">{format(new Date(h.changedAt), "MMM d, yyyy h:mm a")}</div>
+                {h.note && <div className="text-foreground mt-0.5 italic">{h.note}</div>}
+              </li>
+            );
+          })}
+        </ol>
       )}
     </div>
   );
@@ -135,19 +190,33 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
   const [showDetail, setShowDetail] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [selected, setSelected] = useState<PunchListItem | null>(null);
+  const [statusNote, setStatusNote] = useState("");
 
   // Form state
   const emptyForm = {
     title: "", description: "", location: "",
-    trade: "GENERAL", priority: "MEDIUM", status: "OPEN",
-    assignedToUserId: "", assignedToName: "", assignedToEmail: "",
+    trade: "GENERAL", priority: "MEDIUM",
+    assignedToUserId: "__none__", assignedToName: "", assignedToEmail: "",
     dueDate: "",
   };
   const [form, setForm] = useState(emptyForm);
   const [pdfLoading, setPdfLoading] = useState(false);
 
-  // ─── Query ──────────────────────────────────────────────────────────────
-  const qk = ["/api/projects", projectCode, "punch-list"];
+  // ─── Query: org users for assignee picker ───────────────────────────────
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/users"],
+    queryFn: async () => {
+      const r = await fetch("/api/users", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // ─── Query: punch list items ─────────────────────────────────────────────
+  const qk = ["/api/projects", projectCode, "punch-list", { statusFilter, priorityFilter, tradeFilter, search }];
+  const allQk = ["/api/projects", projectCode, "punch-list", "all-counts"];
+
   const { data: items = [], isLoading } = useQuery<PunchListItem[]>({
     queryKey: qk,
     queryFn: async () => {
@@ -163,56 +232,15 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
     enabled: !!projectCode,
   });
 
-  // ─── Mutations ──────────────────────────────────────────────────────────
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: qk });
-
-  const createMutation = useMutation({
-    mutationFn: (data: typeof form) =>
-      apiRequest("POST", `/api/projects/${projectCode}/punch-list`, {
-        ...data,
-        assignedToUserId: data.assignedToUserId || null,
-        dueDate: data.dueDate || null,
-      }),
-    onSuccess: () => {
-      invalidate();
-      setShowCreate(false);
-      setForm(emptyForm);
-      toast({ title: "Item created", description: "Punch list item added successfully." });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<typeof form> & { status?: string } }) =>
-      apiRequest("PATCH", `/api/punch-list/${id}`, data),
-    onSuccess: (updated: PunchListItem) => {
-      invalidate();
-      setSelected(updated);
-      toast({ title: "Updated", description: "Punch list item updated." });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/punch-list/${id}`),
-    onSuccess: () => {
-      invalidate();
-      setShowDetail(false);
-      setSelected(null);
-      toast({ title: "Deleted", description: "Punch list item removed." });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
-  // ─── Counts ─────────────────────────────────────────────────────────────
   const { data: allItems = [] } = useQuery<PunchListItem[]>({
-    queryKey: ["/api/projects", projectCode, "punch-list", "all"],
+    queryKey: allQk,
     queryFn: async () => {
       const r = await fetch(`/api/projects/${projectCode}/punch-list`, { credentials: "include" });
       if (!r.ok) return [];
       return r.json();
     },
     enabled: !!projectCode,
+    staleTime: 30000,
   });
 
   const counts = {
@@ -223,22 +251,96 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
     total: allItems.length,
   };
 
+  // ─── Mutations ──────────────────────────────────────────────────────────
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "punch-list"] });
+  };
+
+  const createMutation = useMutation({
+    mutationFn: (data: typeof form) => {
+      const assignedUser = data.assignedToUserId && data.assignedToUserId !== "__none__"
+        ? orgUsers.find((u) => u.id === data.assignedToUserId)
+        : null;
+      return apiRequest("POST", `/api/projects/${projectCode}/punch-list`, {
+        ...data,
+        assignedToUserId: assignedUser?.id || null,
+        assignedToName: assignedUser
+          ? `${assignedUser.firstName} ${assignedUser.lastName}`.trim()
+          : data.assignedToName || null,
+        assignedToEmail: assignedUser?.email || data.assignedToEmail || null,
+        dueDate: data.dueDate || null,
+      });
+    },
+    onSuccess: () => {
+      invalidate();
+      setShowCreate(false);
+      setForm(emptyForm);
+      toast({ title: "Item created", description: "Punch list item added successfully." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      apiRequest("PATCH", `/api/projects/${projectCode}/punch-list/${id}`, data),
+    onSuccess: (updated: PunchListItem) => {
+      invalidate();
+      if (selected && selected.id === updated.id) setSelected(updated);
+      toast({ title: "Updated", description: "Punch list item updated." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/projects/${projectCode}/punch-list/${id}`),
+    onSuccess: () => {
+      invalidate();
+      setShowDetail(false);
+      setSelected(null);
+      toast({ title: "Deleted", description: "Punch list item removed." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addAttachmentMutation = useMutation({
+    mutationFn: ({ id, attachment }: { id: string; attachment: { url: string; filename: string; mimeType: string } }) =>
+      apiRequest("POST", `/api/projects/${projectCode}/punch-list/${id}/attachments`, attachment),
+    onSuccess: (updated: PunchListItem) => {
+      invalidate();
+      if (selected && selected.id === updated.id) setSelected(updated);
+      toast({ title: "Attachment added" });
+    },
+    onError: (e: Error) => toast({ title: "Upload error", description: e.message, variant: "destructive" }),
+  });
+
+  const removeAttachmentMutation = useMutation({
+    mutationFn: ({ id, filename }: { id: string; filename: string }) =>
+      apiRequest("DELETE", `/api/projects/${projectCode}/punch-list/${id}/attachments/${encodeURIComponent(filename)}`),
+    onSuccess: (updated: PunchListItem) => {
+      invalidate();
+      if (selected && selected.id === updated.id) setSelected(updated);
+      toast({ title: "Attachment removed" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleOpenDetail = (item: PunchListItem) => {
     setSelected(item);
+    setStatusNote("");
     setShowDetail(true);
   };
 
   const handleOpenEdit = (item: PunchListItem) => {
     setSelected(item);
+    const assignedUser = orgUsers.find((u) => u.id === item.assignedToUserId);
     setForm({
       title: item.title,
       description: item.description ?? "",
       location: item.location ?? "",
       trade: item.trade,
       priority: item.priority,
-      status: item.status,
-      assignedToUserId: item.assignedToUserId ?? "",
+      assignedToUserId: assignedUser ? assignedUser.id : "__none__",
       assignedToName: item.assignedToName ?? "",
       assignedToEmail: item.assignedToEmail ?? "",
       dueDate: item.dueDate ? format(new Date(item.dueDate), "yyyy-MM-dd") : "",
@@ -247,7 +349,11 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
   };
 
   const handleStatusChange = (item: PunchListItem, newStatus: string) => {
-    updateMutation.mutate({ id: item.id, data: { status: newStatus } });
+    updateMutation.mutate({
+      id: item.id,
+      data: { status: newStatus, statusNote: statusNote || undefined },
+    });
+    setStatusNote("");
   };
 
   const handleExportPdf = async () => {
@@ -258,16 +364,12 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
       const html = await r.text();
       const w = window.open("", "_blank");
       if (w) { w.document.write(html); w.document.close(); w.print(); }
-    } catch (e: any) {
-      toast({ title: "Export failed", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      toast({ title: "Export failed", description: msg, variant: "destructive" });
     } finally {
       setPdfLoading(false);
     }
-  };
-
-  const handleApplyFilters = () => {
-    invalidate();
-    queryClient.invalidateQueries({ queryKey: qk });
   };
 
   // ─── Render ──────────────────────────────────────────────────────────────
@@ -332,11 +434,11 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
               placeholder="Search title, location…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleApplyFilters()}
+              onKeyDown={(e) => e.key === "Enter" && queryClient.invalidateQueries({ queryKey: qk })}
               className="w-52"
               data-testid="input-punch-search"
             />
-            <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); }}>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-40" data-testid="select-status-filter">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
@@ -345,7 +447,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                 {STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={priorityFilter} onValueChange={(v) => { setPriorityFilter(v); }}>
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
               <SelectTrigger className="w-40" data-testid="select-priority-filter">
                 <SelectValue placeholder="Priority" />
               </SelectTrigger>
@@ -354,7 +456,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                 {PRIORITY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Select value={tradeFilter} onValueChange={(v) => { setTradeFilter(v); }}>
+            <Select value={tradeFilter} onValueChange={setTradeFilter}>
               <SelectTrigger className="w-40" data-testid="select-trade-filter">
                 <SelectValue placeholder="Trade" />
               </SelectTrigger>
@@ -363,9 +465,6 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                 {TRADE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="sm" onClick={handleApplyFilters} data-testid="button-apply-filters">
-              Filter
-            </Button>
           </div>
 
           {/* ── Item List ──────────────────────────────────────────── */}
@@ -387,7 +486,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
                             <span className="text-xs text-muted-foreground font-mono">{item.itemNumber}</span>
-                            <span className="font-medium text-foreground truncate">{item.title}</span>
+                            <span className="font-medium text-foreground">{item.title}</span>
                           </div>
                           <div className="flex items-center gap-2 flex-wrap mt-1">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[item.priority]}`}>
@@ -418,6 +517,12 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                               <span className="flex items-center gap-1">
                                 <Calendar className="h-3 w-3" />
                                 Due {format(new Date(item.dueDate), "MMM d, yyyy")}
+                              </span>
+                            )}
+                            {Array.isArray(item.attachments) && item.attachments.length > 0 && (
+                              <span className="flex items-center gap-1">
+                                <Paperclip className="h-3 w-3" />
+                                {item.attachments.length}
                               </span>
                             )}
                           </div>
@@ -478,9 +583,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
               <div className="space-y-1.5">
                 <Label>Trade</Label>
                 <Select value={form.trade} onValueChange={(v) => setForm((f) => ({ ...f, trade: v }))}>
-                  <SelectTrigger data-testid="select-item-trade">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger data-testid="select-item-trade"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {TRADE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
@@ -489,36 +592,58 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
               <div className="space-y-1.5">
                 <Label>Priority</Label>
                 <Select value={form.priority} onValueChange={(v) => setForm((f) => ({ ...f, priority: v }))}>
-                  <SelectTrigger data-testid="select-item-priority">
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger data-testid="select-item-priority"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITY_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            {/* Org user picker */}
             <div className="space-y-1.5">
-              <Label htmlFor="create-assignee">Assigned To (name)</Label>
-              <Input
-                id="create-assignee"
-                placeholder="Subcontractor or crew name"
-                value={form.assignedToName}
-                onChange={(e) => setForm((f) => ({ ...f, assignedToName: e.target.value }))}
-                data-testid="input-item-assignee"
-              />
+              <Label>Assign To (team member)</Label>
+              <Select value={form.assignedToUserId} onValueChange={(v) => setForm((f) => ({ ...f, assignedToUserId: v }))}>
+                <SelectTrigger data-testid="select-assignee-user">
+                  <SelectValue placeholder="Select team member…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">No team member (manual entry below)</SelectItem>
+                  {orgUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.firstName} {u.lastName} — {u.role.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="create-email">Assignee Email</Label>
-              <Input
-                id="create-email"
-                type="email"
-                placeholder="email@example.com"
-                value={form.assignedToEmail}
-                onChange={(e) => setForm((f) => ({ ...f, assignedToEmail: e.target.value }))}
-                data-testid="input-item-email"
-              />
-            </div>
+
+            {form.assignedToUserId === "__none__" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label htmlFor="create-assignee">Assignee Name (manual)</Label>
+                  <Input
+                    id="create-assignee"
+                    placeholder="Subcontractor or crew name"
+                    value={form.assignedToName}
+                    onChange={(e) => setForm((f) => ({ ...f, assignedToName: e.target.value }))}
+                    data-testid="input-item-assignee"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="create-email">Assignee Email</Label>
+                  <Input
+                    id="create-email"
+                    type="email"
+                    placeholder="email@example.com"
+                    value={form.assignedToEmail}
+                    onChange={(e) => setForm((f) => ({ ...f, assignedToEmail: e.target.value }))}
+                    data-testid="input-item-email"
+                  />
+                </div>
+              </>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="create-due">Due Date</Label>
               <Input
@@ -551,13 +676,11 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
         <Dialog open={showDetail} onOpenChange={(o) => { setShowDetail(o); if (!o) setSelected(null); }}>
           <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-sm text-muted-foreground">{selected.itemNumber}</span>
                 <span>{selected.title}</span>
               </DialogTitle>
-              <DialogDescription>
-                Punch list item detail and status management
-              </DialogDescription>
+              <DialogDescription>Punch list item detail and status management</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 py-2">
@@ -575,7 +698,6 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                 </span>
               </div>
 
-              {/* Core fields */}
               {selected.description && (
                 <div>
                   <Label className="text-muted-foreground text-xs uppercase tracking-wide">Description</Label>
@@ -626,36 +748,77 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
               </div>
 
               {/* Attachments */}
-              {Array.isArray(selected.attachments) && selected.attachments.length > 0 && (
-                <div>
-                  <Label className="text-muted-foreground text-xs uppercase tracking-wide mb-2 block">Attachments</Label>
-                  <div className="flex flex-wrap gap-2">
+              <div>
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide mb-2 block flex items-center gap-1">
+                  <Paperclip className="h-3 w-3" /> Attachments
+                </Label>
+                {Array.isArray(selected.attachments) && selected.attachments.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
                     {(selected.attachments as Array<{ url: string; filename: string; mimeType: string }>).map((a) => (
-                      <a
-                        key={a.filename}
-                        href={a.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-xs bg-muted hover:bg-muted/80 px-2 py-1 rounded border text-foreground"
-                      >
-                        <FileDown className="h-3 w-3" />
-                        {a.filename}
-                      </a>
+                      <div key={a.filename} className="flex items-center gap-1 text-xs bg-muted px-2 py-1 rounded border">
+                        <a href={a.url} target="_blank" rel="noopener noreferrer" className="hover:underline truncate max-w-[140px]">
+                          {a.filename}
+                        </a>
+                        {isManagement(userRole) && (
+                          <button
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() => removeAttachmentMutation.mutate({ id: selected.id, filename: a.filename })}
+                            data-testid={`button-remove-attachment-${a.filename}`}
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     ))}
                   </div>
-                </div>
-              )}
+                )}
+                {isManagement(userRole) && (
+                  <ObjectUploader
+                    fileType="MEDIA"
+                    maxNumberOfFiles={5}
+                    allowedFileTypes={["image/*", "application/pdf"]}
+                    onComplete={(result) => {
+                      const successful = result.successful ?? [];
+                      for (const f of successful) {
+                        addAttachmentMutation.mutate({
+                          id: selected.id,
+                          attachment: {
+                            url: f.uploadURL ?? "",
+                            filename: f.name ?? "attachment",
+                            mimeType: f.type ?? "application/octet-stream",
+                          },
+                        });
+                      }
+                    }}
+                    testId="uploader-punch-attachment"
+                  >
+                    <Button variant="outline" size="sm" data-testid="button-add-attachment">
+                      <Paperclip className="h-4 w-4 mr-1.5" />
+                      Add Photo / File
+                    </Button>
+                  </ObjectUploader>
+                )}
+              </div>
 
-              {/* Created at */}
               <p className="text-xs text-muted-foreground">
                 Created {format(new Date(selected.createdAt), "MMM d, yyyy")}
               </p>
 
               {/* ── Status Action Buttons ────────────────────────── */}
               <div className="border-t pt-4">
-                <Label className="text-muted-foreground text-xs uppercase tracking-wide mb-3 block">Actions</Label>
+                <Label className="text-muted-foreground text-xs uppercase tracking-wide mb-2 block">Update Status</Label>
+
+                {/* Optional note for status change */}
+                <Input
+                  placeholder="Optional note for this status change…"
+                  value={statusNote}
+                  onChange={(e) => setStatusNote(e.target.value)}
+                  className="mb-3 text-sm h-8"
+                  data-testid="input-status-note"
+                />
+
                 <div className="flex flex-wrap gap-2">
-                  {selected.status === "OPEN" && isManagement(userRole) && (
+                  {selected.status === "OPEN" && canChangeStatus(userRole) && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -667,7 +830,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                       Mark In Progress
                     </Button>
                   )}
-                  {(selected.status === "OPEN" || selected.status === "IN_PROGRESS") && isManagement(userRole) && (
+                  {(selected.status === "OPEN" || selected.status === "IN_PROGRESS") && canChangeStatus(userRole) && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -725,11 +888,14 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                       data-testid="button-edit-item"
                     >
                       <Edit2 className="h-4 w-4 mr-1.5" />
-                      Edit
+                      Edit Details
                     </Button>
                   )}
                 </div>
               </div>
+
+              {/* ── Status History ───────────────────────────────── */}
+              <StatusHistory history={(selected.statusHistory ?? []) as StatusHistoryEntry[]} />
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
@@ -824,23 +990,45 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                   </Select>
                 </div>
               </div>
+
+              {/* Org user picker in edit */}
               <div className="space-y-1.5">
-                <Label>Assigned To (name)</Label>
-                <Input
-                  value={form.assignedToName}
-                  onChange={(e) => setForm((f) => ({ ...f, assignedToName: e.target.value }))}
-                  data-testid="input-edit-assignee"
-                />
+                <Label>Assign To (team member)</Label>
+                <Select value={form.assignedToUserId} onValueChange={(v) => setForm((f) => ({ ...f, assignedToUserId: v }))}>
+                  <SelectTrigger data-testid="select-edit-assignee-user"><SelectValue placeholder="Select team member…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No team member (manual entry below)</SelectItem>
+                    {orgUsers.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.firstName} {u.lastName} — {u.role.replace(/_/g, " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="space-y-1.5">
-                <Label>Assignee Email</Label>
-                <Input
-                  type="email"
-                  value={form.assignedToEmail}
-                  onChange={(e) => setForm((f) => ({ ...f, assignedToEmail: e.target.value }))}
-                  data-testid="input-edit-email"
-                />
-              </div>
+
+              {form.assignedToUserId === "__none__" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label>Assignee Name (manual)</Label>
+                    <Input
+                      value={form.assignedToName}
+                      onChange={(e) => setForm((f) => ({ ...f, assignedToName: e.target.value }))}
+                      data-testid="input-edit-assignee"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Assignee Email</Label>
+                    <Input
+                      type="email"
+                      value={form.assignedToEmail}
+                      onChange={(e) => setForm((f) => ({ ...f, assignedToEmail: e.target.value }))}
+                      data-testid="input-edit-email"
+                    />
+                  </div>
+                </>
+              )}
+
               <div className="space-y-1.5">
                 <Label>Due Date</Label>
                 <Input
@@ -854,7 +1042,10 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
             <DialogFooter>
               <Button variant="outline" onClick={() => { setShowEdit(false); setForm(emptyForm); }}>Cancel</Button>
               <Button
-                onClick={() =>
+                onClick={() => {
+                  const assignedUser = form.assignedToUserId && form.assignedToUserId !== "__none__"
+                    ? orgUsers.find((u) => u.id === form.assignedToUserId)
+                    : null;
                   updateMutation.mutate(
                     {
                       id: selected.id,
@@ -864,17 +1055,17 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                         location: form.location,
                         trade: form.trade,
                         priority: form.priority,
-                        assignedToName: form.assignedToName,
-                        assignedToEmail: form.assignedToEmail,
-                        dueDate: form.dueDate,
-                        assignedToUserId: form.assignedToUserId || undefined,
+                        assignedToUserId: assignedUser?.id ?? null,
+                        assignedToName: assignedUser
+                          ? `${assignedUser.firstName} ${assignedUser.lastName}`.trim()
+                          : form.assignedToName || null,
+                        assignedToEmail: assignedUser?.email || form.assignedToEmail || null,
+                        dueDate: form.dueDate || null,
                       },
                     },
-                    {
-                      onSuccess: () => { setShowEdit(false); setForm(emptyForm); },
-                    },
-                  )
-                }
+                    { onSuccess: () => { setShowEdit(false); setForm(emptyForm); } },
+                  );
+                }}
                 disabled={!form.title || updateMutation.isPending}
                 data-testid="button-save-edit"
               >

@@ -1046,6 +1046,9 @@ export const punchListItems = pgTable("punch_list_items", {
   // Photo / file attachments stored as JSON array [{url, filename, mimeType, uploadedAt}]
   attachments: json("attachments").$type<Array<{ url: string; filename: string; mimeType: string; uploadedAt: string }>>().default([]),
 
+  // Status history for audit trail [{status, changedBy, changedAt, note}]
+  statusHistory: json("status_history").$type<Array<{ status: string; changedBy: string; changedAt: string; note?: string }>>().default([]),
+
   // Optional link to a failed inspection that generated this item
   inspectionId: varchar("inspection_id").references(() => projectInspections.id, { onDelete: "set null" }),
 
