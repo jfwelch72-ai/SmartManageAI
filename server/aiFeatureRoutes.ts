@@ -1288,7 +1288,8 @@ router.post("/change-orders/generate", requireAuth, requireRole("ADMIN", "MANAGE
 
     // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
-    // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
+    // Valid trade types from the enum - "MANUAL", "SCOPE_CHANGE", "DELAY", "INSPECTION" and other
+    // non-trade values should fall back to org trade type or GENERAL_CONTRACTOR
     const validTradeTypes = [
       "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
       "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
@@ -1296,7 +1297,9 @@ router.post("/change-orders/generate", requireAuth, requireRole("ADMIN", "MANAGE
       "SOLAR", "WATERPROOFING", "OTHER"
     ];
     const orgTradeType = org?.tradeType;
-    const effectiveTradeType = tradeType || (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
+    const effectiveTradeType = (tradeType && validTradeTypes.includes(tradeType))
+      ? tradeType
+      : (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
 
     // Generate AI draft content
     const draftContent = await generateCoDraft(effectiveTradeType, linkedItems);

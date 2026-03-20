@@ -107,7 +107,6 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
       
       const response = await apiRequest("POST", "/api/ai-features/change-orders/generate", {
         projectId,
-        tradeType: input.sourceType,
         linkedItems,
         pricingSource: "MANUAL",
         includeBreakdown: true,
@@ -120,7 +119,7 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
       setDescription("");
       toast({
         title: "Change Order Draft Generated",
-        description: `AI has created a draft with suggested amount of $${data.draft.suggestedAmount.toLocaleString()}`,
+        description: `AI has created a draft with suggested amount of $${(data.draft?.subtotals?.total ?? 0).toLocaleString()}`,
       });
       setSelectedDraft(data.draft);
       setReviewDialogOpen(true);
