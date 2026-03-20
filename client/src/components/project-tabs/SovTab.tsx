@@ -92,15 +92,18 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
   const createMutation = useMutation({
     mutationFn: async (data: { projectId: string; title: string; description: string }) => {
       const res = await apiRequest("POST", "/api/sov", data);
-      return res.json();
+      return res.json() as Promise<SOV>;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/sov"] });
+    onSuccess: (newSov) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/sov"] }).then(() => {
+        setShowCreateDialog(false);
+        setCreateForm({ title: "", description: "" });
+        setSelectedSOV(newSov);
+        setShowDetailDialog(true);
+      });
       toast({ title: "SOV created successfully" });
-      setShowCreateDialog(false);
-      setCreateForm({ title: "", description: "" });
     },
-    onError: (err: any) => toast({ title: "Error creating SOV", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Error creating SOV", description: err.message, variant: "destructive" }),
   });
 
   const draftCount = sovs.filter(s => s.status === "DRAFT").length;
@@ -175,7 +178,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                   <CardContent className="p-0">
                     <div className="hidden md:block">
                       <Table>
-                        <TableHead>
+                        <TableHeader>
                           <TableRow>
                             <TableHead>SOV #</TableHead>
                             <TableHead>Title</TableHead>
@@ -188,7 +191,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                             <TableHead className="text-right">Balance</TableHead>
                             <TableHead></TableHead>
                           </TableRow>
-                        </TableHead>
+                        </TableHeader>
                         <TableBody>
                           {sovs.map(sov => (
                             <TableRow key={sov.id} data-testid={`row-sov-${sov.id}`}>

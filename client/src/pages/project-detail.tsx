@@ -99,6 +99,7 @@ import CostLedgerTab from "@/components/project-tabs/CostLedgerTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
 import SovTab from "@/components/project-tabs/SovTab";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -164,6 +165,7 @@ interface TabConfig {
 function buildTabConfigs(
   userRole: string | undefined,
   submittedCOCount: number,
+  canAccessSOV: boolean,
 ): TabConfig[] {
   return [
     {
@@ -309,7 +311,7 @@ function buildTabConfigs(
       value: "sov",
       label: "Schedule of Values",
       icon: FileSpreadsheet,
-      visible: hasFinancialAccess(userRole),
+      visible: canAccessSOV,
     },
     {
       value: "punch-list",
@@ -333,6 +335,7 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
+  const canAccessFinancialsPerms = useFeaturePermission("canAccessFinancials");
 
   const searchParams = new URLSearchParams(window.location.search);
   const fromCFO = searchParams.get("from") === "cfo";
@@ -377,7 +380,13 @@ export default function ProjectDetailPage() {
   const submittedCOCount = changeOrders.filter(
     (co) => co.status === "SUBMITTED",
   ).length;
-  const tabConfigs = buildTabConfigs(user?.role, submittedCOCount);
+  const canAccessSOV =
+    user?.role === "ADMIN" ||
+    user?.role === "MANAGER" ||
+    user?.role === "SUPERINTENDENT" ||
+    user?.role === "OFFICE_MANAGER" ||
+    canAccessFinancialsPerms === true;
+  const tabConfigs = buildTabConfigs(user?.role, submittedCOCount, canAccessSOV);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
 
   const { data: closeoutReadiness } = useQuery<{
