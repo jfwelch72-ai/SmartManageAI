@@ -117,12 +117,11 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
     const isUnbilled =
       s.lineItems.length > 0 &&
       s.lineItems.every(li => {
-        const anyLi = li as any;
         const completed = parseFloat(
-          anyLi.totalCompletedAndStored ?? anyLi.totalCompleted ?? "0"
+          li.totalCompletedAndStored ?? li.totalCompleted ?? "0"
         );
         const current = parseFloat(
-          anyLi.thisPeriodCompleted ?? anyLi.currentBilled ?? "0"
+          li.thisPeriodCompleted ?? li.currentBilled ?? "0"
         );
         return completed === 0 && current === 0;
       });

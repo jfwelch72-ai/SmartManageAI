@@ -21,6 +21,9 @@ export interface SOVLineItem {
   retainage: string;
   sortOrder: number;
   category: string | null;
+  totalCompletedAndStored?: string | null;
+  thisPeriodCompleted?: string | null;
+  previouslyCompleted?: string | null;
 }
 
 export interface SOV {
