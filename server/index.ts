@@ -11,6 +11,7 @@ import { aiNotesScheduler } from "./aiNotesScheduler";
 import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
+import { backfillMissingFeatureFlags } from "./services/featureFlagService";
 
 const app = express();
 
@@ -205,6 +206,11 @@ app.use((req, res, next) => {
       console.log('AI auto-scan schedulers are DISABLED (development mode)');
       console.log('   Use the manual "Run AI Analysis" button to trigger scans');
       console.log('   Set NODE_ENV=production to enable schedulers');
+
+      // Ensure all orgs have feature flags populated (idempotent, dev only)
+      backfillMissingFeatureFlags().catch(err => {
+        console.error('[DEV] Feature flag backfill failed:', err);
+      });
     }
   });
 })();

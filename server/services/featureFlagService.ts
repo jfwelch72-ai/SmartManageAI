@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { organizations, FEATURE_FLAG_KEYS, type FeatureFlagKey } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, or, isNull, sql } from "drizzle-orm";
 import { logInfo } from "../utils/logger";
 
 export type FeatureFlagsMap = Partial<Record<FeatureFlagKey, boolean>>;
@@ -58,4 +58,30 @@ export async function setAllFeatureFlags(orgId: string, flags: FeatureFlagsMap):
 
   logInfo("Feature flags bulk updated", { organizationId: orgId });
   return currentFlags;
+}
+
+/**
+ * Idempotent backfill: ensures every organization that has no feature flags
+ * stored (NULL or empty string) gets the full all-enabled flag set.
+ * Safe to call on every dev server startup — only touches rows with missing data.
+ */
+export async function backfillMissingFeatureFlags(): Promise<void> {
+  const allFlagsOn = JSON.stringify(
+    Object.fromEntries(FEATURE_FLAG_KEYS.map(k => [k, true]))
+  );
+
+  const result = await db
+    .update(organizations)
+    .set({ featureFlags: allFlagsOn, updatedAt: new Date() })
+    .where(
+      or(
+        isNull(organizations.featureFlags),
+        sql`${organizations.featureFlags} = ''`
+      )
+    );
+
+  const count = (result as unknown as { rowCount?: number }).rowCount ?? 0;
+  if (count > 0) {
+    logInfo(`Feature flag backfill: enabled all flags for ${count} org(s) with missing data`);
+  }
 }
