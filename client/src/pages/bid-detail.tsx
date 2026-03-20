@@ -778,10 +778,10 @@ export default function BidDetailPage() {
               <Badge variant="outline" className="font-mono">
                 {bid.code}
               </Badge>
-              {(bid as any).submittedAt && (
+              {bid.submittedAt && (
                 <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 text-xs">
                   <Send className="w-3 h-3 mr-1" />
-                  Submitted {format(new Date((bid as any).submittedAt), "MMM d, yyyy")}
+                  Submitted {format(new Date(bid.submittedAt), "MMM d, yyyy")}
                 </Badge>
               )}
               {canEdit ? (
@@ -1126,7 +1126,7 @@ export default function BidDetailPage() {
               Submit Bid to Client
             </DialogTitle>
             <DialogDescription>
-              The customer quote PDF will be attached and sent to the email address below.
+              A bid summary email with the project name, amount, due date, and reference code will be sent to the recipient below.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
