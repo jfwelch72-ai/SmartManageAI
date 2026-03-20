@@ -28,7 +28,7 @@ export function SovPaymentsPanel({ sovs }: { sovs: SOV[] }) {
     notes: "",
   });
 
-  const { data: payments = [], isLoading } = useQuery<any[]>({
+  const { data: allPayments = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/sov/payments"],
   });
 
@@ -44,8 +44,13 @@ export function SovPaymentsPanel({ sovs }: { sovs: SOV[] }) {
       setShowCreate(false);
       setForm({ sovId: "", amount: "", paymentDate: "", paymentMethod: "CHECK", referenceNumber: "", notes: "" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const projectSovIds = new Set(sovs.map(s => s.id));
+  const payments = sovs.length > 0
+    ? allPayments.filter((p: any) => projectSovIds.has(p.sovId))
+    : allPayments;
 
   const paymentsBySOV: Record<string, any[]> = {};
   payments.forEach((p: any) => {
