@@ -272,7 +272,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
         </TabsContent>
 
         <TabsContent value="co-tieout" className="mt-4">
-          <SovCoTieoutPanel />
+          <SovCoTieoutPanel projectId={projectId} />
         </TabsContent>
       </Tabs>
 

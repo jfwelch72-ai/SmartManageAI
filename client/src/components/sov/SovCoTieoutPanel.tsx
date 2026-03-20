@@ -12,10 +12,14 @@ import {
   GitCompare,
 } from "lucide-react";
 
-export function SovCoTieoutPanel() {
-  const { data: reconciliation = [], isLoading } = useQuery<any[]>({
+export function SovCoTieoutPanel({ projectId }: { projectId?: string } = {}) {
+  const { data: allReconciliation = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/sov/co-tieout"],
   });
+
+  const reconciliation = projectId
+    ? allReconciliation.filter((r: any) => r.projectId === projectId)
+    : allReconciliation;
 
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
 
@@ -27,7 +31,7 @@ export function SovCoTieoutPanel() {
     return (
       <Card>
         <CardContent className="py-8 text-center text-muted-foreground">
-          No projects with approved change orders or SOVs to reconcile
+          No change orders or SOVs to reconcile for this project
         </CardContent>
       </Card>
     );

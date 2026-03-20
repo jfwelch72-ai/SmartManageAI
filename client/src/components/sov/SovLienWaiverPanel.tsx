@@ -20,7 +20,7 @@ export function SovLienWaiverPanel({ projects, sovs }: { projects: SovProject[];
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
-    projectId: "",
+    projectId: projects.length === 1 ? projects[0].id : "",
     sovId: "",
     waiverType: "CONDITIONAL_PARTIAL" as string,
     recipientName: "",
@@ -30,9 +30,16 @@ export function SovLienWaiverPanel({ projects, sovs }: { projects: SovProject[];
     notes: "",
   });
 
-  const { data: waivers = [], isLoading } = useQuery<any[]>({
+  const { data: allWaivers = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/sov/lien-waivers"],
   });
+
+  const projectIds = new Set(projects.map(p => p.id));
+  const waivers = projects.length > 0
+    ? allWaivers.filter((w: any) => projectIds.has(w.projectId))
+    : allWaivers;
+
+  const singleProject = projects.length === 1 ? projects[0] : null;
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof form) => {
@@ -43,9 +50,9 @@ export function SovLienWaiverPanel({ projects, sovs }: { projects: SovProject[];
       queryClient.invalidateQueries({ queryKey: ["/api/sov/lien-waivers"] });
       toast({ title: "Lien waiver created" });
       setShowCreate(false);
-      setForm({ projectId: "", sovId: "", waiverType: "CONDITIONAL_PARTIAL", recipientName: "", recipientCompany: "", throughDate: "", amount: "", notes: "" });
+      setForm({ projectId: singleProject?.id ?? "", sovId: "", waiverType: "CONDITIONAL_PARTIAL", recipientName: "", recipientCompany: "", throughDate: "", amount: "", notes: "" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const updateStatusMutation = useMutation({
@@ -57,7 +64,7 @@ export function SovLienWaiverPanel({ projects, sovs }: { projects: SovProject[];
       queryClient.invalidateQueries({ queryKey: ["/api/sov/lien-waivers"] });
       toast({ title: "Waiver updated" });
     },
-    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const waiverTypeLabel = (t: string) => {
@@ -224,16 +231,18 @@ export function SovLienWaiverPanel({ projects, sovs }: { projects: SovProject[];
             <DialogDescription>Track a conditional or unconditional lien waiver</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Project</Label>
-                <Select value={form.projectId} onValueChange={(v) => setForm(f => ({ ...f, projectId: v, sovId: "" }))}>
-                  <SelectTrigger data-testid="select-waiver-project"><SelectValue placeholder="Select project..." /></SelectTrigger>
-                  <SelectContent>
-                    {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className={singleProject ? "space-y-2" : "grid grid-cols-2 gap-4"}>
+              {!singleProject && (
+                <div className="space-y-2">
+                  <Label>Project</Label>
+                  <Select value={form.projectId} onValueChange={(v) => setForm(f => ({ ...f, projectId: v, sovId: "" }))}>
+                    <SelectTrigger data-testid="select-waiver-project"><SelectValue placeholder="Select project..." /></SelectTrigger>
+                    <SelectContent>
+                      {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Linked SOV (optional)</Label>
                 <Select value={form.sovId} onValueChange={(v) => setForm(f => ({ ...f, sovId: v }))}>
