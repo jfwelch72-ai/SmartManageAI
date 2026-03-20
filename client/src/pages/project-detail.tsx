@@ -49,6 +49,7 @@ import {
   DollarSign,
   BarChart3,
   ClipboardList,
+  ShieldCheck,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -89,6 +90,7 @@ import ProfitabilityTab from "@/components/project-tabs/ProfitabilityTab";
 import BudgetTab from "@/components/project-tabs/BudgetTab";
 import CostLedgerTab from "@/components/project-tabs/CostLedgerTab";
 import PunchListTab from "@/components/PunchListTab";
+import WarrantyTab from "@/components/WarrantyTab";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -299,6 +301,12 @@ function buildTabConfigs(
       value: "punch-list",
       label: "Punch List",
       icon: ClipboardList,
+      visible: hasManagementAccess(userRole),
+    },
+    {
+      value: "warranty",
+      label: "Warranty",
+      icon: ShieldCheck,
       visible: hasManagementAccess(userRole),
     },
   ];
@@ -728,6 +736,14 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="punch-list">
             <PunchListTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
+          <TabsContent value="warranty">
+            <WarrantyTab
               projectId={project.id}
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}

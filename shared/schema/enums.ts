@@ -554,6 +554,15 @@ export const deductionCalculationMethodEnum = pgEnum("deduction_calculation_meth
 // Table: data_processing_records (ROPA - Record of Processing Activities)
 
 // ============================================
+// WARRANTY MODULE ENUMS
+// ============================================
+export const warrantyCaseTypeEnum = pgEnum("warranty_case_type", ["DEFECT", "WARRANTY_CLAIM", "CALLBACK", "RECALL"]);
+export const warrantyCaseStatusEnum = pgEnum("warranty_case_status", ["OPEN", "ACKNOWLEDGED", "IN_REPAIR", "REPAIRED", "CLOSED", "REJECTED"]);
+export const warrantyPriorityEnum = pgEnum("warranty_priority", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+export const warrantyTaskStatusEnum = pgEnum("warranty_task_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
+export const warrantyDocumentTypeEnum = pgEnum("warranty_document_type", ["PHOTO", "INVOICE", "INSPECTION_REPORT", "COMMUNICATION", "OTHER"]);
+
+// ============================================
 // HIRING MODULE ENUMS
 // ============================================
 export const hiringJobStatusEnum = pgEnum("hiring_job_status", ["DRAFT", "PUBLISHED", "PAUSED", "ARCHIVED"]);

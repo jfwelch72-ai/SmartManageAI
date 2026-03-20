@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -2338,4 +2338,131 @@ export const insertUploadIntentSchema = createInsertSchema(uploadIntents).omit({
 });
 export type InsertUploadIntent = z.infer<typeof insertUploadIntentSchema>;
 export type UploadIntent = typeof uploadIntents.$inferSelect;
+
+// ─── WARRANTY MODULE ──────────────────────────────────────────────────────────
+
+export const warrantyCases = pgTable("warranty_cases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  caseNumber: text("case_number").notNull(), // e.g. WC-PROJ001-001
+
+  // Classification
+  type: warrantyCaseTypeEnum("type").notNull().default("DEFECT"),
+  status: warrantyCaseStatusEnum("status").notNull().default("OPEN"),
+  priority: warrantyPriorityEnum("priority").notNull().default("MEDIUM"),
+
+  // Case details
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"),
+
+  // Client / reporter info
+  reportedByName: text("reported_by_name"),
+  reportedByEmail: text("reported_by_email"),
+  reportedByPhone: text("reported_by_phone"),
+
+  // Assignment
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  assignedToName: text("assigned_to_name"),
+
+  // Dates
+  reportedDate: timestamp("reported_date"),
+  targetResolutionDate: timestamp("target_resolution_date"),
+  resolvedAt: timestamp("resolved_at"),
+  closedAt: timestamp("closed_at"),
+
+  // Costs (optional)
+  estimatedCost: decimal("estimated_cost", { precision: 12, scale: 2 }),
+  actualCost: decimal("actual_cost", { precision: 12, scale: 2 }),
+
+  // Resolution
+  rootCause: text("root_cause"),
+  resolution: text("resolution"),
+
+  // Status history for audit trail [{status, changedBy, changedAt, note}]
+  statusHistory: json("status_history").$type<Array<{ status: string; changedBy: string; changedAt: string; note?: string }>>().default([]),
+
+  // Metadata
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("warranty_cases_project_id_idx").on(table.projectId),
+  statusIdx: index("warranty_cases_status_idx").on(table.status),
+  typeIdx: index("warranty_cases_type_idx").on(table.type),
+  priorityIdx: index("warranty_cases_priority_idx").on(table.priority),
+}));
+
+export const insertWarrantyCaseSchema = createInsertSchema(warrantyCases).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertWarrantyCase = z.infer<typeof insertWarrantyCaseSchema>;
+export type WarrantyCase = typeof warrantyCases.$inferSelect;
+
+// ─── WARRANTY TASKS ───────────────────────────────────────────────────────────
+
+export const warrantyTasks = pgTable("warranty_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => warrantyCases.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+
+  title: text("title").notNull(),
+  description: text("description"),
+  status: warrantyTaskStatusEnum("status").notNull().default("PENDING"),
+
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  assignedToName: text("assigned_to_name"),
+
+  dueDate: timestamp("due_date"),
+  completedAt: timestamp("completed_at"),
+  estimatedHours: decimal("estimated_hours", { precision: 5, scale: 2 }),
+  actualHours: decimal("actual_hours", { precision: 5, scale: 2 }),
+  notes: text("notes"),
+
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  caseIdIdx: index("warranty_tasks_case_id_idx").on(table.caseId),
+  projectIdIdx: index("warranty_tasks_project_id_idx").on(table.projectId),
+  statusIdx: index("warranty_tasks_status_idx").on(table.status),
+}));
+
+export const insertWarrantyTaskSchema = createInsertSchema(warrantyTasks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertWarrantyTask = z.infer<typeof insertWarrantyTaskSchema>;
+export type WarrantyTask = typeof warrantyTasks.$inferSelect;
+
+// ─── WARRANTY DOCUMENTS ───────────────────────────────────────────────────────
+
+export const warrantyDocuments = pgTable("warranty_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => warrantyCases.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+
+  documentType: warrantyDocumentTypeEnum("document_type").notNull().default("OTHER"),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  caseIdIdx: index("warranty_documents_case_id_idx").on(table.caseId),
+  projectIdIdx: index("warranty_documents_project_id_idx").on(table.projectId),
+}));
+
+export const insertWarrantyDocumentSchema = createInsertSchema(warrantyDocuments).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertWarrantyDocument = z.infer<typeof insertWarrantyDocumentSchema>;
+export type WarrantyDocument = typeof warrantyDocuments.$inferSelect;
 
