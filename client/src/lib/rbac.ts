@@ -853,6 +853,12 @@ export const NavigationConfig = {
       visible: (role?: string) => hasCrmAccess(role),
     },
     {
+      href: "/marketplace",
+      label: "Marketplace",
+      testId: "nav-marketplace",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
+    {
       href: "/mobile-sync",
       label: "Mobile Sync Status",
       testId: "nav-mobile-sync",

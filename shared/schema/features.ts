@@ -6428,3 +6428,69 @@ export const insertHiringActivityLogSchema = createInsertSchema(hiringActivityLo
 export type InsertHiringActivityLog = z.infer<typeof insertHiringActivityLogSchema>;
 export type HiringActivityLog = typeof hiringActivityLogs.$inferSelect;
 
+// ==================================================
+// EQUIPMENT RENTAL MARKETPLACE TABLES
+// ==================================================
+
+export const equipmentCategoryEnum = pgEnum("equipment_category", [
+  "Excavation", "Lifting", "Concrete", "Compaction", "Aerial", "Power", "Scaffolding", "Other"
+]);
+
+export const equipmentConditionEnum = pgEnum("equipment_condition", ["Excellent", "Good", "Fair"]);
+
+export const rentalRequestStatusEnum = pgEnum("rental_request_status", ["PENDING", "ACCEPTED", "DECLINED"]);
+
+export const equipmentListings = pgTable("equipment_listings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: equipmentCategoryEnum("category").notNull(),
+  makeModel: text("make_model"),
+  year: integer("year"),
+  dailyRate: decimal("daily_rate", { precision: 10, scale: 2 }),
+  weeklyRate: decimal("weekly_rate", { precision: 10, scale: 2 }),
+  monthlyRate: decimal("monthly_rate", { precision: 10, scale: 2 }),
+  depositAmount: decimal("deposit_amount", { precision: 10, scale: 2 }),
+  location: text("location"),
+  deliveryRadius: integer("delivery_radius"),
+  photos: text("photos").array(),
+  condition: equipmentConditionEnum("condition"),
+  availableFrom: date("available_from"),
+  availableTo: date("available_to"),
+  isOngoing: boolean("is_ongoing").notNull().default(false),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("equipment_listings_org_idx").on(table.organizationId),
+  categoryIdx: index("equipment_listings_category_idx").on(table.category),
+  isActiveIdx: index("equipment_listings_is_active_idx").on(table.isActive),
+}));
+
+export const insertEquipmentListingSchema = createInsertSchema(equipmentListings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentListing = z.infer<typeof insertEquipmentListingSchema>;
+export type EquipmentListing = typeof equipmentListings.$inferSelect;
+
+export const equipmentRentalRequests = pgTable("equipment_rental_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  listingId: varchar("listing_id").notNull().references(() => equipmentListings.id, { onDelete: "cascade" }),
+  requesterOrgId: varchar("requester_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  deliveryRequested: boolean("delivery_requested").notNull().default(false),
+  message: text("message"),
+  status: rentalRequestStatusEnum("status").notNull().default("PENDING"),
+  ownerResponse: text("owner_response"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  listingIdx: index("equipment_rental_requests_listing_idx").on(table.listingId),
+  requesterIdx: index("equipment_rental_requests_requester_idx").on(table.requesterOrgId),
+  statusIdx: index("equipment_rental_requests_status_idx").on(table.status),
+}));
+
+export const insertEquipmentRentalRequestSchema = createInsertSchema(equipmentRentalRequests).omit({ id: true, createdAt: true, updatedAt: true, status: true, ownerResponse: true });
+export type InsertEquipmentRentalRequest = z.infer<typeof insertEquipmentRentalRequestSchema>;
+export type EquipmentRentalRequest = typeof equipmentRentalRequests.$inferSelect;
+

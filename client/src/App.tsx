@@ -110,6 +110,8 @@ const SharedPreviewPage = lazy(() => import("@/pages/shared-preview"));
 const VendorScoresPage = lazy(() => import("@/pages/vendor-scores"));
 const MaterialPriceIndexPage = lazy(() => import("@/pages/material-price-index"));
 const CrewMarketplacePage = lazy(() => import("@/pages/crew-marketplace"));
+const EquipmentRentalMarketplacePage = lazy(() => import("@/pages/equipment-rental-marketplace"));
+const MarketplacePage = lazy(() => import("@/pages/marketplace"));
 const PricebookImportPage = lazy(() => import("@/pages/pricebook-import"));
 const ClientPortalPublic = lazy(() => import("@/pages/client-portal-public"));
 const SubPortalPage = lazy(() => import("@/pages/sub-portal"));
@@ -294,6 +296,8 @@ function Router() {
       <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
       <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={CrewMarketplacePage} permission={RoutePermissions.CRM} />} />
+      <Route path="/equipment-rental-marketplace" component={() => <ProtectedRoute component={EquipmentRentalMarketplacePage} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} />} />
       <Route path="/pricebook-import" component={() => <ProtectedRoute component={PricebookImportPage} permission={RoutePermissions.CRM} featurePerm="canManageProcurement" />} />
       
       {/* Executive Intelligence routes */}

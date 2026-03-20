@@ -34,6 +34,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "TASK_MENTIONED",
   "DEADLINE_WARNING", "REMINDER",
   "TAKEOFF_ISSUE_ASSIGNED", "TAKEOFF_ISSUE_STATUS_CHANGED",
+  "EQUIPMENT_RENTAL_REQUEST_RECEIVED", "EQUIPMENT_RENTAL_REQUEST_RESPONDED",
 ]);
 
 // Messaging enums

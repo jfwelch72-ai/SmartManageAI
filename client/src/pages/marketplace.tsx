@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
+import EquipmentRentalMarketplacePage from "./equipment-rental-marketplace";
 
 const TRADE_OPTIONS = [
   "GENERAL_CONTRACTOR",
@@ -662,11 +663,9 @@ export default function MarketplacePage() {
           </TabsTrigger>
           <TabsTrigger value="crew" data-testid="tab-crew-marketplace">
             Crew Marketplace
-            <Badge variant="secondary" className="ml-2 text-xs">Coming Soon</Badge>
           </TabsTrigger>
           <TabsTrigger value="equipment" data-testid="tab-equipment-rentals">
             Equipment Rentals
-            <Badge variant="secondary" className="ml-2 text-xs">Coming Soon</Badge>
           </TabsTrigger>
         </TabsList>
 
@@ -688,16 +687,7 @@ export default function MarketplacePage() {
         </TabsContent>
 
         <TabsContent value="equipment" className="mt-6">
-          <Card>
-            <CardContent className="py-16 text-center">
-              <Truck className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold">Equipment Rentals</h3>
-              <p className="text-muted-foreground mt-2 max-w-md mx-auto">
-                Find and rent construction equipment from trusted providers. This section is coming soon.
-              </p>
-              <Badge variant="secondary" className="mt-4">Coming Soon</Badge>
-            </CardContent>
-          </Card>
+          <EquipmentRentalMarketplacePage />
         </TabsContent>
       </Tabs>
     </div>
