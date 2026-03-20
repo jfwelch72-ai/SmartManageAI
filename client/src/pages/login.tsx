@@ -280,6 +280,18 @@ export default function LoginPage() {
           </CardContent>
         </Card>
       )}
+
+      {isDev && (
+        <Button
+          variant="outline"
+          className="w-full max-w-md gap-2 text-muted-foreground"
+          onClick={() => setLocation("/")}
+          data-testid="button-view-landing-page"
+        >
+          <Compass className="h-4 w-4" />
+          Preview Landing Page (Public View)
+        </Button>
+      )}
     </div>
   );
 }
