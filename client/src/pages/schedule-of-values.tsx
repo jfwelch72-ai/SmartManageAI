@@ -62,7 +62,7 @@ export default function ScheduleOfValuesPage() {
   const [selectedSOV, setSelectedSOV] = useState<SOV | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const deepLinkProjectId = typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search).get("project") ?? ""
+    ? new URLSearchParams(window.location.search).get("projectId") ?? ""
     : "";
   const [createForm, setCreateForm] = useState({ projectId: deepLinkProjectId, title: "", description: "" });
   const didAutoOpen = useRef(false);

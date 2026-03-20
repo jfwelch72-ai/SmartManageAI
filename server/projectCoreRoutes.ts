@@ -1232,6 +1232,8 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
   try {
     const project = await db.query.projects.findFirst({ where: eq(projects.code, req.params.code) });
     if (!project) return res.status(404).json({ error: "Project not found" });
+    const { verifyOrgAccess } = await import("./orgFilter");
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
     const { punchListItems } = await import("@shared/schema");
     const { count } = await import("drizzle-orm");

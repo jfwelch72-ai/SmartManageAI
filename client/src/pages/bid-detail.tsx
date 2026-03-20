@@ -10,6 +10,7 @@ import {
   Users,
   Calculator,
   Upload,
+  Send,
 } from "lucide-react";
 import {
   Select,
@@ -18,6 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditBids, canGenerateBidPDFs } from "@/lib/rbac";
@@ -143,6 +147,8 @@ export default function BidDetailPage() {
   const [selectedProjectManagerId, setSelectedProjectManagerId] =
     useState<string>("");
   const [startInPlanning, setStartInPlanning] = useState(false);
+  const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [submitRecipientEmail, setSubmitRecipientEmail] = useState("");
   const [showEquipmentDialog, setShowEquipmentDialog] = useState(false);
   const [editingEquipmentSelection, setEditingEquipmentSelection] =
     useState<BidEquipmentSelection | null>(null);
@@ -543,8 +549,8 @@ export default function BidDetailPage() {
   };
 
   const submitBidMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/bids/${bidCode}/submit`, {});
+    mutationFn: async (recipientEmail: string) => {
+      const res = await apiRequest("POST", `/api/bids/${bidCode}/submit`, { recipientEmail: recipientEmail || undefined });
       return res.json();
     },
     onSuccess: (data) => {
@@ -552,9 +558,10 @@ export default function BidDetailPage() {
         title: "Bid Submitted",
         description: data.emailSent
           ? "Customer quote sent to client successfully."
-          : "Bid marked as submitted (no email address on file).",
+          : "Bid marked as submitted (no email address provided).",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
+      setShowSubmitDialog(false);
     },
     onError: (error: any) => {
       toast({
@@ -771,6 +778,12 @@ export default function BidDetailPage() {
               <Badge variant="outline" className="font-mono">
                 {bid.code}
               </Badge>
+              {(bid as any).submittedAt && (
+                <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 text-xs">
+                  <Send className="w-3 h-3 mr-1" />
+                  Submitted {format(new Date((bid as any).submittedAt), "MMM d, yyyy")}
+                </Badge>
+              )}
               {canEdit ? (
                 <Select
                   value={bid.status}
@@ -1006,7 +1019,10 @@ export default function BidDetailPage() {
                 onNavigateEstimate={() =>
                   setLocation(`/bids/${bidCode}/estimate`)
                 }
-                onSubmitBid={() => submitBidMutation.mutate()}
+                onSubmitBid={() => {
+                  setSubmitRecipientEmail(bid?.clientContactEmail || "");
+                  setShowSubmitDialog(true);
+                }}
                 isSubmittingBid={submitBidMutation.isPending}
               />
             )}
@@ -1101,6 +1117,53 @@ export default function BidDetailPage() {
         onConfirmAward={handleConfirmAward}
         isPending={convertBid.isPending}
       />
+
+      <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-blue-600" />
+              Submit Bid to Client
+            </DialogTitle>
+            <DialogDescription>
+              The customer quote PDF will be attached and sent to the email address below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="recipient-email">Recipient Email</Label>
+              <Input
+                id="recipient-email"
+                type="email"
+                placeholder="client@example.com"
+                value={submitRecipientEmail}
+                onChange={(e) => setSubmitRecipientEmail(e.target.value)}
+                data-testid="input-submit-recipient-email"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave blank to mark as submitted without sending an email.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowSubmitDialog(false)}
+              data-testid="button-cancel-submit"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => submitBidMutation.mutate(submitRecipientEmail)}
+              disabled={submitBidMutation.isPending}
+              data-testid="button-confirm-submit"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              {submitBidMutation.isPending ? "Sending..." : "Send to Client"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

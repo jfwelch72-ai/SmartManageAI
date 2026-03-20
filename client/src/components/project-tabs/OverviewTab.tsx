@@ -503,7 +503,7 @@ export default function OverviewTab({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setLocation(`/schedule-of-values?project=${project.id}`)}
+              onClick={() => setLocation(`/schedule-of-values?projectId=${project.id}`)}
               data-testid="button-manage-sov"
             >
               <FileSpreadsheet className="w-4 h-4 mr-2" />

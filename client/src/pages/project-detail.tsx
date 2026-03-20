@@ -896,7 +896,7 @@ export default function ProjectDetailPage() {
             </Button>
             <Button
               onClick={() => updateStatusMutation.mutate("COMPLETE")}
-              disabled={updateStatusMutation.isPending}
+              disabled={updateStatusMutation.isPending || !closeoutReadiness}
               data-testid="button-confirm-complete"
             >
               <CheckCircle2 className="w-4 h-4 mr-2" />
