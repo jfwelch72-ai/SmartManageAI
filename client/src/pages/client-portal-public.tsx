@@ -4,11 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Building2, Image, ClipboardList, CalendarDays, Lock, MessageSquare } from "lucide-react";
+import { Loader2, Building2, Image, ClipboardList, CalendarDays, Lock, MessageSquare, FileText, FilePenLine, Receipt } from "lucide-react";
 import { PortalLoginForm } from "@/components/client-portal/PortalLoginForm";
 import { PortalProgressTab } from "@/components/client-portal/PortalProgressTab";
 import { PortalPhotosTab } from "@/components/client-portal/PortalPhotosTab";
 import { PortalScheduleTab } from "@/components/client-portal/PortalScheduleTab";
+import { PortalDocumentsTab } from "@/components/client-portal/PortalDocumentsTab";
+import { PortalChangeOrdersTab } from "@/components/client-portal/PortalChangeOrdersTab";
+import { PortalPaymentsTab } from "@/components/client-portal/PortalPaymentsTab";
 import { PortalProjectInfo } from "@/components/client-portal/PortalProjectInfo";
 import { PortalChatTab, hasChatUnread, getChatUnreadCount } from "@/components/client-portal/PortalChatTab";
 
@@ -17,6 +20,7 @@ interface PortalPermissions {
   viewPhotos: boolean;
   viewSchedule: boolean;
   viewDocuments: boolean;
+  viewChangeOrders: boolean;
   viewInvoices: boolean;
   submitRequests: boolean;
 }
@@ -62,6 +66,39 @@ interface PortalData {
     endDate: string | null;
     status: string | null;
     progress: number | null;
+  }>;
+  documents?: Array<{
+    id: string;
+    title: string;
+    fileName: string;
+    fileUrl: string;
+    type: string;
+    mimeType: string | null;
+    fileSize: number | null;
+    uploadedAt: string;
+  }>;
+  changeOrders?: Array<{
+    id: string;
+    changeOrderNumber: string;
+    description: string;
+    amount: string;
+    status: string;
+    submittedAt: string | null;
+    approvedAt: string | null;
+    clientResponseDueDate: string | null;
+  }>;
+  payments?: Array<{
+    id: string;
+    invoiceNumber: string;
+    invoiceDate: string;
+    dueDate: string | null;
+    total: string;
+    subtotal: string;
+    taxAmount: string | null;
+    status: string;
+    sentAt: string | null;
+    paidAt: string | null;
+    pdfUrl: string | null;
   }>;
 }
 
@@ -175,7 +212,10 @@ export default function ClientPortalPublic() {
   if (permissions.viewProgress) availableTabs.push({ value: "progress", label: "Progress", icon: ClipboardList });
   if (permissions.viewPhotos) availableTabs.push({ value: "photos", label: "Photos", icon: Image });
   if (permissions.viewSchedule) availableTabs.push({ value: "schedule", label: "Schedule", icon: CalendarDays });
-  availableTabs.push({ value: "chat", label: "Chat", icon: MessageSquare });
+  if (permissions.viewDocuments) availableTabs.push({ value: "documents", label: "Documents", icon: FileText });
+  if (permissions.viewChangeOrders) availableTabs.push({ value: "change-orders", label: "Change Orders", icon: FilePenLine });
+  if (permissions.viewInvoices) availableTabs.push({ value: "payments", label: "Payments", icon: Receipt });
+  availableTabs.push({ value: "chat", label: "Messages", icon: MessageSquare });
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -210,7 +250,7 @@ export default function ClientPortalPublic() {
 
         {availableTabs.length > 0 ? (
           <Tabs defaultValue={availableTabs[0]?.value} className="space-y-4">
-            <TabsList>
+            <TabsList className="flex-wrap h-auto gap-1">
               {availableTabs.map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -242,6 +282,24 @@ export default function ClientPortalPublic() {
             {permissions.viewSchedule && (
               <TabsContent value="schedule">
                 <PortalScheduleTab schedule={portalData?.schedule} />
+              </TabsContent>
+            )}
+
+            {permissions.viewDocuments && (
+              <TabsContent value="documents">
+                <PortalDocumentsTab documents={portalData?.documents} />
+              </TabsContent>
+            )}
+
+            {permissions.viewChangeOrders && (
+              <TabsContent value="change-orders">
+                <PortalChangeOrdersTab changeOrders={portalData?.changeOrders} />
+              </TabsContent>
+            )}
+
+            {permissions.viewInvoices && (
+              <TabsContent value="payments">
+                <PortalPaymentsTab payments={portalData?.payments} />
               </TabsContent>
             )}
 

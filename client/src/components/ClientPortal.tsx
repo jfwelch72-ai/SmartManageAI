@@ -47,6 +47,7 @@ interface PortalAccess {
     viewPhotos: boolean;
     viewSchedule: boolean;
     viewDocuments: boolean;
+    viewChangeOrders: boolean;
     viewInvoices: boolean;
     submitRequests: boolean;
   };
@@ -76,6 +77,7 @@ export default function ClientPortal({ projectId, projectName }: ClientPortalPro
     viewPhotos: true,
     viewSchedule: true,
     viewDocuments: false,
+    viewChangeOrders: false,
     viewInvoices: false,
     submitRequests: false,
   });
@@ -285,7 +287,8 @@ export default function ClientPortal({ projectId, projectName }: ClientPortalPro
                         { key: "viewPhotos", label: "View Photos & Media" },
                         { key: "viewSchedule", label: "View Schedule" },
                         { key: "viewDocuments", label: "View Documents" },
-                        { key: "viewInvoices", label: "View Invoices" },
+                        { key: "viewChangeOrders", label: "View Change Orders" },
+                        { key: "viewInvoices", label: "View Invoices & Payments" },
                         { key: "submitRequests", label: "Submit Requests" },
                       ].map(perm => (
                         <div key={perm.key} className="flex items-center justify-between">
@@ -509,7 +512,8 @@ export default function ClientPortal({ projectId, projectName }: ClientPortalPro
                     { key: "viewPhotos", label: "View Photos & Media" },
                     { key: "viewSchedule", label: "View Schedule" },
                     { key: "viewDocuments", label: "View Documents" },
-                    { key: "viewInvoices", label: "View Invoices" },
+                    { key: "viewChangeOrders", label: "View Change Orders" },
+                    { key: "viewInvoices", label: "View Invoices & Payments" },
                     { key: "submitRequests", label: "Submit Requests" },
                   ].map(perm => (
                     <div key={perm.key} className="flex items-center justify-between">
@@ -518,7 +522,7 @@ export default function ClientPortal({ projectId, projectName }: ClientPortalPro
                       </Label>
                       <Switch
                         id={`edit-${perm.key}`}
-                        checked={editingAccess.permissions[perm.key as keyof typeof editingAccess.permissions]}
+                        checked={!!editingAccess.permissions[perm.key as keyof typeof editingAccess.permissions]}
                         onCheckedChange={(checked) => {
                           const newPermissions = { 
                             ...editingAccess.permissions, 

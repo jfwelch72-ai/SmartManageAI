@@ -9,8 +9,11 @@ import {
   media,
   projectSchedules,
   projectScheduleTasks,
+  planDocuments,
+  changeOrders,
+  tmInvoices,
 } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray, ne } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { z } from "zod";
 import crypto from "crypto";
@@ -141,6 +144,7 @@ router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAG
         viewPhotos: true,
         viewSchedule: true,
         viewDocuments: false,
+        viewChangeOrders: false,
         viewInvoices: false,
         submitRequests: false,
       };
@@ -241,6 +245,7 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
           viewPhotos: true,
           viewSchedule: true,
           viewDocuments: false,
+          viewChangeOrders: false,
           viewInvoices: false,
           submitRequests: false,
         });
@@ -300,7 +305,8 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
     if (parsedPermissions.viewPhotos) permissionsList.push("Photos & Media");
     if (parsedPermissions.viewSchedule) permissionsList.push("Schedule");
     if (parsedPermissions.viewDocuments) permissionsList.push("Documents");
-    if (parsedPermissions.viewInvoices) permissionsList.push("Invoices");
+    if (parsedPermissions.viewChangeOrders) permissionsList.push("Change Orders");
+    if (parsedPermissions.viewInvoices) permissionsList.push("Invoices & Payments");
     if (parsedPermissions.submitRequests) permissionsList.push("Submit Requests");
 
     const permissionsHtml = permissionsList.length > 0
@@ -499,12 +505,13 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
       viewPhotos: true,
       viewSchedule: true,
       viewDocuments: false,
+      viewChangeOrders: false,
       viewInvoices: false,
       submitRequests: false,
     };
     try {
       if (access.access.permissionsJson) {
-        permissions = JSON.parse(access.access.permissionsJson);
+        permissions = { ...permissions, ...JSON.parse(access.access.permissionsJson) };
       }
     } catch {}
 
@@ -558,12 +565,13 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
       viewPhotos: true,
       viewSchedule: true,
       viewDocuments: false,
+      viewChangeOrders: false,
       viewInvoices: false,
       submitRequests: false,
     };
     try {
       if (access.permissionsJson) {
-        permissions = JSON.parse(access.permissionsJson);
+        permissions = { ...permissions, ...JSON.parse(access.permissionsJson) };
       }
     } catch {}
 
@@ -646,6 +654,79 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
           progress: t.percentComplete,
         }));
       }
+    }
+
+    if (permissions.viewDocuments) {
+      const docs = await db
+        .select()
+        .from(planDocuments)
+        .where(eq(planDocuments.projectId, projectId))
+        .orderBy(desc(planDocuments.uploadedAt))
+        .limit(100);
+
+      result.documents = docs.map((d) => ({
+        id: d.id,
+        title: d.title,
+        fileName: d.fileName,
+        fileUrl: d.fileUrl,
+        type: d.type,
+        mimeType: d.mimeType,
+        fileSize: d.fileSize,
+        uploadedAt: d.uploadedAt,
+      }));
+    }
+
+    if (permissions.viewChangeOrders) {
+      const cos = await db
+        .select()
+        .from(changeOrders)
+        .where(
+          and(
+            eq(changeOrders.projectId, projectId),
+            inArray(changeOrders.status, ["PENDING_APPROVAL", "APPROVED", "REJECTED", "VOIDED"])
+          )
+        )
+        .orderBy(desc(changeOrders.createdAt))
+        .limit(100);
+
+      result.changeOrders = cos.map((co) => ({
+        id: co.id,
+        changeOrderNumber: co.changeOrderNumber,
+        description: co.description,
+        amount: co.amount,
+        status: co.status,
+        submittedAt: co.submittedAt,
+        approvedAt: co.approvedAt,
+        clientResponseDueDate: co.clientResponseDueDate,
+      }));
+    }
+
+    if (permissions.viewInvoices) {
+      const invoices = await db
+        .select()
+        .from(tmInvoices)
+        .where(
+          and(
+            eq(tmInvoices.projectId, projectId),
+            ne(tmInvoices.status, "DRAFT")
+          )
+        )
+        .orderBy(desc(tmInvoices.invoiceDate))
+        .limit(100);
+
+      result.payments = invoices.map((inv) => ({
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        invoiceDate: inv.invoiceDate,
+        dueDate: inv.dueDate,
+        total: inv.total,
+        subtotal: inv.subtotal,
+        taxAmount: inv.taxAmount,
+        status: inv.status,
+        sentAt: inv.sentAt,
+        paidAt: inv.paidAt,
+        pdfUrl: inv.pdfUrl,
+      }));
     }
 
     res.json(result);
