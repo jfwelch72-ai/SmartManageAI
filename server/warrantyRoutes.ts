@@ -76,12 +76,9 @@ async function generateCaseNumber(projectCode: string): Promise<string> {
 }
 
 // Explicit source→target transition matrix for warranty cases
-// OPEN → ACKNOWLEDGED (management+)
-// ACKNOWLEDGED → IN_REPAIR (management+)
-// IN_REPAIR → REPAIRED (worker+)
-// REPAIRED → CLOSED (close_roles)
-// * → REJECTED from any non-terminal state (close_roles)
-// REJECTED, CLOSED are terminal
+// Linear lifecycle: OPEN → ACKNOWLEDGED → IN_REPAIR → REPAIRED → CLOSED
+// REJECTED is a terminal state reachable from any non-terminal state (close_roles only)
+// No backward transitions — forward-only to maintain auditability
 const ALLOWED_TRANSITIONS: Record<string, { targets: string[]; roles: UserRole[] }[]> = {
   OPEN: [
     { targets: ["ACKNOWLEDGED"], roles: MANAGEMENT_ROLES },
@@ -89,17 +86,14 @@ const ALLOWED_TRANSITIONS: Record<string, { targets: string[]; roles: UserRole[]
   ],
   ACKNOWLEDGED: [
     { targets: ["IN_REPAIR"], roles: MANAGEMENT_ROLES },
-    { targets: ["OPEN"], roles: MANAGEMENT_ROLES },
     { targets: ["REJECTED"], roles: CLOSE_ROLES },
   ],
   IN_REPAIR: [
     { targets: ["REPAIRED"], roles: WORKER_ROLES },
-    { targets: ["ACKNOWLEDGED"], roles: MANAGEMENT_ROLES },
     { targets: ["REJECTED"], roles: CLOSE_ROLES },
   ],
   REPAIRED: [
     { targets: ["CLOSED"], roles: CLOSE_ROLES },
-    { targets: ["IN_REPAIR"], roles: MANAGEMENT_ROLES },
     { targets: ["REJECTED"], roles: CLOSE_ROLES },
   ],
 };
@@ -373,11 +367,23 @@ router.delete(
   },
 );
 
+// Helper: resolve case AND enforce project code ownership
+async function resolveCaseForProject(caseId: string, code: string, req: AuthRequest, res: Response) {
+  const wc = await resolveCase(caseId, req, res);
+  if (!wc) return null;
+  const project = await getProjectByCode(code);
+  if (!project || project.id !== wc.projectId) {
+    res.status(404).json({ error: "Warranty case not found in this project" });
+    return null;
+  }
+  return wc;
+}
+
 // ─── LIST TASKS FOR CASE ──────────────────────────────────────────────────────
 
 router.get("/projects/:code/warranty/cases/:id/tasks", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const wc = await resolveCase(req.params.id, req, res);
+    const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
     if (!wc) return;
 
     const tasks = await db
@@ -401,7 +407,7 @@ router.post(
   requireRole(...MANAGEMENT_ROLES),
   async (req: AuthRequest, res: Response) => {
     try {
-      const wc = await resolveCase(req.params.id, req, res);
+      const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
       if (!wc) return;
 
       const userId = req.user!.id;
@@ -439,8 +445,8 @@ router.patch("/projects/:code/warranty/tasks/:taskId", requireAuth, async (req: 
     const [task] = await db.select().from(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId)).limit(1);
     if (!task) return res.status(404).json({ error: "Warranty task not found" });
 
-    // Verify org access via case → project
-    const wc = await resolveCase(task.caseId, req, res);
+    // Verify org access via case → project AND project-code ownership
+    const wc = await resolveCaseForProject(task.caseId, req.params.code, req, res);
     if (!wc) return;
 
     const update: Partial<WarrantyTask> & { updatedAt: Date } = { updatedAt: new Date() };
@@ -484,7 +490,7 @@ router.delete(
       const [task] = await db.select().from(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId)).limit(1);
       if (!task) return res.status(404).json({ error: "Warranty task not found" });
 
-      const wc = await resolveCase(task.caseId, req, res);
+      const wc = await resolveCaseForProject(task.caseId, req.params.code, req, res);
       if (!wc) return;
 
       await db.delete(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId));
@@ -503,7 +509,7 @@ router.post(
   requireAuth,
   async (req: AuthRequest, res: Response) => {
     try {
-      const wc = await resolveCase(req.params.id, req, res);
+      const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
       if (!wc) return;
 
       const { url, filename, mimeType, title, documentType, fileSize } = req.body;
@@ -543,7 +549,7 @@ router.delete(
   requireRole(...MANAGEMENT_ROLES),
   async (req: AuthRequest, res: Response) => {
     try {
-      const wc = await resolveCase(req.params.id, req, res);
+      const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
       if (!wc) return;
 
       const [doc] = await db.select().from(warrantyDocuments).where(eq(warrantyDocuments.id, req.params.docId)).limit(1);
@@ -562,7 +568,7 @@ router.delete(
 
 router.get("/projects/:code/warranty/cases/:id/documents", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const wc = await resolveCase(req.params.id, req, res);
+    const wc = await resolveCaseForProject(req.params.id, req.params.code, req, res);
     if (!wc) return;
 
     const docs = await db

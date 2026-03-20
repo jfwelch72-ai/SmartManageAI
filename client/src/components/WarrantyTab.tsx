@@ -174,7 +174,8 @@ function canClose(role: string) { return CLOSE_ROLES.includes(role); }
 function fmtDate(d?: string | null) { if (!d) return "—"; return format(new Date(d), "MMM d, yyyy"); }
 function fmtType(t: string) { return t.replace(/_/g, " "); }
 
-// Allowed next-status options for the current role
+// Allowed next-status options for the current role — linear forward-only lifecycle
+// OPEN → ACKNOWLEDGED → IN_REPAIR → REPAIRED → CLOSED; REJECTED terminal from any
 function allowedTransitions(status: CaseStatus, role: string): CaseStatus[] {
   if (status === "REJECTED" || status === "CLOSED") return [];
   const transitions: Record<string, { targets: CaseStatus[]; roleCheck: (r: string) => boolean }[]> = {
@@ -183,16 +184,15 @@ function allowedTransitions(status: CaseStatus, role: string): CaseStatus[] {
       { targets: ["REJECTED"], roleCheck: canClose },
     ],
     ACKNOWLEDGED: [
-      { targets: ["IN_REPAIR", "OPEN"], roleCheck: canManage },
+      { targets: ["IN_REPAIR"], roleCheck: canManage },
       { targets: ["REJECTED"], roleCheck: canClose },
     ],
     IN_REPAIR: [
       { targets: ["REPAIRED"], roleCheck: (r) => MANAGEMENT_ROLES.includes(r) || r === "HOURLY_EMPLOYEE" },
-      { targets: ["ACKNOWLEDGED"], roleCheck: canManage },
       { targets: ["REJECTED"], roleCheck: canClose },
     ],
     REPAIRED: [
-      { targets: ["CLOSED", "IN_REPAIR"], roleCheck: canClose },
+      { targets: ["CLOSED"], roleCheck: canClose },
       { targets: ["REJECTED"], roleCheck: canClose },
     ],
   };
@@ -226,18 +226,18 @@ function EmptyState({ onAdd, canAdd }: { onAdd: () => void; canAdd: boolean }) {
 // ─── Stats Bar ────────────────────────────────────────────────────────────────
 
 function StatsBar({ cases }: { cases: WarrantyCase[] }) {
+  const total = cases.length;
   const open = cases.filter((c) => c.status === "OPEN").length;
-  const inRepair = cases.filter((c) => c.status === "IN_REPAIR" || c.status === "ACKNOWLEDGED").length;
-  const repaired = cases.filter((c) => c.status === "REPAIRED").length;
+  const inRepair = cases.filter((c) => c.status === "ACKNOWLEDGED" || c.status === "IN_REPAIR").length;
   const closed = cases.filter((c) => c.status === "CLOSED").length;
-  const critical = cases.filter((c) => c.priority === "CRITICAL").length;
+  const rejected = cases.filter((c) => c.status === "REJECTED").length;
 
   const stats = [
+    { label: "Total", value: total, color: "text-foreground" },
     { label: "Open", value: open, color: "text-blue-600 dark:text-blue-400" },
-    { label: "In Progress", value: inRepair, color: "text-yellow-600 dark:text-yellow-400" },
-    { label: "Repaired", value: repaired, color: "text-emerald-600 dark:text-emerald-400" },
+    { label: "In Repair", value: inRepair, color: "text-yellow-600 dark:text-yellow-400" },
     { label: "Closed", value: closed, color: "text-green-600 dark:text-green-400" },
-    { label: "Critical", value: critical, color: "text-red-600 dark:text-red-400" },
+    { label: "Rejected", value: rejected, color: "text-red-600 dark:text-red-400" },
   ];
 
   return (
@@ -573,13 +573,19 @@ function CaseDetailDialog({
     setEditMode(true);
   }
 
-  function handleDocUploaded(url: string, filename: string, mimeType: string) {
-    apiRequest("POST", `/api/projects/${projectCode}/warranty/cases/${wc.id}/documents`, {
-      url, filename, mimeType, documentType: pendingDocType, title: filename,
-    }).then(() => {
-      qc.invalidateQueries({ queryKey: docsKey });
-      toast({ title: "Document uploaded" });
-    }).catch(() => toast({ title: "Error", description: "Failed to save document", variant: "destructive" }));
+  function handleDocUploadComplete(result: import("@uppy/core").UploadResult<Record<string, unknown>, Record<string, unknown>>) {
+    const successful = result.successful ?? [];
+    for (const f of successful) {
+      const url = f.uploadURL ?? "";
+      const filename = f.name ?? "attachment";
+      const mimeType = f.type ?? "application/octet-stream";
+      apiRequest("POST", `/api/projects/${projectCode}/warranty/cases/${wc.id}/documents`, {
+        url, filename, mimeType, documentType: pendingDocType, title: filename,
+      }).then(() => {
+        qc.invalidateQueries({ queryKey: docsKey });
+        toast({ title: "Document uploaded" });
+      }).catch(() => toast({ title: "Error", description: "Failed to save document", variant: "destructive" }));
+    }
   }
 
   return (
@@ -843,7 +849,17 @@ function CaseDetailDialog({
                   <SelectContent>{DOC_TYPE_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <ObjectUploader onUploaded={handleDocUploaded} label="Attach Document / Photo" />
+              <ObjectUploader
+                fileType="DOCUMENT"
+                maxNumberOfFiles={5}
+                onComplete={handleDocUploadComplete}
+                testId="uploader-warranty-doc"
+              >
+                <Button variant="outline" size="sm" data-testid="button-add-warranty-doc">
+                  <Paperclip className="w-4 h-4 mr-1.5" />
+                  Attach Document / Photo
+                </Button>
+              </ObjectUploader>
             </div>
           </div>
         )}
