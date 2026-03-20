@@ -1243,7 +1243,7 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
       .from(punchListItems)
       .where(and(
         eq(punchListItems.projectId, project.id),
-        sql`${punchListItems.status} NOT IN ('VERIFIED', 'CLOSED')`
+        sql`${punchListItems.status} NOT IN ('VERIFIED', 'REJECTED')`
       ));
 
     const pendingChangeOrders = await db
@@ -1262,10 +1262,20 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
         sql`${tmTickets.status} = 'SUBMITTED'`
       ));
 
+    const { scheduleOfValues: sovTable } = await import("@shared/schema");
+    const pendingPayApps = await db
+      .select({ cnt: count() })
+      .from(sovTable)
+      .where(and(
+        eq(sovTable.projectId, project.id),
+        sql`${sovTable.status} = 'SUBMITTED'`
+      ));
+
     res.json({
       openPunchListItems: Number(openPunchListItems[0]?.cnt ?? 0),
       pendingChangeOrders: Number(pendingChangeOrders[0]?.cnt ?? 0),
       submittedTmTickets: Number(submittedTmTickets[0]?.cnt ?? 0),
+      pendingPayApplications: Number(pendingPayApps[0]?.cnt ?? 0),
     });
   } catch (error) {
     console.error("Closeout readiness error:", error);

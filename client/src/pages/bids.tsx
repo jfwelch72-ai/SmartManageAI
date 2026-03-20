@@ -144,6 +144,9 @@ export default function BidsPage() {
     useState<string>("");
   const [selectedProjectManagerId, setSelectedProjectManagerId] =
     useState<string>("");
+  const [awardOverheadPercent, setAwardOverheadPercent] = useState<string>("10");
+  const [awardProfitPercent, setAwardProfitPercent] = useState<string>("15");
+  const [awardStartStatus, setAwardStartStatus] = useState<"ACTIVE" | "PLANNING">("ACTIVE");
 
   const { data: bidsData = [], isLoading } = useBids();
 
@@ -374,6 +377,9 @@ export default function BidsPage() {
         code: bidCode,
         superintendentId: selectedSuperintendentId || undefined,
         projectManagerId: selectedProjectManagerId || undefined,
+        overheadPercent: parseFloat(awardOverheadPercent) || 10,
+        profitPercent: parseFloat(awardProfitPercent) || 15,
+        startStatus: awardStartStatus,
       });
       toast({
         title: "Bid Awarded!",
@@ -776,6 +782,54 @@ export default function BidsPage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="border-t pt-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Contract Math</p>
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="space-y-1">
+                  <Label htmlFor="award-overhead">Overhead %</Label>
+                  <Input
+                    id="award-overhead"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={awardOverheadPercent}
+                    onChange={(e) => setAwardOverheadPercent(e.target.value)}
+                    data-testid="input-award-overhead"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="award-profit">Profit Margin %</Label>
+                  <Input
+                    id="award-profit"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={awardProfitPercent}
+                    onChange={(e) => setAwardProfitPercent(e.target.value)}
+                    data-testid="input-award-profit"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mb-3">Applied when no bid amount exists; otherwise the bid amount is used as contract value.</p>
+              <div className="space-y-2">
+                <Label htmlFor="award-start-status">Start Project As</Label>
+                <Select
+                  value={awardStartStatus}
+                  onValueChange={(val) => setAwardStartStatus(val as "ACTIVE" | "PLANNING")}
+                >
+                  <SelectTrigger id="award-start-status" data-testid="select-award-start-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ACTIVE">Active — field work can begin immediately</SelectItem>
+                    <SelectItem value="PLANNING">Planning — pre-construction setup phase</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 

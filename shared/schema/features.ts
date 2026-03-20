@@ -2900,6 +2900,9 @@ export const sovLineItems = pgTable("sov_line_items", {
   // Reference to estimate line item (if applicable)
   estimateLineItemId: varchar("estimate_line_item_id").references(() => estimateLineItems.id, { onDelete: "set null" }),
   
+  // Reference to change order (when line item was added from an approved CO)
+  linkedChangeOrderId: varchar("linked_change_order_id").references(() => changeOrders.id, { onDelete: "set null" }),
+  
   // Unified SOW Tracking - links to organization's master SOW library for billing analytics across projects
   organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
   

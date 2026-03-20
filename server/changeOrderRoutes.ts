@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, tmTickets, rfis } from "@shared/schema";
+import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, tmTickets, rfis, scheduleOfValues, sovLineItems } from "@shared/schema";
 import { eq, and, desc, sql, max } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -1758,6 +1758,96 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
     res.status(204).send();
   } catch (error: any) {
     console.error("Delete change order file error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Add approved CO as a new SOV line item on the project's latest DRAFT SOV
+router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const [co] = await db.select().from(changeOrders).where(eq(changeOrders.id, req.params.id)).limit(1);
+    if (!co) return res.status(404).json({ error: "Change order not found" });
+    if (co.status !== "APPROVED") return res.status(400).json({ error: "Only approved change orders can be added to the SOV" });
+
+    // Check if this CO is already linked to an SOV line item
+    const existing = await db.select({ id: sovLineItems.id })
+      .from(sovLineItems)
+      .where(eq(sovLineItems.linkedChangeOrderId, co.id))
+      .limit(1);
+    if (existing.length > 0) return res.status(409).json({ error: "This change order is already linked to an SOV line item" });
+
+    // Find the project's latest DRAFT SOV; if none exists, create one
+    const [latestSov] = await db.select()
+      .from(scheduleOfValues)
+      .where(and(eq(scheduleOfValues.projectId, co.projectId), eq(scheduleOfValues.status, "DRAFT")))
+      .orderBy(desc(scheduleOfValues.createdAt))
+      .limit(1);
+
+    let targetSovId: string;
+
+    if (latestSov) {
+      targetSovId = latestSov.id;
+    } else {
+      // No DRAFT SOV exists — create a minimal one
+      const [project] = await db.select().from(projects).where(eq(projects.id, co.projectId)).limit(1);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const sovCount = await db.select({ cnt: sql<number>`count(*)` })
+        .from(scheduleOfValues)
+        .where(eq(scheduleOfValues.projectId, co.projectId));
+      const nextNum = (Number(sovCount[0]?.cnt || 0) + 1).toString().padStart(3, "0");
+
+      const [newSov] = await db.insert(scheduleOfValues).values({
+        organizationId: project.gcOrganizationId,
+        projectId: co.projectId,
+        sovNumber: `SOV-${project.code}-${nextNum}`,
+        title: `${project.name} — Schedule of Values`,
+        contractValue: project.contractAmount || "0",
+        createdById: req.user?.id || null,
+      }).returning();
+      targetSovId = newSov.id;
+    }
+
+    // Determine next line number
+    const lineNums = await db.select({ ln: sovLineItems.lineNumber })
+      .from(sovLineItems)
+      .where(eq(sovLineItems.sovId, targetSovId))
+      .orderBy(desc(sovLineItems.lineNumber))
+      .limit(1);
+    const nextLineNumber = (lineNums[0]?.ln ?? 0) + 1;
+
+    const [newLineItem] = await db.insert(sovLineItems).values({
+      sovId: targetSovId,
+      lineNumber: nextLineNumber,
+      description: `CO #${co.changeOrderNumber}: ${co.description || "Change Order"}`,
+      scheduledValue: co.amount || "0",
+      linkedChangeOrderId: co.id,
+      balanceToFinish: co.amount || "0",
+    }).returning();
+
+    // Update the SOV's totalScheduledValue
+    await db.execute(sql`
+      UPDATE schedule_of_values
+      SET total_scheduled_value = (
+        SELECT COALESCE(SUM(scheduled_value::numeric), 0)
+        FROM sov_line_items
+        WHERE sov_id = ${targetSovId}
+      ),
+      updated_at = NOW()
+      WHERE id = ${targetSovId}
+    `);
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "CREATE",
+      entityType: "sovLineItem",
+      entityId: newLineItem.id,
+      newValue: JSON.stringify({ changeOrderId: co.id, sovId: targetSovId }),
+    }, req);
+
+    res.json({ success: true, sovLineItemId: newLineItem.id, sovId: targetSovId });
+  } catch (error: any) {
+    console.error("Add CO to SOV error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

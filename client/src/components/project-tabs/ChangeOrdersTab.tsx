@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban, AlertTriangle, Calendar } from "lucide-react";
+import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban, AlertTriangle, Calendar, FileText } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -41,7 +42,24 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [pendingSubmitId, setPendingSubmitId] = useState<string | null>(null);
   const [clientResponseDueDate, setClientResponseDueDate] = useState("");
+  const [addedToSovIds, setAddedToSovIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
+
+  const addToSovMutation = useMutation({
+    mutationFn: async (coId: string) => {
+      const res = await apiRequest("POST", `/api/change-orders/${coId}/add-to-sov`, {});
+      return res.json();
+    },
+    onSuccess: (_data, coId) => {
+      setAddedToSovIds((prev) => new Set([...prev, coId]));
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "sov"] });
+      toast({ title: "Added to SOV", description: "The change order has been added as a new SOV line item." });
+    },
+    onError: (error: Error) => {
+      const msg = error.message?.includes("already linked") ? "This change order is already on the SOV." : "Failed to add to SOV";
+      toast({ title: "Error", description: msg, variant: "destructive" });
+    },
+  });
 
   const createMutation = useCreateChangeOrder();
   const requestApprovalMutation = useRequestApprovalChangeOrder();
@@ -414,6 +432,20 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                             >
                               <XCircle className="w-4 h-4 mr-1" />
                               Reject
+                            </Button>
+                          </div>
+                        )}
+                        {co.status === "APPROVED" && canManage && (
+                          <div className="flex gap-2 mt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => addToSovMutation.mutate(co.id)}
+                              disabled={addToSovMutation.isPending || addedToSovIds.has(co.id)}
+                              data-testid={`button-add-to-sov-${co.id}`}
+                            >
+                              <FileText className="w-4 h-4 mr-1" />
+                              {addedToSovIds.has(co.id) ? "On SOV" : "Add to SOV"}
                             </Button>
                           </div>
                         )}
