@@ -168,7 +168,7 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
                     {canEdit && (
                       <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-sov-empty">
                         <Plus className="h-4 w-4 mr-2" />
-                        Create First SOV
+                        Create SOV
                       </Button>
                     )}
                   </CardContent>
