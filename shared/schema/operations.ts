@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -1023,6 +1023,56 @@ export const insertProjectInspectionSchema = createInsertSchema(projectInspectio
 });
 export type InsertProjectInspection = z.infer<typeof insertProjectInspectionSchema>;
 export type ProjectInspection = typeof projectInspections.$inferSelect;
+
+// Punch List Items table - tracks deficiency items during project walkthrough / closeout
+export const punchListItems = pgTable("punch_list_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  itemNumber: text("item_number").notNull(), // e.g. PLI-PROJ001-001
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"), // area/room/floor/elevation
+  trade: punchListTradeEnum("trade").notNull().default("GENERAL"),
+  priority: punchListPriorityEnum("priority").notNull().default("MEDIUM"),
+  status: punchListStatusEnum("status").notNull().default("OPEN"),
+
+  // Assignment (user from org or manual entry)
+  assignedToUserId: varchar("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),
+  assignedToName: text("assigned_to_name"),
+  assignedToEmail: text("assigned_to_email"),
+
+  dueDate: timestamp("due_date"),
+
+  // Photo / file attachments stored as JSON array [{url, filename, mimeType, uploadedAt}]
+  attachments: json("attachments").$type<Array<{ url: string; filename: string; mimeType: string; uploadedAt: string }>>().default([]),
+
+  // Optional link to a failed inspection that generated this item
+  inspectionId: varchar("inspection_id").references(() => projectInspections.id, { onDelete: "set null" }),
+
+  // Resolution timestamps
+  resolvedAt: timestamp("resolved_at"),
+  verifiedAt: timestamp("verified_at"),
+  verifiedById: varchar("verified_by_id").references(() => users.id, { onDelete: "set null" }),
+
+  // Metadata
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("punch_list_items_project_id_idx").on(table.projectId),
+  statusIdx: index("punch_list_items_status_idx").on(table.status),
+  priorityIdx: index("punch_list_items_priority_idx").on(table.priority),
+  tradeIdx: index("punch_list_items_trade_idx").on(table.trade),
+  assignedToIdx: index("punch_list_items_assigned_to_idx").on(table.assignedToUserId),
+}));
+
+export const insertPunchListItemSchema = createInsertSchema(punchListItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertPunchListItem = z.infer<typeof insertPunchListItemSchema>;
+export type PunchListItem = typeof punchListItems.$inferSelect;
 
 // Calendar Events table
 export const calendarEvents = pgTable("calendar_events", {

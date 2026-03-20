@@ -101,6 +101,15 @@ export const inspectionTypeEnum = pgEnum("inspection_type", ["CITY_OFFICIAL", "G
 export const inspectionStatusEnum = pgEnum("inspection_status", ["REQUESTED", "SCHEDULED", "PASSED", "FAILED", "CANCELLED"]);
 export const inspectionRequestMethodEnum = pgEnum("inspection_request_method", ["CALL", "EMAIL", "PORTAL", "OTHER"]);
 
+// Punch List Enums
+export const punchListTradeEnum = pgEnum("punch_list_trade", [
+  "GENERAL", "ELECTRICAL", "PLUMBING", "HVAC", "FRAMING", "DRYWALL",
+  "PAINTING", "ROOFING", "FLOORING", "CONCRETE", "MASONRY", "TILE",
+  "CARPENTRY", "INSULATION", "GLAZING", "LANDSCAPING", "OTHER"
+]);
+export const punchListPriorityEnum = pgEnum("punch_list_priority", ["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+export const punchListStatusEnum = pgEnum("punch_list_status", ["OPEN", "IN_PROGRESS", "RESOLVED", "VERIFIED", "REJECTED"]);
+
 // White-Label / Multi-Tenant Enums - Comprehensive CSI Trade Divisions
 export const tradeTypeEnum = pgEnum("trade_type", [
   // === EXISTING TRADES (23) - DO NOT REMOVE ===

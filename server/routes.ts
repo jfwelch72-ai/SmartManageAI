@@ -73,6 +73,7 @@ import payrollManagementRoutes from "./payrollManagementRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
+import punchListRoutes from "./punchListRoutes";
 import aiRoutes from "./aiRoutes";
 import aiOnboardingRoutes from "./aiOnboardingRoutes";
 import aiScopeRoutes from "./aiScopeRoutes";
@@ -229,6 +230,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register inspection scheduling routes
   app.use("/api", inspectionRoutes);
+
+  // Register punch list routes
+  app.use("/api", punchListRoutes);
 
   // Register AI PM + CFO routes
   app.use("/api", aiRoutes);
