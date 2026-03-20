@@ -1094,17 +1094,19 @@ export interface ConvertBidData {
   projectManagerId?: string;
   overheadPercent?: number;
   profitPercent?: number;
+  startStatus?: "ACTIVE" | "PLANNING";
 }
 
 export function useConvertBidToProject() {
   return useMutation({
     mutationFn: async (data: ConvertBidData) => {
-      const { code, superintendentId, projectManagerId, overheadPercent, profitPercent } = data;
+      const { code, superintendentId, projectManagerId, overheadPercent, profitPercent, startStatus } = data;
       const response = await apiRequest("POST", `/api/bids/${code}/convert`, {
         superintendentId,
         projectManagerId,
         overheadPercent,
         profitPercent,
+        startStatus,
       });
       return response.json();
     },

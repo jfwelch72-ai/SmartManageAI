@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
-import { Calendar as CalendarIcon, FileText, UserCog } from "lucide-react";
+import { Calendar as CalendarIcon, FileText, UserCog, PlayCircle, ClipboardList } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
@@ -921,8 +922,10 @@ interface AwardBidDialogProps {
   managers: UserOption[];
   selectedSuperintendentId: string;
   selectedProjectManagerId: string;
+  startInPlanning: boolean;
   onSuperintendentChange: (id: string) => void;
   onProjectManagerChange: (id: string) => void;
+  onStartInPlanningChange: (value: boolean) => void;
   onConfirmAward: () => void;
   isPending: boolean;
 }
@@ -936,8 +939,10 @@ export function AwardBidDialog({
   managers,
   selectedSuperintendentId,
   selectedProjectManagerId,
+  startInPlanning,
   onSuperintendentChange,
   onProjectManagerChange,
+  onStartInPlanningChange,
   onConfirmAward,
   isPending,
 }: AwardBidDialogProps) {
@@ -950,7 +955,7 @@ export function AwardBidDialog({
             Award Bid & Assign Team
           </DialogTitle>
           <DialogDescription>
-            Convert this bid to an active project and assign the team members who will be responsible for it.
+            Convert this bid to a project and assign the team members who will be responsible for it.
           </DialogDescription>
         </DialogHeader>
 
@@ -959,6 +964,26 @@ export function AwardBidDialog({
             <p className="text-sm font-medium">Project: {bid?.name}</p>
             <p className="text-xs text-muted-foreground">Code: {bid?.code}</p>
             <p className="text-xs text-muted-foreground mt-1">Final Bid: ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+
+          <div className="p-3 border rounded-lg space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-muted-foreground" />
+                <Label htmlFor="start-in-planning" className="font-medium cursor-pointer">Start in Planning Mode</Label>
+              </div>
+              <Switch
+                id="start-in-planning"
+                checked={startInPlanning}
+                onCheckedChange={onStartInPlanningChange}
+                data-testid="switch-start-in-planning"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {startInPlanning
+                ? "Project will start in Planning status — use this to pre-order materials and schedule crews before mobilizing."
+                : "Project will start as Active immediately upon conversion."}
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -1016,7 +1041,7 @@ export function AwardBidDialog({
             disabled={isPending}
             data-testid="button-confirm-award"
           >
-            {isPending ? "Converting..." : "Award & Convert to Project"}
+            {isPending ? "Converting..." : startInPlanning ? "Award & Start Planning" : "Award & Convert to Project"}
           </Button>
         </DialogFooter>
       </DialogContent>

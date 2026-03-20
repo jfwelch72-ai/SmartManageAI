@@ -14,6 +14,7 @@ import { logUpdate, logDelete, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
+import { sendEmail } from "./email";
 
 const router = Router();
 
@@ -582,9 +583,10 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
 
-    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit } = req.body || {};
+    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit, startStatus: bodyStartStatus } = req.body || {};
     const OVERHEAD_PERCENT = typeof bodyOverhead === "number" && bodyOverhead >= 0 ? bodyOverhead : 10;
     const PROFIT_MARGIN_PERCENT = typeof bodyProfit === "number" && bodyProfit >= 0 ? bodyProfit : 15;
+    const projectStartStatus: "ACTIVE" | "PLANNING" = bodyStartStatus === "PLANNING" ? "PLANNING" : "ACTIVE";
     
     let directCostBudget = "0";
     let contractAmount = bid.bidAmount || "0";
@@ -631,7 +633,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       clientContactName: bid.clientContactName,
       clientContactEmail: bid.clientContactEmail,
       clientContactPhone: bid.clientContactPhone,
-      status: "ACTIVE",
+      status: projectStartStatus,
       locationAddress: bid.locationAddress,
       city: bid.city,
       state: bid.state,
@@ -2038,6 +2040,87 @@ router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMI
     res.json({ success: true });
   } catch (error) {
     console.error("Delete bid document error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const bid = await db.query.bids.findFirst({ where: eq(bids.code, req.params.code) });
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+
+    const orgId = req.user!.organizationId;
+    if (bid.gcOrganizationId && bid.gcOrganizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { recipientEmail } = req.body;
+    const toEmail = recipientEmail || bid.clientContactEmail;
+
+    if (!toEmail) {
+      return res.status(400).json({ error: "No recipient email provided and no client contact email on bid" });
+    }
+
+    const finalAmount = bid.bidAmount ? `$${Number(bid.bidAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "To be determined";
+    const dueDate = bid.dueDate ? new Date(bid.dueDate).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "Not specified";
+
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #1a1a1a;">Bid Proposal: ${bid.name}</h2>
+        <p style="color: #555;">Dear ${bid.clientContactName || bid.clientName},</p>
+        <p style="color: #555;">Please find below the details of our bid proposal for your review.</p>
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <tr style="background: #f5f5f5;">
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Project</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${bid.name}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bid Reference</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-family: monospace;">${bid.code}</td>
+          </tr>
+          <tr style="background: #f5f5f5;">
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Bid Amount</td>
+            <td style="padding: 10px; border: 1px solid #ddd; font-size: 1.1em; color: #2563eb;">${finalAmount}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Due Date</td>
+            <td style="padding: 10px; border: 1px solid #ddd;">${dueDate}</td>
+          </tr>
+          ${bid.locationAddress ? `<tr style="background: #f5f5f5;"><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Location</td><td style="padding: 10px; border: 1px solid #ddd;">${[bid.locationAddress, bid.city, bid.state].filter(Boolean).join(", ")}</td></tr>` : ""}
+          ${bid.description ? `<tr><td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Description</td><td style="padding: 10px; border: 1px solid #ddd;">${bid.description}</td></tr>` : ""}
+        </table>
+        <p style="color: #555;">Please review this proposal and let us know if you have any questions or require additional information.</p>
+        <p style="color: #555;">Thank you for the opportunity to submit this bid.</p>
+      </div>
+    `;
+
+    const emailSent = await sendEmail({
+      to: toEmail,
+      subject: `Bid Proposal: ${bid.name} (Ref: ${bid.code})`,
+      html: emailHtml,
+      text: `Bid Proposal: ${bid.name}\nReference: ${bid.code}\nAmount: ${finalAmount}\nDue Date: ${dueDate}\n\nPlease review this proposal and contact us with any questions.`,
+    });
+
+    if (!emailSent) {
+      console.warn(`[Bid Submit] Email send failed for bid ${bid.code} to ${toEmail}`);
+    }
+
+    const [updatedBid] = await db.update(bids)
+      .set({ submittedAt: new Date(), updatedAt: new Date() })
+      .where(eq(bids.code, req.params.code))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "bid",
+      entityId: bid.id,
+      newValue: `Bid submitted to client at ${toEmail}`,
+    }, req);
+
+    res.json({ success: true, submittedAt: updatedBid.submittedAt, emailSent });
+  } catch (error) {
+    console.error("Bid submit error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

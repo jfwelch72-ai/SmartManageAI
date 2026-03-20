@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Calculator, Package, Truck, Users, Clock, FileText, DollarSign, Building2, Calendar, CheckCircle2 } from "lucide-react";
+import { Calculator, Package, Truck, Users, Clock, FileText, DollarSign, Building2, Calendar, CheckCircle2, Send } from "lucide-react";
 import BidDocumentDistribution from "@/components/BidDocumentDistribution";
 import JobInformationForm from "@/components/JobInformationForm";
 import { format } from "date-fns";
@@ -32,6 +32,8 @@ interface BidSummaryStepProps {
   onPrevStep: () => void;
   onAwardBid: () => void;
   onNavigateEstimate: () => void;
+  onSubmitBid?: () => void;
+  isSubmittingBid?: boolean;
 }
 
 export default function BidSummaryStep({
@@ -58,6 +60,8 @@ export default function BidSummaryStep({
   onPrevStep,
   onAwardBid,
   onNavigateEstimate,
+  onSubmitBid,
+  isSubmittingBid = false,
 }: BidSummaryStepProps) {
   return (
     <div className="space-y-6">
@@ -209,6 +213,39 @@ export default function BidSummaryStep({
               <p className="text-xs text-muted-foreground mt-2">
                 Internal summary includes all vendor quotes and detailed costs. Customer quote shows only scope of work and final pricing.
               </p>
+            </div>
+          )}
+
+          {canEdit && onSubmitBid && (
+            <div className="p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                    <Send className="w-4 h-4" />
+                    Submit Bid to Client
+                  </h4>
+                  {bid.submittedAt ? (
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                      Submitted {format(new Date(bid.submittedAt), 'PPP p')}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                      Send the customer quote PDF to {bid.clientContactEmail || bid.clientName || "the client"} via email.
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant={bid.submittedAt ? "outline" : "default"}
+                  size="sm"
+                  onClick={onSubmitBid}
+                  disabled={isSubmittingBid}
+                  className="w-full sm:w-auto shrink-0"
+                  data-testid="button-submit-bid-to-client"
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  {isSubmittingBid ? "Sending..." : bid.submittedAt ? "Resend to Client" : "Submit to Client"}
+                </Button>
+              </div>
             </div>
           )}
 

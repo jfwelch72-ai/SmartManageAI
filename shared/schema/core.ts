@@ -373,6 +373,7 @@ export const bids = pgTable("bids", {
   status: bidStatusEnum("status").notNull().default("DRAFT"),
   convertedToProjectId: varchar("converted_to_project_id"),
   awardedAt: timestamp("awarded_at"),
+  submittedAt: timestamp("submitted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

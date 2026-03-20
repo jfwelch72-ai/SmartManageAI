@@ -23,7 +23,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { canEditBids, canGenerateBidPDFs } from "@/lib/rbac";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
@@ -33,7 +33,7 @@ import type {
   EstimateLineItem,
   BidEquipmentSelection,
 } from "@shared/schema";
-import { bidEstimateKey } from "@/lib/queryClient";
+import { bidEstimateKey, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { UploadResult } from "@uppy/core";
 import { apiRequest } from "@/lib/queryClient";
@@ -142,6 +142,7 @@ export default function BidDetailPage() {
     useState<string>("");
   const [selectedProjectManagerId, setSelectedProjectManagerId] =
     useState<string>("");
+  const [startInPlanning, setStartInPlanning] = useState(false);
   const [showEquipmentDialog, setShowEquipmentDialog] = useState(false);
   const [editingEquipmentSelection, setEditingEquipmentSelection] =
     useState<BidEquipmentSelection | null>(null);
@@ -541,6 +542,29 @@ export default function BidDetailPage() {
       );
   };
 
+  const submitBidMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/bids/${bidCode}/submit`, {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Bid Submitted",
+        description: data.emailSent
+          ? "Customer quote sent to client successfully."
+          : "Bid marked as submitted (no email address on file).",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to submit bid",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleConfirmAward = async () => {
     if (!bid) return;
     try {
@@ -550,10 +574,13 @@ export default function BidDetailPage() {
         projectManagerId: selectedProjectManagerId || undefined,
         overheadPercent,
         profitPercent,
+        startStatus: startInPlanning ? "PLANNING" : "ACTIVE",
       });
       toast({
         title: "Success",
-        description: "Bid has been awarded and moved to Active Projects!",
+        description: startInPlanning
+          ? "Bid awarded — project created in Planning status."
+          : "Bid has been awarded and moved to Active Projects!",
       });
       setShowAwardDialog(false);
       setLocation("/projects");
@@ -979,6 +1006,8 @@ export default function BidDetailPage() {
                 onNavigateEstimate={() =>
                   setLocation(`/bids/${bidCode}/estimate`)
                 }
+                onSubmitBid={() => submitBidMutation.mutate()}
+                isSubmittingBid={submitBidMutation.isPending}
               />
             )}
           </div>
@@ -1065,8 +1094,10 @@ export default function BidDetailPage() {
         managers={managers}
         selectedSuperintendentId={selectedSuperintendentId}
         selectedProjectManagerId={selectedProjectManagerId}
+        startInPlanning={startInPlanning}
         onSuperintendentChange={setSelectedSuperintendentId}
         onProjectManagerChange={setSelectedProjectManagerId}
+        onStartInPlanningChange={setStartInPlanning}
         onConfirmAward={handleConfirmAward}
         isPending={convertBid.isPending}
       />

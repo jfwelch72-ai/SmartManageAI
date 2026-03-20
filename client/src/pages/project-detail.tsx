@@ -50,6 +50,9 @@ import {
   BarChart3,
   ClipboardList,
   ShieldCheck,
+  CheckCircle2,
+  XCircle,
+  ChevronDown,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -73,7 +76,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 import ChangeOrdersTab from "@/components/project-tabs/ChangeOrdersTab";
 import OverviewTab from "@/components/project-tabs/OverviewTab";
 import SubcontractorsTab from "@/components/project-tabs/SubcontractorsTab";
@@ -317,6 +323,8 @@ export default function ProjectDetailPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [, params] = useRoute("/projects/:code");
   const { user } = useAuth();
+  const { toast } = useToast();
+  const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
 
   const searchParams = new URLSearchParams(window.location.search);
   const fromCFO = searchParams.get("from") === "cfo";
@@ -363,6 +371,31 @@ export default function ProjectDetailPage() {
   ).length;
   const tabConfigs = buildTabConfigs(user?.role, submittedCOCount);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
+
+  const { data: closeoutReadiness } = useQuery<{
+    openPunchListItems: number;
+    pendingChangeOrders: number;
+    submittedTmTickets: number;
+  }>({
+    queryKey: ["/api/projects", projectCode, "closeout-readiness"],
+    enabled: !!projectCode && project?.status === "ACTIVE" && hasManagementAccess(user?.role),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async (newStatus: string) => {
+      const res = await apiRequest("PATCH", `/api/projects/${projectCode}`, { status: newStatus });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setShowCloseoutDialog(false);
+      toast({ title: "Status updated", description: "Project status has been updated." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to update status", variant: "destructive" });
+    },
+  });
 
   if (projectLoading) {
     return (
@@ -415,6 +448,45 @@ export default function ProjectDetailPage() {
                 {project.name}
               </h1>
             </div>
+            {hasManagementAccess(user?.role) && (
+              <div className="flex items-center gap-2 mt-1">
+                {project.status === "PLANNING" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateStatusMutation.mutate("ACTIVE")}
+                    disabled={updateStatusMutation.isPending}
+                    data-testid="button-activate-project"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2 text-green-600" />
+                    Activate Project
+                  </Button>
+                )}
+                {project.status === "ACTIVE" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowCloseoutDialog(true)}
+                    data-testid="button-mark-complete"
+                  >
+                    <CheckCircle2 className="w-4 h-4 mr-2 text-blue-600" />
+                    Mark Complete
+                  </Button>
+                )}
+                {project.status === "COMPLETE" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateStatusMutation.mutate("CLOSED")}
+                    disabled={updateStatusMutation.isPending}
+                    data-testid="button-close-project"
+                  >
+                    <XCircle className="w-4 h-4 mr-2 text-muted-foreground" />
+                    Close Project
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -751,6 +823,88 @@ export default function ProjectDetailPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={showCloseoutDialog} onOpenChange={setShowCloseoutDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-blue-600" />
+              Close Out Project
+            </DialogTitle>
+            <DialogDescription>
+              Review the items below before marking this project complete.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            {closeoutReadiness ? (
+              <>
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${closeoutReadiness.openPunchListItems > 0 ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : "border-green-200 bg-green-50 dark:bg-green-950/20"}`}>
+                  <div className="flex items-center gap-2">
+                    {closeoutReadiness.openPunchListItems > 0
+                      ? <XCircle className="w-4 h-4 text-amber-600" />
+                      : <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                    <span className="text-sm font-medium">Open Punch List Items</span>
+                  </div>
+                  <span className={`text-sm font-bold ${closeoutReadiness.openPunchListItems > 0 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
+                    {closeoutReadiness.openPunchListItems === 0 ? "None" : closeoutReadiness.openPunchListItems}
+                  </span>
+                </div>
+
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${closeoutReadiness.pendingChangeOrders > 0 ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : "border-green-200 bg-green-50 dark:bg-green-950/20"}`}>
+                  <div className="flex items-center gap-2">
+                    {closeoutReadiness.pendingChangeOrders > 0
+                      ? <XCircle className="w-4 h-4 text-amber-600" />
+                      : <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                    <span className="text-sm font-medium">Pending Change Orders</span>
+                  </div>
+                  <span className={`text-sm font-bold ${closeoutReadiness.pendingChangeOrders > 0 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
+                    {closeoutReadiness.pendingChangeOrders === 0 ? "None" : closeoutReadiness.pendingChangeOrders}
+                  </span>
+                </div>
+
+                <div className={`flex items-center justify-between p-3 rounded-lg border ${closeoutReadiness.submittedTmTickets > 0 ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : "border-green-200 bg-green-50 dark:bg-green-950/20"}`}>
+                  <div className="flex items-center gap-2">
+                    {closeoutReadiness.submittedTmTickets > 0
+                      ? <XCircle className="w-4 h-4 text-amber-600" />
+                      : <CheckCircle2 className="w-4 h-4 text-green-600" />}
+                    <span className="text-sm font-medium">Unapproved T&M Tickets</span>
+                  </div>
+                  <span className={`text-sm font-bold ${closeoutReadiness.submittedTmTickets > 0 ? "text-amber-700 dark:text-amber-400" : "text-green-700 dark:text-green-400"}`}>
+                    {closeoutReadiness.submittedTmTickets === 0 ? "None" : closeoutReadiness.submittedTmTickets}
+                  </span>
+                </div>
+
+                {(closeoutReadiness.openPunchListItems > 0 || closeoutReadiness.pendingChangeOrders > 0 || closeoutReadiness.submittedTmTickets > 0) && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    These items are still open. You can still mark the project complete, but it is recommended to resolve them first.
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground py-2">Checking project status...</div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCloseoutDialog(false)}
+              data-testid="button-cancel-closeout"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => updateStatusMutation.mutate("COMPLETE")}
+              disabled={updateStatusMutation.isPending}
+              data-testid="button-confirm-complete"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              {updateStatusMutation.isPending ? "Updating..." : "Mark as Complete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

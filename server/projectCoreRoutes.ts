@@ -1228,4 +1228,47 @@ router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN")
   }
 });
 
+router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const project = await db.query.projects.findFirst({ where: eq(projects.code, req.params.code) });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const { punchListItems } = await import("@shared/schema");
+    const { count } = await import("drizzle-orm");
+
+    const openPunchListItems = await db
+      .select({ cnt: count() })
+      .from(punchListItems)
+      .where(and(
+        eq(punchListItems.projectId, project.id),
+        sql`${punchListItems.status} NOT IN ('VERIFIED', 'CLOSED')`
+      ));
+
+    const pendingChangeOrders = await db
+      .select({ cnt: count() })
+      .from(changeOrders)
+      .where(and(
+        eq(changeOrders.projectId, project.id),
+        sql`${changeOrders.status} IN ('SUBMITTED', 'PENDING_APPROVAL')`
+      ));
+
+    const submittedTmTickets = await db
+      .select({ cnt: count() })
+      .from(tmTickets)
+      .where(and(
+        eq(tmTickets.projectId, project.id),
+        sql`${tmTickets.status} = 'SUBMITTED'`
+      ));
+
+    res.json({
+      openPunchListItems: Number(openPunchListItems[0]?.cnt ?? 0),
+      pendingChangeOrders: Number(pendingChangeOrders[0]?.cnt ?? 0),
+      submittedTmTickets: Number(submittedTmTickets[0]?.cnt ?? 0),
+    });
+  } catch (error) {
+    console.error("Closeout readiness error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -61,7 +61,11 @@ export default function ScheduleOfValuesPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [selectedSOV, setSelectedSOV] = useState<SOV | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
-  const [createForm, setCreateForm] = useState({ projectId: "", title: "", description: "" });
+  const deepLinkProjectId = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("project") ?? ""
+    : "";
+  const [createForm, setCreateForm] = useState({ projectId: deepLinkProjectId, title: "", description: "" });
+  const didAutoOpen = useRef(false);
 
   const { data: projects = [] } = useQuery<SovProject[]>({
     queryKey: ["/api/sov/projects"],
@@ -81,6 +85,19 @@ export default function ScheduleOfValuesPage() {
       }
     }
   }, [sovs, selectedSOV]);
+
+  useEffect(() => {
+    if (deepLinkProjectId && !didAutoOpen.current && sovs.length >= 0) {
+      const existingSOV = sovs.find(s => String(s.projectId) === deepLinkProjectId);
+      if (existingSOV) {
+        setSelectedSOV(existingSOV);
+        setShowDetailDialog(true);
+      } else {
+        setShowCreateDialog(true);
+      }
+      didAutoOpen.current = true;
+    }
+  }, [deepLinkProjectId, sovs]);
 
   const createSOVMutation = useMutation({
     mutationFn: async (data: typeof createForm) => {
