@@ -22,6 +22,7 @@ app.use(compression());
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
+  frameguard: false,
 }));
 
 // CORS Configuration - Fixed default to localhost:5173
