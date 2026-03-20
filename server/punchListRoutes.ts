@@ -274,6 +274,11 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
       const newStatus = req.body.status as PunchListItem["status"];
 
       // Determine allowed transitions per role
+      // REJECTED and VERIFIED are terminal — no further transitions allowed
+      if (item.status === "REJECTED") {
+        return res.status(409).json({ error: "REJECTED is a terminal status and cannot be changed." });
+      }
+
       const role = getUserRole(req);
       const canDoTransition = (() => {
         if (newStatus === "IN_PROGRESS" || newStatus === "RESOLVED") {
@@ -283,6 +288,8 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
           return hasRole(req, VERIFY_ROLES);
         }
         if (newStatus === "OPEN") {
+          // Only VERIFIED items can be reopened; REJECTED is terminal
+          if (item.status === "REJECTED") return false;
           return hasRole(req, VERIFY_ROLES); // reopen requires manager+
         }
         return false;

@@ -868,7 +868,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                       Reject
                     </Button>
                   )}
-                  {(selected.status === "VERIFIED" || selected.status === "REJECTED") && canVerify(userRole) && (
+                  {selected.status === "VERIFIED" && canVerify(userRole) && (
                     <Button
                       size="sm"
                       variant="outline"

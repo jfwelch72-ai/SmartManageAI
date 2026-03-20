@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardCheck, Calendar, CheckCircle, XCircle, Clock, Building, User, Mail, Phone, FileText, Download, Eye, Edit2, Loader2, Send, Ban } from "lucide-react";
+import { Plus, ClipboardCheck, Calendar, CheckCircle, XCircle, Clock, Building, User, Mail, Phone, FileText, Download, Eye, Edit2, Loader2, Send, Ban, ClipboardList } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ProjectInspection } from "@shared/schema";
@@ -242,6 +242,23 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to cancel inspection", variant: "destructive" });
+    },
+  });
+
+  const createPunchItemFromInspection = useMutation({
+    mutationFn: async ({ inspectionId, title, description }: { inspectionId: string; title: string; description: string }) => {
+      return apiRequest("POST", `/api/projects/${projectCode}/inspections/${inspectionId}/punch-list`, {
+        title,
+        description,
+        trade: "GENERAL",
+        priority: "HIGH",
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Punch list item created", description: "Item added to the project punch list." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to create punch list item", variant: "destructive" });
     },
   });
 
@@ -914,8 +931,32 @@ export function InspectionsSection({ projectId, projectCode, userRole }: Inspect
 
               {selectedInspection.punchListItems && (
                 <div>
-                  <Label className="text-muted-foreground">Punch List Items</Label>
-                  <p className="mt-1 whitespace-pre-wrap">{selectedInspection.punchListItems}</p>
+                  <Label className="text-muted-foreground">Punch List Items (from inspection)</Label>
+                  <p className="mt-1 whitespace-pre-wrap text-sm">{selectedInspection.punchListItems}</p>
+                  {selectedInspection.status === "FAILED" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2 text-orange-700 border-orange-300 hover:bg-orange-50 dark:hover:bg-orange-900/20"
+                      disabled={createPunchItemFromInspection.isPending}
+                      onClick={() => {
+                        const firstLine = selectedInspection.punchListItems
+                          ? selectedInspection.punchListItems.split("\n")[0].trim()
+                          : "Deficiency from failed inspection";
+                        createPunchItemFromInspection.mutate({
+                          inspectionId: selectedInspection.id,
+                          title: firstLine.substring(0, 200) || "Deficiency from failed inspection",
+                          description: selectedInspection.punchListItems || "",
+                        });
+                      }}
+                      data-testid="button-create-punch-from-inspection"
+                    >
+                      {createPunchItemFromInspection.isPending
+                        ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        : <ClipboardList className="h-4 w-4 mr-1.5" />}
+                      Add to Punch List
+                    </Button>
+                  )}
                 </div>
               )}
 
