@@ -393,6 +393,12 @@ export default function BidsPage() {
       setAwardBidCode(null);
       if (newProject?.code) {
         setLocation(`/projects/${newProject.code}`);
+      } else {
+        toast({
+          title: "Project created",
+          description: "Navigate to Projects to find your new project.",
+        });
+        setLocation("/projects");
       }
     } catch (error: any) {
       toast({

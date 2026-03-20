@@ -111,24 +111,26 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
   const approvedCount = sovs.filter(s => s.status === "APPROVED" || s.status === "SUBMITTED").length;
 
   const gapSov = sovs.find(s => {
+    if (s.lineItems.length === 0) return false;
     const contract = parseFloat(s.contractAmount ?? "0");
-    const scheduled = parseFloat(s.totalScheduledValue ?? "0");
-    if (scheduled <= 0 || contract <= scheduled + 0.01) return false;
-    const isUnbilled =
-      s.lineItems.length > 0 &&
-      s.lineItems.every(li => {
-        const completed = parseFloat(
-          li.totalCompletedAndStored ?? li.totalCompleted ?? "0"
-        );
-        const current = parseFloat(
-          li.thisPeriodCompleted ?? li.currentBilled ?? "0"
-        );
-        return completed === 0 && current === 0;
-      });
-    return isUnbilled;
+    const summedScheduled = s.lineItems.reduce(
+      (acc, li) => acc + parseFloat(li.scheduledValue ?? "0"),
+      0
+    );
+    if (summedScheduled <= 0 || contract <= summedScheduled + 0.01) return false;
+    return s.lineItems.every(li => {
+      const completed = parseFloat(
+        li.totalCompletedAndStored ?? li.totalCompleted ?? "0"
+      );
+      const current = parseFloat(
+        li.thisPeriodCompleted ?? li.currentBilled ?? "0"
+      );
+      return completed === 0 && current === 0;
+    });
   });
   const sovGapAmount = gapSov
-    ? parseFloat(gapSov.contractAmount ?? "0") - parseFloat(gapSov.totalScheduledValue ?? "0")
+    ? parseFloat(gapSov.contractAmount ?? "0") -
+      gapSov.lineItems.reduce((acc, li) => acc + parseFloat(li.scheduledValue ?? "0"), 0)
     : 0;
 
   return (
