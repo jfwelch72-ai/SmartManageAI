@@ -1,9 +1,8 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, CheckCircle, DollarSign, Edit, FileSpreadsheet } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, CheckCircle, DollarSign, Edit } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
@@ -81,8 +80,6 @@ export default function OverviewTab({
 }: OverviewTabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [, setLocation] = useLocation();
-
   const { data: scheduleData } = useQuery<{ schedule: { baselineStartDate: string; baselineEndDate?: string } | null; tasks: { percentComplete: number }[] }>({
     queryKey: ["/api/projects", projectCode, "schedule"],
     enabled: !!projectCode,
@@ -487,29 +484,6 @@ export default function OverviewTab({
               </div>
             )}
           </CardContent>
-        </Card>
-      )}
-
-      {FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role) && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-4">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <FileSpreadsheet className="w-5 h-5" />
-                Schedule of Values
-              </CardTitle>
-              <CardDescription>Track payment applications against the project contract</CardDescription>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setLocation(`/schedule-of-values?projectId=${project.id}`)}
-              data-testid="button-manage-sov"
-            >
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Manage SOV
-            </Button>
-          </CardHeader>
         </Card>
       )}
 

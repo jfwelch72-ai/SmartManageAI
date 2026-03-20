@@ -53,6 +53,7 @@ import {
   CheckCircle2,
   XCircle,
   ChevronDown,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -97,6 +98,7 @@ import BudgetTab from "@/components/project-tabs/BudgetTab";
 import CostLedgerTab from "@/components/project-tabs/CostLedgerTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
+import SovTab from "@/components/project-tabs/SovTab";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -301,6 +303,12 @@ function buildTabConfigs(
       value: "financials",
       label: "Live Financials",
       icon: TrendingUp,
+      visible: hasFinancialAccess(userRole),
+    },
+    {
+      value: "sov",
+      label: "Schedule of Values",
+      icon: FileSpreadsheet,
       visible: hasFinancialAccess(userRole),
     },
     {
@@ -804,6 +812,10 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="financials">
             <ProfitabilityTab projectCode={project.code} />
+          </TabsContent>
+
+          <TabsContent value="sov">
+            <SovTab projectId={project.id} projectCode={project.code} />
           </TabsContent>
 
           <TabsContent value="punch-list">
