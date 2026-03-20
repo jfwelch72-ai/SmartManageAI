@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Save, DollarSign, AlertTriangle, Check } from "lucide-react";
+import { Plus, Trash2, Save, DollarSign, AlertTriangle, Check, Info } from "lucide-react";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -217,6 +217,12 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
   };
   const hasDirty = lines.some(l => l.isDirty);
 
+  // Detect if any lines were auto-seeded from the bid estimate at conversion
+  const seededMatch = lines.find(l => l.description.includes("Seeded from estimate on"));
+  const seededDate = seededMatch
+    ? (seededMatch.description.match(/Seeded from estimate on (.+)$/)?.[1] ?? null)
+    : null;
+
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground" data-testid="budget-loading">Loading budget...</div>;
   }
@@ -242,6 +248,12 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
           )}
         </CardHeader>
         <CardContent>
+          {seededDate && (
+            <div className="mb-3 flex items-center gap-2 text-sm rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-blue-700 dark:text-blue-300" data-testid="text-budget-seeded-notice">
+              <Info className="h-4 w-4 flex-shrink-0" />
+              <span>Budget lines were pre-populated from the bid estimate on <strong>{seededDate}</strong>. Review and adjust the amounts as needed before finalizing.</span>
+            </div>
+          )}
           {hasDirty && (
             <div className="mb-3 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-4 w-4" /> You have unsaved changes. Save individual rows using the save button.

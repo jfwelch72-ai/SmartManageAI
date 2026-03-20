@@ -741,7 +741,11 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${newProject.code}`);
     }
 
-    // Seed budget line items from estimate line items grouped by cost type
+    // Seed budget line items aggregated by cost component across all estimate line items.
+    // Rather than one row per estimate category (CONCRETE, EXCAVATION, etc.), we aggregate
+    // into five universal cost-type buckets: Labor, Material, Equipment, Subcontractor,
+    // and Other. This produces a clean starting baseline that PMs can refine per CSI code.
+    // Generic 01-xxx cost codes are used because they exist in every org's valid code set.
     if (sovSeedLineItems.length > 0) {
       const { budgetLineItems } = await import("@shared/schema");
 
