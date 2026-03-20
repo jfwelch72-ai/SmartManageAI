@@ -713,32 +713,28 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
     // Seed SOV from estimate line items
     if (sovSeedLineItems.length > 0) {
       const sovContractValue = contractAmount && parseFloat(contractAmount) > 0 ? contractAmount : "0";
+      const totalScheduled = sovSeedLineItems.reduce((sum, li) => sum + Number(li.totalCost || 0), 0);
       const [newSov] = await db.insert(scheduleOfValues).values({
         organizationId: bid.gcOrganizationId,
         projectId: newProject.id,
         sovNumber: `SOV-${newProject.code}-001`,
         title: `${newProject.name} — Initial Contract`,
         contractValue: sovContractValue,
-        totalScheduledValue: sovSeedLineItems.reduce((sum, li) => {
-          const totalCost = Number(li.materialCost || 0) + Number(li.laborCost || 0) +
-            Number(li.equipmentCost || 0) + Number(li.consumablesCost || 0) + Number(li.subcontractCost || 0);
-          return sum + totalCost;
-        }, 0).toFixed(2),
+        totalScheduledValue: totalScheduled.toFixed(2),
         createdById: req.user?.id || null,
       }).returning();
 
       for (let i = 0; i < sovSeedLineItems.length; i++) {
         const li = sovSeedLineItems[i];
-        const totalCost = Number(li.materialCost || 0) + Number(li.laborCost || 0) +
-          Number(li.equipmentCost || 0) + Number(li.consumablesCost || 0) + Number(li.subcontractCost || 0);
-        if (totalCost <= 0) continue;
+        const scheduledValue = Number(li.totalCost || 0);
         await db.insert(sovLineItems).values({
           sovId: newSov.id,
           lineNumber: i + 1,
           description: li.description || `Line Item ${i + 1}`,
-          scheduledValue: totalCost.toFixed(2),
+          category: li.category || null,
+          scheduledValue: scheduledValue.toFixed(2),
           estimateLineItemId: li.id,
-          balanceToFinish: totalCost.toFixed(2),
+          balanceToFinish: scheduledValue.toFixed(2),
         });
       }
       console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${newProject.code}`);

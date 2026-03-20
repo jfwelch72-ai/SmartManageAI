@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useMemo, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,6 +45,17 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const [addedToSovIds, setAddedToSovIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
+  // Fetch persisted linked CO IDs from backend to accurately pre-disable "Add to SOV" buttons
+  const { data: sovCoLinkedData } = useQuery<{ linkedCoIds: string[] }>({
+    queryKey: ["/api/projects", projectCode, "sov-co-linked-ids"],
+  });
+
+  useEffect(() => {
+    if (sovCoLinkedData?.linkedCoIds?.length) {
+      setAddedToSovIds(new Set(sovCoLinkedData.linkedCoIds));
+    }
+  }, [sovCoLinkedData]);
+
   const addToSovMutation = useMutation({
     mutationFn: async (coId: string) => {
       const res = await apiRequest("POST", `/api/change-orders/${coId}/add-to-sov`, {});
@@ -53,6 +64,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     onSuccess: (_data, coId) => {
       setAddedToSovIds((prev) => new Set([...prev, coId]));
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "sov"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "sov-co-linked-ids"] });
       toast({ title: "Added to SOV", description: "The change order has been added as a new SOV line item." });
     },
     onError: (error: Error) => {

@@ -9,7 +9,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, type DbTransaction } from "./auditLogger";
 import { insertNotifications } from "./services/notificationService";
 import { sanitizeText } from "./sanitization";
-import { getOrgIdForFilter } from "./orgFilter";
+import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
@@ -1769,6 +1769,11 @@ router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFF
     if (!co) return res.status(404).json({ error: "Change order not found" });
     if (co.status !== "APPROVED") return res.status(400).json({ error: "Only approved change orders can be added to the SOV" });
 
+    // Verify org ownership: load the project and check org access
+    const [project] = await db.select().from(projects).where(eq(projects.id, co.projectId)).limit(1);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
     // Check if this CO is already linked to an SOV line item
     const existing = await db.select({ id: sovLineItems.id })
       .from(sovLineItems)
@@ -1788,10 +1793,7 @@ router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFF
     if (latestSov) {
       targetSovId = latestSov.id;
     } else {
-      // No DRAFT SOV exists — create a minimal one
-      const [project] = await db.select().from(projects).where(eq(projects.id, co.projectId)).limit(1);
-      if (!project) return res.status(404).json({ error: "Project not found" });
-
+      // No DRAFT SOV exists — create a minimal one (project already loaded above for org check)
       const sovCount = await db.select({ cnt: sql<number>`count(*)` })
         .from(scheduleOfValues)
         .where(eq(scheduleOfValues.projectId, co.projectId));

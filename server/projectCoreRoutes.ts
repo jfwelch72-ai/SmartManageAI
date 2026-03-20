@@ -15,6 +15,7 @@ import {
   calendarEvents, media, planDocuments, projectNotes,
   dailyScopeProgress, conversations, conversationParticipants,
   crewMembers, crewProjectAssignments,
+  scheduleOfValues, sovLineItems,
 } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1228,6 +1229,42 @@ router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN")
   }
 });
 
+// Returns the list of change order IDs that already have a linked SOV line item for this project
+router.get("/api/projects/:code/sov-co-linked-ids", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const project = await db.query.projects.findFirst({ where: eq(projects.code, req.params.code) });
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const sovRows = await db
+      .select({ id: scheduleOfValues.id })
+      .from(scheduleOfValues)
+      .where(eq(scheduleOfValues.projectId, project.id));
+
+    if (sovRows.length === 0) return res.json({ linkedCoIds: [] });
+
+    const sovIds = sovRows.map((r) => r.id);
+    const linkedRows = await db
+      .select({ linkedChangeOrderId: sovLineItems.linkedChangeOrderId })
+      .from(sovLineItems)
+      .where(
+        and(
+          inArray(sovLineItems.sovId, sovIds),
+          sql`${sovLineItems.linkedChangeOrderId} IS NOT NULL`
+        )
+      );
+
+    const linkedCoIds = linkedRows
+      .map((r) => r.linkedChangeOrderId)
+      .filter((id): id is string => !!id);
+
+    res.json({ linkedCoIds });
+  } catch (error) {
+    console.error("SOV CO linked IDs error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
   try {
     const project = await db.query.projects.findFirst({ where: eq(projects.code, req.params.code) });
@@ -1262,13 +1299,12 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
         sql`${tmTickets.status} = 'SUBMITTED'`
       ));
 
-    const { scheduleOfValues: sovTable } = await import("@shared/schema");
     const pendingPayApps = await db
       .select({ cnt: count() })
-      .from(sovTable)
+      .from(scheduleOfValues)
       .where(and(
-        eq(sovTable.projectId, project.id),
-        sql`${sovTable.status} = 'SUBMITTED'`
+        eq(scheduleOfValues.projectId, project.id),
+        sql`${scheduleOfValues.status} IN ('DRAFT', 'SUBMITTED')`
       ));
 
     res.json({
