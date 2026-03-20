@@ -557,8 +557,8 @@ export default function BidDetailPage() {
       toast({
         title: "Bid Submitted",
         description: data.emailSent
-          ? "Customer quote sent to client successfully."
-          : "Bid marked as submitted (no email address provided).",
+          ? "Bid submitted and customer quote emailed to the client."
+          : "Bid marked as submitted. Email delivery may have failed — check logs.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode] });
       setShowSubmitDialog(false);
@@ -1140,9 +1140,16 @@ export default function BidDetailPage() {
                 onChange={(e) => setSubmitRecipientEmail(e.target.value)}
                 data-testid="input-submit-recipient-email"
               />
-              <p className="text-xs text-muted-foreground">
-                Leave blank to mark as submitted without sending an email.
-              </p>
+              {bid.clientContactEmail && !submitRecipientEmail && (
+                <p className="text-xs text-muted-foreground">
+                  Will default to <span className="font-mono">{bid.clientContactEmail}</span> if left blank.
+                </p>
+              )}
+              {!bid.clientContactEmail && !submitRecipientEmail && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  No client email on file — please enter a recipient email above.
+                </p>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -1155,7 +1162,7 @@ export default function BidDetailPage() {
             </Button>
             <Button
               onClick={() => submitBidMutation.mutate(submitRecipientEmail)}
-              disabled={submitBidMutation.isPending}
+              disabled={submitBidMutation.isPending || (!submitRecipientEmail && !bid.clientContactEmail)}
               data-testid="button-confirm-submit"
             >
               <Send className="w-4 h-4 mr-2" />
