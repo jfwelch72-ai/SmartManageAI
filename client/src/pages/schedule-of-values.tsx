@@ -87,7 +87,7 @@ export default function ScheduleOfValuesPage() {
   }, [sovs, selectedSOV]);
 
   useEffect(() => {
-    if (deepLinkProjectId && !didAutoOpen.current && sovs.length >= 0) {
+    if (deepLinkProjectId && !didAutoOpen.current && !loadingSOVs) {
       const existingSOV = sovs.find(s => String(s.projectId) === deepLinkProjectId);
       if (existingSOV) {
         setSelectedSOV(existingSOV);
