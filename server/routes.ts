@@ -188,6 +188,7 @@ import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
 import hiringRoutes from "./hiringRoutes";
 import marketplaceEquipmentRoutes from "./marketplaceEquipmentRoutes";
+import marketplaceCrewRoutes from "./marketplaceCrewRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -229,6 +230,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register marketplace routes (vendor scores, material prices, crew marketplace)
   app.use("/api/marketplace", marketplaceRoutes);
+  // Register crew marketplace routes at /api/marketplace/crews
+  app.use("/api/marketplace/crews", marketplaceCrewRoutes);
   app.use(aiScheduleRoutes);
 
   // Register inspection scheduling routes

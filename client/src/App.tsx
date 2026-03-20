@@ -111,7 +111,6 @@ const VendorScoresPage = lazy(() => import("@/pages/vendor-scores"));
 const MaterialPriceIndexPage = lazy(() => import("@/pages/material-price-index"));
 const CrewMarketplacePage = lazy(() => import("@/pages/crew-marketplace"));
 const EquipmentRentalMarketplacePage = lazy(() => import("@/pages/equipment-rental-marketplace"));
-const MarketplacePage = lazy(() => import("@/pages/marketplace"));
 const PricebookImportPage = lazy(() => import("@/pages/pricebook-import"));
 const ClientPortalPublic = lazy(() => import("@/pages/client-portal-public"));
 const SubPortalPage = lazy(() => import("@/pages/sub-portal"));
@@ -293,28 +292,25 @@ function Router() {
       <Route path="/offline-sync" component={() => <ProtectedRoute component={OfflineSyncPage} />} />
       
       {/* Marketplace routes */}
+      <Route path="/marketplace/contractors/:orgId" component={() => <ProtectedRoute component={ContractorProfilePage} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={RoutePermissions.CRM} />} />
       <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
       <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={CrewMarketplacePage} permission={RoutePermissions.CRM} />} />
       <Route path="/equipment-rental-marketplace" component={() => <ProtectedRoute component={EquipmentRentalMarketplacePage} />} />
-      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} />} />
       <Route path="/pricebook-import" component={() => <ProtectedRoute component={PricebookImportPage} permission={RoutePermissions.CRM} featurePerm="canManageProcurement" />} />
       
       {/* Executive Intelligence routes */}
       <Route path="/company-health" component={() => <ProtectedRoute component={CompanyHealthPage} permission={RoutePermissions.CFO} featurePerm="canAccessFinancials" />} />
       <Route path="/executive-digest" component={() => <ProtectedRoute component={ExecutiveDigestPage} permission={RoutePermissions.CFO} featurePerm="canAccessFinancials" />} />
       <Route path="/what-if-simulator" component={() => <ProtectedRoute component={WhatIfSimulatorPage} permission={RoutePermissions.CFO} featurePerm="canAccessFinancials" />} />
-      
+
       {/* Bid Network routes */}
       <Route path="/bid-network/:id" component={() => <ProtectedRoute component={BidNetworkDetailPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bid-inbox" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
-      
-      {/* Marketplace routes */}
-      <Route path="/marketplace/contractors/:orgId" component={() => <ProtectedRoute component={ContractorProfilePage} />} />
-      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} />} />
-      
+
       {/* Tools routes */}
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={ReportsPage} permission={RoutePermissions.REPORTS} featurePerm="canAccessReports" />} />
