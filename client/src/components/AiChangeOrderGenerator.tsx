@@ -425,8 +425,7 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
                     <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 ml-4" />
                   </div>
                   );
-                }
-                ))}
+                })}
               </div>
             </ScrollArea>
           )}
