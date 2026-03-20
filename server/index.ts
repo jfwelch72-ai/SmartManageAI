@@ -147,12 +147,6 @@ app.use((req, res, next) => {
   // theoretical startup race where a request could arrive before listeners are wired.
   initializeEventBus();
 
-  // Idempotent backfill: any org with missing feature_flags gets all flags enabled.
-  // Runs on every startup (dev + production) and is a no-op once data is populated.
-  backfillMissingFeatureFlags().catch(err => {
-    console.error('[startup] Feature flag backfill failed:', err);
-  });
-
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
       console.error(`Port ${port} is in use. Attempting to free it...`);
@@ -212,6 +206,12 @@ app.use((req, res, next) => {
       console.log('AI auto-scan schedulers are DISABLED (development mode)');
       console.log('   Use the manual "Run AI Analysis" button to trigger scans');
       console.log('   Set NODE_ENV=production to enable schedulers');
+
+      // Dev only: idempotent backfill so any org with missing feature flags
+      // gets all flags enabled. No-op once data is populated.
+      backfillMissingFeatureFlags().catch(err => {
+        console.error('[DEV] Feature flag backfill failed:', err);
+      });
     }
   });
 })();

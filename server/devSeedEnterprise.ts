@@ -246,7 +246,7 @@ router.post("/seed-enterprise", requireAuth, async (req, res) => {
       FEATURE_FLAG_KEYS.map(key => [key, true])
     );
     await setAllFeatureFlags(orgId, allFlagsOn);
-    results.featureFlags = "All 11 feature flags enabled";
+    results.featureFlags = `All ${FEATURE_FLAG_KEYS.length} feature flags enabled`;
 
     logInfo("Enterprise dev seed completed", { orgId, results });
 
