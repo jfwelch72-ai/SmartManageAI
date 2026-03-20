@@ -92,6 +92,7 @@ export function AppSidebar() {
   const [administrationOpen, setAdministrationOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [hiringOpen, setHiringOpen] = useState(false);
+  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
@@ -293,6 +294,7 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
+
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -435,6 +437,50 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
         
+        {/* 4b. Marketplace group */}
+        {hasManagementAccess(userRole) && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={marketplaceOpen} onOpenChange={setMarketplaceOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Marketplace" data-testid="sidebar-marketplace-group">
+                        <Store className="w-4 h-4" />
+                        <span>Marketplace</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton asChild isActive={isActive("/marketplace") && !isActive("/marketplace/contractors")}>
+                            <Link href="/marketplace" data-testid="nav-contractor-directory">
+                              Contractor Directory
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton data-testid="nav-crew-marketplace" className="text-muted-foreground cursor-default">
+                            <span>Crew Marketplace</span>
+                            <Badge variant="secondary" className="ml-auto text-xs px-1 py-0">Soon</Badge>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton data-testid="nav-equipment-rentals" className="text-muted-foreground cursor-default">
+                            <span>Equipment Rentals</span>
+                            <Badge variant="secondary" className="ml-auto text-xs px-1 py-0">Soon</Badge>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
         {/* 5. Financials group */}
         {hasFinancialsMenu && (
           <SidebarGroup>

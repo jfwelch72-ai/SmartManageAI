@@ -96,6 +96,8 @@ const HustlerBenchmarking = lazy(() => import("@/pages/hustler-benchmarking"));
 const BidNetworkPage = lazy(() => import("@/pages/bid-network"));
 const BidNetworkDetailPage = lazy(() => import("@/pages/bid-network-detail"));
 const BidInboxPage = lazy(() => import("@/pages/bid-inbox"));
+const MarketplacePage = lazy(() => import("@/pages/marketplace").then(m => ({ default: m.default })));
+const ContractorProfilePage = lazy(() => import("@/pages/marketplace").then(m => ({ default: m.ContractorProfilePage })));
 const BillingPage = lazy(() => import("@/pages/billing"));
 const DelayClaimsPage = lazy(() => import("@/pages/delay-claims"));
 const DailyReportLocksPage = lazy(() => import("@/pages/daily-report-locks"));
@@ -304,6 +306,10 @@ function Router() {
       <Route path="/bid-network" component={() => <ProtectedRoute component={BidNetworkPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bid-inbox/:id" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bid-inbox" component={() => <ProtectedRoute component={BidInboxPage} permission={RoutePermissions.BIDS} />} />
+      
+      {/* Marketplace routes */}
+      <Route path="/marketplace/contractors/:orgId" component={() => <ProtectedRoute component={ContractorProfilePage} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} />} />
       
       {/* Tools routes */}
       <Route path="/calculator" component={() => <ProtectedRoute component={CalculatorPage} />} />

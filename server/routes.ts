@@ -115,6 +115,7 @@ import libraryRoutes from "./libraryRoutes";
 import opsRoutes from "./opsRoutes";
 import hustlerRoutes from "./hustlerRoutes";
 import bidNetworkRoutes from "./bidNetworkRoutes";
+import marketplaceContractorRoutes from "./marketplaceContractorRoutes";
 import weatherRoutes from "./weatherRoutes";
 import vendorPricebookRoutes from "./vendorPricebookRoutes";
 import delayClaimsRoutes from "./delayClaimsRoutes";
@@ -335,6 +336,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Subcontractor Bid Network routes
   app.use("/api/bid-network", bidNetworkRoutes);
+
+  // Register Marketplace Contractor Directory routes
+  app.use("/api/marketplace/contractors", marketplaceContractorRoutes);
 
   app.use("/api", rfiRoutes);
   app.use("/api", transmittalRoutes);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -51,7 +51,11 @@ import {
   ChevronRight,
   AlertCircle,
   Settings,
+  Store,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
+import { Link } from "wouter";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import {
@@ -881,6 +885,248 @@ function NetworkSettingsDialog() {
   );
 }
 
+// ============================================
+// MARKETPLACE PROFILE CARD (for network settings page)
+// ============================================
+interface MarketplaceProfileData {
+  bio?: string;
+  foundedYear?: number;
+  licenseNumbers?: string[];
+  portfolioPhotos?: string[];
+  isDirectoryListed?: boolean;
+  avgRating?: string | null;
+  reviewCount?: number;
+}
+
+function MarketplaceProfileCard() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const orgId = user?.organizationId;
+
+  const profileUrl = `/api/marketplace/contractors/${orgId}`;
+  const { data: profile, refetch } = useQuery<MarketplaceProfileData>({
+    queryKey: [profileUrl],
+    enabled: !!orgId,
+    retry: false,
+  });
+
+  const [bio, setBio] = useState("");
+  const [foundedYear, setFoundedYear] = useState("");
+  const [licenseNumbers, setLicenseNumbers] = useState<string[]>([]);
+  const [newLicense, setNewLicense] = useState("");
+  const [portfolioPhotos, setPortfolioPhotos] = useState<string[]>([]);
+  const [newPhoto, setNewPhoto] = useState("");
+  const [isDirectoryListed, setIsDirectoryListed] = useState(false);
+  useEffect(() => {
+    if (profile) {
+      setBio(profile.bio || "");
+      setFoundedYear(profile.foundedYear ? String(profile.foundedYear) : "");
+      setLicenseNumbers(profile.licenseNumbers || []);
+      setPortfolioPhotos(profile.portfolioPhotos || []);
+      setIsDirectoryListed(profile.isDirectoryListed || false);
+    }
+  }, [profile]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/marketplace/contractors/${orgId}/profile`, {
+        bio: bio || null,
+        foundedYear: foundedYear ? parseInt(foundedYear) : null,
+        licenseNumbers,
+        portfolioPhotos,
+        isDirectoryListed,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to save");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Marketplace profile saved" });
+      refetch();
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "Failed to save";
+      toast({ title: "Error", description: message, variant: "destructive" });
+    },
+  });
+
+  if (!orgId || (user?.role !== "ADMIN" && user?.role !== "MANAGER")) {
+    return null;
+  }
+
+  return (
+    <Card data-testid="card-marketplace-profile">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Store className="w-5 h-5 text-primary" />
+            <CardTitle>Marketplace Profile</CardTitle>
+          </div>
+          <Link href="/marketplace">
+            <Button variant="ghost" size="sm" data-testid="link-view-marketplace">
+              <ExternalLink className="w-4 h-4 mr-1" />
+              View Directory
+            </Button>
+          </Link>
+        </div>
+        <CardDescription>
+          Manage how your organization appears in the Contractor Directory. Enable listing to be discoverable.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label>List in Contractor Directory</Label>
+            <p className="text-sm text-muted-foreground">Make your profile visible in the public marketplace</p>
+          </div>
+          <Switch
+            checked={isDirectoryListed}
+            onCheckedChange={setIsDirectoryListed}
+            data-testid="switch-directory-listed"
+          />
+        </div>
+
+        <Separator />
+
+        <div className="grid gap-2">
+          <Label htmlFor="mp-bio">Company Bio</Label>
+          <Textarea
+            id="mp-bio"
+            placeholder="Tell potential clients about your company..."
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            rows={3}
+            data-testid="input-marketplace-bio"
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="mp-founded">Founded Year</Label>
+          <Input
+            id="mp-founded"
+            type="number"
+            placeholder="e.g., 2005"
+            value={foundedYear}
+            onChange={(e) => setFoundedYear(e.target.value)}
+            min={1800}
+            max={new Date().getFullYear()}
+            data-testid="input-founded-year"
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <Label>License Numbers</Label>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Add license number..."
+              value={newLicense}
+              onChange={(e) => setNewLicense(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newLicense.trim()) {
+                  setLicenseNumbers([...licenseNumbers, newLicense.trim()]);
+                  setNewLicense("");
+                }
+              }}
+              data-testid="input-new-license"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (newLicense.trim()) {
+                  setLicenseNumbers([...licenseNumbers, newLicense.trim()]);
+                  setNewLicense("");
+                }
+              }}
+              data-testid="button-add-license"
+            >
+              Add
+            </Button>
+          </div>
+          {licenseNumbers.map((lic, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <Badge variant="secondary" className="flex-1 justify-between">
+                <span>{lic}</span>
+                <button
+                  onClick={() => setLicenseNumbers(licenseNumbers.filter((_, idx) => idx !== i))}
+                  data-testid={`button-remove-license-${i}`}
+                >
+                  <Trash2 className="w-3 h-3 ml-2 text-muted-foreground hover:text-destructive" />
+                </button>
+              </Badge>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid gap-2">
+          <Label>Portfolio Photos (URLs)</Label>
+          <p className="text-xs text-muted-foreground">Add up to 20 photo URLs for your portfolio</p>
+          <div className="flex gap-2">
+            <Input
+              placeholder="https://example.com/photo.jpg"
+              value={newPhoto}
+              onChange={(e) => setNewPhoto(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newPhoto.trim() && portfolioPhotos.length < 20) {
+                  setPortfolioPhotos([...portfolioPhotos, newPhoto.trim()]);
+                  setNewPhoto("");
+                }
+              }}
+              data-testid="input-new-photo"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (newPhoto.trim() && portfolioPhotos.length < 20) {
+                  setPortfolioPhotos([...portfolioPhotos, newPhoto.trim()]);
+                  setNewPhoto("");
+                }
+              }}
+              disabled={portfolioPhotos.length >= 20}
+              data-testid="button-add-photo"
+            >
+              Add
+            </Button>
+          </div>
+          {portfolioPhotos.length > 0 && (
+            <div className="grid grid-cols-3 gap-2 mt-1">
+              {portfolioPhotos.map((url, i) => (
+                <div key={i} className="relative group">
+                  <img
+                    src={url}
+                    alt={`Portfolio ${i + 1}`}
+                    className="w-full aspect-square object-cover rounded"
+                    data-testid={`img-portfolio-edit-${i}`}
+                    onError={(e) => { (e.target as HTMLImageElement).src = ""; }}
+                  />
+                  <button
+                    className="absolute top-1 right-1 bg-destructive text-destructive-foreground rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => setPortfolioPhotos(portfolioPhotos.filter((_, idx) => idx !== i))}
+                    data-testid={`button-remove-photo-${i}`}
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          data-testid="button-save-marketplace-profile"
+        >
+          {saveMutation.isPending ? "Saving..." : "Save Marketplace Profile"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function BidNetworkPage() {
   const { user } = useAuth();
   const isMobile = useIsMobile();
@@ -1071,6 +1317,8 @@ export default function BidNetworkPage() {
           ))}
         </div>
       )}
+
+      <MarketplaceProfileCard />
     </div>
   );
 }

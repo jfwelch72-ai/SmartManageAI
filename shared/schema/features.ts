@@ -4064,6 +4064,15 @@ export const organizationNetworkSettings = pgTable("organization_network_setting
   serviceAreas: text("service_areas").array(),  // Geographic regions served
   certifications: text("certifications").array(),
   yearsInBusiness: integer("years_in_business"),
+
+  // Marketplace directory fields
+  bio: text("bio"),
+  foundedYear: integer("founded_year"),
+  licenseNumbers: text("license_numbers").array(),
+  portfolioPhotos: text("portfolio_photos").array(),
+  isDirectoryListed: boolean("is_directory_listed").notNull().default(false),
+  avgRating: decimal("avg_rating", { precision: 3, scale: 2 }),
+  reviewCount: integer("review_count").notNull().default(0),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -4074,6 +4083,25 @@ export const organizationNetworkSettings = pgTable("organization_network_setting
 export const insertOrganizationNetworkSettingsSchema = createInsertSchema(organizationNetworkSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationNetworkSettings = z.infer<typeof insertOrganizationNetworkSettingsSchema>;
 export type OrganizationNetworkSettings = typeof organizationNetworkSettings.$inferSelect;
+
+// Marketplace Reviews
+export const marketplaceReviews = pgTable("marketplace_reviews", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewerOrgId: varchar("reviewer_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  revieweeOrgId: varchar("reviewee_org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  rating: integer("rating").notNull(),  // 1-5
+  comment: text("comment"),
+  projectRef: text("project_ref"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  reviewerIdx: index("marketplace_reviews_reviewer_idx").on(table.reviewerOrgId),
+  revieweeIdx: index("marketplace_reviews_reviewee_idx").on(table.revieweeOrgId),
+  uniquePairIdx: unique("marketplace_reviews_unique_pair").on(table.reviewerOrgId, table.revieweeOrgId),
+}));
+
+export const insertMarketplaceReviewSchema = createInsertSchema(marketplaceReviews).omit({ id: true, createdAt: true });
+export type InsertMarketplaceReview = z.infer<typeof insertMarketplaceReviewSchema>;
+export type MarketplaceReview = typeof marketplaceReviews.$inferSelect;
 
 // Subcontractor Bid Requests - GC creates a request for quotes
 export const subcontractorBidRequests = pgTable("subcontractor_bid_requests", {
