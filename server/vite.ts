@@ -32,6 +32,11 @@ export async function setupVite(app: Express, server: Server) {
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
+        // Ignore harmless source map loading failures (CSS/asset warnings misclassified as errors)
+        if (msg.includes("Failed to load source map") || msg.includes("source map")) {
+          viteLogger.warn(msg, options);
+          return;
+        }
         viteLogger.error(msg, options);
         process.exit(1);
       },

@@ -3,6 +3,7 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import helmet from "helmet";
+import { execSync } from "child_process";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAIScheduler } from "./ai/scheduler";
@@ -147,7 +148,6 @@ app.use((req, res, next) => {
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
       console.error(`Port ${port} is in use. Attempting to free it...`);
-      const { execSync } = require("child_process");
       try {
         execSync(`fuser -k ${port}/tcp`, { stdio: "ignore" });
       } catch (_) { /* ignore */ }
