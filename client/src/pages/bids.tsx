@@ -368,6 +368,9 @@ export default function BidsPage() {
     setAwardBidCode(bidCode);
     setSelectedSuperintendentId("");
     setSelectedProjectManagerId("");
+    setAwardOverheadPercent("10");
+    setAwardProfitPercent("15");
+    setAwardStartStatus("ACTIVE");
     setShowAwardDialog(true);
   };
 
@@ -381,9 +384,10 @@ export default function BidsPage() {
         profitPercent: parseFloat(awardProfitPercent) || 15,
         startStatus: awardStartStatus,
       });
+      const statusLabel = awardStartStatus === "PLANNING" ? "a Planning project" : "an Active project";
       toast({
         title: "Bid Awarded!",
-        description: `Bid ${bidCode} has been marked as awarded and converted to an active project.`,
+        description: `Bid ${bidCode} has been converted to ${statusLabel}.`,
       });
       setShowAwardDialog(false);
       setAwardBidCode(null);
