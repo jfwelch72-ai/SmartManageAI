@@ -248,28 +248,39 @@ router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: Auth
     const userId = req.user!.id;
     const update: Partial<WarrantyCase> & { updatedAt: Date } = { updatedAt: new Date() };
 
-    // Field edits require management role
-    const isEditingFields = req.body.status === undefined;
-    if (isEditingFields && !hasRole(req, MANAGEMENT_ROLES)) {
-      return res.status(403).json({ error: "Insufficient permissions to edit warranty cases" });
+    // Determine whether the caller is editing protected fields (requires management role)
+    const PROTECTED_FIELDS = [
+      "title", "description", "location", "type", "priority",
+      "assignedToUserId", "assignedToName",
+      "reportedByName", "reportedByEmail", "reportedByPhone",
+      "reportedDate", "targetResolutionDate",
+      "estimatedCost", "actualCost", "rootCause", "resolution",
+    ];
+    const hasProtectedFieldEdits = PROTECTED_FIELDS.some((f) => req.body[f] !== undefined);
+
+    if (hasProtectedFieldEdits && !hasRole(req, MANAGEMENT_ROLES)) {
+      return res.status(403).json({ error: "Insufficient permissions to edit warranty case fields" });
     }
 
-    if (req.body.title !== undefined) update.title = sanitizeShortText(req.body.title);
-    if (req.body.description !== undefined) update.description = sanitizeText(req.body.description);
-    if (req.body.location !== undefined) update.location = sanitizeShortText(req.body.location);
-    if (req.body.type !== undefined) update.type = req.body.type;
-    if (req.body.priority !== undefined) update.priority = req.body.priority;
-    if (req.body.assignedToUserId !== undefined) update.assignedToUserId = req.body.assignedToUserId ?? null;
-    if (req.body.assignedToName !== undefined) update.assignedToName = sanitizeShortText(req.body.assignedToName);
-    if (req.body.reportedByName !== undefined) update.reportedByName = sanitizeShortText(req.body.reportedByName);
-    if (req.body.reportedByEmail !== undefined) update.reportedByEmail = sanitizeShortText(req.body.reportedByEmail);
-    if (req.body.reportedByPhone !== undefined) update.reportedByPhone = sanitizeShortText(req.body.reportedByPhone);
-    if (req.body.reportedDate !== undefined) update.reportedDate = req.body.reportedDate ? new Date(req.body.reportedDate) : null;
-    if (req.body.targetResolutionDate !== undefined) update.targetResolutionDate = req.body.targetResolutionDate ? new Date(req.body.targetResolutionDate) : null;
-    if (req.body.estimatedCost !== undefined) update.estimatedCost = req.body.estimatedCost ?? null;
-    if (req.body.actualCost !== undefined) update.actualCost = req.body.actualCost ?? null;
-    if (req.body.rootCause !== undefined) update.rootCause = sanitizeText(req.body.rootCause);
-    if (req.body.resolution !== undefined) update.resolution = sanitizeText(req.body.resolution);
+    // Apply protected field changes (only if management-role check passed above)
+    if (hasProtectedFieldEdits) {
+      if (req.body.title !== undefined) update.title = sanitizeShortText(req.body.title);
+      if (req.body.description !== undefined) update.description = sanitizeText(req.body.description);
+      if (req.body.location !== undefined) update.location = sanitizeShortText(req.body.location);
+      if (req.body.type !== undefined) update.type = req.body.type;
+      if (req.body.priority !== undefined) update.priority = req.body.priority;
+      if (req.body.assignedToUserId !== undefined) update.assignedToUserId = req.body.assignedToUserId ?? null;
+      if (req.body.assignedToName !== undefined) update.assignedToName = sanitizeShortText(req.body.assignedToName);
+      if (req.body.reportedByName !== undefined) update.reportedByName = sanitizeShortText(req.body.reportedByName);
+      if (req.body.reportedByEmail !== undefined) update.reportedByEmail = sanitizeShortText(req.body.reportedByEmail);
+      if (req.body.reportedByPhone !== undefined) update.reportedByPhone = sanitizeShortText(req.body.reportedByPhone);
+      if (req.body.reportedDate !== undefined) update.reportedDate = req.body.reportedDate ? new Date(req.body.reportedDate) : null;
+      if (req.body.targetResolutionDate !== undefined) update.targetResolutionDate = req.body.targetResolutionDate ? new Date(req.body.targetResolutionDate) : null;
+      if (req.body.estimatedCost !== undefined) update.estimatedCost = req.body.estimatedCost ?? null;
+      if (req.body.actualCost !== undefined) update.actualCost = req.body.actualCost ?? null;
+      if (req.body.rootCause !== undefined) update.rootCause = sanitizeText(req.body.rootCause);
+      if (req.body.resolution !== undefined) update.resolution = sanitizeText(req.body.resolution);
+    }
 
     // Status transitions — enforced via transition matrix
     if (req.body.status !== undefined && req.body.status !== wc.status) {
