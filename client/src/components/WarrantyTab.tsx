@@ -25,6 +25,14 @@ import { ObjectUploader } from "@/components/ObjectUploader";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface OrgUser {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+}
+
 type CaseType = "DEFECT" | "WARRANTY_CLAIM" | "CALLBACK" | "RECALL";
 type CaseStatus = "OPEN" | "ACKNOWLEDGED" | "IN_REPAIR" | "REPAIRED" | "CLOSED" | "REJECTED";
 type Priority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
@@ -168,32 +176,36 @@ const TASK_STATUS_COLORS: Record<string, string> = {
 const MANAGEMENT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER", "OFFICE_MANAGER", "SAFETY_MANAGER"];
 const CLOSE_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"];
 
+const REJECT_ROLES = ["ADMIN", "MANAGER"];
+
 function canManage(role: string) { return MANAGEMENT_ROLES.includes(role); }
 function canClose(role: string) { return CLOSE_ROLES.includes(role); }
+function canReject(role: string) { return REJECT_ROLES.includes(role); }
 
 function fmtDate(d?: string | null) { if (!d) return "—"; return format(new Date(d), "MMM d, yyyy"); }
 function fmtType(t: string) { return t.replace(/_/g, " "); }
 
 // Allowed next-status options for the current role — linear forward-only lifecycle
-// OPEN → ACKNOWLEDGED → IN_REPAIR → REPAIRED → CLOSED; REJECTED terminal from any
+// OPEN → ACKNOWLEDGED → IN_REPAIR → REPAIRED → CLOSED
+// REJECTED: terminal, only ADMIN/MANAGER can reject
 function allowedTransitions(status: CaseStatus, role: string): CaseStatus[] {
   if (status === "REJECTED" || status === "CLOSED") return [];
   const transitions: Record<string, { targets: CaseStatus[]; roleCheck: (r: string) => boolean }[]> = {
     OPEN: [
       { targets: ["ACKNOWLEDGED"], roleCheck: canManage },
-      { targets: ["REJECTED"], roleCheck: canClose },
+      { targets: ["REJECTED"], roleCheck: canReject },
     ],
     ACKNOWLEDGED: [
       { targets: ["IN_REPAIR"], roleCheck: canManage },
-      { targets: ["REJECTED"], roleCheck: canClose },
+      { targets: ["REJECTED"], roleCheck: canReject },
     ],
     IN_REPAIR: [
       { targets: ["REPAIRED"], roleCheck: (r) => MANAGEMENT_ROLES.includes(r) || r === "HOURLY_EMPLOYEE" },
-      { targets: ["REJECTED"], roleCheck: canClose },
+      { targets: ["REJECTED"], roleCheck: canReject },
     ],
     REPAIRED: [
       { targets: ["CLOSED"], roleCheck: canClose },
-      { targets: ["REJECTED"], roleCheck: canClose },
+      { targets: ["REJECTED"], roleCheck: canReject },
     ],
   };
 
@@ -402,17 +414,22 @@ function TaskRow({
 
 function AddTaskForm({ caseId, projectCode, onSaved }: { caseId: string; projectCode: string; onSaved: () => void }) {
   const [title, setTitle] = useState("");
-  const [assignedToName, setAssignedToName] = useState("");
+  const [assignedToUserId, setAssignedToUserId] = useState("__none__");
   const [dueDate, setDueDate] = useState("");
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/users"],
+    queryFn: () => apiRequest("GET", "/api/users").then((r) => r.json()),
+  });
 
   const mutation = useMutation({
     mutationFn: (data: object) =>
       apiRequest("POST", `/api/projects/${projectCode}/warranty/cases/${caseId}/tasks`, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/projects", projectCode, "warranty", "cases", caseId, "tasks"] });
-      setTitle(""); setAssignedToName(""); setDueDate("");
+      setTitle(""); setAssignedToUserId("__none__"); setDueDate("");
       onSaved();
     },
     onError: () => toast({ title: "Error", description: "Failed to create task.", variant: "destructive" }),
@@ -421,25 +438,37 @@ function AddTaskForm({ caseId, projectCode, onSaved }: { caseId: string; project
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
-    mutation.mutate({ title: title.trim(), assignedToName: assignedToName.trim() || null, dueDate: dueDate || null });
+    const selectedUser = assignedToUserId !== "__none__" ? orgUsers.find((u) => u.id === assignedToUserId) : null;
+    mutation.mutate({
+      title: title.trim(),
+      assignedToUserId: selectedUser?.id ?? null,
+      assignedToName: selectedUser ? `${selectedUser.firstName} ${selectedUser.lastName}`.trim() : null,
+      dueDate: dueDate || null,
+    });
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex gap-2 mt-2">
+    <form onSubmit={handleSubmit} className="flex gap-2 mt-2 flex-wrap">
       <Input
         placeholder="Task title…"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="flex-1 h-8 text-sm"
+        className="flex-1 min-w-40 h-8 text-sm"
         data-testid="input-task-title"
       />
-      <Input
-        placeholder="Assigned to"
-        value={assignedToName}
-        onChange={(e) => setAssignedToName(e.target.value)}
-        className="w-32 h-8 text-sm"
-        data-testid="input-task-assigned"
-      />
+      <Select value={assignedToUserId} onValueChange={setAssignedToUserId}>
+        <SelectTrigger className="w-40 h-8 text-sm" data-testid="select-task-assignee">
+          <SelectValue placeholder="Assign to…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Unassigned</SelectItem>
+          {orgUsers.map((u) => (
+            <SelectItem key={u.id} value={u.id}>
+              {u.firstName} {u.lastName}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Input
         type="date"
         value={dueDate}
