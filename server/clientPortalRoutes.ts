@@ -150,7 +150,7 @@ router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAG
       };
       try {
         if (row.access.permissionsJson) {
-          permissions = JSON.parse(row.access.permissionsJson);
+          permissions = { ...permissions, ...JSON.parse(row.access.permissionsJson) };
         }
       } catch {}
 
