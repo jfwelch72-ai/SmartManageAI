@@ -730,6 +730,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         await db.insert(sovLineItems).values({
           sovId: newSov.id,
           lineNumber: i + 1,
+          itemCode: li.workTypeCode || null,
           description: li.description || `Line Item ${i + 1}`,
           category: li.category || null,
           scheduledValue: scheduledValue.toFixed(2),
