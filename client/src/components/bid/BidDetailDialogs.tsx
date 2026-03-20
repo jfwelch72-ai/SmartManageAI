@@ -918,6 +918,8 @@ interface AwardBidDialogProps {
   onOpenChange: (open: boolean) => void;
   bid: any;
   finalBidAmount: number;
+  overheadPercent: number;
+  profitPercent: number;
   superintendents: UserOption[];
   managers: UserOption[];
   selectedSuperintendentId: string;
@@ -935,6 +937,8 @@ export function AwardBidDialog({
   onOpenChange,
   bid,
   finalBidAmount,
+  overheadPercent,
+  profitPercent,
   superintendents,
   managers,
   selectedSuperintendentId,
@@ -960,10 +964,14 @@ export function AwardBidDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          <div className="p-3 bg-muted rounded-lg">
+          <div className="p-3 bg-muted rounded-lg space-y-1">
             <p className="text-sm font-medium">Project: {bid?.name}</p>
             <p className="text-xs text-muted-foreground">Code: {bid?.code}</p>
-            <p className="text-xs text-muted-foreground mt-1">Final Bid: ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p className="text-xs text-muted-foreground">Final Bid: ${finalBidAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <div className="flex gap-4 pt-1 border-t mt-1">
+              <p className="text-xs text-muted-foreground">Overhead: <span className="font-medium text-foreground">{overheadPercent}%</span></p>
+              <p className="text-xs text-muted-foreground">Profit Margin: <span className="font-medium text-foreground">{profitPercent}%</span></p>
+            </div>
           </div>
 
           <div className="p-3 border rounded-lg space-y-2">

@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { FileSpreadsheet, Plus, Eye, CheckCircle2, Clock, Send, XCircle, DollarSign, Percent, Shield, CreditCard, GitCompare } from "lucide-react";
+import { FileSpreadsheet, Plus, Eye, CheckCircle2, Clock, Send, XCircle, DollarSign, Percent, Shield, CreditCard, GitCompare, Info } from "lucide-react";
 import { SovLineItemsEditor } from "@/components/sov/SovLineItemsEditor";
 import { SovPaymentsPanel } from "@/components/sov/SovPaymentsPanel";
 import { SovLienWaiverPanel } from "@/components/sov/SovLienWaiverPanel";
@@ -110,6 +110,15 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
   const pendingCount = sovs.filter(s => s.status === "PENDING").length;
   const approvedCount = sovs.filter(s => s.status === "APPROVED" || s.status === "SUBMITTED").length;
 
+  const gapSov = sovs.find(s => {
+    const contract = parseFloat(s.contractAmount ?? "0");
+    const scheduled = parseFloat(s.totalScheduledValue ?? "0");
+    return scheduled > 0 && contract > scheduled + 0.01;
+  });
+  const sovGapAmount = gapSov
+    ? parseFloat(gapSov.contractAmount ?? "0") - parseFloat(gapSov.totalScheduledValue ?? "0")
+    : 0;
+
   return (
     <div className="space-y-6 pt-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -149,6 +158,15 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
         </TabsList>
 
         <TabsContent value="pay-apps" className="space-y-4 mt-4">
+          {gapSov && (
+            <div className="flex items-start gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30" data-testid="banner-sov-gap">
+              <Info className="h-4 w-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+              <div className="text-sm text-blue-800 dark:text-blue-300 space-y-0.5">
+                <p className="font-medium">Scheduled values are {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(sovGapAmount)} below the contract amount.</p>
+                <p className="text-xs">The SOV was seeded from the estimate's direct costs. The gap represents overhead and profit markup. Open the SOV to adjust line items so they sum to the full contract value.</p>
+              </div>
+            </div>
+          )}
           {loadingSOVs ? (
             <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16" />)}</div>
           ) : (

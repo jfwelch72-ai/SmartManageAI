@@ -575,7 +575,7 @@ export default function BidDetailPage() {
   const handleConfirmAward = async () => {
     if (!bid) return;
     try {
-      await convertBid.mutateAsync({
+      const newProject = await convertBid.mutateAsync({
         code: bid.code,
         superintendentId: selectedSuperintendentId || undefined,
         projectManagerId: selectedProjectManagerId || undefined,
@@ -590,7 +590,7 @@ export default function BidDetailPage() {
           : "Bid has been awarded and moved to Active Projects!",
       });
       setShowAwardDialog(false);
-      setLocation("/projects");
+      setLocation(`/projects/${newProject?.code ?? ""}`);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -1106,6 +1106,8 @@ export default function BidDetailPage() {
         onOpenChange={setShowAwardDialog}
         bid={bid}
         finalBidAmount={finalBidAmount}
+        overheadPercent={overheadPercent}
+        profitPercent={profitPercent}
         superintendents={superintendents}
         managers={managers}
         selectedSuperintendentId={selectedSuperintendentId}

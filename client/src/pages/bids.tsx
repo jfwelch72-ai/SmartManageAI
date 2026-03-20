@@ -376,7 +376,7 @@ export default function BidsPage() {
 
   const performConversion = async (bidCode: string) => {
     try {
-      await convertBid.mutateAsync({
+      const newProject = await convertBid.mutateAsync({
         code: bidCode,
         superintendentId: selectedSuperintendentId || undefined,
         projectManagerId: selectedProjectManagerId || undefined,
@@ -391,6 +391,9 @@ export default function BidsPage() {
       });
       setShowAwardDialog(false);
       setAwardBidCode(null);
+      if (newProject?.code) {
+        setLocation(`/projects/${newProject.code}`);
+      }
     } catch (error: any) {
       toast({
         title: "Error",
