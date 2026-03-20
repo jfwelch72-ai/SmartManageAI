@@ -1395,6 +1395,31 @@ router.get("/change-orders/drafts/:projectId", requireAuth, async (req: AuthRequ
   }
 });
 
+// PATCH /api/ai-features/change-orders/drafts/:draftId - Update draft status (e.g. REJECTED, REVIEWED)
+router.patch("/change-orders/drafts/:draftId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { status } = req.body;
+    if (!status) return res.status(400).json({ error: "status is required" });
+
+    const [draft] = await db.select().from(aiCoDrafts).where(
+      and(eq(aiCoDrafts.id, req.params.draftId), eq(aiCoDrafts.organizationId, organizationId))
+    );
+    if (!draft) return res.status(404).json({ error: "Draft not found" });
+
+    await db.update(aiCoDrafts)
+      .set({ status, updatedAt: new Date() })
+      .where(eq(aiCoDrafts.id, draft.id));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Update CO draft error:", error);
+    res.status(500).json({ error: "Failed to update draft" });
+  }
+});
+
 // POST /api/ai-features/change-orders/drafts/:draftId/convert - Convert draft to real CO
 router.post("/change-orders/drafts/:draftId/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {

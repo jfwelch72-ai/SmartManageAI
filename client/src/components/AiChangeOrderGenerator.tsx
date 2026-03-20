@@ -105,7 +105,13 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
   }
 
   const { data, isLoading, refetch } = useQuery<DraftResponse>({
-    queryKey: ["/api/ai-features/change-order-drafts", projectId],
+    queryKey: ["/api/ai-features/change-orders/drafts", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/ai-features/change-orders/drafts/${projectId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch drafts");
+      const json = await res.json();
+      return { drafts: json.drafts ?? [], stats: { totalDrafts: 0, pendingReview: 0, converted: 0, totalSuggestedValue: 0 } };
+    },
   });
 
   const generateMutation = useMutation({
@@ -138,7 +144,7 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/change-order-drafts", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/change-orders/drafts", projectId] });
       setGenerateDialogOpen(false);
       setDescription("");
       toast({
@@ -157,24 +163,38 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
     },
   });
 
-  const updateDraftMutation = useMutation({
-    mutationFn: async ({ draftId, status }: { draftId: string; status: string }) => {
-      const response = await apiRequest("PATCH", `/api/ai-features/change-order-drafts/${draftId}`, { status });
+  const convertMutation = useMutation({
+    mutationFn: async (draftId: string) => {
+      const response = await apiRequest("POST", `/api/ai-features/change-orders/drafts/${draftId}/convert`, {});
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/change-order-drafts", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/change-orders/drafts", projectId] });
       toast({
-        title: "Draft Updated",
-        description: "The draft status has been updated",
+        title: "Change Order Created",
+        description: "The AI draft has been converted to a change order successfully.",
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Update Failed",
-        description: error.message || "Failed to update draft",
+        title: "Conversion Failed",
+        description: error.message || "Failed to convert draft to change order",
         variant: "destructive",
       });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (draftId: string) => {
+      const response = await apiRequest("PATCH", `/api/ai-features/change-orders/drafts/${draftId}`, { status: "REJECTED" });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/change-orders/drafts", projectId] });
+      toast({ title: "Draft Rejected", description: "The draft has been rejected." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Update Failed", description: error.message || "Failed to reject draft", variant: "destructive" });
     },
   });
 
@@ -186,17 +206,15 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
   };
 
   const handleConvertToCO = (draft: GeneratedDraftResult) => {
-    updateDraftMutation.mutate({ draftId: draft.draftId, status: "CONVERTED" });
-    setReviewDialogOpen(false);
-    toast({
-      title: "Ready to Create",
-      description: "Draft data copied. Create a new change order to continue.",
+    convertMutation.mutate(draft.draftId, {
+      onSuccess: () => setReviewDialogOpen(false),
     });
   };
 
   const handleRejectDraft = (draft: GeneratedDraftResult) => {
-    updateDraftMutation.mutate({ draftId: draft.draftId, status: "REJECTED" });
-    setReviewDialogOpen(false);
+    rejectMutation.mutate(draft.draftId, {
+      onSuccess: () => setReviewDialogOpen(false),
+    });
   };
 
   const drafts = data?.drafts || [];
@@ -507,8 +525,9 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
             <Button
               variant="destructive"
               onClick={() => selectedDraft && handleRejectDraft(selectedDraft)}
-              disabled={updateDraftMutation.isPending}
+              disabled={rejectMutation.isPending || convertMutation.isPending}
             >
+              {rejectMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Reject
             </Button>
             <Button variant="outline" onClick={() => setReviewDialogOpen(false)}>
@@ -516,9 +535,9 @@ export default function AiChangeOrderGenerator({ projectId, projectName, onCreat
             </Button>
             <Button
               onClick={() => selectedDraft && handleConvertToCO(selectedDraft)}
-              disabled={updateDraftMutation.isPending}
+              disabled={convertMutation.isPending || rejectMutation.isPending}
             >
-              {updateDraftMutation.isPending ? (
+              {convertMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : (
                 <ArrowRight className="w-4 h-4 mr-2" />
