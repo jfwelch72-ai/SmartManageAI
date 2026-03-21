@@ -156,9 +156,14 @@ function fmt(n: number) {
 
 // ── Form Schema ────────────────────────────────────────────────────────────
 
+const OVERHEAD_CATEGORIES_VALUES = [
+  "SALARIES", "INSURANCE", "RENT_LEASE", "LOANS_FINANCING", "SUBSCRIPTIONS",
+  "UTILITIES", "VEHICLES", "MARKETING", "PROFESSIONAL_FEES", "EQUIPMENT", "OTHER",
+] as const;
+
 const itemFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
-  category: z.string().min(1, "Category is required"),
+  category: z.enum(OVERHEAD_CATEGORIES_VALUES),
   amount: z.coerce.number({ invalid_type_error: "Enter a valid amount" }).nonnegative("Amount must be 0 or more"),
   frequency: z.enum(["MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME"]),
   effectiveDate: z.string().optional(),
@@ -186,7 +191,7 @@ function ItemDialog({
     defaultValues: editItem
       ? {
           name: editItem.name,
-          category: editItem.category,
+          category: editItem.category as ItemFormValues["category"],
           amount: Number(editItem.amount),
           frequency: editItem.frequency as ItemFormValues["frequency"],
           effectiveDate: editItem.effectiveDate ?? "",
@@ -207,8 +212,7 @@ function ItemDialog({
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: ItemFormValues) =>
-      apiRequest("POST", "/api/overhead/items", data),
+    mutationFn: (data: ItemFormValues) => apiRequest("POST", "/api/overhead/items", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/overhead/items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/overhead/summary"] });
@@ -425,6 +429,109 @@ function ItemDialog({
   );
 }
 
+// ── Category Group ─────────────────────────────────────────────────────────
+
+function CategoryGroup({
+  category,
+  items,
+  onEdit,
+  onDelete,
+}: {
+  category: string;
+  items: OverheadCostItem[];
+  onEdit: (item: OverheadCostItem) => void;
+  onDelete: (item: OverheadCostItem) => void;
+}) {
+  const groupMonthly = items.reduce(
+    (sum, i) => sum + toMonthly(Number(i.amount), i.frequency),
+    0
+  );
+  const activeMonthly = items
+    .filter((i) => i.isActive)
+    .reduce((sum, i) => sum + toMonthly(Number(i.amount), i.frequency), 0);
+
+  return (
+    <div className="mb-6" data-testid={`group-category-${category}`}>
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border rounded-t-md">
+        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold ${CATEGORY_COLORS[category] ?? CATEGORY_COLORS.OTHER}`}>
+          {getCategoryLabel(category)}
+        </span>
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span>
+            Active: <span className="font-semibold text-foreground">${fmt(activeMonthly)}/mo</span>
+          </span>
+          <span>
+            Total: <span className="font-semibold text-foreground">${fmt(groupMonthly)}/mo</span>
+          </span>
+        </div>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Frequency</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
+            <TableHead className="text-right">Monthly Equiv.</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Notes</TableHead>
+            <TableHead className="text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((item) => {
+            const monthly = toMonthly(Number(item.amount), item.frequency);
+            return (
+              <TableRow key={item.id} data-testid={`row-overhead-${item.id}`}>
+                <TableCell className="font-medium">{item.name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {getFrequencyLabel(item.frequency)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm">
+                  ${fmt(Number(item.amount))}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                  {item.frequency === "ONE_TIME" ? "—" : `$${fmt(monthly)}/mo`}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={item.isActive ? "default" : "secondary"}>
+                    {item.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground max-w-[180px] truncate">
+                  {item.notes ?? "—"}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(item)}
+                      data-testid={`button-edit-overhead-${item.id}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => onDelete(item)}
+                      data-testid={`button-delete-overhead-${item.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 
 export default function OverheadCostsPage() {
@@ -505,17 +612,25 @@ export default function OverheadCostsPage() {
     toast({ title: `Default overhead set to ${summary.suggestedPercent}%` });
   }
 
-  const categories = ["ALL", ...CATEGORIES.map((c) => c.value)];
-
+  // Build grouped map — ordered by category definition order
   const filteredItems = filterCategory === "ALL"
     ? items
     : items.filter((i) => i.category === filterCategory);
 
   const grouped: Record<string, OverheadCostItem[]> = {};
-  for (const item of filteredItems) {
-    if (!grouped[item.category]) grouped[item.category] = [];
-    grouped[item.category].push(item);
+  for (const cat of OVERHEAD_CATEGORIES_VALUES) {
+    const group = filteredItems.filter((i) => i.category === cat);
+    if (group.length > 0) grouped[cat] = group;
   }
+  // Items with unrecognized categories fall to "OTHER" group automatically
+  for (const item of filteredItems) {
+    if (!OVERHEAD_CATEGORIES_VALUES.includes(item.category as typeof OVERHEAD_CATEGORIES_VALUES[number])) {
+      if (!grouped["OTHER"]) grouped["OTHER"] = [];
+      if (!grouped["OTHER"].find((x) => x.id === item.id)) grouped["OTHER"].push(item);
+    }
+  }
+
+  const categoryTabs = ["ALL", ...CATEGORIES.map((c) => c.value)];
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -691,7 +806,7 @@ export default function OverheadCostsPage() {
 
       {/* Category filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        {categories.map((cat) => (
+        {categoryTabs.map((cat) => (
           <Button
             key={cat}
             type="button"
@@ -705,12 +820,12 @@ export default function OverheadCostsPage() {
         ))}
       </div>
 
-      {/* Items table */}
+      {/* Cost items grouped by category */}
       <Card>
         <CardHeader>
           <CardTitle>Cost Items ({filteredItems.length})</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent>
           {itemsLoading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
           ) : filteredItems.length === 0 ? (
@@ -720,71 +835,17 @@ export default function OverheadCostsPage() {
               <p className="text-sm mt-1">Click "Add Cost" to get started</p>
             </div>
           ) : (
-            <Table data-testid="table-overhead-items">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Frequency</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Monthly Equiv.</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredItems.map((item) => {
-                  const monthly = toMonthly(Number(item.amount), item.frequency);
-                  return (
-                    <TableRow key={item.id} data-testid={`row-overhead-${item.id}`}>
-                      <TableCell className="font-medium">{item.name}</TableCell>
-                      <TableCell>
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${CATEGORY_COLORS[item.category] ?? CATEGORY_COLORS.OTHER}`}>
-                          {getCategoryLabel(item.category)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {getFrequencyLabel(item.frequency)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        ${fmt(Number(item.amount))}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                        {item.frequency === "ONE_TIME" ? "—" : `$${fmt(monthly)}/mo`}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={item.isActive ? "default" : "secondary"}>
-                          {item.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEdit(item)}
-                            data-testid={`button-edit-overhead-${item.id}`}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => setDeleteItem(item)}
-                            data-testid={`button-delete-overhead-${item.id}`}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div data-testid="grouped-overhead-items">
+              {Object.entries(grouped).map(([cat, groupItems]) => (
+                <CategoryGroup
+                  key={cat}
+                  category={cat}
+                  items={groupItems}
+                  onEdit={openEdit}
+                  onDelete={setDeleteItem}
+                />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -797,13 +858,13 @@ export default function OverheadCostsPage() {
               <div>
                 <span className="text-muted-foreground">Shown items monthly total: </span>
                 <span className="font-semibold">
-                  ${fmt(filteredItems.reduce((sum, i) => sum + toMonthly(Number(i.amount), i.frequency), 0))}
+                  ${fmt(filteredItems.reduce((sum, i) => sum + toMonthly(Number(i.amount), i.frequency), 0))}/mo
                 </span>
               </div>
               <div>
                 <span className="text-muted-foreground">Active items only: </span>
                 <span className="font-semibold">
-                  ${fmt(filteredItems.filter(i => i.isActive).reduce((sum, i) => sum + toMonthly(Number(i.amount), i.frequency), 0))}/mo
+                  ${fmt(filteredItems.filter((i) => i.isActive).reduce((sum, i) => sum + toMonthly(Number(i.amount), i.frequency), 0))}/mo
                 </span>
               </div>
             </div>
