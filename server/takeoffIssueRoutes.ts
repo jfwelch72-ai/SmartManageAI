@@ -21,9 +21,9 @@ async function verifyIssueSheetAccess(sheetId: string, user: { id: string; orgId
 
   if (sheet.projectId) {
     const [project] = await db
-      .select({ id: projects.id, orgId: projects.orgId })
+      .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, sheet.projectId), eq(projects.orgId, user.orgId)))
+      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.orgId)))
       .limit(1);
     if (!project) return { allowed: false, sheet, reason: "Not found" };
     return { allowed: true, sheet };
@@ -31,9 +31,9 @@ async function verifyIssueSheetAccess(sheetId: string, user: { id: string; orgId
 
   if (sheet.bidId) {
     const [bid] = await db
-      .select({ id: bids.id, orgId: bids.orgId })
+      .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, sheet.bidId), eq(bids.orgId, user.orgId)))
+      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.orgId)))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Not found" };
     return { allowed: true, sheet };
@@ -91,8 +91,9 @@ router.get("/api/takeoff/sheets/:sheetId/issues", requireAuth, async (req: AuthR
           authorId: takeoffIssueComments.authorId,
           body: takeoffIssueComments.body,
           createdAt: takeoffIssueComments.createdAt,
-          authorName: users.name,
-          authorAvatarUrl: users.profilePhotoUrl,
+          authorFirstName: users.firstName,
+          authorLastName: users.lastName,
+          authorAvatarUrl: users.avatarUrl,
         })
         .from(takeoffIssueComments)
         .leftJoin(users, eq(takeoffIssueComments.authorId, users.id))

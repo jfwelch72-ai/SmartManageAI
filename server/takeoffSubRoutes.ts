@@ -30,9 +30,9 @@ async function verifySheetAccess(sheetId: string, user: { id: string; orgId: str
 
   if (sheet.projectId) {
     const [project] = await db
-      .select({ id: projects.id, orgId: projects.orgId })
+      .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, sheet.projectId), eq(projects.orgId, user.orgId)))
+      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.orgId)))
       .limit(1);
     if (!project) return { allowed: false, sheet, reason: "Sheet not found" };
 
@@ -51,9 +51,9 @@ async function verifySheetAccess(sheetId: string, user: { id: string; orgId: str
 
   if (sheet.bidId) {
     const [bid] = await db
-      .select({ id: bids.id, orgId: bids.orgId })
+      .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, sheet.bidId), eq(bids.orgId, user.orgId)))
+      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.orgId)))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Sheet not found" };
     return { allowed: true, sheet };
@@ -444,101 +444,72 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
 router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { sheetId } = req.params;
-    const { takeoffSheets, projectPlans, planDocuments } = await import("@shared/schema");
+    const { takeoffSheets, projectPlans, planDocuments, bidDocuments, bids } = await import("@shared/schema");
+    const orgId = req.user!.organizationId!;
 
-    // Get the sheet with plan and document info
-    const [sheetData] = await db
-      .select({
-        sheet: takeoffSheets,
-        plan: projectPlans,
-        document: planDocuments,
-      })
-      .from(takeoffSheets)
-      .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
-      .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
-      .where(eq(takeoffSheets.id, sheetId))
-      .limit(1);
+    // Get the sheet
+    const [sheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, sheetId)).limit(1);
 
-    if (!sheetData) {
+    if (!sheet) {
       res.status(404).json({ error: "Sheet not found" });
       return;
     }
 
-    const { sheet, plan, document } = sheetData;
+    let objectKey: string | null = null;
 
-    // Verify project exists and user has access
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, sheet.projectId))
-      .limit(1);
-
-    if (!project) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-
-    // Check if user has permission to access this document
-    const userRole = req.user!.role;
-    const userId = req.user!.id;
-
-    // Admins and Managers have full access
-    const hasRoleAccess = userRole === "ADMIN" || userRole === "MANAGER";
-
-    // Check if user uploaded the document or has explicit permission
-    let hasDocumentAccess = hasRoleAccess;
-    if (!hasDocumentAccess && document) {
-      // Check if user uploaded this document
-      const isUploader = document.uploadedById === userId;
-      
-      // Check for explicit file permission
-      const [permission] = await db
-        .select()
-        .from(filePermissions)
-        .where(
-          and(
-            eq(filePermissions.fileId, document.id),
-            eq(filePermissions.fileType, "DOCUMENT"),
-            eq(filePermissions.userId, userId)
-          )
-        )
-        .limit(1);
-
-      hasDocumentAccess = isUploader || !!permission;
-    }
-
-    if (!hasDocumentAccess) {
-      res.status(403).json({ error: "You do not have permission to access this document" });
-      return;
-    }
-
-    // If document exists and has objectKey, stream the file
-    if (document?.objectKey) {
-      const { ObjectStorageService } = await import("./objectStorage");
-      const objectStorageService = new ObjectStorageService();
-      
-      try {
-        const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
-        
-        // Stream the file directly to the response with caching
-        await objectStorageService.downloadObject(objectFile, res, 3600); // 1 hour cache
-        return;
-      } catch (error: any) {
-        console.error("Error streaming PDF from objectKey:", error);
-        
-        // If object not found, return 404 instead of 500
-        if (error.name === 'ObjectNotFoundError' || error.message?.includes('not found')) {
-          res.status(404).json({ error: "PDF file no longer exists. Please re-upload the document." });
-          return;
-        }
-        
-        res.status(500).json({ error: "Internal server error" });
+    // --- Bid-based sheet ---
+    if (sheet.bidId) {
+      const [bid] = await db.select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId }).from(bids)
+        .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, orgId))).limit(1);
+      if (!bid) {
+        res.status(403).json({ error: "Access denied" });
         return;
       }
+      // Look up the bid document whose fileUrl matches the sheet's imageUrl
+      const [bidDoc] = await db.select({ objectKey: bidDocuments.objectKey })
+        .from(bidDocuments)
+        .where(and(eq(bidDocuments.bidId, sheet.bidId), eq(bidDocuments.fileUrl, sheet.imageUrl)))
+        .limit(1);
+      objectKey = bidDoc?.objectKey ?? null;
+    } else if (sheet.projectId) {
+      // --- Project-based sheet ---
+      const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+        .from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
+      if (!project || project.gcOrganizationId !== orgId) {
+        res.status(project ? 403 : 404).json({ error: project ? "Access denied" : "Project not found" });
+        return;
+      }
+      const [sheetWithDoc] = await db
+        .select({ objectKey: planDocuments.objectKey })
+        .from(takeoffSheets)
+        .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
+        .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
+        .where(eq(takeoffSheets.id, sheetId))
+        .limit(1);
+      objectKey = sheetWithDoc?.objectKey ?? null;
+    } else {
+      res.status(404).json({ error: "Sheet has no parent" });
+      return;
     }
 
-    // No valid document/objectKey available - cannot serve PDF securely
-    res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
+    if (!objectKey) {
+      res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
+      return;
+    }
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    try {
+      const objectFile = await objectStorageService.getObjectEntityFile(objectKey);
+      await objectStorageService.downloadObject(objectFile, res, 3600);
+    } catch (error: any) {
+      console.error("Error streaming PDF from objectKey:", error);
+      if (error.name === 'ObjectNotFoundError' || error.message?.includes('not found')) {
+        res.status(404).json({ error: "PDF file no longer exists. Please re-upload the document." });
+        return;
+      }
+      res.status(500).json({ error: "Internal server error" });
+    }
   } catch (error: any) {
     console.error("Stream sheet PDF error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1500,7 +1471,9 @@ router.get("/api/takeoff/sheets/:sheetId/markups", requireAuth, async (req: Auth
         text: takeoffMarkups.text,
         categoryId: takeoffMarkups.categoryId,
         createdAt: takeoffMarkups.createdAt,
-        authorName: users.name,
+        authorFirstName: users.firstName,
+        authorLastName: users.lastName,
+        authorAvatarUrl: users.avatarUrl,
       })
       .from(takeoffMarkups)
       .leftJoin(users, eq(takeoffMarkups.createdBy, users.id))
