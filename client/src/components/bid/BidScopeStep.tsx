@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat } from "lucide-react";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import EstimateRevisionHistory from "@/components/estimate/EstimateRevisionHistory";
 
 interface TakeoffCategory {
   id: string;
@@ -28,6 +29,7 @@ interface BidScopeStepProps {
   estimate: (Estimate & { lineItems: EstimateLineItem[]; totals: any }) | null;
   estimateLoading: boolean;
   canEdit: boolean;
+  canViewHistory?: boolean;
   bidId: string;
   bidCode: string;
   createEstimatePending: boolean;
@@ -41,6 +43,7 @@ export default function BidScopeStep({
   estimate,
   estimateLoading,
   canEdit,
+  canViewHistory = false,
   bidId,
   bidCode,
   createEstimatePending,
@@ -51,6 +54,7 @@ export default function BidScopeStep({
 }: BidScopeStepProps) {
   const { toast } = useToast();
   const [lastImportCount, setLastImportCount] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [lastLaborRateAppliedCount, setLastLaborRateAppliedCount] = useState<number | null>(null);
   const [lastClassificationName, setLastClassificationName] = useState<string | null>(null);
   const [selectedClassificationId, setSelectedClassificationId] = useState<string>("none");
@@ -254,6 +258,7 @@ export default function BidScopeStep({
   };
 
   return (
+    <>
     <Card data-testid="card-bid-estimate">
       <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
@@ -273,6 +278,17 @@ export default function BidScopeStep({
             >
               <Plus className="w-4 h-4 mr-2" />
               Create Estimate
+            </Button>
+          )}
+          {estimate && canViewHistory && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHistory(true)}
+              data-testid="button-estimate-history"
+            >
+              <History className="w-4 h-4 mr-2" />
+              History
             </Button>
           )}
           {estimate && (
@@ -472,5 +488,14 @@ export default function BidScopeStep({
         )}
       </CardContent>
     </Card>
+    {estimate && canViewHistory && (
+      <EstimateRevisionHistory
+        open={showHistory}
+        onOpenChange={setShowHistory}
+        bidCode={bidCode}
+        estimateId={estimate.id}
+      />
+    )}
+    </>
   );
 }

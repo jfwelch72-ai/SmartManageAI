@@ -917,6 +917,7 @@ export default function BidDetailPage() {
                 estimate={estimate}
                 estimateLoading={estimateLoading}
                 canEdit={canEdit}
+                canViewHistory={["ADMIN", "MANAGER", "ESTIMATOR"].includes(user?.role || "")}
                 bidId={bid.id}
                 bidCode={bidCode}
                 createEstimatePending={

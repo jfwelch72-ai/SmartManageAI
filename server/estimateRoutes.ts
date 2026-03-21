@@ -3,6 +3,7 @@ import { db } from "./db";
 import { 
   estimates, 
   estimateLineItems, 
+  estimateVersions,
   projects,
   bids,
   quantityCategories,
@@ -44,6 +45,34 @@ function hasEstimateAccess(role: string): boolean {
 // Helper to check if user has general management access (includes SUPERINTENDENT for read-only)
 function hasManagementAccess(role: string): boolean {
   return ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"].includes(role);
+}
+
+// Create a snapshot of current estimate line items and store in estimate_versions
+// Throws on failure so callers can handle or log appropriately
+async function createEstimateSnapshot(estimateId: string, savedByUserId: string): Promise<void> {
+  const lineItems = await db.select().from(estimateLineItems).where(eq(estimateLineItems.estimateId, estimateId));
+  const totalCost = lineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
+  // Enrich each line item with a deterministic unitCost for comparison purposes
+  const enrichedLineItems = lineItems.map((item) => {
+    const qty = Number(item.quantity) || 0;
+    const tc = Number(item.totalCost) || 0;
+    const unitCost = qty > 0 ? tc / qty : 0;
+    return { ...item, unitCost: unitCost.toFixed(4) };
+  });
+  const snapshot = JSON.stringify({
+    savedByUserId,
+    totalCost,
+    lineItemCount: lineItems.length,
+    lineItems: enrichedLineItems,
+  });
+  const lastVersion = await db
+    .select({ versionNumber: estimateVersions.versionNumber })
+    .from(estimateVersions)
+    .where(eq(estimateVersions.estimateId, estimateId))
+    .orderBy(desc(estimateVersions.versionNumber))
+    .limit(1);
+  const nextVersion = lastVersion.length > 0 ? lastVersion[0].versionNumber + 1 : 1;
+  await db.insert(estimateVersions).values({ estimateId, versionNumber: nextVersion, snapshot });
 }
 
 // Valid database enum values
@@ -517,6 +546,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       if (lineItemsToCreate.length > 0) {
         const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
+        try {
+          await createEstimateSnapshot(estimateId, req.user!.id);
+        } catch (snapshotErr) {
+          console.error("[Snapshot] Failed to create snapshot after project import-takeoff:", snapshotErr);
+        }
         res.json({ lineItems: newLineItems, count: newLineItems.length });
       } else {
         res.json({ lineItems: [], count: 0 });
@@ -680,6 +714,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       if (lineItemsToCreate.length > 0) {
         const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
         const laborRateAppliedCount = newLineItems.filter((li) => li.laborRateUsed !== null && Number(li.laborRateUsed) > 0).length;
+        try {
+          await createEstimateSnapshot(estimateId, req.user!.id);
+        } catch (snapshotErr) {
+          console.error("[Snapshot] Failed to create snapshot after import-takeoff:", snapshotErr);
+        }
         res.json({ lineItems: newLineItems, count: newLineItems.length, laborRateAppliedCount, classificationName });
       } else {
         res.json({ lineItems: [], count: 0, laborRateAppliedCount: 0, classificationName: null });
@@ -838,6 +877,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();
 
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        console.error("[Snapshot] Failed to create snapshot after line item create:", snapshotErr);
+      }
+
       res.status(201).json(newLineItem);
     } catch (error) {
       console.error("Error creating line item:", error);
@@ -943,6 +988,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(404).json({ error: "Line item not found" });
       }
 
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        console.error("[Snapshot] Failed to create snapshot after line item update:", snapshotErr);
+      }
+
       res.json(updatedLineItem);
     } catch (error) {
       console.error("Error updating line item:", error);
@@ -974,10 +1025,103 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           eq(estimateLineItems.estimateId, estimateId)
         ));
 
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        console.error("[Snapshot] Failed to create snapshot after line item delete:", snapshotErr);
+      }
+
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting line item:", error);
       res.status(500).json({ error: "Failed to delete line item" });
+    }
+  });
+
+  // Get estimate version history
+  router.get("/api/bids/:code/estimates/:estimateId/versions", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { code, estimateId } = req.params;
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Verify the bid and estimate belong to the org
+      const bid = await db.query.bids.findFirst({
+        where: eq(bids.code, code),
+      });
+      if (!bid) return res.status(404).json({ error: "Bid not found" });
+
+      const orgId = req.user!.organizationId;
+      if (orgId && bid.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const estimate = await db.query.estimates.findFirst({
+        where: and(eq(estimates.id, estimateId), eq(estimates.bidId, bid.id)),
+      });
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      const versions = await db
+        .select()
+        .from(estimateVersions)
+        .where(eq(estimateVersions.estimateId, estimateId))
+        .orderBy(desc(estimateVersions.versionNumber));
+
+      const result = versions.map((v) => {
+        const parsed = JSON.parse(v.snapshot);
+        return {
+          id: v.id,
+          versionNumber: v.versionNumber,
+          createdAt: v.createdAt,
+          savedByUserId: parsed.savedByUserId,
+          totalCost: parsed.totalCost,
+          lineItemCount: parsed.lineItemCount,
+        };
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching estimate versions:", error);
+      res.status(500).json({ error: "Failed to fetch estimate versions" });
+    }
+  });
+
+  // Get a specific estimate version snapshot
+  router.get("/api/bids/:code/estimates/:estimateId/versions/:versionId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { code, estimateId, versionId } = req.params;
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const bid = await db.query.bids.findFirst({ where: eq(bids.code, code) });
+      if (!bid) return res.status(404).json({ error: "Bid not found" });
+
+      const orgId = req.user!.organizationId;
+      if (orgId && bid.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const estimate = await db.query.estimates.findFirst({
+        where: and(eq(estimates.id, estimateId), eq(estimates.bidId, bid.id)),
+      });
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      const [version] = await db
+        .select()
+        .from(estimateVersions)
+        .where(and(eq(estimateVersions.id, versionId), eq(estimateVersions.estimateId, estimateId)))
+        .limit(1);
+      if (!version) return res.status(404).json({ error: "Version not found" });
+
+      const parsed = JSON.parse(version.snapshot);
+      res.json({ ...version, parsed });
+    } catch (error) {
+      console.error("Error fetching estimate version:", error);
+      res.status(500).json({ error: "Failed to fetch estimate version" });
     }
   });
 
@@ -1559,6 +1703,12 @@ Provide comprehensive financial analysis and recommendations.`
           return res.status(404).json({ error: "Not found" });
         }
 
+        try {
+          await createEstimateSnapshot(estimateId, req.user!.id);
+        } catch (snapshotErr) {
+          console.error("[Snapshot] Failed to create snapshot after auto-populate-labor:", snapshotErr);
+        }
+
         return res.json({
           success: true,
           message: `Applied ${laborEstimate.suggestedLaborHours} labor hours based on production rate data`,
@@ -1654,6 +1804,12 @@ Provide comprehensive financial analysis and recommendations.`
         .returning();
 
       console.log(`[MaterialSync] Synced material data for line item ${lineItemId}`);
+
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        console.error("[Snapshot] Failed to create snapshot after sync-materials:", snapshotErr);
+      }
 
       res.json({
         success: true,
