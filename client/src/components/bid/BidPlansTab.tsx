@@ -225,19 +225,24 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
       toast({ title: "Error", description: "No file uploaded", variant: "destructive" });
       return;
     }
-    const uploaded = result.successful[0];
-    const file = uploaded.data as File;
-    const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
-    const title = docTitle.trim() || file.name.replace(/\.[^/.]+$/, "");
-
-    createDocMutation.mutate({
-      title,
-      fileName: file.name,
-      fileUrl,
-      fileSize: file.size,
-      mimeType: file.type,
-      type: docType,
+    const isSingle = result.successful.length === 1;
+    result.successful.forEach((uploaded: any) => {
+      const file = uploaded.data as File;
+      const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
+      const baseName = file.name.replace(/\.[^/.]+$/, "");
+      const title = isSingle && docTitle.trim() ? docTitle.trim() : baseName;
+      createDocMutation.mutate({
+        title,
+        fileName: file.name,
+        fileUrl,
+        fileSize: file.size,
+        mimeType: file.type,
+        type: docType,
+      });
     });
+    if (result.successful.length > 1) {
+      toast({ title: `${result.successful.length} files uploaded`, description: "All documents have been added." });
+    }
   };
 
   const handleImportToTakeoff = async (docId: string) => {
@@ -328,7 +333,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     </Select>
                   </div>
                   <ObjectUploader
-                    maxNumberOfFiles={1}
+                    maxNumberOfFiles={20}
                     maxFileSize={104857600}
                     allowedFileTypes={[".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
                     fileType="DOCUMENT"
