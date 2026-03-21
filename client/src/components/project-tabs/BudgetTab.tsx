@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Save, DollarSign, AlertTriangle, Check, Info } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Plus, Trash2, Save, DollarSign, AlertTriangle, Check, Info, ArrowLeftRight, PlusCircle, X } from "lucide-react";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -77,10 +78,380 @@ function serverLineToLocal(l: BudgetLineItem): LocalLine {
   };
 }
 
+function getDivisionFromCode(code: string): string {
+  const divNum = code.split("-")[0]?.trim();
+  const divisionMap: Record<string, string> = {
+    "01": "General Requirements", "02": "Existing Conditions", "03": "Concrete",
+    "04": "Masonry", "05": "Metals", "06": "Wood, Plastics & Composites",
+    "07": "Thermal & Moisture Protection", "08": "Openings", "09": "Finishes",
+    "10": "Specialties", "11": "Equipment", "12": "Furnishings",
+    "13": "Special Construction", "14": "Conveying Equipment",
+    "21": "Fire Suppression", "22": "Plumbing", "23": "HVAC",
+    "25": "Integrated Automation", "26": "Electrical",
+    "27": "Communications", "28": "Electronic Safety & Security",
+    "31": "Earthwork", "32": "Exterior Improvements", "33": "Utilities",
+    "34": "Transportation", "35": "Waterway & Marine Construction",
+    "40": "Process Integration", "41": "Material Processing & Handling",
+    "42": "Process Heating, Cooling & Drying", "43": "Process Gas & Liquid Handling",
+    "44": "Pollution & Waste Control", "46": "Water & Wastewater",
+    "48": "Electrical Power Generation",
+  };
+  return divisionMap[divNum] || "Other";
+}
+
+const SEEDED_COST_TYPES = [
+  { label: "Labor", field: "laborBudget" as const },
+  { label: "Materials", field: "materialBudget" as const },
+  { label: "Subcontractors", field: "subcontractorBudget" as const },
+  { label: "Equipment", field: "equipmentBudget" as const },
+  { label: "Other", field: "otherBudget" as const },
+];
+
+type CostField = "laborBudget" | "materialBudget" | "subcontractorBudget" | "equipmentBudget" | "otherBudget";
+
+interface RemapRow {
+  key: string;
+  costCode: string;
+  description: string;
+  division: string;
+  amount: string;
+}
+
+interface RemapBucket {
+  label: string;
+  field: CostField;
+  totalAmount: number;
+  rows: RemapRow[];
+}
+
+function buildInitialBuckets(seededLines: LocalLine[]): RemapBucket[] {
+  return SEEDED_COST_TYPES.map(({ label, field }) => {
+    const total = seededLines.reduce((sum, l) => sum + parseNum(l[field]), 0);
+    return {
+      label,
+      field,
+      totalAmount: total,
+      rows: [
+        {
+          key: `${field}-0`,
+          costCode: "",
+          description: "",
+          division: "",
+          amount: String(total),
+        },
+      ],
+    };
+  });
+}
+
+interface RemapDialogProps {
+  open: boolean;
+  onClose: () => void;
+  seededLines: LocalLine[];
+  nonSeededLines: LocalLine[];
+  projectCode: string;
+  onSuccess: (freshLines: BudgetLineItem[]) => void;
+}
+
+function RemapDialog({ open, onClose, seededLines, nonSeededLines, projectCode, onSuccess }: RemapDialogProps) {
+  const { toast } = useToast();
+  const [buckets, setBuckets] = useState<RemapBucket[]>([]);
+
+  const { data: costCodes = [] } = useQuery<OrgCostCode[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+
+  const costCodeMap = new Map(costCodes.map(c => [c.code, c]));
+
+  useEffect(() => {
+    if (open) {
+      setBuckets(buildInitialBuckets(seededLines));
+    }
+  }, [open, seededLines]);
+
+  const bulkReplaceMutation = useMutation({
+    mutationFn: async (lines: object[]) => {
+      const res = await apiRequest("PUT", `/api/projects/${projectCode}/budget-lines`, lines);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || "Failed to remap budget lines");
+      }
+      return res.json() as Promise<BudgetLineItem[]>;
+    },
+    onSuccess: (freshLines: BudgetLineItem[]) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "budget-lines"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "cost-ledger"] });
+      toast({ title: "Budget Remapped", description: "Budget lines have been updated with your selected CSI codes." });
+      onSuccess(freshLines);
+      onClose();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to remap budget lines.", variant: "destructive" });
+    },
+  });
+
+  const handleCostCodeSelect = (bucketIdx: number, rowIdx: number, code: string) => {
+    setBuckets(prev => prev.map((b, bi) => {
+      if (bi !== bucketIdx) return b;
+      const matched = costCodeMap.get(code);
+      const description = matched?.description || code;
+      const division = matched?.division || getDivisionFromCode(code);
+      const updatedRows = b.rows.map((r, ri) =>
+        ri === rowIdx ? { ...r, costCode: code, description, division } : r
+      );
+      return { ...b, rows: updatedRows };
+    }));
+  };
+
+  const handleDescriptionChange = (bucketIdx: number, rowIdx: number, value: string) => {
+    setBuckets(prev => prev.map((b, bi) => {
+      if (bi !== bucketIdx) return b;
+      const updatedRows = b.rows.map((r, ri) =>
+        ri === rowIdx ? { ...r, description: value } : r
+      );
+      return { ...b, rows: updatedRows };
+    }));
+  };
+
+  const handleAmountChange = (bucketIdx: number, rowIdx: number, value: string) => {
+    setBuckets(prev => prev.map((b, bi) => {
+      if (bi !== bucketIdx) return b;
+      const updatedRows = b.rows.map((r, ri) =>
+        ri === rowIdx ? { ...r, amount: value } : r
+      );
+      return { ...b, rows: updatedRows };
+    }));
+  };
+
+  const addSplitRow = (bucketIdx: number) => {
+    setBuckets(prev => prev.map((b, bi) => {
+      if (bi !== bucketIdx) return b;
+      const newRow: RemapRow = {
+        key: `${b.field}-${Date.now()}`,
+        costCode: "",
+        description: "",
+        division: "",
+        amount: "0",
+      };
+      return { ...b, rows: [...b.rows, newRow] };
+    }));
+  };
+
+  const removeRow = (bucketIdx: number, rowIdx: number) => {
+    setBuckets(prev => prev.map((b, bi) => {
+      if (bi !== bucketIdx) return b;
+      if (b.rows.length <= 1) return b;
+      return { ...b, rows: b.rows.filter((_, ri) => ri !== rowIdx) };
+    }));
+  };
+
+  const handleConfirm = () => {
+    for (const bucket of buckets) {
+      if (bucket.totalAmount === 0) continue;
+      for (const row of bucket.rows) {
+        if (!row.costCode.trim()) {
+          toast({ title: "Validation Error", description: `Please select a cost code for all ${bucket.label} rows.`, variant: "destructive" });
+          return;
+        }
+      }
+      const rowTotal = bucket.rows.reduce((s, r) => s + parseNum(r.amount), 0);
+      if (Math.abs(rowTotal - bucket.totalAmount) > 0.01) {
+        toast({
+          title: "Amount Mismatch",
+          description: `${bucket.label}: split row total (${fmtCurrency(rowTotal)}) must equal the original budget amount (${fmtCurrency(bucket.totalAmount)}). Adjust the amounts before confirming.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    const allMappedLines: Map<string, {
+      costCode: string;
+      description: string;
+      division: string;
+      laborBudget: number;
+      materialBudget: number;
+      subcontractorBudget: number;
+      equipmentBudget: number;
+      otherBudget: number;
+    }> = new Map();
+
+    for (const bucket of buckets) {
+      if (bucket.totalAmount === 0) continue;
+      for (const row of bucket.rows) {
+        if (!row.costCode.trim()) continue;
+        const key = row.costCode;
+        if (!allMappedLines.has(key)) {
+          allMappedLines.set(key, {
+            costCode: row.costCode,
+            description: row.description || row.costCode,
+            division: row.division || getDivisionFromCode(row.costCode),
+            laborBudget: 0,
+            materialBudget: 0,
+            subcontractorBudget: 0,
+            equipmentBudget: 0,
+            otherBudget: 0,
+          });
+        }
+        const entry = allMappedLines.get(key)!;
+        entry[bucket.field] += parseNum(row.amount);
+      }
+    }
+
+    for (const l of nonSeededLines.filter(l => l.costCode.trim() && l.description.trim())) {
+      const key = l.costCode;
+      if (!allMappedLines.has(key)) {
+        allMappedLines.set(key, {
+          costCode: l.costCode,
+          description: l.description,
+          division: l.division,
+          laborBudget: parseNum(l.laborBudget),
+          materialBudget: parseNum(l.materialBudget),
+          subcontractorBudget: parseNum(l.subcontractorBudget),
+          equipmentBudget: parseNum(l.equipmentBudget),
+          otherBudget: parseNum(l.otherBudget),
+        });
+      } else {
+        const entry = allMappedLines.get(key)!;
+        entry.laborBudget += parseNum(l.laborBudget);
+        entry.materialBudget += parseNum(l.materialBudget);
+        entry.subcontractorBudget += parseNum(l.subcontractorBudget);
+        entry.equipmentBudget += parseNum(l.equipmentBudget);
+        entry.otherBudget += parseNum(l.otherBudget);
+      }
+    }
+
+    const finalLines = Array.from(allMappedLines.values()).map(l => ({
+      costCode: l.costCode,
+      description: l.description,
+      division: l.division,
+      laborBudget: String(l.laborBudget),
+      materialBudget: String(l.materialBudget),
+      subcontractorBudget: String(l.subcontractorBudget),
+      equipmentBudget: String(l.equipmentBudget),
+      otherBudget: String(l.otherBudget),
+    }));
+
+    bulkReplaceMutation.mutate(finalLines);
+  };
+
+  const activeBuckets = buckets.filter(b => b.totalAmount > 0);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="dialog-remap-csi">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ArrowLeftRight className="h-5 w-5" />
+            Remap to CSI Codes
+          </DialogTitle>
+          <DialogDescription>
+            Reassign each seeded cost bucket to your project's actual CSI cost codes. You can split a bucket across multiple codes by adding rows.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-6 py-2">
+          {activeBuckets.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">No seeded buckets with amounts to remap.</p>
+          )}
+          {activeBuckets.map((bucket, bucketIdx) => {
+            const globalBucketIdx = buckets.findIndex(b => b.field === bucket.field);
+            const rowTotal = bucket.rows.reduce((s, r) => s + parseNum(r.amount), 0);
+            const diff = Math.abs(rowTotal - bucket.totalAmount);
+            const hasAmountMismatch = diff > 0.01;
+
+            return (
+              <div key={bucket.field} className="rounded-lg border p-4 space-y-3" data-testid={`remap-bucket-${bucket.field}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-semibold text-sm">{bucket.label}</span>
+                    <span className="ml-2 text-muted-foreground text-sm">original total: {fmtCurrency(bucket.totalAmount)}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => addSplitRow(globalBucketIdx)}
+                    className="text-xs"
+                    data-testid={`button-add-split-${bucket.field}`}
+                  >
+                    <PlusCircle className="h-3.5 w-3.5 mr-1" />
+                    Split
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  {bucket.rows.map((row, rowIdx) => (
+                    <div key={row.key} className="flex items-center gap-2" data-testid={`remap-row-${bucket.field}-${rowIdx}`}>
+                      <div className="flex-1 min-w-0">
+                        <CostCodeCombobox
+                          value={row.costCode}
+                          onChange={(code) => handleCostCodeSelect(globalBucketIdx, rowIdx, code)}
+                          data-testid={`combobox-remap-${bucket.field}-${rowIdx}`}
+                        />
+                      </div>
+                      <div className="w-40">
+                        <Input
+                          value={row.description}
+                          onChange={(e) => handleDescriptionChange(globalBucketIdx, rowIdx, e.target.value)}
+                          placeholder="Description"
+                          className="h-9 text-sm"
+                          data-testid={`input-remap-desc-${bucket.field}-${rowIdx}`}
+                        />
+                      </div>
+                      <div className="w-28">
+                        <Input
+                          type="number"
+                          value={row.amount}
+                          onChange={(e) => handleAmountChange(globalBucketIdx, rowIdx, e.target.value)}
+                          className="h-9 text-sm text-right"
+                          data-testid={`input-remap-amount-${bucket.field}-${rowIdx}`}
+                        />
+                      </div>
+                      {bucket.rows.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeRow(globalBucketIdx, rowIdx)}
+                          className="h-9 w-9 text-destructive flex-shrink-0"
+                          data-testid={`button-remove-remap-${bucket.field}-${rowIdx}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {hasAmountMismatch && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1" data-testid={`warning-remap-mismatch-${bucket.field}`}>
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Row total ({fmtCurrency(rowTotal)}) doesn't match original ({fmtCurrency(bucket.totalAmount)}).
+                    Difference: {fmtCurrency(diff)}.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={bulkReplaceMutation.isPending} data-testid="button-remap-cancel">
+            Cancel
+          </Button>
+          <Button onClick={handleConfirm} disabled={bulkReplaceMutation.isPending} data-testid="button-remap-confirm">
+            {bulkReplaceMutation.isPending ? "Remapping..." : "Confirm Remap"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function BudgetTab({ projectCode, userRole, projectBudget }: { projectCode: string; userRole: string; projectBudget?: number }) {
   const { toast } = useToast();
   const [lines, setLines] = useState<LocalLine[]>([]);
   const [initialized, setInitialized] = useState(false);
+  const [remapDialogOpen, setRemapDialogOpen] = useState(false);
 
   const canEdit = userRole === "ADMIN" || userRole === "MANAGER";
 
@@ -217,11 +588,19 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
   };
   const hasDirty = lines.some(l => l.isDirty);
 
-  // Detect if any lines were auto-seeded from the bid estimate at conversion
-  const seededMatch = lines.find(l => l.description.includes("Seeded from estimate on"));
+  const isSeededLine = (l: LocalLine) => l.description.includes("Seeded from estimate on");
+  const seededLines = lines.filter(isSeededLine);
+  const nonSeededLines = lines.filter(l => !isSeededLine(l));
+  const hasSeededLines = seededLines.length > 0;
+
+  const seededMatch = seededLines[0];
   const seededDate = seededMatch
     ? (seededMatch.description.match(/Seeded from estimate on (.+)$/)?.[1] ?? null)
     : null;
+
+  const handleRemapSuccess = (freshLines: BudgetLineItem[]) => {
+    setLines(freshLines.map(serverLineToLocal));
+  };
 
   if (isLoading) {
     return <div className="flex items-center justify-center py-12 text-muted-foreground" data-testid="budget-loading">Loading budget...</div>;
@@ -241,11 +620,18 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
               {orgCostCodes && orgCostCodes.length > 0 && ` ${orgCostCodes.length} cost codes available for your organization.`}
             </p>
           </div>
-          {canEdit && (
-            <Button variant="outline" size="sm" onClick={addLine} data-testid="button-add-budget-line">
-              <Plus className="h-4 w-4 mr-1" /> Add Line
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {canEdit && hasSeededLines && (
+              <Button variant="outline" size="sm" onClick={() => setRemapDialogOpen(true)} data-testid="button-remap-csi-codes">
+                <ArrowLeftRight className="h-4 w-4 mr-1" /> Remap to CSI Codes
+              </Button>
+            )}
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={addLine} data-testid="button-add-budget-line">
+                <Plus className="h-4 w-4 mr-1" /> Add Line
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {seededDate && (
@@ -406,27 +792,15 @@ export default function BudgetTab({ projectCode, userRole, projectBudget }: { pr
           </div>
         </CardContent>
       </Card>
+
+      <RemapDialog
+        open={remapDialogOpen}
+        onClose={() => setRemapDialogOpen(false)}
+        seededLines={seededLines}
+        nonSeededLines={nonSeededLines}
+        projectCode={projectCode}
+        onSuccess={handleRemapSuccess}
+      />
     </div>
   );
-}
-
-function getDivisionFromCode(code: string): string {
-  const divNum = code.split("-")[0]?.trim();
-  const divisionMap: Record<string, string> = {
-    "01": "General Requirements", "02": "Existing Conditions", "03": "Concrete",
-    "04": "Masonry", "05": "Metals", "06": "Wood, Plastics & Composites",
-    "07": "Thermal & Moisture Protection", "08": "Openings", "09": "Finishes",
-    "10": "Specialties", "11": "Equipment", "12": "Furnishings",
-    "13": "Special Construction", "14": "Conveying Equipment",
-    "21": "Fire Suppression", "22": "Plumbing", "23": "HVAC",
-    "25": "Integrated Automation", "26": "Electrical",
-    "27": "Communications", "28": "Electronic Safety & Security",
-    "31": "Earthwork", "32": "Exterior Improvements", "33": "Utilities",
-    "34": "Transportation", "35": "Waterway & Marine Construction",
-    "40": "Process Integration", "41": "Material Processing & Handling",
-    "42": "Process Heating, Cooling & Drying", "43": "Process Gas & Liquid Handling",
-    "44": "Pollution & Waste Control", "46": "Water & Wastewater",
-    "48": "Electrical Power Generation",
-  };
-  return divisionMap[divNum] || "Other";
 }
