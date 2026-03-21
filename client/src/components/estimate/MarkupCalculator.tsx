@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
-import { Calculator } from "lucide-react";
+import { Calculator, Building2 } from "lucide-react";
+import { Link } from "wouter";
 
 interface MarkupCalculatorProps {
   totals: {
@@ -19,6 +21,10 @@ interface MarkupCalculatorProps {
 }
 
 export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPercent, onOverheadChange, onProfitChange }: MarkupCalculatorProps) {
+  const { data: overheadSummary } = useQuery<{ defaultOverheadPercent: number; suggestedPercent: number | null }>({
+    queryKey: ["/api/overhead/summary"],
+  });
+
   return (
     <Card className="border-primary/20 bg-primary/5" data-testid="card-markup-calculator">
       <CardHeader>
@@ -32,6 +38,20 @@ export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPerc
               Adjust overhead and profit percentages to see impact on total bid amount
             </CardDescription>
           </div>
+          {overheadSummary && (
+            <div className="text-right text-sm hidden sm:block">
+              <Link href="/overhead-costs" className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors" data-testid="link-overhead-costs">
+                <Building2 className="h-3.5 w-3.5" />
+                <span>Company overhead</span>
+              </Link>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Default: <span className="font-semibold text-foreground">{overheadSummary.defaultOverheadPercent}%</span>
+                {overheadSummary.suggestedPercent != null && (
+                  <span> · Suggested: <span className="font-semibold text-foreground">{overheadSummary.suggestedPercent}%</span></span>
+                )}
+              </p>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>

@@ -189,6 +189,7 @@ import costLedgerRoutes from "./costLedgerRoutes";
 import hiringRoutes from "./hiringRoutes";
 import marketplaceEquipmentRoutes from "./marketplaceEquipmentRoutes";
 import marketplaceCrewRoutes from "./marketplaceCrewRoutes";
+import overheadRoutes from "./overheadRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -567,6 +568,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Client Portal Routes (extracted from aiFeatureRoutes)
   app.use("/api/ai-features", clientPortalRoutes);
+
+  // Overhead Cost Items Routes
+  app.use(overheadRoutes);
 
   // Reports Routes (Takeoff & Estimate Reports)
   app.use(reportRoutes);

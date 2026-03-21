@@ -379,6 +379,9 @@ export const RoutePermissions = {
   // Interviews + analytics: ADMIN/HUSTLER/MANAGER only (excludes OFFICE_MANAGER and HR_MANAGER)
   HIRING_ADVANCED: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
   HIRING_SETTINGS: (role?: string) => role === "ADMIN",
+
+  // Overhead & Fixed Costs Manager
+  OVERHEAD_COSTS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
 };
 
 /**
@@ -785,6 +788,12 @@ export const NavigationConfig = {
       label: "Safety Training",
       testId: "nav-safety-training",
       visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
+    },
+    {
+      href: "/overhead-costs",
+      label: "Overhead & Fixed Costs",
+      testId: "nav-overhead-costs",
+      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
   ],
 

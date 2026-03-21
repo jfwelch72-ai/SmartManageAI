@@ -6495,3 +6495,46 @@ export const insertEquipmentRentalRequestSchema = createInsertSchema(equipmentRe
 export type InsertEquipmentRentalRequest = z.infer<typeof insertEquipmentRentalRequestSchema>;
 export type EquipmentRentalRequest = typeof equipmentRentalRequests.$inferSelect;
 
+// ── Overhead Cost Items ──────────────────────────────────────────────────────
+// Allowed categories for company fixed/overhead costs
+export type OverheadCostCategory =
+  | "SALARIES"
+  | "INSURANCE"
+  | "RENT_LEASE"
+  | "LOANS_FINANCING"
+  | "SUBSCRIPTIONS"
+  | "UTILITIES"
+  | "VEHICLES"
+  | "MARKETING"
+  | "PROFESSIONAL_FEES"
+  | "EQUIPMENT"
+  | "OTHER";
+
+export type OverheadCostFrequency = "MONTHLY" | "QUARTERLY" | "ANNUAL" | "ONE_TIME";
+
+export const overheadCostItems = pgTable("overhead_cost_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").notNull().default("OTHER"),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  frequency: text("frequency").notNull().default("MONTHLY"),
+  effectiveDate: date("effective_date"),
+  endDate: date("end_date"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("overhead_cost_items_org_idx").on(table.organizationId),
+  activeIdx: index("overhead_cost_items_active_idx").on(table.organizationId, table.isActive),
+}));
+
+export const insertOverheadCostItemSchema = createInsertSchema(overheadCostItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertOverheadCostItem = z.infer<typeof insertOverheadCostItemSchema>;
+export type OverheadCostItem = typeof overheadCostItems.$inferSelect;
+

@@ -32,6 +32,8 @@ export const organizations = pgTable("organizations", {
   matchTolerancePct: decimal("match_tolerance_pct", { precision: 5, scale: 2 }).default("5"),
   isActive: boolean("is_active").notNull().default(true),
   hiringAutoTasksEnabled: boolean("hiring_auto_tasks_enabled").notNull().default(false),
+  annualRevenueTarget: decimal("annual_revenue_target", { precision: 15, scale: 2 }),
+  defaultOverheadPercent: decimal("default_overhead_percent", { precision: 8, scale: 4 }).default("15"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
