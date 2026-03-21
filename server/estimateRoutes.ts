@@ -16,7 +16,7 @@ import {
   jobClassifications,
   type EstimateLineItem,
 } from "@shared/schema";
-import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
+import { eq, and, desc, sql, or, isNull, inArray } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
@@ -425,8 +425,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }
 
       // Get selected categories
+      if (!categoryIds?.length) {
+        return res.status(400).json({ error: "No takeoff categories selected" });
+      }
       const categories = await db.query.quantityCategories.findMany({
-        where: sql`${quantityCategories.id} = ANY(${categoryIds})`,
+        where: inArray(quantityCategories.id, categoryIds),
       });
 
       const lineItemsToCreate = [];
@@ -587,8 +590,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(404).json({ error: "Estimate not found for this bid" });
       }
 
+      if (!categoryIds?.length) {
+        return res.status(400).json({ error: "No takeoff categories selected" });
+      }
+
       const categories = await db.query.quantityCategories.findMany({
-        where: sql`${quantityCategories.id} = ANY(${categoryIds})`,
+        where: inArray(quantityCategories.id, categoryIds),
       });
 
       // Resolve labor classification rate if provided — scoped to org for tenant isolation
