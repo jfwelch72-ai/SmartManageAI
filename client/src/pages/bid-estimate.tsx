@@ -530,7 +530,7 @@ export default function BidEstimate() {
       sealerWasteFactor: lineItemAny.sealerWasteFactor || "10",
       calculatedSealerGallons: lineItemAny.calculatedSealerGallons || "0",
       requiresUnderlayment: lineItemAny.requiresUnderlayment || false,
-      underlaymentType: lineItemAny.underlaymentType || "6MIL_POLY",
+      underlaymentType: lineItemAny.underlaymentType || "POLY_6MIL",
       underlaymentOverlapInches: lineItemAny.underlaymentOverlapInches || "6",
       underlaymentWasteFactor: lineItemAny.underlaymentWasteFactor || "10",
       calculatedUnderlaymentSF: lineItemAny.calculatedUnderlaymentSF || "0",

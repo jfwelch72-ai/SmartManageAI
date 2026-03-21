@@ -77,11 +77,11 @@ const SEALER_TYPES: Record<string, { label: string; coverageSFPerGallon: number 
   EPOXY: { label: "Epoxy Sealer", coverageSFPerGallon: 100 },
 };
 
-// Underlayment types
+// Underlayment types — keys must match the underlaymentTypeEnum: POLY_6MIL | POLY_10MIL | VAPOR_BARRIER
 const UNDERLAYMENT_TYPES: Record<string, { label: string; rollWidthFt: number; rollLengthFt: number }> = {
-  "6MIL_POLY": { label: "6 mil Poly (Vapor Barrier)", rollWidthFt: 10, rollLengthFt: 100 },
-  "10MIL_POLY": { label: "10 mil Poly (Heavy Duty)", rollWidthFt: 10, rollLengthFt: 100 },
-  VISQUEEN: { label: "Visqueen", rollWidthFt: 10, rollLengthFt: 100 },
+  POLY_6MIL: { label: "6 mil Poly (Vapor Barrier)", rollWidthFt: 10, rollLengthFt: 100 },
+  POLY_10MIL: { label: "10 mil Poly (Heavy Duty)", rollWidthFt: 10, rollLengthFt: 100 },
+  VAPOR_BARRIER: { label: "Vapor Barrier / Visqueen", rollWidthFt: 10, rollLengthFt: 100 },
 };
 
 // Determine if a unit is linear (LF) or area-based (SF)
@@ -1747,7 +1747,7 @@ export default function MaterialCalculator({
                     <div>
                       <Label className="text-xs">Material Type</Label>
                       <Select
-                        value={value.underlaymentType || "6MIL_POLY"}
+                        value={value.underlaymentType || "POLY_6MIL"}
                         onValueChange={(val) => updateValue("underlaymentType", val)}
                         disabled={readOnly}
                       >
@@ -1975,7 +1975,7 @@ export function getDefaultMaterialCalculatorData(): MaterialCalculatorData {
     sealerWasteFactor: "10",
     calculatedSealerGallons: "0",
     requiresUnderlayment: false,
-    underlaymentType: "6MIL_POLY",
+    underlaymentType: "POLY_6MIL",
     underlaymentOverlapInches: "6",
     underlaymentWasteFactor: "10",
     calculatedUnderlaymentSF: "0",

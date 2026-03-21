@@ -67,9 +67,9 @@ const SEALER_TYPES: Record<string, { label: string; coverageSFPerGallon: number 
 };
 
 const UNDERLAYMENT_TYPES: Record<string, { label: string; rollWidthFt: number; rollLengthFt: number }> = {
-  "6MIL_POLY": { label: "6 mil Poly (Vapor Barrier)", rollWidthFt: 10, rollLengthFt: 100 },
-  "10MIL_POLY": { label: "10 mil Poly (Heavy Duty)", rollWidthFt: 10, rollLengthFt: 100 },
-  VISQUEEN: { label: "Visqueen", rollWidthFt: 10, rollLengthFt: 100 },
+  POLY_6MIL: { label: "6 mil Poly (Vapor Barrier)", rollWidthFt: 10, rollLengthFt: 100 },
+  POLY_10MIL: { label: "10 mil Poly (Heavy Duty)", rollWidthFt: 10, rollLengthFt: 100 },
+  VAPOR_BARRIER: { label: "Vapor Barrier / Visqueen", rollWidthFt: 10, rollLengthFt: 100 },
 };
 
 type ConcreteShape = "area" | "slab" | "footing" | "column";
@@ -121,7 +121,7 @@ export default function MaterialEstimatorCalculator() {
   const [sealerWaste, setSealerWaste] = useState("10");
 
   const [enableUnderlayment, setEnableUnderlayment] = useState(false);
-  const [underlaymentType, setUnderlaymentType] = useState("6MIL_POLY");
+  const [underlaymentType, setUnderlaymentType] = useState("POLY_6MIL");
   const [underlaymentOverlap, setUnderlaymentOverlap] = useState("6");
 
   const areaSF = useMemo(() => {

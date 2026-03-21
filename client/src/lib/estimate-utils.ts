@@ -99,7 +99,7 @@ export function buildMaterialCalculatorPayload(data: MaterialCalculatorData) {
     sealerWasteFactor: data.requiresSealer ? (data.sealerWasteFactor || "10") : undefined,
     calculatedSealerGallons: data.requiresSealer ? (data.calculatedSealerGallons || undefined) : undefined,
     requiresUnderlayment: data.requiresUnderlayment || false,
-    underlaymentType: data.requiresUnderlayment ? (data.underlaymentType || "6MIL_POLY") : undefined,
+    underlaymentType: data.requiresUnderlayment ? (data.underlaymentType || "POLY_6MIL") : undefined,
     underlaymentOverlapInches: data.requiresUnderlayment ? (data.underlaymentOverlapInches || "6") : undefined,
     underlaymentWasteFactor: data.requiresUnderlayment ? (data.underlaymentWasteFactor || "10") : undefined,
     calculatedUnderlaymentSF: data.requiresUnderlayment ? (data.calculatedUnderlaymentSF || undefined) : undefined,
