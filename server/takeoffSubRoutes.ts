@@ -12,9 +12,8 @@ import { createArcSegment } from "@shared/utils/geometry";
 
 const router = Router();
 
-async function verifySheetAccess(sheetId: string, user: { id: string; orgId: string; role: string }): Promise<{ allowed: boolean; sheet: any | null; reason?: string }> {
+async function verifySheetAccess(sheetId: string, user: { id: string; organizationId: string | null; role: string }): Promise<{ allowed: boolean; sheet: any | null; reason?: string }> {
   const { takeoffSheets, projects, bids } = await import("@shared/schema");
-  const { isNull } = await import("drizzle-orm");
 
   const [sheet] = await db
     .select({
@@ -32,7 +31,7 @@ async function verifySheetAccess(sheetId: string, user: { id: string; orgId: str
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.orgId)))
+      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)))
       .limit(1);
     if (!project) return { allowed: false, sheet, reason: "Sheet not found" };
 
@@ -53,7 +52,7 @@ async function verifySheetAccess(sheetId: string, user: { id: string; orgId: str
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.orgId)))
+      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Sheet not found" };
     return { allowed: true, sheet };
@@ -455,7 +454,35 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
       return;
     }
 
-    let objectKey: string | null = null;
+    const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+
+    // Helper: resolve a GCS URL or stored objectKey into a streamable GCS File object
+    async function resolveGcsFile(objectKey: string | null | undefined, gcsUrl: string | null | undefined) {
+      if (objectKey && objectKey.startsWith("/objects/")) {
+        return objectStorageService.getObjectEntityFile(objectKey);
+      }
+      const rawUrl = objectKey || gcsUrl;
+      if (!rawUrl) return null;
+      // If it's a full GCS URL, parse it directly
+      if (rawUrl.startsWith("https://storage.googleapis.com/")) {
+        const url = new URL(rawUrl);
+        // pathname = /bucket-name/object/path
+        const parts = url.pathname.split("/").filter(Boolean);
+        if (parts.length < 2) return null;
+        const bucketName = parts[0];
+        const objectName = parts.slice(1).join("/");
+        const file = objectStorageClient.bucket(bucketName).file(objectName);
+        const [exists] = await file.exists();
+        return exists ? file : null;
+      }
+      // Try as a stored objectKey via the service
+      try {
+        return await objectStorageService.getObjectEntityFile(rawUrl);
+      } catch {
+        return null;
+      }
+    }
 
     // --- Bid-based sheet ---
     if (sheet.bidId) {
@@ -466,11 +493,16 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
         return;
       }
       // Look up the bid document whose fileUrl matches the sheet's imageUrl
-      const [bidDoc] = await db.select({ objectKey: bidDocuments.objectKey })
+      const [bidDoc] = await db.select({ objectKey: bidDocuments.objectKey, fileUrl: bidDocuments.fileUrl })
         .from(bidDocuments)
         .where(and(eq(bidDocuments.bidId, sheet.bidId), eq(bidDocuments.fileUrl, sheet.imageUrl)))
         .limit(1);
-      objectKey = bidDoc?.objectKey ?? null;
+      const gcsFile = await resolveGcsFile(bidDoc?.objectKey, bidDoc?.fileUrl ?? sheet.imageUrl);
+      if (!gcsFile) {
+        res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
+        return;
+      }
+      await objectStorageService.downloadObject(gcsFile, res, 3600);
     } else if (sheet.projectId) {
       // --- Project-based sheet ---
       const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
@@ -480,35 +512,20 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
         return;
       }
       const [sheetWithDoc] = await db
-        .select({ objectKey: planDocuments.objectKey })
+        .select({ objectKey: planDocuments.objectKey, fileUrl: planDocuments.fileUrl })
         .from(takeoffSheets)
         .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
         .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
         .where(eq(takeoffSheets.id, sheetId))
         .limit(1);
-      objectKey = sheetWithDoc?.objectKey ?? null;
-    } else {
-      res.status(404).json({ error: "Sheet has no parent" });
-      return;
-    }
-
-    if (!objectKey) {
-      res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
-      return;
-    }
-
-    const { ObjectStorageService } = await import("./objectStorage");
-    const objectStorageService = new ObjectStorageService();
-    try {
-      const objectFile = await objectStorageService.getObjectEntityFile(objectKey);
-      await objectStorageService.downloadObject(objectFile, res, 3600);
-    } catch (error: any) {
-      console.error("Error streaming PDF from objectKey:", error);
-      if (error.name === 'ObjectNotFoundError' || error.message?.includes('not found')) {
-        res.status(404).json({ error: "PDF file no longer exists. Please re-upload the document." });
+      const gcsFile = await resolveGcsFile(sheetWithDoc?.objectKey, sheetWithDoc?.fileUrl);
+      if (!gcsFile) {
+        res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
         return;
       }
-      res.status(500).json({ error: "Internal server error" });
+      await objectStorageService.downloadObject(gcsFile, res, 3600);
+    } else {
+      res.status(404).json({ error: "Sheet has no parent" });
     }
   } catch (error: any) {
     console.error("Stream sheet PDF error:", error);

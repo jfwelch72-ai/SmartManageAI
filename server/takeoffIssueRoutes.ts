@@ -7,9 +7,8 @@ import { insertNotification } from "./services/notificationService";
 
 const router = Router();
 
-async function verifyIssueSheetAccess(sheetId: string, user: { id: string; orgId: string; role: string }): Promise<{ allowed: boolean; sheet: any | null; reason?: string }> {
+async function verifyIssueSheetAccess(sheetId: string, user: { id: string; organizationId: string | null; role: string }): Promise<{ allowed: boolean; sheet: any | null; reason?: string }> {
   const { takeoffSheets, projects, bids } = await import("@shared/schema");
-  const { isNull } = await import("drizzle-orm");
 
   const [sheet] = await db
     .select({ id: takeoffSheets.id, projectId: takeoffSheets.projectId, bidId: takeoffSheets.bidId })
@@ -23,7 +22,7 @@ async function verifyIssueSheetAccess(sheetId: string, user: { id: string; orgId
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.orgId)))
+      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)))
       .limit(1);
     if (!project) return { allowed: false, sheet, reason: "Not found" };
     return { allowed: true, sheet };
@@ -33,7 +32,7 @@ async function verifyIssueSheetAccess(sheetId: string, user: { id: string; orgId
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.orgId)))
+      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Not found" };
     return { allowed: true, sheet };
