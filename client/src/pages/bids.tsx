@@ -95,6 +95,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ToastAction } from "@/components/ui/toast";
 import {
   Form,
   FormControl,
@@ -359,6 +360,18 @@ export default function BidsPage() {
 
   const handleConvertToProject = async (bidCode: string) => {
     const bid = bids.find((b) => b.code === bidCode);
+    if (bid?.status === "AWARDED") {
+      toast({
+        title: "Already converted",
+        description: bid.convertedToProjectId
+          ? `Bid ${bidCode} has already been converted to project ${bidCode}.`
+          : `Bid ${bidCode} has already been awarded.`,
+      });
+      if (bid.convertedToProjectId) {
+        setLocation(`/projects/${bidCode}`);
+      }
+      return;
+    }
     if (bid && (!bid.bidAmount || parseFloat(bid.bidAmount) === 0)) {
       setPendingConversionBidCode(bidCode);
       setShowBudgetWarning(true);
@@ -401,11 +414,37 @@ export default function BidsPage() {
         setLocation("/projects");
       }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to convert bid to project",
-        variant: "destructive",
-      });
+      const isAlreadyAwarded =
+        error.message?.includes("Bid already awarded") ||
+        error.status === 409;
+      if (isAlreadyAwarded) {
+        const bid = bids.find((b) => b.code === bidCode);
+        toast({
+          title: "Already converted",
+          description: bid?.convertedToProjectId
+            ? `Bid ${bidCode} has already been converted to project ${bidCode}.`
+            : `Bid ${bidCode} has already been awarded.`,
+          action: bid?.convertedToProjectId ? (
+            <ToastAction
+              altText="View Project"
+              onClick={() => {
+                setShowAwardDialog(false);
+                setLocation(`/projects/${bidCode}`);
+              }}
+            >
+              View Project
+            </ToastAction>
+          ) : undefined,
+        });
+        setShowAwardDialog(false);
+        setAwardBidCode(null);
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to convert bid to project",
+          variant: "destructive",
+        });
+      }
     }
   };
 

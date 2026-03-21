@@ -11,6 +11,7 @@ import {
   Calculator,
   Upload,
   Send,
+  ExternalLink,
 } from "lucide-react";
 import {
   Select,
@@ -20,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLocation, useRoute } from "wouter";
@@ -596,11 +598,32 @@ export default function BidDetailPage() {
         setLocation("/projects");
       }
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to convert bid to project",
-        variant: "destructive",
-      });
+      const isAlreadyAwarded =
+        error.message?.includes("Bid already awarded") ||
+        error.status === 409;
+      if (isAlreadyAwarded) {
+        const projectCode = bid.convertedToProjectId ? bid.code : null;
+        toast({
+          title: "Already converted",
+          description: projectCode
+            ? `This bid has already been converted to project ${projectCode}.`
+            : "This bid has already been converted to a project.",
+          action: projectCode ? (
+            <ToastAction
+              altText="View Project"
+              onClick={() => setLocation(`/projects/${projectCode}`)}
+            >
+              View Project
+            </ToastAction>
+          ) : undefined,
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to convert bid to project",
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -788,14 +811,24 @@ export default function BidDetailPage() {
                   Submitted {format(new Date(bid.submittedAt), "MMM d, yyyy h:mm a")}
                 </Badge>
               )}
-              {canEdit ? (
+              {bid.status === "AWARDED" && bid.convertedToProjectId ? (
+                <Badge
+                  className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 cursor-pointer hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                  onClick={() => setLocation(`/projects/${bid.code}`)}
+                  data-testid="badge-converted-to-project"
+                  title={`View project ${bid.code}`}
+                >
+                  <ExternalLink className="w-3 h-3 mr-1" />
+                  Converted → Project {bid.code}
+                </Badge>
+              ) : canEdit ? (
                 <Select
                   value={bid.status}
                   onValueChange={(v) => {
                     if (v === "AWARDED") setShowAwardDialog(true);
                     else mutations.updateBidStatus.mutate(v);
                   }}
-                  disabled={mutations.updateBidStatus.isPending}
+                  disabled={mutations.updateBidStatus.isPending || bid.status === "AWARDED"}
                   data-testid="select-bid-status"
                 >
                   <SelectTrigger
@@ -820,6 +853,7 @@ export default function BidDetailPage() {
                     <SelectItem
                       value="AWARDED"
                       data-testid="select-bid-status-awarded"
+                      disabled={bid.status === "AWARDED"}
                     >
                       Awarded
                     </SelectItem>
@@ -874,7 +908,18 @@ export default function BidDetailPage() {
                 <Edit className="w-4 h-4 mr-2" />
                 Edit Bid Info
               </Button>
-              {bid.status !== "AWARDED" && (
+              {bid.status === "AWARDED" && bid.convertedToProjectId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 sm:flex-none"
+                  onClick={() => setLocation(`/projects/${bid.code}`)}
+                  data-testid="button-view-converted-project"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  View Project
+                </Button>
+              ) : bid.status !== "AWARDED" ? (
                 <Button
                   size="sm"
                   className="flex-1 sm:flex-none"
@@ -883,7 +928,7 @@ export default function BidDetailPage() {
                 >
                   Mark as Awarded
                 </Button>
-              )}
+              ) : null}
             </div>
           )}
         </div>
