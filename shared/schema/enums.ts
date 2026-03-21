@@ -574,3 +574,15 @@ export const hiringInterviewStatusEnum = pgEnum("hiring_interview_status", ["SCH
 export const hiringSyncStatusEnum = pgEnum("hiring_sync_status", ["PENDING", "RUNNING", "COMPLETED", "FAILED"]);
 export const atsProviderEnum = pgEnum("ats_provider", ["WORKABLE", "GREENHOUSE", "LEVER"]);
 export const hiringActivityTypeEnum = pgEnum("hiring_activity_type", ["JOB_CREATED", "JOB_PUBLISHED", "JOB_ARCHIVED", "CANDIDATE_APPLIED", "CANDIDATE_STAGE_CHANGED", "CANDIDATE_HIRED", "CANDIDATE_REJECTED", "NOTE_ADDED", "INTERVIEW_SCHEDULED", "INTEGRATION_CONNECTED", "AI_REVIEW_GENERATED"]);
+
+// ============================================
+// OVERHEAD COST ENUMS
+// ============================================
+export const overheadCostCategoryEnum = pgEnum("overhead_cost_category", [
+  "SALARIES", "INSURANCE", "RENT_LEASE", "LOANS_FINANCING",
+  "SUBSCRIPTIONS", "UTILITIES", "VEHICLES", "MARKETING",
+  "PROFESSIONAL_FEES", "EQUIPMENT", "OTHER",
+]);
+export const overheadCostFrequencyEnum = pgEnum("overhead_cost_frequency", [
+  "MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME",
+]);
