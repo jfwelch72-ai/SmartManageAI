@@ -206,7 +206,7 @@ router.get("/api/overhead/summary", requireAuth, async (req: AuthRequest, res: R
     totalAnnual: Math.round(totalAnnual * 100) / 100,
     suggestedPercent,
     annualRevenueTarget: annualRevenue,
-    defaultOverheadPercent: org?.defaultOverheadPercent ? Number(org.defaultOverheadPercent) : 15,
+    defaultOverheadPercent: org?.defaultOverheadPercent != null ? Number(org.defaultOverheadPercent) : 15,
   });
 });
 

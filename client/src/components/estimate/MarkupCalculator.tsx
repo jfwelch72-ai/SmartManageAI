@@ -38,20 +38,6 @@ export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPerc
               Adjust overhead and profit percentages to see impact on total bid amount
             </CardDescription>
           </div>
-          {overheadSummary && (
-            <div className="text-right text-sm hidden sm:block">
-              <Link href="/overhead-costs" className="flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors" data-testid="link-overhead-costs">
-                <Building2 className="h-3.5 w-3.5" />
-                <span>Company overhead</span>
-              </Link>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Default: <span className="font-semibold text-foreground">{overheadSummary.defaultOverheadPercent}%</span>
-                {overheadSummary.suggestedPercent != null && (
-                  <span> · Suggested: <span className="font-semibold text-foreground">{overheadSummary.suggestedPercent}%</span></span>
-                )}
-              </p>
-            </div>
-          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -101,6 +87,19 @@ export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPerc
                   </Button>
                 ))}
               </div>
+              {overheadSummary && (
+                <p className="text-xs text-muted-foreground" data-testid="text-overhead-benchmark">
+                  <Link href="/overhead-costs" className="inline-flex items-center gap-1 hover:underline" data-testid="link-overhead-costs">
+                    <Building2 className="h-3 w-3" />
+                    Org benchmark:
+                  </Link>
+                  {" "}
+                  <span className="font-medium text-foreground">{overheadSummary.defaultOverheadPercent}%</span>
+                  {overheadSummary.suggestedPercent != null && (
+                    <span className="text-muted-foreground"> · suggested {overheadSummary.suggestedPercent}% based on your fixed overhead costs</span>
+                  )}
+                </p>
+              )}
             </div>
 
             <div className="space-y-3">
