@@ -5,7 +5,8 @@ import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
-  Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2
+  Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2,
+  ExternalLink, X
 } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
@@ -84,6 +85,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [renameSheetId, setRenameSheetId] = useState<string | null>(null);
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
   const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents"];
 
@@ -109,6 +111,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     onSuccess: (_, docId) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidCode, "documents"] });
       if (selectedDocId === docId) setSelectedDocId(null);
+      if (previewDocId === docId) setPreviewDocId(null);
       toast({ title: "Document removed" });
     },
     onError: () => {
@@ -333,9 +336,10 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     </Select>
                   </div>
                   <ObjectUploader
+                    key={docType}
                     maxNumberOfFiles={20}
                     maxFileSize={104857600}
-                    allowedFileTypes={[".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
+                    allowedFileTypes={docType === "PLANS" ? [".pdf"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
                     fileType="DOCUMENT"
                     onComplete={handleUploadComplete}
                     testId="button-upload-bid-plan"
@@ -345,6 +349,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                       {createDocMutation.isPending ? "Saving..." : "Upload"}
                     </Button>
                   </ObjectUploader>
+                  {docType === "PLANS" && (
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
+                  )}
                 </div>
               )}
             </div>
@@ -394,7 +401,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                   "flex items-center gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
                                   selectedDocId === doc.id && "bg-accent"
                                 )}
-                                onClick={() => setSelectedDocId(doc.id)}
+                                onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                 data-testid={`bid-document-${doc.id}`}
                               >
                                 <File className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -659,8 +666,8 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           </div>
         )}
 
-        <div className="flex-1 min-w-0 relative">
-          {leftPanelCollapsed && (
+        <div className="flex-1 min-w-0 relative flex flex-col">
+          {leftPanelCollapsed && !previewDocId && (
             <Button
               size="icon"
               variant="ghost"
@@ -671,7 +678,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
               <ChevronRight className="w-4 h-4" />
             </Button>
           )}
-          {!leftPanelCollapsed && (
+          {!leftPanelCollapsed && !previewDocId && (
             <Button
               size="icon"
               variant="ghost"
@@ -682,9 +689,85 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
               <ChevronDown className="w-4 h-4 rotate-90" />
             </Button>
           )}
-          <TakeoffWorkspace
-            context={{ type: "bid", bidId, bidCode }}
-          />
+          {previewDocId ? (
+            (() => {
+              const doc = documents.find((d) => d.id === previewDocId);
+              if (!doc) return <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />;
+              const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
+              const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
+              return (
+                <div className="flex flex-col h-full" data-testid="doc-preview-panel">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setPreviewDocId(null)}
+                      data-testid="button-back-to-takeoff"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Back to Takeoff
+                    </Button>
+                    <span className="text-sm font-medium truncate flex-1" data-testid="preview-doc-title">{doc.title || doc.fileName}</span>
+                    <Badge variant="outline" className="text-[10px] shrink-0">{doc.type}</Badge>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => window.open(doc.fileUrl, "_blank")}
+                      data-testid="button-open-doc-external"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    {isPdf ? (
+                      <iframe
+                        src={doc.fileUrl}
+                        className="w-full h-full border-0"
+                        title={doc.title || doc.fileName}
+                        data-testid="preview-pdf-iframe"
+                      />
+                    ) : isImage ? (
+                      <div className="flex items-center justify-center h-full bg-muted/20 p-4">
+                        <img
+                          src={doc.fileUrl}
+                          alt={doc.title || doc.fileName}
+                          className="max-w-full max-h-full object-contain"
+                          data-testid="preview-image"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <div className="text-center space-y-4 p-8 max-w-sm">
+                          <div className="flex justify-center">
+                            <File className="w-16 h-16 text-muted-foreground/40" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm" data-testid="preview-filename">{doc.title || doc.fileName}</p>
+                            <Badge variant="secondary" className="mt-1 text-xs">{doc.fileName.split(".").pop()?.toUpperCase() || doc.type}</Badge>
+                          </div>
+                          <p className="text-sm text-muted-foreground">This file type cannot be previewed in the browser.</p>
+                          <Button
+                            variant="outline"
+                            onClick={() => window.open(doc.fileUrl, "_blank")}
+                            data-testid="button-open-file-external"
+                          >
+                            <ExternalLink className="w-4 h-4 mr-2" />
+                            Open File
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <TakeoffWorkspace
+              context={{ type: "bid", bidId, bidCode }}
+            />
+          )}
         </div>
       </div>
 
