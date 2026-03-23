@@ -9,7 +9,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { FileText } from "lucide-react";
+import { FileText, Pencil, Trash2 } from "lucide-react";
 import type { EstimateLineItem } from "@shared/schema";
 
 interface LineItemsTableProps {
@@ -56,13 +56,13 @@ export function LineItemsTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Estimate Line Items</CardTitle>
+        <CardTitle className="text-lg sm:text-xl">Estimate Line Items</CardTitle>
         <CardDescription>Detailed breakdown of all cost items in this estimate</CardDescription>
       </CardHeader>
       <CardContent className="p-0 sm:p-6">
 
-        {/* ── Mobile card layout (hidden on md+) ── */}
-        <div className="md:hidden divide-y divide-border">
+        {/* ── Mobile card layout (hidden on lg+) ── */}
+        <div className="lg:hidden divide-y divide-border">
           {lineItems.map((item) => {
             const directCost = Number(item.materialCost) + Number(item.laborCost) + Number(item.equipmentCost) + Number(item.consumablesCost || 0) + Number(item.subcontractCost || 0);
             const totalOverhead = directCost * (overheadPercent / 100);
@@ -71,7 +71,6 @@ export function LineItemsTable({
 
             return (
               <div key={item.id} className="px-4 py-4 space-y-3" data-testid={`row-line-item-${item.id}`}>
-                {/* Header row: description + category */}
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm leading-snug">{item.description}</p>
@@ -82,7 +81,6 @@ export function LineItemsTable({
                   <Badge variant="outline" className="text-xs shrink-0">{item.category}</Badge>
                 </div>
 
-                {/* Cost breakdown grid */}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Material</span>
@@ -100,9 +98,14 @@ export function LineItemsTable({
                     <span className="text-muted-foreground">Subcontract</span>
                     <span>${fmt(Number(item.subcontractCost || 0))}</span>
                   </div>
+                  {Number(item.laborHours || 0) > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Hours</span>
+                      <span>{Number(item.laborHours || 0).toLocaleString(undefined, { minimumFractionDigits: 1 })}</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Totals row */}
                 <div className="flex items-center justify-between rounded-md bg-muted/40 px-3 py-2 text-sm">
                   <div className="space-y-0.5">
                     <div className="flex gap-3">
@@ -120,7 +123,6 @@ export function LineItemsTable({
                   </div>
                 </div>
 
-                {/* Actions */}
                 {hasEstimateAccess && (
                   <div className="flex gap-2 pt-1">
                     <Button
@@ -130,6 +132,7 @@ export function LineItemsTable({
                       onClick={() => onEdit(item)}
                       data-testid={`button-edit-line-item-${item.id}`}
                     >
+                      <Pencil className="h-3 w-3 mr-1" />
                       Edit
                     </Button>
                     <Button
@@ -140,6 +143,7 @@ export function LineItemsTable({
                       disabled={isDeleting}
                       data-testid={`button-delete-line-item-${item.id}`}
                     >
+                      <Trash2 className="h-3 w-3 mr-1" />
                       Delete
                     </Button>
                   </div>
@@ -149,25 +153,25 @@ export function LineItemsTable({
           })}
         </div>
 
-        {/* ── Desktop full table (hidden below md) ── */}
-        <div className="hidden md:block overflow-x-auto">
-          <Table className="min-w-[1000px]">
+        {/* ── Desktop full table (hidden below lg) ── */}
+        <div className="hidden lg:block overflow-x-auto">
+          <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="whitespace-nowrap">Description</TableHead>
+                <TableHead className="min-w-[180px]">Description</TableHead>
                 <TableHead className="whitespace-nowrap">Category</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead className="text-right">Material</TableHead>
-                <TableHead className="text-right">Labor</TableHead>
-                <TableHead className="text-right">Hours</TableHead>
-                <TableHead className="text-right">Equipment</TableHead>
-                <TableHead className="text-right">Subcontract</TableHead>
-                <TableHead className="text-right">Direct Cost</TableHead>
-                <TableHead className="text-right text-orange-600 dark:text-orange-400">Overhead ({overheadPercent}%)</TableHead>
-                <TableHead className="text-right text-green-600 dark:text-green-400">Profit ({profitMarginPercent}%)</TableHead>
-                <TableHead className="text-right">Bid Total</TableHead>
-                {hasEstimateAccess && <TableHead></TableHead>}
+                <TableHead className="text-right whitespace-nowrap">Qty</TableHead>
+                <TableHead className="whitespace-nowrap">Unit</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Material</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Labor</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Hours</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Equipment</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Subcontract</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Direct Cost</TableHead>
+                <TableHead className="text-right text-orange-600 dark:text-orange-400 whitespace-nowrap">OH ({overheadPercent}%)</TableHead>
+                <TableHead className="text-right text-green-600 dark:text-green-400 whitespace-nowrap">Profit ({profitMarginPercent}%)</TableHead>
+                <TableHead className="text-right whitespace-nowrap">Bid Total</TableHead>
+                {hasEstimateAccess && <TableHead className="w-[80px]"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -179,43 +183,46 @@ export function LineItemsTable({
 
                 return (
                   <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
-                    <TableCell className="font-medium">{item.description}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">{item.category}</Badge>
+                    <TableCell className="font-medium max-w-[250px]">
+                      <span className="line-clamp-3">{item.description}</span>
                     </TableCell>
-                    <TableCell>{item.quantity.toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs whitespace-nowrap">{item.category}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{item.quantity.toLocaleString()}</TableCell>
                     <TableCell className="text-muted-foreground text-xs">{item.unit}</TableCell>
-                    <TableCell className="text-right">${fmt(Number(item.materialCost))}</TableCell>
-                    <TableCell className="text-right">${fmt(Number(item.laborCost))}</TableCell>
-                    <TableCell className="text-right text-muted-foreground">
+                    <TableCell className="text-right tabular-nums">${fmt(Number(item.materialCost))}</TableCell>
+                    <TableCell className="text-right tabular-nums">${fmt(Number(item.laborCost))}</TableCell>
+                    <TableCell className="text-right text-muted-foreground tabular-nums">
                       {Number(item.laborHours || 0).toLocaleString(undefined, { minimumFractionDigits: 1 })}
                     </TableCell>
-                    <TableCell className="text-right">${fmt(Number(item.equipmentCost))}</TableCell>
-                    <TableCell className="text-right">${fmt(Number(item.subcontractCost || 0))}</TableCell>
-                    <TableCell className="text-right font-medium">${fmt(directCost)}</TableCell>
-                    <TableCell className="text-right text-orange-600 dark:text-orange-400">${fmt(totalOverhead)}</TableCell>
-                    <TableCell className="text-right text-green-600 dark:text-green-400">${fmt(totalProfit)}</TableCell>
-                    <TableCell className="text-right font-bold">${fmt(bidTotal)}</TableCell>
+                    <TableCell className="text-right tabular-nums">${fmt(Number(item.equipmentCost))}</TableCell>
+                    <TableCell className="text-right tabular-nums">${fmt(Number(item.subcontractCost || 0))}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">${fmt(directCost)}</TableCell>
+                    <TableCell className="text-right text-orange-600 dark:text-orange-400 tabular-nums">${fmt(totalOverhead)}</TableCell>
+                    <TableCell className="text-right text-green-600 dark:text-green-400 tabular-nums">${fmt(totalProfit)}</TableCell>
+                    <TableCell className="text-right font-bold tabular-nums">${fmt(bidTotal)}</TableCell>
                     {hasEstimateAccess && (
                       <TableCell>
                         <div className="flex gap-1">
                           <Button
-                            size="sm"
+                            size="icon"
                             variant="ghost"
+                            className="h-7 w-7"
                             onClick={() => onEdit(item)}
                             data-testid={`button-edit-line-item-${item.id}`}
                           >
-                            Edit
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            size="sm"
+                            size="icon"
                             variant="ghost"
-                            className="text-destructive"
+                            className="h-7 w-7 text-destructive"
                             onClick={() => onDelete(item.id)}
                             disabled={isDeleting}
                             data-testid={`button-delete-line-item-${item.id}`}
                           >
-                            Delete
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </TableCell>
