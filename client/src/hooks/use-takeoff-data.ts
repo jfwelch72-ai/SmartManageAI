@@ -20,6 +20,7 @@ interface UseTakeoffDataParams {
   uploadDialogOpen: boolean;
   takeoffHistory: ReturnType<typeof useTakeoffHistory>;
   selectedCategoryId: string | null;
+  onCollabBroadcast?: (type: "MEASUREMENT_CREATED" | "MEASUREMENT_UPDATED" | "MEASUREMENT_DELETED", payload: any) => void;
   callbacks: {
     setUploadDialogOpen: (v: boolean) => void;
     setSelectedSheet: (v: string | null) => void;
@@ -42,6 +43,7 @@ export function useTakeoffData({
   uploadDialogOpen,
   takeoffHistory,
   selectedCategoryId,
+  onCollabBroadcast,
   callbacks,
 }: UseTakeoffDataParams) {
   const { toast } = useToast();
@@ -144,6 +146,7 @@ export function useTakeoffData({
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       if (selectedSheet) {
         takeoffHistory.pushAction("CREATE", data, selectedSheet);
+        onCollabBroadcast?.("MEASUREMENT_CREATED", { sheetId: selectedSheet, measurementId: data.id });
       }
       toast({ title: "Success", description: "Measurement saved" });
     },
@@ -157,8 +160,11 @@ export function useTakeoffData({
       const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data: any, variables: { id: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      if (selectedSheet) {
+        onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables.id });
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update measurement", variant: "destructive" });
@@ -175,6 +181,7 @@ export function useTakeoffData({
       callbacks.setSelectedMeasurementId(null);
       if (selectedSheet) {
         takeoffHistory.pushAction("DELETE", deleted, selectedSheet);
+        onCollabBroadcast?.("MEASUREMENT_DELETED", { sheetId: selectedSheet, measurementId: deleted.id });
       }
       toast({ title: "Success", description: "Measurement deleted" });
     },

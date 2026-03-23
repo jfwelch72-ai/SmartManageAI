@@ -34,6 +34,8 @@ import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 import { onLibraryEvent } from "@/lib/libraryEvents";
 import type { LibraryEvent } from "@/lib/libraryEvents";
+import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
+import { Users, Lock } from "lucide-react";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -137,6 +139,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
   };
 
+  const { data: currentUserData } = useQuery({ queryKey: ["/api/auth/me"] });
+  const currentUser: any = currentUserData;
+
+  const collabRoomId = context?.type === "bid" ? context.bidId : projectId;
+  const collab = useTakeoffCollaboration({
+    roomId: collabRoomId || null,
+    selectedSheet,
+    currentUserId: currentUser?.id || null,
+  });
+
   const data = useTakeoffData({
     projectId,
     projectCode,
@@ -145,6 +157,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     uploadDialogOpen,
     takeoffHistory,
     selectedCategoryId,
+    onCollabBroadcast: collab.broadcastMeasurementChange,
     callbacks: {
       setUploadDialogOpen,
       setSelectedSheet,
@@ -207,9 +220,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     ...u,
     name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email,
   }));
-
-  const { data: currentUserData } = useQuery({ queryKey: ["/api/auth/me"] });
-  const currentUser: any = currentUserData;
 
   const createIssueMutation = useMutation({
     mutationFn: async (body: any) => {
@@ -687,8 +697,92 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   : "Not Calibrated"}
               </Badge>
             )}
+            {selectedSheet && collab.collaborators.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={collab.sheetLocks.has(selectedSheet) && collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id ? "secondary" : "ghost"}
+                    size="sm"
+                    className="gap-1 h-7 px-2"
+                    onClick={() => {
+                      if (!selectedSheet) return;
+                      const myLock = collab.sheetLocks.get(selectedSheet);
+                      if (myLock && myLock.userId === currentUser?.id) {
+                        collab.unlockSheet(selectedSheet);
+                      } else {
+                        collab.lockSheet(selectedSheet);
+                      }
+                    }}
+                    data-testid="button-sheet-lock-toggle"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline text-xs">
+                      {collab.sheetLocks.has(selectedSheet) && collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id ? "Unlock" : "Lock"}
+                    </span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    {collab.sheetLocks.has(selectedSheet) && collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id
+                      ? "Release \"I'm working here\" lock"
+                      : "Set \"I'm working here\" soft lock"}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {collab.collaborators.length > 0 && (
+              <div className="flex items-center gap-1" data-testid="collaborators-indicator">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center -space-x-1.5">
+                      {collab.collaborators.slice(0, 4).map((c) => (
+                        <Tooltip key={c.userId}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="w-7 h-7 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold text-white cursor-default"
+                              style={{ backgroundColor: c.userColor }}
+                              data-testid={`avatar-collaborator-${c.userId}`}
+                            >
+                              {c.userName.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>{c.userName}</p>
+                            {c.currentSheetId && (
+                              <p className="text-xs text-muted-foreground">
+                                Viewing: {sheets.find(s => s.id === c.currentSheetId)?.sheetName || "Unknown sheet"}
+                              </p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      ))}
+                      {collab.collaborators.length > 4 && (
+                        <div className="w-7 h-7 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground">
+                          +{collab.collaborators.length - 4}
+                        </div>
+                      )}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{collab.collaborators.length} collaborator{collab.collaborators.length > 1 ? "s" : ""} online</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Users className="w-4 h-4 text-muted-foreground ml-1" />
+              </div>
+            )}
+            {collab.currentSheetLock && (
+              <div className="flex items-center gap-1 px-2 py-1 bg-amber-100 dark:bg-amber-900/30 rounded text-xs text-amber-700 dark:text-amber-300" data-testid="sheet-lock-warning">
+                <Lock className="w-3 h-3" />
+                <span>{collab.currentSheetLock.userName} is working here</span>
+              </div>
+            )}
+            {!collab.connected && collabRoomId && (
+              <Badge variant="outline" className="text-xs text-amber-600 border-amber-300" data-testid="badge-offline">
+                Offline
+              </Badge>
+            )}
             {selectedSheet && issues.length > 0 && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="hide-resolved-toggle">
                 <Switch
@@ -785,7 +879,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 }
                 handleStageMouseUp(e);
               }}
-              onMouseMove={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleStageMouseMove(e); } }}
+              onMouseMove={(e) => {
+                if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleStageMouseMove(e); }
+                const stage = stageRef.current;
+                if (stage) {
+                  const pos = stage.getPointerPosition();
+                  if (pos) {
+                    const canvasX = (pos.x - stagePosition.x) / stageScale;
+                    const canvasY = (pos.y - stagePosition.y) / stageScale;
+                    collab.sendCursorMove(canvasX, canvasY, selectedSheet);
+                  }
+                }
+              }}
               onTouchStart={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
               onTouchEnd={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleTouchEnd(e); } }}
               onTouchMove={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleTouchMove(e); } }}
@@ -1293,6 +1398,34 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   }
                   return null;
                 })}
+
+                {collab.visibleCursors.map((cursor) => (
+                  <Group key={`collab-cursor-${cursor.userId}`} x={cursor.x} y={cursor.y} listening={false}>
+                    <Line
+                      points={[0, 0, 4 / stageScale, 14 / stageScale, 0, 10 / stageScale]}
+                      fill={cursor.userColor}
+                      stroke="#ffffff"
+                      strokeWidth={1 / stageScale}
+                      closed
+                    />
+                    <Rect
+                      x={6 / stageScale}
+                      y={10 / stageScale}
+                      width={(cursor.userName.length * 6 + 8) / stageScale}
+                      height={16 / stageScale}
+                      fill={cursor.userColor}
+                      cornerRadius={3 / stageScale}
+                    />
+                    <Text
+                      x={10 / stageScale}
+                      y={12 / stageScale}
+                      text={cursor.userName}
+                      fontSize={10 / stageScale}
+                      fill="#ffffff"
+                      listening={false}
+                    />
+                  </Group>
+                ))}
 
                 {markupDrawing && markupDrawPoints.length >= 2 && (() => {
                   const pts = markupDrawPoints;

@@ -610,6 +610,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+
+  const { setupTakeoffCollaboration } = await import("./takeoffCollaboration");
+  setupTakeoffCollaboration(httpServer);
+
   return httpServer;
 }
 

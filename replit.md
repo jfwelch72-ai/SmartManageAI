@@ -30,6 +30,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Procurement Module**: Full procure-to-pay lifecycle covering Purchase Requests, Purchase Orders, Delivery Receipts, Vendor Invoices, and automated 3-Way Match, with RBAC-controlled approvals.
 *   **Production Rate Tracking**: Analytics for crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM).
 *   **Communication & Collaboration**: Unified Messaging System with Slack-style channels, file attachments, voice messages, task @mentions, and a grouped sidebar. Includes Client Portal Chat and Subcontractor Portal System.
+*   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSocket (`/ws/takeoff/:roomId`). Features include live cursor tracking, real-time measurement sync (create/update/delete), presence indicators with colored avatars, optional per-sheet soft locks, and automatic reconnection with polling fallback. Server: `server/takeoffCollaboration.ts`. Client hook: `client/src/hooks/use-takeoff-collaboration.ts`.
 *   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, publishing controls, and full SEO support.
 *   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, GDPR compliance, feature flags, and a 4-tier subscription model, including Super Admin tools.
 *   **HTTP Security**: Helmet middleware for security headers and API log redaction.
