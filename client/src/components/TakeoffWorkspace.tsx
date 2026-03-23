@@ -15,7 +15,7 @@ import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
-  CheckCircle2, AlertCircle
+  CheckCircle2, AlertCircle, GalleryHorizontal, List
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -28,6 +28,7 @@ import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
+import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
@@ -111,6 +112,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
+  const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -753,6 +755,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+            {sheets.length > 1 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={thumbnailStripOpen ? "secondary" : "ghost"}
+                    size="icon"
+                    className="h-8 w-8 shrink-0"
+                    onClick={() => setThumbnailStripOpen((v) => !v)}
+                    data-testid="button-toggle-thumbnails"
+                  >
+                    {thumbnailStripOpen ? <List className="h-4 w-4" /> : <GalleryHorizontal className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{thumbnailStripOpen ? "Hide Thumbnails" : "Show Page Thumbnails"}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
             {currentSheet && (
               <Badge variant="outline" data-testid="badge-calibration-status">
                 {currentSheet.scalePxPerFoot
@@ -898,6 +918,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             </Button>
           </div>
         </div>
+
+        {thumbnailStripOpen && sheets.length > 1 && (
+          <div className="bg-card border-b shrink-0" data-testid="panel-thumbnail-strip">
+            <PageThumbnailStrip
+              sheets={sheets}
+              selectedSheet={selectedSheet}
+              onSelectSheet={setSelectedSheet}
+              layout="horizontal"
+            />
+          </div>
+        )}
 
         <div
           ref={containerRef}
