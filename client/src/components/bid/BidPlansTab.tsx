@@ -87,6 +87,17 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
+  const { data: previewUrlData, isLoading: previewUrlLoading } = useQuery<{ url: string }>({
+    queryKey: ["/api/bids", bidCode, "documents", previewDocId, "preview-url"],
+    queryFn: async () => {
+      const res = await fetch(`/api/bids/${bidCode}/documents/${previewDocId}/preview-url`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to get preview URL");
+      return res.json();
+    },
+    enabled: !!previewDocId,
+    staleTime: 50 * 60 * 1000,
+  });
+
   const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents"];
 
   const createDocMutation = useMutation({
@@ -721,17 +732,31 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     </Button>
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
-                    {isPdf ? (
+                    {previewUrlLoading ? (
+                      <div className="flex items-center justify-center h-full" data-testid="preview-loading">
+                        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : isPdf && previewUrlData?.url ? (
                       <iframe
-                        src={doc.fileUrl}
+                        src={previewUrlData.url}
                         className="w-full h-full border-0"
                         title={doc.title || doc.fileName}
                         data-testid="preview-pdf-iframe"
                       />
+                    ) : isPdf ? (
+                      <div className="flex items-center justify-center h-full">
+                        <div className="text-center space-y-4 p-8 max-w-sm">
+                          <File className="w-16 h-16 text-muted-foreground/40 mx-auto" />
+                          <p className="text-sm text-muted-foreground">Unable to generate preview. Open the file directly.</p>
+                          <Button variant="outline" onClick={() => window.open(doc.fileUrl, "_blank")} data-testid="button-open-pdf-fallback">
+                            <ExternalLink className="w-4 h-4 mr-2" />Open File
+                          </Button>
+                        </div>
+                      </div>
                     ) : isImage ? (
                       <div className="flex items-center justify-center h-full bg-muted/20 p-4">
                         <img
-                          src={doc.fileUrl}
+                          src={previewUrlData?.url || doc.fileUrl}
                           alt={doc.title || doc.fileName}
                           className="max-w-full max-h-full object-contain"
                           data-testid="preview-image"
