@@ -47,6 +47,8 @@ interface DocGroup {
   name: string;
   expanded: boolean;
   types: string[];
+  children?: DocGroup[];
+  parentName?: string;
 }
 
 const DEFAULT_GROUPS: DocGroup[] = [
@@ -97,6 +99,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [deletingGroupName, setDeletingGroupName] = useState<string | null>(null);
   const [createFolderOpen, setCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [createFolderParent, setCreateFolderParent] = useState<string | null>(null);
   const [hiddenSheetIds, setHiddenSheetIds] = useState<Set<string>>(new Set());
   const uploadButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -297,9 +300,21 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const handleCreateFolderSubmit = () => {
     const trimmed = newFolderName.trim();
     if (!trimmed) return;
-    setGroups((prev) => [...prev, { name: trimmed, expanded: true, types: ["OTHER"] }]);
+    const newChild: DocGroup = { name: trimmed, expanded: true, types: [], parentName: createFolderParent || undefined };
+    if (createFolderParent) {
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.name === createFolderParent
+            ? { ...g, expanded: true, children: [...(g.children || []), newChild] }
+            : g
+        )
+      );
+    } else {
+      setGroups((prev) => [...prev, { name: trimmed, expanded: true, types: ["OTHER"] }]);
+    }
     setCreateFolderOpen(false);
     setNewFolderName("");
+    setCreateFolderParent(null);
     toast({ description: `Folder "${trimmed}" created.` });
   };
 
@@ -571,7 +586,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start" className="w-56">
                             <DropdownMenuItem
-                              onClick={(e) => { e.stopPropagation(); setNewFolderName(""); setCreateFolderOpen(true); }}
+                              onClick={(e) => { e.stopPropagation(); setNewFolderName(""); setCreateFolderParent(group.name); setCreateFolderOpen(true); }}
                               data-testid="menu-item-create-folder"
                             >
                               <FolderPlus className="w-4 h-4 mr-2" />
@@ -710,6 +725,59 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                               </div>
                             ))
                           )}
+                          {(group.children || []).map((child) => (
+                            <div key={child.name} className="mt-0.5">
+                              <div
+                                className="flex items-center gap-1.5 px-2 py-1 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/subfolder"
+                                onClick={() => {
+                                  setGroups((prev) =>
+                                    prev.map((g) =>
+                                      g.name === group.name
+                                        ? { ...g, children: (g.children || []).map((c) => c.name === child.name ? { ...c, expanded: !c.expanded } : c) }
+                                        : g
+                                    )
+                                  );
+                                }}
+                                data-testid={`subfolder-${child.name.toLowerCase().replace(/\s+/g, '-')}`}
+                              >
+                                {child.expanded ? (
+                                  <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+                                ) : (
+                                  <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                                )}
+                                {child.expanded ? (
+                                  <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                                ) : (
+                                  <Folder className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                                )}
+                                <span className="truncate font-medium text-xs flex-1">{child.name}</span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-4 w-4 opacity-0 group-hover/subfolder:opacity-100 shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setGroups((prev) =>
+                                      prev.map((g) =>
+                                        g.name === group.name
+                                          ? { ...g, children: (g.children || []).filter((c) => c.name !== child.name) }
+                                          : g
+                                      )
+                                    );
+                                    toast({ description: `Subfolder "${child.name}" removed.` });
+                                  }}
+                                  data-testid={`delete-subfolder-${child.name}`}
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+                              {child.expanded && (
+                                <div className="ml-4 px-2 py-1 text-xs text-muted-foreground italic">
+                                  No files
+                                </div>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -1051,10 +1119,10 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
         </div>
       </div>
 
-      <Dialog open={createFolderOpen} onOpenChange={(open) => { setCreateFolderOpen(open); if (!open) setNewFolderName(""); }}>
+      <Dialog open={createFolderOpen} onOpenChange={(open) => { setCreateFolderOpen(open); if (!open) { setNewFolderName(""); setCreateFolderParent(null); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Create Folder</DialogTitle>
+            <DialogTitle>Create Folder{createFolderParent ? ` inside ${createFolderParent}` : ""}</DialogTitle>
           </DialogHeader>
           <div className="py-2">
             <Label htmlFor="new-folder-name" className="text-sm mb-1 block">Folder name</Label>
