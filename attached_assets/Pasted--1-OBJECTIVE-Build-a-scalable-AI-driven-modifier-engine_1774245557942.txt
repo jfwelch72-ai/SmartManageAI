@@ -1,0 +1,260 @@
+________________________________________
+1. OBJECTIVE
+Build a scalable, AI-driven modifier engine that:
+•	Works across ~3,000+ scopes
+•	Dynamically adjusts based on trade + scope
+•	Supports real-world estimating workflows
+•	Allows AI to generate missing modifiers intelligently
+________________________________________
+2. CORE ARCHITECTURE
+The system MUST use a 3-layer modifier structure:
+LAYER 1: UNIVERSAL MODIFIERS (Global)
+Applies to all trades/scopes.
+LAYER 2: TRADE MODIFIERS (Dynamic)
+Loaded based on selected trade (Concrete, Electrical, Roofing, etc.)
+LAYER 3: SCOPE-SPECIFIC MODIFIERS (Rule-Based)
+Auto-generated based on scope name patterns (e.g., “Concrete Sidewalk”, “Trenching”)
+________________________________________
+3. UNIVERSAL MODIFIER CATEGORIES (REPLACE CURRENT UI)
+Remove current categories:
+•	Complexity
+•	Access
+•	Timeline
+•	Quality Level
+•	Conditions
+Replace with:
+•	Site Access & Logistics
+•	Working Conditions
+•	Schedule & Phasing
+•	Labor Conditions
+•	Safety & Compliance
+•	Site / Existing Conditions
+•	Installation Complexity
+•	Material Handling
+•	Protection / Temporary Works
+•	Waste / Disposal
+•	Quality / Specification Level
+•	Weather / Environmental Exposure
+Each category must support multiple selectable modifiers.
+________________________________________
+4. UNIVERSAL MODIFIER LIBRARY
+Each modifier must include:
+•	Name
+•	Category
+•	Cost impact (labor/material/duration/waste)
+•	Min/Max factor range
+•	AI tags
+Examples:
+Site Access & Logistics:
+•	Tight access
+•	Limited laydown area
+•	Long carry distance
+•	Urban site
+•	Remote site
+•	Crane required
+Labor Conditions:
+•	Prevailing wage
+•	Union labor
+•	Overtime required
+•	Double time
+•	Certified labor
+Safety & Compliance:
+•	Traffic control
+•	Fall protection
+•	Confined space
+•	Lockout/tagout
+•	Fire watch
+(Developer Note: All categories must be seeded with a full list provided separately or via seed script)
+________________________________________
+5. TRADE MODIFIER SYSTEM
+Trade modifiers MUST load dynamically based on selected trade.
+Example: CONCRETE
+Categories:
+•	Reinforcement
+•	Mix Design
+•	Placement Method
+•	Finish Type
+•	Forming
+•	Jointing
+•	Curing / Protection
+Example Modifiers:
+•	Fiber mesh
+•	WWF
+•	Rebar (#3, #4, epoxy)
+•	4000 PSI mix
+•	Pumped concrete
+•	Broom finish
+•	Stamped finish
+•	Expansion joints
+•	Cure & seal
+________________________________________
+Example: EARTHWORK / TRENCHING
+Categories:
+•	Soil Conditions
+•	Excavation Logistics
+•	Trench Safety
+•	Backfill & Compaction
+•	Water Management
+Modifiers:
+•	Rock excavation
+•	Wet soil
+•	Deep trench
+•	Trench box
+•	Dewatering
+•	Import/export material
+________________________________________
+Example: ELECTRICAL
+Categories:
+•	Power Level
+•	Raceway Type
+•	Cabling
+•	Devices/Controls
+•	Installation Conditions
+Modifiers:
+•	Medium voltage
+•	EMT / PVC / RMC
+•	Long pulls
+•	Live environment
+•	BAS integration
+________________________________________
+Example: ROOFING
+Categories:
+•	Tear-off Conditions
+•	Roofing System
+•	Insulation / Deck
+•	Penetrations / Details
+Modifiers:
+•	Multi-layer tear-off
+•	TPO / EPDM / Metal
+•	Tapered insulation
+•	Heavy penetrations
+•	Edge detail complexity
+________________________________________
+6. SCOPE-SPECIFIC RULE ENGINE
+DO NOT manually assign modifiers per scope.
+Instead implement:
+Pattern Matching Logic
+Based on scope_name:
+If contains “Concrete Sidewalk”
+Add:
+•	Thickness
+•	Reinforcement
+•	Finish
+•	Cure & seal
+•	ADA panels
+If contains “Trenching”
+Add:
+•	Depth
+•	Soil type
+•	Shoring
+•	Utility crossings
+•	Dewatering
+If contains “Mobilization”
+Add:
+•	Distance
+•	Number of trips
+•	Equipment hauling
+If contains “Remove / Demolition”
+Add:
+•	Disposal type
+•	Salvage
+•	Hazard risk
+•	Protection
+If contains “Labor Only”
+Add:
+•	Crew efficiency
+•	Supervision
+•	Shift conditions
+If contains “Material Only”
+Add:
+•	Freight
+•	Storage
+•	Breakage
+•	Lead time
+________________________________________
+7. DATABASE STRUCTURE
+Create table:
+modifiers
+Fields:
+•	id
+•	name
+•	category
+•	trade_ids (array)
+•	scope_patterns (array)
+•	uoms (array)
+•	material_families (array)
+•	labor_factor_min
+•	labor_factor_max
+•	material_factor_min
+•	material_factor_max
+•	duration_factor_min
+•	duration_factor_max
+•	waste_factor_min
+•	waste_factor_max
+•	effect_type (labor/material/mixed)
+•	ai_tags (array)
+•	default_behavior (optional/required)
+________________________________________
+8. UI IMPLEMENTATION
+When user selects a scope:
+UI Flow:
+1.	Load UNIVERSAL modifiers
+2.	Load TRADE modifiers
+3.	Load SCOPE-SUGGESTED modifiers
+4.	Allow manual selection
+5.	Allow "Add Custom Modifier"
+6.	Show AI suggestions (auto)
+________________________________________
+9. AI MODIFIER ENGINE
+Implement AI generation using the following prompt:
+________________________________________
+AI SYSTEM PROMPT
+(Use exactly as written)
+You are the SmartManageAI Modifier Engine.
+Your job is to generate estimating modifiers for a selected construction scope when the existing modifier library is incomplete or when a user enters custom scope details.
+PRIMARY OBJECTIVE
+Create realistic construction cost modifiers that affect labor, material, duration, equipment, logistics, waste, or risk.
+INPUTS
+•	trade_name
+•	scope_name
+•	uom
+•	material_families
+•	estimator_notes
+•	description
+OUTPUT (JSON ONLY):
+{
+"suggested_modifier_categories": [],
+"custom_modifiers": [],
+"warnings": [],
+"assumptions": []
+}
+RULES:
+•	Use universal categories first
+•	Then trade-specific
+•	Infer from keywords
+•	Keep cost impacts realistic
+•	Do NOT hallucinate unrealistic modifiers
+•	Include confidence scores
+•	Use conservative factor ranges
+________________________________________
+10. CRITICAL IMPLEMENTATION RULES
+•	DO NOT break existing estimating logic
+•	DO NOT overwrite scope data
+•	This system must be additive only
+•	Must support multi-organization architecture
+•	Must support future AI expansion
+•	Must be fast (pre-load rules, avoid heavy runtime logic)
+________________________________________
+11. Possible Other Options
+•	AI auto-detect modifiers from uploaded plans
+•	Modifier learning from historical jobs
+•	Cost benchmarking across companies
+•	Smart defaults based on region
+________________________________________
+12. SUMMARY
+This system will:
+•	Replace generic modifiers with real estimating logic
+•	Scale across all trades and scopes
+•	Enable AI-assisted estimating
+•	Significantly improve accuracy and usability
+
