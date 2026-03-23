@@ -25,6 +25,7 @@ import {
 import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store } from "lucide-react";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
+import ModifierSelector from "@/components/ModifierSelector";
 import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
@@ -52,6 +53,7 @@ interface LineItemFormDialogProps {
   onCategoryChange: (value: string) => void;
   onApplyCatalogPrice: (item: CatalogPriceItem) => void;
   equipmentSelectorKey: number;
+  lineItemId?: string;
   useHierarchicalBuilder?: boolean;
   onUseHierarchicalBuilderChange?: (value: boolean) => void;
   selectedScopeData?: ScopeSelectionData | null;
@@ -83,6 +85,7 @@ export function LineItemFormDialog({
   onCategoryChange,
   onApplyCatalogPrice,
   equipmentSelectorKey,
+  lineItemId,
   useHierarchicalBuilder = false,
   onUseHierarchicalBuilderChange,
   selectedScopeData,
@@ -138,6 +141,7 @@ export function LineItemFormDialog({
             <>
               <HierarchicalLineItemBuilder
                 onSelectionChange={onHierarchicalSelectionChange!}
+                lineItemId={lineItemId}
                 quantity={hierarchicalQuantity}
                 onQuantityChange={(q) => {
                   onHierarchicalQuantityChange?.(q);
@@ -175,6 +179,7 @@ export function LineItemFormDialog({
                 value={selectedScopeData || undefined}
                 onChange={onScopeSelect!}
                 showDimensionInputs={false}
+                lineItemId={lineItemId}
               />
               {selectedScopeData && (
                 <div className="mt-2 p-2 bg-green-50 dark:bg-green-950/30 rounded border border-green-200 dark:border-green-900">
@@ -185,6 +190,20 @@ export function LineItemFormDialog({
               )}
             </div>
           ) : null}
+
+          {isEdit && lineItemId && (
+            <div className="border rounded-md p-4 bg-muted/30">
+              <div className="flex items-center gap-2 mb-3">
+                <Tag className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Modifiers</span>
+              </div>
+              <ModifierSelector
+                trade={form.getValues("category")?.toUpperCase().replace(/ /g, "_")}
+                lineItemId={lineItemId}
+                onSelectionsChange={() => {}}
+              />
+            </div>
+          )}
           
           {(isEdit || (isAdd && !useHierarchicalBuilder)) && (
             <div className="grid grid-cols-2 gap-4">

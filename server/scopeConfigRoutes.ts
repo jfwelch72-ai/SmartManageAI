@@ -6,8 +6,12 @@ import {
   scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers,
   insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema,
   insertScopeModifierCategorySchema, insertScopeModifierSchema,
-  tradeTypeEnum
+  tradeTypeEnum, bids,
+  bidModifierSelections, estimateLineItems,
+  estimates, modifiers as modifiersTable
 } from "@shared/schema";
+
+type TradeType = (typeof tradeTypeEnum.enumValues)[number];
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -1523,6 +1527,411 @@ router.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: 
     });
   } catch (error) {
     console.error("Get SOW preview error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ====================
+// 3-Layer Modifier API for Scope Selection
+// Returns Universal + Trade + Scope-Suggested modifiers merged
+// ====================
+
+router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
+
+    const trade = (req.query.trade as string) || "";
+    const scopeName = (req.query.scopeName as string) || "";
+
+    const [org] = await db
+      .select({ tradeType: organizations.tradeType })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+
+    if (!org) {
+      res.status(404).json({ error: "Organization not found" });
+      return;
+    }
+
+    const effectiveTrade = trade || org.tradeType;
+
+    interface ModItem { id: string; categoryId: string; categoryName: string; name: string; code: string; displayOrder: number; isCustom?: boolean; description?: string; factorMin?: number; factorMax?: number; effectType?: string; }
+    interface CatGroup { id: string; name: string; displayOrder: number; description?: string; modifiers: ModItem[]; }
+    interface FlatMod { id: string; name: string; code: string; categoryName: string; sourceLayer: string; }
+
+    let universalLayer: CatGroup[] = [];
+    let tradeLayer: CatGroup[] = [];
+    let allFlatMods: FlatMod[] = [];
+    let usedModifiersTable = false;
+
+    try {
+      const modRows = await db
+        .select()
+        .from(modifiersTable)
+        .where(eq(modifiersTable.isActive, true))
+        .orderBy(modifiersTable.displayOrder);
+
+      if (modRows.length > 0) {
+        usedModifiersTable = true;
+
+        const universalMods = modRows.filter(m => m.layer === "universal");
+        const tradeMods = modRows.filter(m =>
+          m.layer === "trade" && (m.tradeIds.length === 0 || m.tradeIds.includes(effectiveTrade))
+        );
+
+        const groupByCategory = (mods: typeof modRows): CatGroup[] => {
+          const cats = new Map<string, CatGroup>();
+          for (const m of mods) {
+            if (!cats.has(m.category)) {
+              cats.set(m.category, {
+                id: m.category,
+                name: m.category,
+                displayOrder: cats.size,
+                modifiers: [],
+              });
+            }
+            cats.get(m.category)!.modifiers.push({
+              id: m.id,
+              categoryId: m.category,
+              categoryName: m.category,
+              name: m.name,
+              code: m.id.slice(0, 8),
+              displayOrder: m.displayOrder,
+              isCustom: false,
+              factorMin: Math.min(m.laborFactorMin, m.materialFactorMin, m.durationFactorMin),
+              factorMax: Math.max(m.laborFactorMax, m.materialFactorMax, m.durationFactorMax),
+              effectType: m.effectType,
+            });
+          }
+          return Array.from(cats.values());
+        };
+
+        universalLayer = groupByCategory(universalMods);
+        tradeLayer = groupByCategory(tradeMods);
+
+        allFlatMods = [...universalMods.map(m => ({
+          id: m.id, name: m.name, code: m.id.slice(0, 8), categoryName: m.category, sourceLayer: "universal",
+        })), ...tradeMods.map(m => ({
+          id: m.id, name: m.name, code: m.id.slice(0, 8), categoryName: m.category, sourceLayer: "trade",
+        }))];
+      }
+    } catch {
+      usedModifiersTable = false;
+    }
+
+    if (!usedModifiersTable) {
+      const universalCategories = await db
+        .select()
+        .from(scopeModifierCategories)
+        .where(eq(scopeModifierCategories.isActive, true))
+        .orderBy(scopeModifierCategories.displayOrder);
+
+      let universalMods: (typeof scopeModifiers.$inferSelect)[] = [];
+      if (universalCategories.length > 0) {
+        universalMods = await db
+          .select()
+          .from(scopeModifiers)
+          .where(eq(scopeModifiers.isActive, true))
+          .orderBy(scopeModifiers.displayOrder);
+      }
+
+      universalLayer = universalCategories.map(cat => ({
+        id: cat.id,
+        name: cat.name,
+        displayOrder: cat.displayOrder,
+        modifiers: universalMods
+          .filter(m => m.categoryId === cat.id)
+          .map(m => ({
+            id: m.id,
+            categoryId: m.categoryId,
+            categoryName: cat.name,
+            name: m.name,
+            code: m.code,
+            displayOrder: m.displayOrder,
+            isCustom: m.isCustom,
+          }))
+      }));
+
+      const tradeCategories = await db
+        .select()
+        .from(masterModifierCategories)
+        .where(
+          and(
+            eq(masterModifierCategories.tradeType, effectiveTrade as TradeType),
+            eq(masterModifierCategories.isActive, true)
+          )
+        )
+        .orderBy(masterModifierCategories.displayOrder);
+
+      let tradeMods: (typeof masterModifiers.$inferSelect)[] = [];
+      if (tradeCategories.length > 0) {
+        tradeMods = await db
+          .select()
+          .from(masterModifiers)
+          .where(
+            and(
+              eq(masterModifiers.tradeType, effectiveTrade as TradeType),
+              eq(masterModifiers.isActive, true)
+            )
+          )
+          .orderBy(masterModifiers.displayOrder);
+      }
+
+      tradeLayer = tradeCategories.map(cat => ({
+        id: cat.id,
+        name: cat.name,
+        description: cat.description,
+        displayOrder: cat.displayOrder,
+        modifiers: tradeMods
+          .filter(m => m.categoryId === cat.id)
+          .map(m => ({
+            id: m.id,
+            categoryId: m.categoryId,
+            categoryName: cat.name,
+            name: m.name,
+            code: m.code,
+            description: m.description,
+            displayOrder: m.displayOrder,
+          }))
+      }));
+
+      allFlatMods = [
+        ...universalMods.map(m => {
+          const cat = universalCategories.find(c => c.id === m.categoryId);
+          return { id: m.id, name: m.name, code: m.code, categoryName: cat?.name || "", sourceLayer: "universal" };
+        }),
+        ...tradeMods.map(m => {
+          const cat = tradeCategories.find(c => c.id === m.categoryId);
+          return { id: m.id, name: m.name, code: m.code, categoryName: cat?.name || "", sourceLayer: "trade" };
+        }),
+      ];
+    }
+
+    interface SuggestedMod { id: string; name: string; code: string; categoryName: string; matchPattern: string; layer: string; }
+    const suggestedModifiers: SuggestedMod[] = [];
+    if (scopeName && allFlatMods.length > 0) {
+      const scopeLower = scopeName.toLowerCase();
+      for (const mod of allFlatMods) {
+        const modLower = mod.name.toLowerCase();
+        const codeLower = (mod.code || "").toLowerCase();
+        if (scopeLower.includes(modLower) || scopeLower.includes(codeLower) ||
+            modLower.includes(scopeLower.split(" ")[0])) {
+          suggestedModifiers.push({
+            id: mod.id,
+            name: mod.name,
+            code: mod.code,
+            categoryName: mod.categoryName,
+            matchPattern: `Scope name contains "${mod.name}"`,
+            layer: mod.sourceLayer,
+          });
+        }
+      }
+    }
+
+    res.json({
+      universal: universalLayer,
+      trade: tradeLayer,
+      suggested: suggestedModifiers,
+      tradeType: effectiveTrade,
+      persistenceEnabled: usedModifiersTable,
+    });
+  } catch (error) {
+    console.error("Get modifiers for scope error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get saved modifier selections for a line item
+router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
+
+    const { lineItemId } = req.params;
+
+    const [lineItem] = await db
+      .select({ id: estimateLineItems.id })
+      .from(estimateLineItems)
+      .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+      .where(
+        and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimates.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!lineItem) {
+      res.status(404).json({ error: "Line item not found" });
+      return;
+    }
+
+    const selections = await db
+      .select({
+        id: bidModifierSelections.id,
+        bidId: bidModifierSelections.bidId,
+        estimateLineItemId: bidModifierSelections.estimateLineItemId,
+        modifierId: bidModifierSelections.modifierId,
+        selectedFactor: bidModifierSelections.selectedFactor,
+        notes: bidModifierSelections.notes,
+        modifierName: modifiersTable.name,
+        modifierCategory: modifiersTable.category,
+        modifierLayer: modifiersTable.layer,
+        modifierEffectType: modifiersTable.effectType,
+      })
+      .from(bidModifierSelections)
+      .innerJoin(modifiersTable, eq(modifiersTable.id, bidModifierSelections.modifierId))
+      .where(eq(bidModifierSelections.estimateLineItemId, lineItemId));
+
+    res.json(selections);
+  } catch (error) {
+    console.error("Get bid modifier selections error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/bid-modifier-selections/by-bid/:bidId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
+
+    const { bidId } = req.params;
+
+    const [bid] = await db
+      .select({ id: bids.id })
+      .from(bids)
+      .where(
+        and(
+          eq(bids.id, bidId),
+          eq(bids.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+
+    const selections = await db
+      .select({
+        id: bidModifierSelections.id,
+        estimateLineItemId: bidModifierSelections.estimateLineItemId,
+        modifierId: bidModifierSelections.modifierId,
+        selectedFactor: bidModifierSelections.selectedFactor,
+        modifierName: modifiersTable.name,
+      })
+      .from(bidModifierSelections)
+      .innerJoin(modifiersTable, eq(modifiersTable.id, bidModifierSelections.modifierId))
+      .where(eq(bidModifierSelections.bidId, bidId));
+
+    res.json({ selections });
+  } catch (error) {
+    console.error("Get bid modifier selections by bid error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Save modifier selections for a line item
+router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
+
+    const bodySchema = z.object({
+      lineItemId: z.string(),
+      bidId: z.string().optional(),
+      selections: z.array(z.object({
+        modifierId: z.string(),
+        selectedFactor: z.number().default(1.0),
+        notes: z.string().optional(),
+      })),
+    });
+
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      return;
+    }
+
+    const { lineItemId, bidId, selections } = parsed.data;
+
+    const [lineItem] = await db
+      .select({
+        id: estimateLineItems.id,
+        estimateId: estimateLineItems.estimateId,
+        estimateBidId: estimates.bidId,
+      })
+      .from(estimateLineItems)
+      .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+      .where(
+        and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimates.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!lineItem) {
+      res.status(404).json({ error: "Line item not found" });
+      return;
+    }
+
+    const effectiveBidId = bidId || lineItem.estimateBidId;
+    if (!effectiveBidId) {
+      res.status(400).json({ error: "No bid associated with this estimate. Cannot save modifier selections without a bid." });
+      return;
+    }
+
+    await db
+      .delete(bidModifierSelections)
+      .where(eq(bidModifierSelections.estimateLineItemId, lineItemId));
+
+    if (selections.length > 0) {
+      await db.insert(bidModifierSelections).values(
+        selections.map(sel => ({
+          bidId: effectiveBidId,
+          estimateLineItemId: lineItemId,
+          modifierId: sel.modifierId,
+          selectedFactor: sel.selectedFactor,
+          notes: sel.notes || null,
+        }))
+      );
+    }
+
+    const saved = await db
+      .select({
+        id: bidModifierSelections.id,
+        bidId: bidModifierSelections.bidId,
+        estimateLineItemId: bidModifierSelections.estimateLineItemId,
+        modifierId: bidModifierSelections.modifierId,
+        selectedFactor: bidModifierSelections.selectedFactor,
+        notes: bidModifierSelections.notes,
+        modifierName: modifiersTable.name,
+        modifierCategory: modifiersTable.category,
+        modifierLayer: modifiersTable.layer,
+      })
+      .from(bidModifierSelections)
+      .innerJoin(modifiersTable, eq(modifiersTable.id, bidModifierSelections.modifierId))
+      .where(eq(bidModifierSelections.estimateLineItemId, lineItemId));
+
+    res.json(saved);
+  } catch (error) {
+    console.error("Save bid modifier selections error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

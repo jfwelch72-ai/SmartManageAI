@@ -6,16 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronDown, Layers, Tags, Calculator, DollarSign, FileText, ChevronRight, Building2, Sparkles, Loader2, Plus, Info } from "lucide-react";
+import { Layers, Tags, Calculator, DollarSign, FileText, ChevronRight, Building2, Sparkles, Loader2, Plus, Info } from "lucide-react";
 import MaterialCalculator, { MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import ModifierSelector, { type ModifierSelection } from "@/components/ModifierSelector";
 
 // Types for hierarchical data
 interface WorkType {
@@ -56,12 +55,14 @@ interface Modifier {
   isActive: boolean;
 }
 
-interface ModifierCategory {
-  id: string;
-  name: string;
-  displayOrder: number;
-  isActive: boolean;
-  modifiers: Modifier[];
+export interface ModifierSelectionDetail {
+  modifierId: string;
+  modifierName: string;
+  modifierCode: string;
+  categoryName: string;
+  layer: string;
+  selectedFactor: number;
+  costImpactType: string;
 }
 
 export interface LineItemSelectionData {
@@ -74,6 +75,7 @@ export interface LineItemSelectionData {
   unit: string;
   modifierIds: string[];
   modifierNames: string[];
+  modifierSelections?: ModifierSelectionDetail[];
   canonicalName: string;
   organizationSowItemId: string;
 }
@@ -86,6 +88,7 @@ interface HierarchicalLineItemBuilderProps {
   onUnitChange: (unit: string) => void;
   materialCalcData: MaterialCalculatorData;
   onMaterialCalcChange: (data: MaterialCalculatorData) => void;
+  lineItemId?: string;
 }
 
 const COMMON_UNITS = [
@@ -136,6 +139,7 @@ export default function HierarchicalLineItemBuilder({
   onUnitChange,
   materialCalcData,
   onMaterialCalcChange,
+  lineItemId,
 }: HierarchicalLineItemBuilderProps) {
   const { toast } = useToast();
   
@@ -144,7 +148,8 @@ export default function HierarchicalLineItemBuilder({
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("");
   const [selectedWorkTypeId, setSelectedWorkTypeId] = useState<string>("");
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
-  const [expandedModifierCategories, setExpandedModifierCategories] = useState<string[]>([]);
+  const [selectedModifierNames, setSelectedModifierNames] = useState<string[]>([]);
+  const [modifierSelectionsState, setModifierSelectionsState] = useState<ModifierSelection[]>([]);
   const [costCodeOverride, setCostCodeOverride] = useState<string>("");
   
   // AI Assist dialog state
@@ -237,11 +242,6 @@ export default function HierarchicalLineItemBuilder({
     setAiExistingCategories([]);
   };
 
-  // Fetch modifiers
-  const { data: modifierCategories = [], isLoading: loadingModifiers } = useQuery<ModifierCategory[]>({
-    queryKey: ["/api/scope/modifiers"],
-  });
-
   // Get selected trade object with categoryCode
   const selectedTradeObj = useMemo(() => {
     if (!hierarchicalData || !selectedTrade) return null;
@@ -266,18 +266,17 @@ export default function HierarchicalLineItemBuilder({
     return availableWorkTypes.find(wt => wt.id === selectedWorkTypeId) || null;
   }, [availableWorkTypes, selectedWorkTypeId]);
 
-  // Get selected modifiers
   const selectedModifiers = useMemo(() => {
-    const mods: Modifier[] = [];
-    modifierCategories.forEach((cat) => {
-      cat.modifiers.forEach((m) => {
-        if (selectedModifierIds.includes(m.id)) {
-          mods.push(m);
-        }
-      });
-    });
-    return mods;
-  }, [modifierCategories, selectedModifierIds]);
+    return selectedModifierNames.map((name, i) => ({
+      id: selectedModifierIds[i] || name,
+      categoryId: "",
+      name,
+      code: "",
+      displayOrder: 0,
+      isCustom: false,
+      isActive: true,
+    }));
+  }, [selectedModifierIds, selectedModifierNames]);
 
   // Build canonical name
   const canonicalName = useMemo(() => {
@@ -289,7 +288,6 @@ export default function HierarchicalLineItemBuilder({
     return name;
   }, [selectedWorkType, selectedModifiers]);
 
-  // Emit selection change
   useEffect(() => {
     if (selectedWorkType && selectedTradeObj) {
       onSelectionChange({
@@ -302,13 +300,22 @@ export default function HierarchicalLineItemBuilder({
         unit: unit || selectedWorkType.unit || "SF",
         modifierIds: selectedModifierIds,
         modifierNames: selectedModifiers.map(m => m.name),
+        modifierSelections: modifierSelectionsState.map(s => ({
+          modifierId: s.modifierId,
+          modifierName: s.modifierName,
+          modifierCode: s.modifierCode,
+          categoryName: s.categoryName,
+          layer: s.layer,
+          selectedFactor: s.selectedFactor,
+          costImpactType: s.costImpactType,
+        })),
         canonicalName,
         organizationSowItemId: selectedWorkType.id,
       });
     } else {
       onSelectionChange(null);
     }
-  }, [selectedWorkType, selectedTradeObj, selectedTrade, selectedSubcategory, selectedModifierIds, canonicalName, unit, costCodeOverride]);
+  }, [selectedWorkType, selectedTradeObj, selectedTrade, selectedSubcategory, selectedModifierIds, modifierSelectionsState, canonicalName, unit, costCodeOverride]);
 
   // Auto-set unit when work type changes
   useEffect(() => {
@@ -317,51 +324,39 @@ export default function HierarchicalLineItemBuilder({
     }
   }, [selectedWorkType]);
 
-  // Handle trade change - reset downstream selections
   const handleTradeChange = (trade: string) => {
     setSelectedTrade(trade);
     setSelectedSubcategory("");
     setSelectedWorkTypeId("");
     setSelectedModifierIds([]);
+    setSelectedModifierNames([]);
+    setModifierSelectionsState([]);
   };
 
-  // Handle subcategory change - reset work type
   const handleSubcategoryChange = (subcategory: string) => {
     setSelectedSubcategory(subcategory);
     setSelectedWorkTypeId("");
     setSelectedModifierIds([]);
+    setSelectedModifierNames([]);
+    setModifierSelectionsState([]);
   };
 
-  // Handle work type change
   const handleWorkTypeChange = (workTypeId: string) => {
     setSelectedWorkTypeId(workTypeId);
     setSelectedModifierIds([]);
+    setSelectedModifierNames([]);
+    setModifierSelectionsState([]);
     const wt = availableWorkTypes.find(w => w.id === workTypeId);
     setCostCodeOverride(wt?.code || "");
-    
-    // Auto-set unit from work type
-    const workType = availableWorkTypes.find(wt => wt.id === workTypeId);
-    if (workType?.unit) {
-      onUnitChange(workType.unit);
+    if (wt?.unit) {
+      onUnitChange(wt.unit);
     }
   };
 
-  // Toggle modifier selection
-  const toggleModifier = (modifierId: string) => {
-    setSelectedModifierIds(prev => 
-      prev.includes(modifierId) 
-        ? prev.filter(id => id !== modifierId)
-        : [...prev, modifierId]
-    );
-  };
-
-  // Toggle modifier category expansion
-  const toggleModifierCategory = (categoryId: string) => {
-    setExpandedModifierCategories(prev =>
-      prev.includes(categoryId)
-        ? prev.filter(id => id !== categoryId)
-        : [...prev, categoryId]
-    );
+  const handleModifierSelectionsChange = (sels: ModifierSelection[]) => {
+    setSelectedModifierIds(sels.map(s => s.modifierId));
+    setSelectedModifierNames(sels.map(s => s.modifierName));
+    setModifierSelectionsState(sels);
   };
 
   if (loadingHierarchy) {
@@ -539,8 +534,7 @@ export default function HierarchicalLineItemBuilder({
         </Card>
       )}
 
-      {/* Step 4: Modifiers */}
-      {selectedWorkType && modifierCategories.length > 0 && (
+      {selectedWorkType && (
         <Card>
           <CardHeader className="py-3">
             <CardTitle className="text-sm flex items-center gap-2">
@@ -551,39 +545,13 @@ export default function HierarchicalLineItemBuilder({
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {modifierCategories.map((category) => (
-              <Collapsible
-                key={category.id}
-                open={expandedModifierCategories.includes(category.id)}
-                onOpenChange={() => toggleModifierCategory(category.id)}
-              >
-                <CollapsibleTrigger 
-                  className="flex items-center gap-2 w-full p-2 rounded hover:bg-muted/50 text-sm"
-                  data-testid={`button-modifier-category-${category.id}`}
-                >
-                  <ChevronDown className={`h-4 w-4 transition-transform ${expandedModifierCategories.includes(category.id) ? "rotate-180" : ""}`} />
-                  <span className="font-medium">{category.name}</span>
-                  <span className="text-muted-foreground text-xs">({category.modifiers.length})</span>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pl-6 space-y-1 py-2">
-                  {category.modifiers.map((modifier) => (
-                    <label
-                      key={modifier.id}
-                      className="flex items-center gap-2 p-1.5 rounded hover:bg-muted/30 cursor-pointer text-sm"
-                    >
-                      <Checkbox
-                        checked={selectedModifierIds.includes(modifier.id)}
-                        onCheckedChange={() => toggleModifier(modifier.id)}
-                        data-testid={`checkbox-modifier-${modifier.id}`}
-                      />
-                      <span>{modifier.name}</span>
-                      <span className="text-muted-foreground text-xs">({modifier.code})</span>
-                    </label>
-                  ))}
-                </CollapsibleContent>
-              </Collapsible>
-            ))}
+          <CardContent>
+            <ModifierSelector
+              trade={selectedTradeObj?.categoryCode || selectedTrade}
+              scopeName={selectedWorkType?.name}
+              lineItemId={lineItemId}
+              onSelectionsChange={handleModifierSelectionsChange}
+            />
           </CardContent>
         </Card>
       )}

@@ -115,14 +115,36 @@ export default function BidEstimate() {
   };
 
   const addLineItemMutation = useMutation({
-    mutationFn: (data: LineItemFormValues & { estimateId: string }) =>
-      apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data),
-    onSuccess: () => {
+    mutationFn: async (data: LineItemFormValues & { estimateId: string }) => {
+      const response = await apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data);
+      return response.json();
+    },
+    onSuccess: async (newLineItem: { id: string }) => {
+      const modSelections = hierarchicalSelection?.modifierSelections || selectedScopeData?.modifierSelections || [];
+      if (modSelections.length > 0 && newLineItem?.id && bidId) {
+        try {
+          await apiRequest("POST", "/api/bid-modifier-selections", {
+            bidId,
+            lineItemId: newLineItem.id,
+            selections: modSelections.map(s => ({
+              modifierId: s.modifierId,
+              selectedFactor: s.selectedFactor,
+            })),
+          });
+        } catch {
+          toast({
+            title: "Modifier selections could not be saved",
+            description: "The line item was created, but its modifier selections failed to persist. You can re-apply them by editing the line item.",
+            variant: "destructive",
+          });
+        }
+      }
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setAddLineItemOpen(false);
       form.reset();
       setEquipmentSelectorKey((prev) => prev + 1);
       setSelectedScopeData(null);
+      setHierarchicalSelection(null);
       toast({ title: "Line item added successfully" });
     },
     onError: () => {
@@ -706,6 +728,7 @@ export default function BidEstimate() {
               onCategoryChange={handleCategoryChange}
               onApplyCatalogPrice={applyCatalogPrice}
               equipmentSelectorKey={equipmentSelectorKey}
+              lineItemId={editingLineItem?.id}
             />
           </div>
         )}

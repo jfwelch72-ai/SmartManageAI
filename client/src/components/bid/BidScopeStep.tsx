@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History } from "lucide-react";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History, Tag } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
@@ -55,6 +55,12 @@ export default function BidScopeStep({
   const { toast } = useToast();
   const [lastImportCount, setLastImportCount] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+
+  const modifierSelectionsQuery = useQuery<{ selections: Array<{ estimateLineItemId: string; modifierId: string; modifierName: string }> }>({
+    queryKey: [`/api/bid-modifier-selections/by-bid/${bidId}`],
+    enabled: !!estimate && !!bidId,
+  });
+  const modifierCount = modifierSelectionsQuery.data?.selections?.length ?? 0;
   const [lastLaborRateAppliedCount, setLastLaborRateAppliedCount] = useState<number | null>(null);
   const [lastClassificationName, setLastClassificationName] = useState<string | null>(null);
   const [selectedClassificationId, setSelectedClassificationId] = useState<string>("none");
@@ -450,6 +456,17 @@ export default function BidScopeStep({
                   <span className="font-mono font-semibold min-w-0">
                     ${Number(estimate.totals.consumablesCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
+                </div>
+              )}
+              {modifierCount > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                  <span className="text-sm font-medium flex items-center gap-1.5">
+                    <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                    Modifiers Applied
+                  </span>
+                  <Badge variant="secondary" data-testid="badge-modifier-count">
+                    {modifierCount} {modifierCount === 1 ? "modifier" : "modifiers"}
+                  </Badge>
                 </div>
               )}
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">

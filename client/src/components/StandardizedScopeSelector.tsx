@@ -5,8 +5,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ChevronDown, Layers } from "lucide-react";
+import { Layers } from "lucide-react";
+import ModifierSelector, { type ModifierSelection } from "@/components/ModifierSelector";
 
 interface WorkType {
   id: string;
@@ -39,20 +39,22 @@ interface Modifier {
   isActive: boolean;
 }
 
-interface ModifierCategory {
-  id: string;
-  name: string;
-  displayOrder: number;
-  isActive: boolean;
-  modifiers: Modifier[];
-}
-
 interface Dimensions {
   length?: string;
   width?: string;
   depth?: string;
   height?: string;
   thickness?: string;
+}
+
+export interface ModifierSelectionSummary {
+  modifierId: string;
+  modifierName: string;
+  modifierCode: string;
+  categoryName: string;
+  layer: string;
+  selectedFactor: number;
+  costImpactType: string;
 }
 
 export interface ScopeSelectionData {
@@ -63,6 +65,7 @@ export interface ScopeSelectionData {
   unit: string;
   modifierIds: string[];
   modifierNames: string[];
+  modifierSelections?: ModifierSelectionSummary[];
   dimensions?: Dimensions;
   canonicalName: string;
 }
@@ -71,18 +74,21 @@ interface StandardizedScopeSelectorProps {
   value?: ScopeSelectionData;
   onChange: (data: ScopeSelectionData) => void;
   showDimensionInputs?: boolean;
+  lineItemId?: string;
 }
 
 export default function StandardizedScopeSelector({
   value,
   onChange,
   showDimensionInputs = true,
+  lineItemId,
 }: StandardizedScopeSelectorProps) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("");
   const [selectedWorkTypeId, setSelectedWorkTypeId] = useState<string>("");
   const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
+  const [selectedModifierNames, setSelectedModifierNames] = useState<string[]>([]);
+  const [modifierSelectionsState, setModifierSelectionsState] = useState<ModifierSelection[]>([]);
   const [dimensions, setDimensions] = useState<Dimensions>({});
-  const [expandedModifierCategories, setExpandedModifierCategories] = useState<string[]>([]);
   
   // Use refs to prevent infinite loops
   const onChangeRef = useRef(onChange);
@@ -91,10 +97,6 @@ export default function StandardizedScopeSelector({
 
   const { data: workTypeCategories = [], isLoading: loadingWorkTypes } = useQuery<WorkTypeCategory[]>({
     queryKey: ["/api/scope/work-types"],
-  });
-
-  const { data: modifierCategories = [], isLoading: loadingModifiers } = useQuery<ModifierCategory[]>({
-    queryKey: ["/api/scope/modifiers"],
   });
 
   const selectedCategory = useMemo(() => {
@@ -107,16 +109,16 @@ export default function StandardizedScopeSelector({
   }, [selectedCategory, selectedWorkTypeId]);
 
   const selectedModifiers = useMemo(() => {
-    const mods: Modifier[] = [];
-    modifierCategories.forEach((cat) => {
-      cat.modifiers.forEach((m) => {
-        if (selectedModifierIds.includes(m.id)) {
-          mods.push(m);
-        }
-      });
-    });
-    return mods;
-  }, [modifierCategories, selectedModifierIds]);
+    return selectedModifierNames.map((name, i) => ({
+      id: selectedModifierIds[i] || name,
+      categoryId: "",
+      name,
+      code: "",
+      displayOrder: 0,
+      isCustom: false,
+      isActive: true,
+    }));
+  }, [selectedModifierIds, selectedModifierNames]);
 
   const canonicalName = useMemo(() => {
     if (!selectedWorkType) return "";
@@ -158,6 +160,9 @@ export default function StandardizedScopeSelector({
       if (value.modifierIds) {
         setSelectedModifierIds(value.modifierIds);
       }
+      if (value.modifierNames) {
+        setSelectedModifierNames(value.modifierNames);
+      }
       if (value.dimensions) {
         setDimensions(value.dimensions);
       }
@@ -175,10 +180,19 @@ export default function StandardizedScopeSelector({
       unit: selectedWorkType.defaultUnit,
       modifierIds: selectedModifierIds,
       modifierNames: selectedModifiers.map((m) => m.name),
+      modifierSelections: modifierSelectionsState.map(s => ({
+        modifierId: s.modifierId,
+        modifierName: s.modifierName,
+        modifierCode: s.modifierCode,
+        categoryName: s.categoryName,
+        layer: s.layer,
+        selectedFactor: s.selectedFactor,
+        costImpactType: s.costImpactType,
+      })),
       dimensions: selectedWorkType.requiresDimensions ? dimensions : undefined,
       canonicalName,
     };
-  }, [selectedWorkType, selectedCategory, selectedModifierIds, selectedModifiers, dimensions, canonicalName]);
+  }, [selectedWorkType, selectedCategory, selectedModifierIds, selectedModifiers, modifierSelectionsState, dimensions, canonicalName]);
   
   // Only emit onChange when the data actually changes (compare by serialized value)
   useEffect(() => {
@@ -194,30 +208,26 @@ export default function StandardizedScopeSelector({
   const handleCategoryChange = (categoryId: string) => {
     setSelectedCategoryId(categoryId);
     setSelectedWorkTypeId("");
+    setSelectedModifierIds([]);
+    setSelectedModifierNames([]);
+    setModifierSelectionsState([]);
   };
 
   const handleWorkTypeChange = (workTypeId: string) => {
     setSelectedWorkTypeId(workTypeId);
     setDimensions({});
+    setSelectedModifierIds([]);
+    setSelectedModifierNames([]);
+    setModifierSelectionsState([]);
   };
 
-  const handleModifierToggle = (modifierId: string) => {
-    setSelectedModifierIds((prev) =>
-      prev.includes(modifierId)
-        ? prev.filter((id) => id !== modifierId)
-        : [...prev, modifierId]
-    );
+  const handleModifierSelectionsChange = (selections: ModifierSelection[]) => {
+    setSelectedModifierIds(selections.map(s => s.modifierId));
+    setSelectedModifierNames(selections.map(s => s.modifierName));
+    setModifierSelectionsState(selections);
   };
 
-  const toggleModifierCategory = (categoryId: string) => {
-    setExpandedModifierCategories((prev) =>
-      prev.includes(categoryId)
-        ? prev.filter((id) => id !== categoryId)
-        : [...prev, categoryId]
-    );
-  };
-
-  if (loadingWorkTypes || loadingModifiers) {
+  if (loadingWorkTypes) {
     return <div className="text-sm text-muted-foreground">Loading scope options...</div>;
   }
 
@@ -383,53 +393,11 @@ export default function StandardizedScopeSelector({
       {selectedWorkTypeId && (
         <div>
           <Label className="mb-2 block">Modifiers (Optional)</Label>
-          <div className="space-y-2">
-            {modifierCategories.map((cat) => (
-              <Collapsible
-                key={cat.id}
-                open={expandedModifierCategories.includes(cat.id)}
-                onOpenChange={() => toggleModifierCategory(cat.id)}
-              >
-                <CollapsibleTrigger className="flex items-center justify-between w-full p-2 rounded-md hover-elevate bg-muted/30 text-sm">
-                  <span className="font-medium">{cat.name}</span>
-                  <div className="flex items-center gap-2">
-                    {cat.modifiers.filter((m) => selectedModifierIds.includes(m.id)).length > 0 && (
-                      <Badge variant="secondary" className="text-xs">
-                        {cat.modifiers.filter((m) => selectedModifierIds.includes(m.id)).length} selected
-                      </Badge>
-                    )}
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${
-                        expandedModifierCategories.includes(cat.id) ? "rotate-180" : ""
-                      }`}
-                    />
-                  </div>
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-2 pl-2">
-                  <div className="flex flex-wrap gap-2">
-                    {cat.modifiers.map((mod) => {
-                      const isChecked = selectedModifierIds.includes(mod.id);
-                      return (
-                        <label
-                          key={mod.id}
-                          className="flex items-center gap-2 p-2 rounded-md border bg-background cursor-pointer hover-elevate"
-                          data-testid={`modifier-checkbox-${mod.id}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={() => handleModifierToggle(mod.id)}
-                            className="h-4 w-4 rounded border-primary text-primary focus:ring-primary"
-                          />
-                          <span className="text-sm">{mod.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </CollapsibleContent>
-              </Collapsible>
-            ))}
-          </div>
+          <ModifierSelector
+            scopeName={selectedWorkType?.name}
+            lineItemId={lineItemId}
+            onSelectionsChange={handleModifierSelectionsChange}
+          />
         </div>
       )}
 
