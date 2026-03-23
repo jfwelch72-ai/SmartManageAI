@@ -8,6 +8,7 @@ import {
   bids,
   quantityCategories,
   takeoffMeasurements,
+  takeoffSheets,
   insertEstimateSchema,
   insertEstimateLineItemSchema,
   organizations,
@@ -446,12 +447,52 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         let countTotal = 0;
 
         for (const measurement of measurements) {
-          if (measurement.type === "LINEAR" && measurement.computedLengthFt) {
-            linearTotal += Number(measurement.computedLengthFt);
-          } else if (measurement.type === "AREA" && measurement.computedAreaFt2) {
-            areaTotal += Number(measurement.computedAreaFt2);
-          } else if (measurement.type === "VOLUME" && measurement.computedVolumeCy) {
-            volumeTotal += Number(measurement.computedVolumeCy);
+          if (measurement.type === "LINEAR") {
+            if (measurement.computedLengthFt) {
+              linearTotal += Number(measurement.computedLengthFt);
+            } else if (measurement.points) {
+              try {
+                const { computeDistanceInFeet } = await import("@shared/utils/geometry");
+                const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
+                  const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
+                  linearTotal += length;
+                  await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
+                }
+              } catch { /* skip */ }
+            }
+          } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
+            if (measurement.computedAreaFt2) {
+              areaTotal += Number(measurement.computedAreaFt2);
+            } else if (measurement.points) {
+              try {
+                const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
+                const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
+                  const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  areaTotal += area;
+                  await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
+                }
+              } catch { /* skip */ }
+            }
+          } else if (measurement.type === "VOLUME") {
+            if (measurement.computedVolumeCy) {
+              volumeTotal += Number(measurement.computedVolumeCy);
+            } else if (measurement.points) {
+              try {
+                const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
+                const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3 && measurement.depthFeet) {
+                  const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  const volume = computeVolumeInCY(area, measurement.depthFeet);
+                  volumeTotal += volume;
+                  await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
+                }
+              } catch { /* skip */ }
+            }
           } else if (measurement.type === "COUNT") {
             countTotal += 1;
           }
@@ -654,12 +695,52 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         let countTotal = 0;
 
         for (const measurement of measurements) {
-          if (measurement.type === "LINEAR" && measurement.computedLengthFt) {
-            linearTotal += Number(measurement.computedLengthFt);
-          } else if (measurement.type === "AREA" && measurement.computedAreaFt2) {
-            areaTotal += Number(measurement.computedAreaFt2);
-          } else if (measurement.type === "VOLUME" && measurement.computedVolumeCy) {
-            volumeTotal += Number(measurement.computedVolumeCy);
+          if (measurement.type === "LINEAR") {
+            if (measurement.computedLengthFt) {
+              linearTotal += Number(measurement.computedLengthFt);
+            } else if (measurement.points) {
+              try {
+                const { computeDistanceInFeet } = await import("@shared/utils/geometry");
+                const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
+                  const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
+                  linearTotal += length;
+                  await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
+                }
+              } catch { /* skip */ }
+            }
+          } else if ((measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA")) {
+            if (measurement.computedAreaFt2) {
+              areaTotal += Number(measurement.computedAreaFt2);
+            } else if (measurement.points) {
+              try {
+                const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
+                const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
+                  const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  areaTotal += area;
+                  await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
+                }
+              } catch { /* skip */ }
+            }
+          } else if (measurement.type === "VOLUME") {
+            if (measurement.computedVolumeCy) {
+              volumeTotal += Number(measurement.computedVolumeCy);
+            } else if (measurement.points) {
+              try {
+                const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
+                const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                const sheet = await db.query.takeoffSheets.findFirst({ where: eq(takeoffSheets.id, measurement.sheetId) });
+                if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3 && measurement.depthFeet) {
+                  const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                  const volume = computeVolumeInCY(area, measurement.depthFeet);
+                  volumeTotal += volume;
+                  await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
+                }
+              } catch { /* skip */ }
+            }
           } else if (measurement.type === "COUNT") {
             countTotal += 1;
           }

@@ -1675,28 +1675,48 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
       }
     }
 
-    // PHASE 2.3a: Compute arc length for 3-point LINEAR measurements (arcs)
     let finalValues = { ...validated };
-    if (validated.type === "LINEAR" && sheet.scalePxPerFoot) {
+    if (sheet.scalePxPerFoot) {
       const points = safeParsePoints(validated.points);
-      
-      if (points && points.length === 3) {
+
+      if (validated.type === "LINEAR" && points && points.length === 3) {
         try {
           const [start, middle, end] = points;
           const arcSegment = createArcSegment(start, end, middle, sheet.scalePxPerFoot);
-          
           if (arcSegment) {
-            // Store the computed arc length in feet
-            finalValues = {
-              ...validated,
-              computedLengthFt: arcSegment.arcLength,
-            };
-            console.log(`[Arc Measurement] Computed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
+            finalValues.computedLengthFt = arcSegment.arcLength;
           }
         } catch (error) {
           console.error("Error computing arc length:", error);
-          // If arc computation fails, don't block the measurement creation
-          // The frontend will handle displaying the measurement
+        }
+      } else if (validated.type === "LINEAR" && points && points.length >= 2 && !finalValues.computedLengthFt) {
+        try {
+          const { computeDistanceInFeet } = await import("@shared/utils/geometry");
+          finalValues.computedLengthFt = computeDistanceInFeet(points, sheet.scalePxPerFoot);
+        } catch (error) {
+          console.error("Error computing linear length:", error);
+        }
+      }
+
+      if ((validated.type === "AREA" || validated.type === "PITCHED_AREA" || validated.type === "SURFACE_AREA") && points && points.length >= 3 && !finalValues.computedAreaFt2) {
+        try {
+          const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
+          finalValues.computedAreaFt2 = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+        } catch (error) {
+          console.error("Error computing area:", error);
+        }
+      }
+
+      if (validated.type === "VOLUME" && points && points.length >= 3 && !finalValues.computedVolumeCy) {
+        try {
+          const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
+          const areaFt2 = finalValues.computedAreaFt2 || computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+          if (!finalValues.computedAreaFt2) finalValues.computedAreaFt2 = areaFt2;
+          if (validated.depthFeet) {
+            finalValues.computedVolumeCy = computeVolumeInCY(areaFt2, validated.depthFeet);
+          }
+        } catch (error) {
+          console.error("Error computing volume:", error);
         }
       }
     }

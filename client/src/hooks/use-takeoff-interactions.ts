@@ -189,6 +189,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         points: drawingPoints,
         label: `Area ${aggregatedMeasurements.byType.area.length + 1}`,
         categoryId: selectedCategoryId,
+        computedAreaFt2: areaFt2,
       });
       toast({ title: "Area Measurement Created", description: `${areaFt2.toFixed(2)} SF` });
     } else if (activeTool === "volume") {
@@ -202,6 +203,8 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         label: `Volume ${aggregatedMeasurements.byType.volume.length + 1}`,
         depthFeet: depthFt,
         categoryId: selectedCategoryId,
+        computedAreaFt2: areaFt2,
+        computedVolumeCy: volumeCy,
       });
       toast({ title: "Volume Measurement Created", description: `${areaFt2.toFixed(2)} SF @ ${defaultDepthInches}" depth = ${volumeCy.toFixed(2)} CY` });
     } else if (activeTool === "pitched_area") {
@@ -213,6 +216,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         label: `Pitched Area ${measurements.length + 1}`,
         categoryId: selectedCategoryId,
         pitchRatio,
+        computedAreaFt2: areaFt2,
         computedSurfaceAreaFt2: pitchedArea,
       });
       toast({ title: "Pitched Area Created", description: `Flat: ${areaFt2.toFixed(2)} SF → Pitched (${pitchRatio}): ${pitchedArea.toFixed(2)} SF` });
@@ -225,6 +229,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         label: `Surface ${measurements.length + 1}`,
         categoryId: selectedCategoryId,
         pitchRatio,
+        computedAreaFt2: areaFt2,
         computedSurfaceAreaFt2: surfaceArea,
       });
       toast({ title: "Surface Area Created", description: `Flat: ${areaFt2.toFixed(2)} SF → Surface (${pitchRatio}): ${surfaceArea.toFixed(2)} SF` });
