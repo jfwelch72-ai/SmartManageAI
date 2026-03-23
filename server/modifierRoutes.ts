@@ -70,7 +70,7 @@ function buildOrgFilter(orgId: string | undefined) {
 
 async function verifyLineItemOrgOwnership(lineItemId: string, orgId: string): Promise<boolean> {
   const result = await db
-    .select({ bidOrgId: bids.organizationId })
+    .select({ bidOrgId: bids.gcOrganizationId })
     .from(estimateLineItems)
     .innerJoin(estimates, eq(estimateLineItems.estimateId, estimates.id))
     .innerJoin(bids, eq(estimates.bidId, bids.id))
@@ -492,11 +492,11 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
     }
 
     const [bid] = await db
-      .select({ id: bids.id, organizationId: bids.organizationId })
+      .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
       .where(eq(bids.id, parsed.data.bidId));
 
-    if (!bid || bid.organizationId !== orgId) {
+    if (!bid || bid.gcOrganizationId !== orgId) {
       return res.status(403).json({ message: "Access denied" });
     }
 

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { organizations, organizationSowItems, masterSowItems, masterModifierCategories, masterModifiers, scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers, insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema, insertScopeModifierCategorySchema, insertScopeModifierSchema, tradeTypeEnum, bids, bidModifierSelections, estimateLineItems, estimates, modifiers as modifiersTable, projects, users, scopeItems, insertScopeItemSchema, dailyScopeProgress, insertDailyScopeProgressSchema, projectMaterialBudgets, notifications } from "@shared/schema";
 import { insertNotifications } from "./services/notificationService";
-import { eq, and, sql, desc, type SQL, asc } from "drizzle-orm";
+import { eq, and, or, sql, desc, type SQL, asc } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
@@ -1847,10 +1847,15 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
       .select({ id: estimateLineItems.id })
       .from(estimateLineItems)
       .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+      .leftJoin(bids, eq(bids.id, estimates.bidId))
+      .leftJoin(projects, eq(projects.id, estimates.projectId))
       .where(
         and(
           eq(estimateLineItems.id, lineItemId),
-          eq(estimates.organizationId, organizationId)
+          or(
+            eq(bids.gcOrganizationId, organizationId),
+            eq(projects.organizationId, organizationId)
+          )
         )
       )
       .limit(1);
@@ -1900,7 +1905,7 @@ router.get("/api/bid-modifier-selections/by-bid/:bidId", requireAuth, async (req
       .where(
         and(
           eq(bids.id, bidId),
-          eq(bids.organizationId, organizationId)
+          eq(bids.gcOrganizationId, organizationId)
         )
       )
       .limit(1);
@@ -1964,10 +1969,15 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
       })
       .from(estimateLineItems)
       .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+      .leftJoin(bids, eq(bids.id, estimates.bidId))
+      .leftJoin(projects, eq(projects.id, estimates.projectId))
       .where(
         and(
           eq(estimateLineItems.id, lineItemId),
-          eq(estimates.organizationId, organizationId)
+          or(
+            eq(bids.gcOrganizationId, organizationId),
+            eq(projects.organizationId, organizationId)
+          )
         )
       )
       .limit(1);
