@@ -468,13 +468,13 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
                     {planDocuments.map((doc) => {
                       const isAlreadyImported = sheets.some((sheet: any) => sheet.documentId === doc.id && (sheet.isActive !== false));
                       return (
-                        <div key={doc.id} className={cn("flex items-center gap-3 p-3 rounded-lg border", isAlreadyImported ? "bg-muted/50 cursor-not-allowed opacity-60" : "hover-elevate cursor-pointer")} onClick={() => { if (!isAlreadyImported && !importPlanMutation.isPending) handleDocClick(doc.id); }} data-testid={`button-import-doc-${doc.id}`}>
+                        <div key={doc.id} className={cn("flex items-center gap-3 p-3 rounded-lg border overflow-hidden", isAlreadyImported ? "bg-muted/50 cursor-not-allowed opacity-60" : "hover-elevate cursor-pointer")} onClick={() => { if (!isAlreadyImported && !importPlanMutation.isPending) handleDocClick(doc.id); }} data-testid={`button-import-doc-${doc.id}`}>
                           <FileText className="w-8 h-8 text-primary flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <p className="font-medium truncate">{doc.title || doc.fileName}</p>
                             <p className="text-sm text-muted-foreground truncate">{doc.fileName}</p>
                           </div>
-                          {isAlreadyImported ? <Badge variant="secondary">Imported</Badge> : importPlanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                          {isAlreadyImported ? <Badge variant="secondary" className="flex-shrink-0">Imported</Badge> : importPlanMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> : null}
                         </div>
                       );
                     })}
