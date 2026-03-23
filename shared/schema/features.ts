@@ -2580,7 +2580,8 @@ export type TradeFeature = typeof tradeFeatures.$inferSelect;
 export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id"),
   takeoffSheetId: varchar("takeoff_sheet_id").references(() => takeoffSheets.id, { onDelete: "set null" }),
   tradeType: tradeTypeEnum("trade_type").notNull(),
   status: aiTakeoffStatusEnum("status").notNull().default("PENDING"),

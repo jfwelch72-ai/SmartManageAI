@@ -2514,7 +2514,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       {aiPanelOpen && selectedSheet && (
         <div className="w-80 border-l bg-card shrink-0">
           <AiTakeoffPanel
-            projectId={projectId}
+            projectId={context?.type === "project" ? context.projectId : projectId || undefined}
+            bidId={context?.type === "bid" ? context.bidId : undefined}
             sheetId={selectedSheet}
             onClose={() => setAiPanelOpen(false)}
           />

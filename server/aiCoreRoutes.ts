@@ -625,7 +625,8 @@ const TRADE_DETECTION_PROMPTS: Record<string, string> = {
 // ============================================
 
 const aiTakeoffAnalyzeSchema = z.object({
-  projectId: z.string(),
+  projectId: z.string().optional(),
+  bidId: z.string().optional(),
   takeoffSheetId: z.string().optional(),
   tradeType: z.string().optional(),
   analysisMode: z.enum(["QUICK", "DETAILED"]).default("QUICK"),
@@ -646,7 +647,11 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
     }
 
-    const { projectId, takeoffSheetId, tradeType, analysisMode, focusAreas } = parsed.data;
+    const { projectId, bidId, takeoffSheetId, tradeType, analysisMode, focusAreas } = parsed.data;
+
+    if (!projectId && !bidId) {
+      return res.status(400).json({ error: "Either projectId or bidId is required" });
+    }
 
     // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
@@ -663,7 +668,8 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
     // Create analysis record
     const [analysis] = await db.insert(aiTakeoffAnalyses).values({
       organizationId,
-      projectId,
+      projectId: projectId || null,
+      bidId: bidId || null,
       takeoffSheetId: takeoffSheetId || null,
       tradeType: effectiveTradeType as any,
       status: "PENDING",

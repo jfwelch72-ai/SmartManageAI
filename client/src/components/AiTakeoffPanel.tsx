@@ -42,7 +42,8 @@ interface DetectedItem {
 }
 
 interface AiTakeoffPanelProps {
-  projectId: string;
+  projectId?: string;
+  bidId?: string;
   sheetId?: string | null;
   onItemsImported?: (items: DetectedItem[]) => void;
 }
@@ -64,7 +65,7 @@ const ITEM_TYPE_ICONS: Record<string, any> = {
   default: FileText,
 };
 
-export default function AiTakeoffPanel({ projectId, sheetId, onItemsImported }: AiTakeoffPanelProps) {
+export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -96,14 +97,15 @@ export default function AiTakeoffPanel({ projectId, sheetId, onItemsImported }: 
   });
 
   const { data: analysisHistory } = useQuery<{ analyses: AnalysisResult[] }>({
-    queryKey: ["/api/ai-features/takeoff/history", projectId],
-    enabled: !!projectId,
+    queryKey: ["/api/ai-features/takeoff/history", projectId || bidId],
+    enabled: !!(projectId || bidId),
   });
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/ai-features/takeoff/analyze", {
-        projectId,
+        ...(projectId ? { projectId } : {}),
+        ...(bidId ? { bidId } : {}),
         takeoffSheetId: sheetId,
         analysisMode: "QUICK",
       });
