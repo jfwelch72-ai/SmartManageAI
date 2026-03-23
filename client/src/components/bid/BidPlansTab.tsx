@@ -6,8 +6,9 @@ import { ObjectUploader } from "@/components/ObjectUploader";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2,
-  ExternalLink, X
+  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -90,6 +91,14 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const isResizingRef = useRef(false);
   const resizeStartXRef = useRef(0);
   const resizeStartWidthRef = useRef(256);
+
+  const [renamingGroupName, setRenamingGroupName] = useState<string | null>(null);
+  const [renameGroupValue, setRenameGroupValue] = useState("");
+  const [deletingGroupName, setDeletingGroupName] = useState<string | null>(null);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [hiddenSheetIds, setHiddenSheetIds] = useState<Set<string>>(new Set());
+  const uploadButtonRef = useRef<HTMLButtonElement>(null);
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -265,6 +274,88 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     );
   };
 
+  const handleRenameGroupStart = (name: string) => {
+    setRenameGroupValue(name);
+    setRenamingGroupName(name);
+  };
+
+  const handleRenameGroupSubmit = (oldName: string) => {
+    const trimmed = renameGroupValue.trim();
+    if (trimmed && trimmed !== oldName) {
+      setGroups((prev) => prev.map((g) => g.name === oldName ? { ...g, name: trimmed } : g));
+    }
+    setRenamingGroupName(null);
+  };
+
+  const handleDeleteGroupConfirm = () => {
+    if (!deletingGroupName) return;
+    setGroups((prev) => prev.filter((g) => g.name !== deletingGroupName));
+    setDeletingGroupName(null);
+    toast({ description: `Folder "${deletingGroupName}" removed.` });
+  };
+
+  const handleCreateFolderSubmit = () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
+    setGroups((prev) => [...prev, { name: trimmed, expanded: true, types: ["OTHER"] }]);
+    setCreateFolderOpen(false);
+    setNewFolderName("");
+    toast({ description: `Folder "${trimmed}" created.` });
+  };
+
+  const handlePrintAllSheets = async (docs: BidDocument[]) => {
+    const pdfs = docs.filter((d) => (d.fileName || "").toLowerCase().endsWith(".pdf"));
+    if (pdfs.length === 0) {
+      toast({ description: "No PDF documents found in this folder." });
+      return;
+    }
+    toast({ description: `Opening ${pdfs.length} PDF(s) for printing…` });
+    for (const doc of pdfs) {
+      await handleOpenFile(doc.id, doc.fileUrl);
+    }
+  };
+
+  const handleAutonameSheets = (folderName: string) => {
+    const folderSheets = groupedSheets[folderName] || [];
+    if (folderSheets.length === 0) {
+      toast({ description: "No takeoff sheets in this folder to rename." });
+      return;
+    }
+    folderSheets.forEach((sheet, i) => {
+      renameSheetMutation.mutate({ sheetId: sheet.id, sheetName: `Sheet ${i + 1}` });
+    });
+    toast({ description: `Auto-named ${folderSheets.length} sheet(s).` });
+  };
+
+  const handleHideAllSheets = (folderName: string) => {
+    const folderSheets = groupedSheets[folderName] || [];
+    if (folderSheets.length === 0) {
+      toast({ description: "No takeoff sheets to hide in this folder." });
+      return;
+    }
+    setHiddenSheetIds((prev) => {
+      const next = new Set(prev);
+      folderSheets.forEach((s) => next.add(s.id));
+      return next;
+    });
+    toast({ description: `${folderSheets.length} sheet(s) hidden.` });
+  };
+
+  const handleUnhideAllSheets = (folderName: string) => {
+    const folderSheets = groupedSheets[folderName] || [];
+    setHiddenSheetIds((prev) => {
+      const next = new Set(prev);
+      folderSheets.forEach((s) => next.delete(s.id));
+      return next;
+    });
+    toast({ description: "All sheets in this folder are now visible." });
+  };
+
+  const handleUploadForType = (type: string) => {
+    setDocType(type);
+    setTimeout(() => uploadButtonRef.current?.click(), 80);
+  };
+
   const selectedDoc = documents.find((d) => d.id === selectedDocId);
 
   const handleOpenFile = async (docId: string, fallbackUrl: string) => {
@@ -406,7 +497,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     onComplete={handleUploadComplete}
                     testId="button-upload-bid-plan"
                   >
-                    <Button variant="default" size="sm" className="w-full h-7 text-xs" disabled={createDocMutation.isPending} data-testid="button-upload-bid-plan">
+                    <Button ref={uploadButtonRef} variant="default" size="sm" className="w-full h-7 text-xs" disabled={createDocMutation.isPending} data-testid="button-upload-bid-plan">
                       <Upload className="w-3 h-3 mr-1" />
                       {createDocMutation.isPending ? "Saving..." : "Upload"}
                     </Button>
@@ -431,9 +522,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 ) : (
                   groupedDocuments.map((group) => (
                     <div key={group.name}>
-                      <button
-                        className="flex items-center gap-1.5 w-full px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors"
-                        onClick={() => toggleGroup(group.name)}
+                      <div
+                        className="flex items-center gap-1.5 w-full px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/folder"
+                        onClick={() => { if (renamingGroupName !== group.name) toggleGroup(group.name); }}
                         data-testid={`folder-${group.name.toLowerCase().replace(/\s+/g, '-')}`}
                       >
                         {group.expanded ? (
@@ -446,11 +537,115 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         ) : (
                           <Folder className="w-4 h-4 text-yellow-500 shrink-0" />
                         )}
-                        <span className="truncate font-medium">{group.name}</span>
-                        <Badge variant="secondary" className="ml-auto text-[10px] h-4 px-1">
+                        {renamingGroupName === group.name ? (
+                          <Input
+                            autoFocus
+                            value={renameGroupValue}
+                            className="h-5 text-xs px-1 py-0 flex-1"
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => setRenameGroupValue(e.target.value)}
+                            onBlur={() => handleRenameGroupSubmit(group.name)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleRenameGroupSubmit(group.name);
+                              if (e.key === "Escape") setRenamingGroupName(null);
+                            }}
+                            data-testid={`input-rename-folder-${group.name}`}
+                          />
+                        ) : (
+                          <span className="truncate font-medium flex-1">{group.name}</span>
+                        )}
+                        <Badge variant="secondary" className="text-[10px] h-4 px-1 shrink-0">
                           {group.docs.length}
                         </Badge>
-                      </button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-5 w-5 opacity-0 group-hover/folder:opacity-100 shrink-0 ml-0.5"
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`menu-folder-${group.name.toLowerCase().replace(/\s+/g, '-')}`}
+                            >
+                              <MoreVertical className="w-3 h-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-56">
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); setNewFolderName(""); setCreateFolderOpen(true); }}
+                              data-testid="menu-item-create-folder"
+                            >
+                              <FolderPlus className="w-4 h-4 mr-2" />
+                              Create Folder
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleRenameGroupStart(group.name); }}
+                              data-testid="menu-item-rename-folder"
+                            >
+                              <Pencil className="w-4 h-4 mr-2" />
+                              Rename Folder
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); setDeletingGroupName(group.name); }}
+                              className="text-destructive focus:text-destructive"
+                              data-testid="menu-item-delete-folder"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Folder
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleAutonameSheets(group.name); }}
+                              data-testid="menu-item-autoname-sheets"
+                            >
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Autoname Sheets
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handlePrintAllSheets(group.docs); }}
+                              data-testid="menu-item-print-all-sheets"
+                            >
+                              <Printer className="w-4 h-4 mr-2" />
+                              Print All Sheets
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); toast({ description: "Rotating blank sheets right — feature coming soon." }); }}
+                              data-testid="menu-item-rotate-sheets"
+                            >
+                              <RotateCw className="w-4 h-4 mr-2" />
+                              Rotate All Blank Sheets Right
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleHideAllSheets(group.name); }}
+                              data-testid="menu-item-hide-sheets"
+                            >
+                              <EyeOff className="w-4 h-4 mr-2" />
+                              Hide All Sheets
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleUnhideAllSheets(group.name); }}
+                              data-testid="menu-item-unhide-sheets"
+                            >
+                              <Eye className="w-4 h-4 mr-2" />
+                              Unhide All Sheets
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleUploadForType("PLANS"); }}
+                              data-testid="menu-item-upload-plans"
+                            >
+                              <Upload className="w-4 h-4 mr-2" />
+                              Upload Plans
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => { e.stopPropagation(); handleUploadForType("OTHER"); }}
+                              data-testid="menu-item-upload-supporting"
+                            >
+                              <Upload className="w-4 h-4 mr-2" />
+                              Upload Supporting Documents
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                       {group.expanded && (
                         <div className="ml-2">
                           {group.docs.length === 0 ? (
@@ -562,10 +757,12 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                           </button>
                           {isExpanded && (
                             <div className="ml-2">
-                              {folderSheets.length === 0 ? (
-                                <div className="px-6 py-1 text-xs text-muted-foreground italic">No sheets</div>
+                              {folderSheets.filter((s) => !hiddenSheetIds.has(s.id)).length === 0 ? (
+                                <div className="px-6 py-1 text-xs text-muted-foreground italic">
+                                  {folderSheets.length > 0 ? "All sheets hidden" : "No sheets"}
+                                </div>
                               ) : (
-                                folderSheets.map((sheet) => (
+                                folderSheets.filter((s) => !hiddenSheetIds.has(s.id)).map((sheet) => (
                                   <div
                                     key={sheet.id}
                                     draggable
@@ -853,6 +1050,49 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           )}
         </div>
       </div>
+
+      <Dialog open={createFolderOpen} onOpenChange={(open) => { setCreateFolderOpen(open); if (!open) setNewFolderName(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create Folder</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <Label htmlFor="new-folder-name" className="text-sm mb-1 block">Folder name</Label>
+            <Input
+              id="new-folder-name"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="e.g. Structural Plans"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateFolderSubmit(); if (e.key === "Escape") setCreateFolderOpen(false); }}
+              data-testid="input-new-folder-name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateFolderSubmit} disabled={!newFolderName.trim()} data-testid="button-create-folder-confirm">
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deletingGroupName} onOpenChange={(open) => !open && setDeletingGroupName(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Folder</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove the <strong>{deletingGroupName}</strong> folder from view? Documents already uploaded will not be deleted — they will reappear if you reload the page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteGroupConfirm} className="bg-destructive hover:bg-destructive/90" data-testid="button-confirm-delete-folder">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteDocId} onOpenChange={(open) => !open && setDeleteDocId(null)}>
         <AlertDialogContent>
