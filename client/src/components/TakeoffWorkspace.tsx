@@ -36,6 +36,7 @@ import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
 import { onLibraryEvent } from "@/lib/libraryEvents";
+import { generateTakeoffExcel } from "@/utils/takeoff-export";
 import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
 import { Users, Lock } from "lucide-react";
@@ -447,6 +448,52 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     deleteCategoryMutation.mutate(categoryId);
   };
 
+  const handleExportCurrentSheet = () => {
+    if (measurements.length === 0) {
+      toast({ title: "No measurements", description: "There are no measurements to export on this sheet", variant: "destructive" });
+      return;
+    }
+    const filtered = measurements.filter(m => !m.categoryId || !hiddenCategoryIds.has(m.categoryId));
+    if (filtered.length === 0) {
+      toast({ title: "No measurements", description: "All measurements are hidden by category filters", variant: "destructive" });
+      return;
+    }
+    generateTakeoffExcel({
+      projectName: projectCode || "Takeoff",
+      measurements: filtered,
+      sheets,
+      categories,
+      hiddenCategoryIds,
+    });
+    toast({ title: "Export complete", description: "Current sheet exported to Excel" });
+  };
+
+  const handleExportAllSheets = async () => {
+    try {
+      const isBid = context?.type === "bid";
+      const ctxId = isBid ? context.bidId : projectId;
+      const url = isBid
+        ? `/api/bids/${ctxId}/takeoff/all-measurements`
+        : `/api/projects/${ctxId}/takeoff/all-measurements`;
+      const res = await apiRequest("GET", url);
+      const allMeasurements = await res.json();
+      if (!allMeasurements || allMeasurements.length === 0) {
+        toast({ title: "No measurements", description: "There are no measurements across any sheets", variant: "destructive" });
+        return;
+      }
+      generateTakeoffExcel({
+        projectName: projectCode || "Takeoff",
+        measurements: allMeasurements,
+        sheets,
+        categories,
+        hiddenCategoryIds,
+      });
+      toast({ title: "Export complete", description: `All sheets exported to Excel (${allMeasurements.length} measurements)` });
+    } catch {
+      toast({ title: "Error", description: "Failed to fetch measurements for export", variant: "destructive" });
+    }
+  };
+
   const handleSaveCategory = () => {
     if (!categoryName.trim()) {
       toast({ title: "Error", description: "Category name is required", variant: "destructive" });
@@ -616,6 +663,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setMarkupColor={setMarkupColor}
         markupThickness={markupThickness}
         setMarkupThickness={setMarkupThickness}
+        onExportCurrentSheet={handleExportCurrentSheet}
+        onExportAllSheets={handleExportAllSheets}
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
@@ -1714,6 +1763,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             setSelectedSheet(issue.sheetId);
           }
         }}
+        onExportCurrentSheet={handleExportCurrentSheet}
+        onExportAllSheets={handleExportAllSheets}
       />
 
       <TakeoffDialogs

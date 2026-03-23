@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
-  ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen
+  ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download
 } from "lucide-react";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
@@ -39,6 +40,8 @@ interface TakeoffToolbarProps {
   setMarkupColor: (v: string) => void;
   markupThickness: number;
   setMarkupThickness: (v: number) => void;
+  onExportCurrentSheet?: () => void;
+  onExportAllSheets?: () => void;
 }
 
 export function TakeoffToolbar({
@@ -49,6 +52,7 @@ export function TakeoffToolbar({
   mobileMeasurementsOpen, setMobileMeasurementsOpen,
   isDrawing, drawingPoints, isMobile,
   markupColor, setMarkupColor, markupThickness, setMarkupThickness,
+  onExportCurrentSheet, onExportAllSheets,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
 
@@ -271,6 +275,35 @@ export function TakeoffToolbar({
           </TooltipTrigger>
           <TooltipContent side="right"><p>AI Auto-Takeoff</p></TooltipContent>
         </Tooltip>
+        {(onExportCurrentSheet || onExportAllSheets) && (
+          <>
+            <Separator className="my-2 w-12" />
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" data-testid="button-export-excel" className="toggle-elevate">
+                      <Download className="w-5 h-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="right"><p>Export to Excel</p></TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent side="right">
+                {onExportCurrentSheet && (
+                  <DropdownMenuItem onClick={onExportCurrentSheet} disabled={measurements.length === 0} data-testid="button-export-current-sheet">
+                    Current Sheet Only
+                  </DropdownMenuItem>
+                )}
+                {onExportAllSheets && (
+                  <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets">
+                    All Sheets
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
       </div>
 
       <div className="sm:hidden bg-card/90 backdrop-blur-sm border-t px-3 py-1 flex items-center justify-between shrink-0">
@@ -406,6 +439,35 @@ export function TakeoffToolbar({
           </TooltipTrigger>
           <TooltipContent side="top">AI Auto-Takeoff</TooltipContent>
         </Tooltip>
+        {(onExportCurrentSheet || onExportAllSheets) && (
+          <>
+            <Separator orientation="vertical" className="h-6 mx-0.5" />
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" data-testid="button-export-excel-mobile" className="h-8 w-8 shrink-0">
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="top">Export to Excel</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent>
+                {onExportCurrentSheet && (
+                  <DropdownMenuItem onClick={onExportCurrentSheet} disabled={measurements.length === 0} data-testid="button-export-current-sheet-mobile">
+                    Current Sheet Only
+                  </DropdownMenuItem>
+                )}
+                {onExportAllSheets && (
+                  <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets-mobile">
+                    All Sheets
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
       </div>
     </>
   );

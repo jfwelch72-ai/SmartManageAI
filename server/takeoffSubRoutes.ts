@@ -5,7 +5,7 @@ import {
   filePermissions
 } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import { logCreate, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { createArcSegment } from "@shared/utils/geometry";
@@ -712,6 +712,113 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
     res.status(201).json({ plan, sheets: [sheet] });
   } catch (error) {
     console.error("Error uploading plan:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get all measurements across all sheets for a project
+router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const user = req.user!;
+    const { takeoffMeasurements, takeoffSheets, crewProjectAssignments, crewMembers } = await import("@shared/schema");
+
+    const [project] = await db
+      .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+      .from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .limit(1);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    if (user.role !== "ADMIN" && user.role !== "MANAGER" && user.role !== "SUPER_ADMIN" && user.role !== "ESTIMATOR") {
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, projectId), eq(crewMembers.userId, user.id)))
+        .limit(1);
+      if (!assignment) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    }
+
+    const projectSheets = await db
+      .select({ id: takeoffSheets.id })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.projectId, projectId));
+
+    const sheetIds = projectSheets.map(s => s.id);
+    if (sheetIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const measurements = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds))
+      .orderBy(takeoffMeasurements.createdAt);
+
+    const parsedMeasurements = measurements.map(m => ({
+      ...m,
+      points: JSON.parse(m.points),
+    }));
+
+    res.json(parsedMeasurements);
+  } catch (error) {
+    console.error("Error fetching all measurements:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get all measurements across all sheets for a bid
+router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { bidId } = req.params;
+    const user = req.user!;
+    const { takeoffMeasurements, takeoffSheets, bids } = await import("@shared/schema");
+
+    const [bid] = await db
+      .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
+      .from(bids)
+      .where(and(eq(bids.id, bidId), eq(bids.gcOrganizationId, user.organizationId)))
+      .limit(1);
+
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+
+    const bidSheets = await db
+      .select({ id: takeoffSheets.id })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.bidId, bidId));
+
+    const sheetIds = bidSheets.map(s => s.id);
+    if (sheetIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    const measurements = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.sheetId, sheetIds))
+      .orderBy(takeoffMeasurements.createdAt);
+
+    const parsedMeasurements = measurements.map(m => ({
+      ...m,
+      points: JSON.parse(m.points),
+    }));
+
+    res.json(parsedMeasurements);
+  } catch (error) {
+    console.error("Error fetching all bid measurements:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -6,12 +6,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
-  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy
+  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -110,6 +112,8 @@ interface TakeoffSidebarProps {
   allSheetIssues?: any[];
   selectedIssueId?: string | null;
   onSelectIssue?: (issue: any) => void;
+  onExportCurrentSheet?: () => void;
+  onExportAllSheets?: () => void;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -136,6 +140,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     sheets = [], onCompareRevisions, onSelectSheet,
     markups = [], deleteMarkupMutation,
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
+    onExportCurrentSheet, onExportAllSheets,
   } = props;
 
   const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
@@ -368,7 +373,35 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold">Measurements</h3>
-                <Badge variant="secondary" data-testid="badge-measurement-count">{measurements.length}</Badge>
+                <div className="flex items-center gap-1">
+                  {(onExportCurrentSheet || onExportAllSheets) && (
+                    <DropdownMenu>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-export-excel-sidebar">
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>Export to Excel</TooltipContent>
+                      </Tooltip>
+                      <DropdownMenuContent>
+                        {onExportCurrentSheet && (
+                          <DropdownMenuItem onClick={onExportCurrentSheet} data-testid="button-export-current-sheet-sidebar">
+                            Current Sheet Only
+                          </DropdownMenuItem>
+                        )}
+                        {onExportAllSheets && (
+                          <DropdownMenuItem onClick={onExportAllSheets} data-testid="button-export-all-sheets-sidebar">
+                            All Sheets
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                  <Badge variant="secondary" data-testid="badge-measurement-count">{measurements.length}</Badge>
+                </div>
               </div>
               {measurements.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No measurements yet</p>
