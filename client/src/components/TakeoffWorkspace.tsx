@@ -815,7 +815,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         await page.render({
           canvasContext: context,
           viewport: viewport,
-          canvas: canvas
         }).promise;
         const img = new window.Image();
         img.src = canvas.toDataURL();
