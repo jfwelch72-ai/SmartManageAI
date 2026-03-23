@@ -3,10 +3,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import BidLibrarySection from "./BidLibrarySection";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2,
-  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box
+  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen
 } from "lucide-react";
 
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
@@ -107,6 +108,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [newFolderName, setNewFolderName] = useState("");
   const [createFolderParent, setCreateFolderParent] = useState<string | null>(null);
   const [hiddenSheetIds, setHiddenSheetIds] = useState<Set<string>>(new Set());
+  const [libraryExpanded, setLibraryExpanded] = useState(false);
   const uploadButtonRef = useRef<HTMLButtonElement>(null);
   const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
@@ -1126,6 +1128,28 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                       );
                     })}
                   </>
+                )}
+
+                <Separator className="my-2" />
+                <div className="px-2 py-1.5">
+                  <button
+                    className="flex items-center gap-1.5 w-full text-sm hover:bg-accent/50 transition-colors rounded px-1 py-0.5"
+                    onClick={() => setLibraryExpanded(!libraryExpanded)}
+                    data-testid="section-libraries-toggle"
+                  >
+                    {libraryExpanded ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <BookOpen className="w-4 h-4 text-purple-500 shrink-0" />
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                      Libraries
+                    </span>
+                  </button>
+                </div>
+                {libraryExpanded && (
+                  <BidLibrarySection bidId={bidId} />
                 )}
               </div>
             </ScrollArea>

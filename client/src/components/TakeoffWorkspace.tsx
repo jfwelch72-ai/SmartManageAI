@@ -32,6 +32,8 @@ import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { cn } from "@/lib/utils";
+import { onLibraryEvent } from "@/lib/libraryEvents";
+import type { LibraryEvent } from "@/lib/libraryEvents";
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
@@ -515,6 +517,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       return () => { resizeObserver.disconnect(); };
     }
   }, [isFullscreen, selectedSheet]);
+
+  useEffect(() => {
+    const cleanup = onLibraryEvent((event: LibraryEvent) => {
+      if (event.type === "APPLY_LIBRARY_ITEM") {
+        if (!selectedMeasurementId) {
+          toast({ title: "No Measurement Selected", description: "Select a measurement first, then apply a library item.", variant: "destructive" });
+          return;
+        }
+        const updates: { id: string; label?: string; unitCost?: number; costCodeId?: string } = { id: selectedMeasurementId };
+        if (event.item.name) updates.label = event.item.name;
+        if (event.item.unitCost != null) updates.unitCost = event.item.unitCost;
+        if (event.item.costCodeId) updates.costCodeId = event.item.costCodeId;
+        updateMeasurementMutation.mutate(updates, {
+          onSuccess: () => {
+            toast({ title: "Item Applied", description: `"${event.item.name}" applied to measurement.` });
+          },
+        });
+      } else if (event.type === "APPLY_LIBRARY_ASSEMBLY") {
+        if (!selectedMeasurementId) {
+          toast({ title: "No Measurement Selected", description: "Select a measurement first, then apply an assembly.", variant: "destructive" });
+          return;
+        }
+        const firstItem = event.assembly.items?.[0];
+        const updates: { id: string; label?: string; unitCost?: number } = {
+          id: selectedMeasurementId,
+          label: event.assembly.name,
+        };
+        if (firstItem?.unitCost != null) updates.unitCost = Number(firstItem.unitCost);
+        updateMeasurementMutation.mutate(updates, {
+          onSuccess: () => {
+            toast({ title: "Assembly Applied", description: `"${event.assembly.name}" applied to measurement.` });
+          },
+        });
+      } else if (event.type === "LOAD_SAVED_TAKEOFF") {
+        toast({ title: "Saved Takeoff Loaded", description: `"${event.takeoff.name}" measurement data loaded. Select a sheet to apply.` });
+      }
+    });
+    return cleanup;
+  }, [selectedMeasurementId, updateMeasurementMutation, toast]);
 
   return (
     <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative overflow-hidden">

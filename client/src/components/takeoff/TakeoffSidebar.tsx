@@ -11,7 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X,
-  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag
+  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
@@ -19,6 +19,7 @@ import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
 import { computePixelDistance } from "@shared/utils/geometry";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
+import LibraryItemDialog from "@/components/LibraryItemDialog";
 import { IssuesTab } from "./IssuesTab";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
@@ -136,6 +137,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
   const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"tools" | "issues">("tools");
+  const [saveToLibraryOpen, setSaveToLibraryOpen] = useState(false);
+  const [saveToLibraryItem, setSaveToLibraryItem] = useState<{ name: string; unitOfMeasure: string; costTypes: string[]; unitCosts: Record<string, string>; notes: string } | null>(null);
   const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
 
   const revisionChain = (() => {
@@ -427,6 +430,33 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       </div>
                     </div>
                   )}
+                  <Separator />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs"
+                    onClick={() => {
+                      const uom = selM.type === "LINEAR" || selM.type === "PITCHED_LINEAR" || selM.type === "LINEAR_WITH_DROP"
+                        ? "LF"
+                        : selM.type === "AREA" || selM.type === "PITCHED_AREA" || selM.type === "SURFACE_AREA"
+                        ? "SF"
+                        : selM.type === "VOLUME"
+                        ? "CY"
+                        : "EA";
+                      const totalCost = (selM as any).unitCost ? Number((selM as any).unitCost) : 0;
+                      setSaveToLibraryItem({
+                        name: selM.label || "Untitled Measurement",
+                        unitOfMeasure: uom,
+                        costTypes: ["material"],
+                        unitCosts: totalCost > 0 ? { material: String(totalCost) } : {},
+                        notes: (selM as any).costCodeId ? `Cost Code: ${(selM as any).costCodeId}` : "",
+                      });
+                      setSaveToLibraryOpen(true);
+                    }}
+                    data-testid="button-save-to-library"
+                  >
+                    <BookOpen className="w-3 h-3 mr-1" /> Save to Library
+                  </Button>
                 </CardContent>
               </Card>
             );
@@ -823,6 +853,18 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           )}
         </div>
       </ScrollArea>
+      )}
+
+      {saveToLibraryOpen && (
+        <LibraryItemDialog
+          open={saveToLibraryOpen}
+          onOpenChange={(open) => {
+            setSaveToLibraryOpen(open);
+            if (!open) setSaveToLibraryItem(null);
+          }}
+          item={null}
+          initialValues={saveToLibraryItem || undefined}
+        />
       )}
     </div>
   );

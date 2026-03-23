@@ -28,14 +28,24 @@ const COST_TYPE_OPTIONS = [
   { id: "subcontractor", label: "Subcontractor" },
 ];
 
+interface LibraryItemInitialValues {
+  name?: string;
+  itemNumber?: string;
+  unitOfMeasure?: string;
+  costTypes?: string[];
+  unitCosts?: Record<string, string>;
+  notes?: string;
+}
+
 interface LibraryItemDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: LibraryItem | null;
   libraryId?: string;
+  initialValues?: LibraryItemInitialValues;
 }
 
-export default function LibraryItemDialog({ open, onOpenChange, item, libraryId }: LibraryItemDialogProps) {
+export default function LibraryItemDialog({ open, onOpenChange, item, libraryId, initialValues }: LibraryItemDialogProps) {
   const { toast } = useToast();
 
   const [name, setName] = useState("");
@@ -68,6 +78,19 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId 
           : {}
       );
       setNotes(item.notes || "");
+    } else if (initialValues) {
+      setName(initialValues.name || "");
+      setItemNumber(initialValues.itemNumber || "");
+      setMeasuredCoverage("1");
+      setUnitOfMeasure(initialValues.unitOfMeasure || "SF");
+      setPurchaseCoverage("1");
+      setPurchaseUnit(initialValues.unitOfMeasure || "SF");
+      setCustomPurchaseUnit("");
+      setDescription("");
+      setCostTypes(initialValues.costTypes || ["material"]);
+      setAccountingCodes({});
+      setUnitCosts(initialValues.unitCosts || {});
+      setNotes(initialValues.notes || "");
     } else {
       setName("");
       setItemNumber("");
@@ -82,7 +105,7 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId 
       setUnitCosts({});
       setNotes("");
     }
-  }, [item, open]);
+  }, [item, initialValues, open]);
 
   const invalidateItems = () => queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-items") });
 
