@@ -1,0 +1,114 @@
+[
+  {
+    "pattern": "sidewalk",
+    "matchType": "contains",
+    "modifierNames": ["Tight access", "Traffic control", "Erosion control"],
+    "tradeIds": ["CONCRETE"],
+    "priority": 10
+  },
+  {
+    "pattern": "trench",
+    "matchType": "contains",
+    "modifierNames": ["Trench depth > 5ft (shoring required)", "Existing utilities present", "Select backfill"],
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "priority": 10
+  },
+  {
+    "pattern": "mobilization",
+    "matchType": "contains",
+    "modifierNames": ["Multiple mobilizations", "Remote site"],
+    "tradeIds": [],
+    "priority": 5
+  },
+  {
+    "pattern": "^(remove|demo|demolition|tear)",
+    "matchType": "regex",
+    "modifierNames": ["Hazardous waste disposal", "Recycling required", "Dust control"],
+    "tradeIds": [],
+    "priority": 8
+  },
+  {
+    "pattern": "labor only",
+    "matchType": "contains",
+    "modifierNames": ["Prevailing wage", "Union labor", "Overtime required"],
+    "tradeIds": [],
+    "priority": 5
+  },
+  {
+    "pattern": "material only",
+    "matchType": "contains",
+    "modifierNames": ["Long haul distance", "Small quantities", "Specialty materials"],
+    "tradeIds": [],
+    "priority": 5
+  },
+  {
+    "pattern": "foundation",
+    "matchType": "contains",
+    "modifierNames": ["Poor soil conditions", "High water table", "Dewatering required", "Compaction testing"],
+    "tradeIds": ["CONCRETE", "EARTHWORK"],
+    "priority": 9
+  },
+  {
+    "pattern": "slab",
+    "matchType": "contains",
+    "modifierNames": ["Pump placement", "Tight tolerances", "Fiber-reinforced concrete"],
+    "tradeIds": ["CONCRETE"],
+    "priority": 8
+  },
+  {
+    "pattern": "roof",
+    "matchType": "contains",
+    "modifierNames": ["Fall protection", "High wind area", "Wind uplift zone"],
+    "tradeIds": ["ROOFING"],
+    "priority": 8
+  },
+  {
+    "pattern": "pipe|piping",
+    "matchType": "regex",
+    "modifierNames": ["Under-slab piping", "Backflow prevention", "Confined space"],
+    "tradeIds": ["PLUMBING"],
+    "priority": 7
+  },
+  {
+    "pattern": "panel|switchgear|electrical",
+    "matchType": "regex",
+    "modifierNames": ["Arc flash study required", "Lockout/tagout", "Live circuit work"],
+    "tradeIds": ["ELECTRICAL"],
+    "priority": 7
+  },
+  {
+    "pattern": "concrete",
+    "matchType": "contains",
+    "modifierNames": ["Pump placement", "Tight tolerances", "Complex formwork"],
+    "tradeIds": ["CONCRETE"],
+    "priority": 6
+  },
+  {
+    "pattern": "underground",
+    "matchType": "contains",
+    "modifierNames": ["Dewatering required", "Existing utilities present", "Confined space"],
+    "tradeIds": [],
+    "priority": 7
+  },
+  {
+    "pattern": "high.?rise|tall.?building|multi.?story",
+    "matchType": "regex",
+    "modifierNames": ["High-rise work", "Crane required", "Multi-story access"],
+    "tradeIds": [],
+    "priority": 8
+  },
+  {
+    "pattern": "renovation|remodel|retrofit",
+    "matchType": "regex",
+    "modifierNames": ["Unknown conditions", "Occupied building", "Dust control", "Temporary protection"],
+    "tradeIds": [],
+    "priority": 7
+  },
+  {
+    "pattern": "exterior|outdoor",
+    "matchType": "regex",
+    "modifierNames": ["Extreme heat", "Extreme cold", "High wind area", "Erosion control"],
+    "tradeIds": [],
+    "priority": 5
+  }
+]

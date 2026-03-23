@@ -191,6 +191,7 @@ import hiringRoutes from "./hiringRoutes";
 import marketplaceEquipmentRoutes from "./marketplaceEquipmentRoutes";
 import marketplaceCrewRoutes from "./marketplaceCrewRoutes";
 import overheadRoutes from "./overheadRoutes";
+import modifierRoutes from "./modifierRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -573,6 +574,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Overhead Cost Items Routes
   app.use(overheadRoutes);
+
+  // Scope Modifier System (3-Layer)
+  app.use(modifierRoutes);
 
   // Reports Routes (Takeoff & Estimate Reports)
   app.use(reportRoutes);

@@ -6583,3 +6583,85 @@ export const insertOverheadCostItemSchema = createInsertSchema(overheadCostItems
 export type InsertOverheadCostItem = z.infer<typeof insertOverheadCostItemSchema>;
 export type OverheadCostItem = typeof overheadCostItems.$inferSelect;
 
+// ── Scope Modifier System (3-Layer) ──────────────────────────────────────────
+
+export const modifiers = pgTable("modifiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  layer: text("layer").notNull(),
+  tradeIds: text("trade_ids").array().notNull().default(sql`'{}'::text[]`),
+  scopePatterns: text("scope_patterns").array().notNull().default(sql`'{}'::text[]`),
+  uoms: text("uoms").array().notNull().default(sql`'{}'::text[]`),
+  materialFamilies: text("material_families").array().notNull().default(sql`'{}'::text[]`),
+  laborFactorMin: doublePrecision("labor_factor_min").notNull().default(1.0),
+  laborFactorMax: doublePrecision("labor_factor_max").notNull().default(1.0),
+  materialFactorMin: doublePrecision("material_factor_min").notNull().default(1.0),
+  materialFactorMax: doublePrecision("material_factor_max").notNull().default(1.0),
+  durationFactorMin: doublePrecision("duration_factor_min").notNull().default(1.0),
+  durationFactorMax: doublePrecision("duration_factor_max").notNull().default(1.0),
+  wasteFactorMin: doublePrecision("waste_factor_min").notNull().default(0.0),
+  wasteFactorMax: doublePrecision("waste_factor_max").notNull().default(0.0),
+  effectType: text("effect_type").notNull().default("mixed"),
+  aiTags: text("ai_tags").array().notNull().default(sql`'{}'::text[]`),
+  defaultBehavior: text("default_behavior").notNull().default("optional"),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  isActive: boolean("is_active").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  layerIdx: index("modifiers_layer_idx").on(table.layer),
+  categoryIdx: index("modifiers_category_idx").on(table.category),
+  orgIdx: index("modifiers_org_idx").on(table.organizationId),
+  activeIdx: index("modifiers_active_idx").on(table.isActive),
+}));
+
+export const insertModifierSchema = createInsertSchema(modifiers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertModifier = z.infer<typeof insertModifierSchema>;
+export type Modifier = typeof modifiers.$inferSelect;
+
+export const scopeModifierRules = pgTable("scope_modifier_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pattern: text("pattern").notNull(),
+  matchType: text("match_type").notNull(),
+  modifierIds: text("modifier_ids").array().notNull().default(sql`'{}'::text[]`),
+  tradeIds: text("trade_ids").array().notNull().default(sql`'{}'::text[]`),
+  priority: integer("priority").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+}, (table) => ({
+  activeIdx: index("scope_modifier_rules_active_idx").on(table.isActive),
+  priorityIdx: index("scope_modifier_rules_priority_idx").on(table.priority),
+}));
+
+export const insertScopeModifierRuleSchema = createInsertSchema(scopeModifierRules).omit({
+  id: true,
+});
+export type InsertScopeModifierRule = z.infer<typeof insertScopeModifierRuleSchema>;
+export type ScopeModifierRule = typeof scopeModifierRules.$inferSelect;
+
+export const bidModifierSelections = pgTable("bid_modifier_selections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  estimateLineItemId: varchar("estimate_line_item_id").notNull().references(() => estimateLineItems.id, { onDelete: "cascade" }),
+  modifierId: varchar("modifier_id").notNull().references(() => modifiers.id, { onDelete: "cascade" }),
+  selectedFactor: doublePrecision("selected_factor").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  bidIdx: index("bid_modifier_selections_bid_idx").on(table.bidId),
+  lineItemIdx: index("bid_modifier_selections_line_item_idx").on(table.estimateLineItemId),
+  modifierIdx: index("bid_modifier_selections_modifier_idx").on(table.modifierId),
+}));
+
+export const insertBidModifierSelectionSchema = createInsertSchema(bidModifierSelections).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertBidModifierSelection = z.infer<typeof insertBidModifierSelectionSchema>;
+export type BidModifierSelection = typeof bidModifierSelections.$inferSelect;
+

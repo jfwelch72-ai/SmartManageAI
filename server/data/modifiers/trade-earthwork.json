@@ -1,0 +1,153 @@
+[
+  {
+    "name": "Rock excavation",
+    "category": "Earthwork Conditions",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "labor",
+    "laborFactorMin": 1.3,
+    "laborFactorMax": 1.6,
+    "aiTags": ["rock", "blasting", "ripping", "hard dig"],
+    "displayOrder": 1
+  },
+  {
+    "name": "Dewatering required",
+    "category": "Earthwork Conditions",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "mixed",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.15,
+    "aiTags": ["dewatering", "pump", "well point", "groundwater"],
+    "displayOrder": 2
+  },
+  {
+    "name": "Contaminated soil",
+    "category": "Earthwork Conditions",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "mixed",
+    "laborFactorMin": 1.2,
+    "laborFactorMax": 1.5,
+    "materialFactorMin": 1.15,
+    "materialFactorMax": 1.4,
+    "aiTags": ["contaminated", "brownfield", "remediation", "environmental"],
+    "displayOrder": 3
+  },
+  {
+    "name": "Trench depth > 5ft (shoring required)",
+    "category": "Trenching Safety",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.3,
+    "aiTags": ["deep trench", "shoring", "trench box", "OSHA"],
+    "displayOrder": 4
+  },
+  {
+    "name": "Tight trench (< 24\" wide)",
+    "category": "Trenching Safety",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.2,
+    "aiTags": ["narrow", "tight", "restricted", "hand dig"],
+    "displayOrder": 5
+  },
+  {
+    "name": "Existing utilities present",
+    "category": "Trenching Safety",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["utilities", "existing", "locate", "pothole"],
+    "displayOrder": 6
+  },
+  {
+    "name": "Import fill required",
+    "category": "Earthwork Materials",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK"],
+    "effectType": "material",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.3,
+    "aiTags": ["import", "fill", "borrow", "hauling"],
+    "displayOrder": 7
+  },
+  {
+    "name": "Select backfill",
+    "category": "Earthwork Materials",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "material",
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.2,
+    "aiTags": ["select", "backfill", "granular", "crushed stone"],
+    "displayOrder": 8
+  },
+  {
+    "name": "Compaction testing",
+    "category": "Earthwork Quality",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK"],
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.1,
+    "aiTags": ["compaction", "proctor", "density", "testing"],
+    "displayOrder": 9
+  },
+  {
+    "name": "Geotextile/geogrid",
+    "category": "Earthwork Materials",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK"],
+    "effectType": "mixed",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.1,
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.15,
+    "aiTags": ["geotextile", "geogrid", "stabilization", "fabric"],
+    "displayOrder": 10
+  },
+  {
+    "name": "Winter earthwork",
+    "category": "Earthwork Conditions",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK", "TRENCHING"],
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.3,
+    "aiTags": ["frozen", "winter", "frost", "thaw"],
+    "displayOrder": 11
+  },
+  {
+    "name": "Steep slope work",
+    "category": "Earthwork Conditions",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK"],
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["slope", "grade", "steep", "hillside"],
+    "displayOrder": 12
+  },
+  {
+    "name": "GPS machine control",
+    "category": "Earthwork Equipment",
+    "layer": "trade",
+    "tradeIds": ["EARTHWORK"],
+    "effectType": "mixed",
+    "laborFactorMin": 0.9,
+    "laborFactorMax": 0.95,
+    "materialFactorMin": 1.02,
+    "materialFactorMax": 1.05,
+    "aiTags": ["GPS", "machine control", "automated", "grade control"],
+    "displayOrder": 13
+  }
+]

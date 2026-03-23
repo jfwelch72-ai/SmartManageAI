@@ -1,0 +1,632 @@
+[
+  {
+    "name": "Tight access",
+    "category": "Site Access & Logistics",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.3,
+    "aiTags": ["tight", "access", "restricted", "narrow"],
+    "displayOrder": 1
+  },
+  {
+    "name": "Limited laydown area",
+    "category": "Site Access & Logistics",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["laydown", "staging", "limited", "area"],
+    "displayOrder": 2
+  },
+  {
+    "name": "Long carry distance",
+    "category": "Site Access & Logistics",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "durationFactorMin": 1.05,
+    "durationFactorMax": 1.15,
+    "aiTags": ["carry", "distance", "haul", "transport"],
+    "displayOrder": 3
+  },
+  {
+    "name": "Urban site",
+    "category": "Site Access & Logistics",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.1,
+    "aiTags": ["urban", "city", "downtown", "metro"],
+    "displayOrder": 4
+  },
+  {
+    "name": "Remote site",
+    "category": "Site Access & Logistics",
+    "layer": "universal",
+    "effectType": "mixed",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.25,
+    "durationFactorMin": 1.1,
+    "durationFactorMax": 1.2,
+    "aiTags": ["remote", "rural", "isolated", "far"],
+    "displayOrder": 5
+  },
+  {
+    "name": "Crane required",
+    "category": "Site Access & Logistics",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.35,
+    "aiTags": ["crane", "lift", "hoist", "rigging"],
+    "displayOrder": 6
+  },
+  {
+    "name": "Indoor work",
+    "category": "Working Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.0,
+    "laborFactorMax": 1.05,
+    "aiTags": ["indoor", "interior", "inside"],
+    "displayOrder": 7
+  },
+  {
+    "name": "Night work",
+    "category": "Working Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.3,
+    "aiTags": ["night", "evening", "overnight", "after hours"],
+    "displayOrder": 8
+  },
+  {
+    "name": "High-rise work",
+    "category": "Working Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["high-rise", "tall", "elevated", "upper floors"],
+    "displayOrder": 9
+  },
+  {
+    "name": "Occupied building",
+    "category": "Working Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.2,
+    "aiTags": ["occupied", "tenants", "active building", "operational"],
+    "displayOrder": 10
+  },
+  {
+    "name": "Clean room environment",
+    "category": "Working Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.2,
+    "laborFactorMax": 1.4,
+    "aiTags": ["clean room", "sterile", "controlled", "pharmaceutical"],
+    "displayOrder": 11
+  },
+  {
+    "name": "Dust-free environment",
+    "category": "Working Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["dust-free", "dust control", "sensitive"],
+    "displayOrder": 12
+  },
+  {
+    "name": "Accelerated schedule",
+    "category": "Schedule & Phasing",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.35,
+    "aiTags": ["accelerated", "fast-track", "rush", "expedited"],
+    "displayOrder": 13
+  },
+  {
+    "name": "Phased work",
+    "category": "Schedule & Phasing",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["phased", "phases", "staged", "sequential"],
+    "displayOrder": 14
+  },
+  {
+    "name": "Weekend work",
+    "category": "Schedule & Phasing",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.25,
+    "laborFactorMax": 1.5,
+    "aiTags": ["weekend", "saturday", "sunday"],
+    "displayOrder": 15
+  },
+  {
+    "name": "Shutdown window",
+    "category": "Schedule & Phasing",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.2,
+    "aiTags": ["shutdown", "outage", "downtime", "turnaround"],
+    "displayOrder": 16
+  },
+  {
+    "name": "Multiple mobilizations",
+    "category": "Schedule & Phasing",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["mobilization", "demobilization", "multiple visits"],
+    "displayOrder": 17
+  },
+  {
+    "name": "Prevailing wage",
+    "category": "Labor Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.2,
+    "laborFactorMax": 1.5,
+    "aiTags": ["prevailing wage", "davis-bacon", "government", "public works"],
+    "displayOrder": 18
+  },
+  {
+    "name": "Union labor",
+    "category": "Labor Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.4,
+    "aiTags": ["union", "organized", "collective bargaining"],
+    "displayOrder": 19
+  },
+  {
+    "name": "Overtime required",
+    "category": "Labor Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.5,
+    "laborFactorMax": 2.0,
+    "aiTags": ["overtime", "OT", "extended hours"],
+    "displayOrder": 20
+  },
+  {
+    "name": "Double time",
+    "category": "Labor Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 2.0,
+    "laborFactorMax": 2.0,
+    "aiTags": ["double time", "holiday", "premium pay"],
+    "displayOrder": 21
+  },
+  {
+    "name": "Certified labor",
+    "category": "Labor Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["certified", "licensed", "specialized", "journeyman"],
+    "displayOrder": 22
+  },
+  {
+    "name": "Traffic control",
+    "category": "Safety & Compliance",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["traffic", "road", "flagging", "lane closure"],
+    "displayOrder": 23
+  },
+  {
+    "name": "Fall protection",
+    "category": "Safety & Compliance",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["fall protection", "harness", "guardrail", "safety net"],
+    "displayOrder": 24
+  },
+  {
+    "name": "Confined space",
+    "category": "Safety & Compliance",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.3,
+    "aiTags": ["confined space", "entry permit", "ventilation", "manhole"],
+    "displayOrder": 25
+  },
+  {
+    "name": "Lockout/tagout",
+    "category": "Safety & Compliance",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.1,
+    "aiTags": ["lockout", "tagout", "LOTO", "energy isolation"],
+    "displayOrder": 26
+  },
+  {
+    "name": "Fire watch",
+    "category": "Safety & Compliance",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.1,
+    "aiTags": ["fire watch", "hot work", "welding", "cutting"],
+    "displayOrder": 27
+  },
+  {
+    "name": "Hazmat abatement",
+    "category": "Safety & Compliance",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.2,
+    "laborFactorMax": 1.5,
+    "aiTags": ["hazmat", "abatement", "hazardous", "remediation"],
+    "displayOrder": 28
+  },
+  {
+    "name": "Unknown conditions",
+    "category": "Site / Existing Conditions",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.2,
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.1,
+    "aiTags": ["unknown", "unforeseen", "concealed", "existing"],
+    "displayOrder": 29
+  },
+  {
+    "name": "Asbestos present",
+    "category": "Site / Existing Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.2,
+    "laborFactorMax": 1.5,
+    "aiTags": ["asbestos", "ACM", "abatement", "encapsulation"],
+    "displayOrder": 30
+  },
+  {
+    "name": "Lead paint",
+    "category": "Site / Existing Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.35,
+    "aiTags": ["lead", "lead paint", "LBP", "lead abatement"],
+    "displayOrder": 31
+  },
+  {
+    "name": "Poor soil conditions",
+    "category": "Site / Existing Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["soil", "clay", "unstable", "soft ground"],
+    "displayOrder": 32
+  },
+  {
+    "name": "High water table",
+    "category": "Site / Existing Conditions",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.3,
+    "aiTags": ["water table", "dewatering", "groundwater", "wet"],
+    "displayOrder": 33
+  },
+  {
+    "name": "Tight tolerances",
+    "category": "Installation Complexity",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["tolerance", "precision", "exact", "tight fit"],
+    "displayOrder": 34
+  },
+  {
+    "name": "Complex geometry",
+    "category": "Installation Complexity",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.3,
+    "aiTags": ["complex", "geometry", "curved", "irregular"],
+    "displayOrder": 35
+  },
+  {
+    "name": "Multiple penetrations",
+    "category": "Installation Complexity",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.2,
+    "aiTags": ["penetration", "core drill", "sleeve", "opening"],
+    "displayOrder": 36
+  },
+  {
+    "name": "Coordination-heavy",
+    "category": "Installation Complexity",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.2,
+    "aiTags": ["coordination", "multi-trade", "sequencing", "MEP"],
+    "displayOrder": 37
+  },
+  {
+    "name": "Custom fabrication",
+    "category": "Installation Complexity",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.15,
+    "materialFactorMax": 1.35,
+    "aiTags": ["custom", "fabrication", "shop drawing", "bespoke"],
+    "displayOrder": 38
+  },
+  {
+    "name": "Long haul distance",
+    "category": "Material Handling",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.15,
+    "aiTags": ["haul", "freight", "shipping", "delivery"],
+    "displayOrder": 39
+  },
+  {
+    "name": "Small quantities",
+    "category": "Material Handling",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.25,
+    "aiTags": ["small quantity", "minimum order", "partial"],
+    "displayOrder": 40
+  },
+  {
+    "name": "Specialty materials",
+    "category": "Material Handling",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.3,
+    "aiTags": ["specialty", "custom", "special order", "unique"],
+    "displayOrder": 41
+  },
+  {
+    "name": "Long lead time",
+    "category": "Material Handling",
+    "layer": "universal",
+    "effectType": "mixed",
+    "durationFactorMin": 1.1,
+    "durationFactorMax": 1.3,
+    "aiTags": ["lead time", "backorder", "long lead", "supply chain"],
+    "displayOrder": 42
+  },
+  {
+    "name": "Fragile materials",
+    "category": "Material Handling",
+    "layer": "universal",
+    "effectType": "mixed",
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.15,
+    "wasteFactorMin": 0.02,
+    "wasteFactorMax": 0.05,
+    "aiTags": ["fragile", "breakable", "glass", "delicate"],
+    "displayOrder": 43
+  },
+  {
+    "name": "Temporary shoring",
+    "category": "Protection / Temporary Works",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.25,
+    "aiTags": ["shoring", "bracing", "underpinning", "support"],
+    "displayOrder": 44
+  },
+  {
+    "name": "Temporary protection",
+    "category": "Protection / Temporary Works",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.1,
+    "aiTags": ["protection", "covering", "temporary", "floor protection"],
+    "displayOrder": 45
+  },
+  {
+    "name": "Erosion control",
+    "category": "Protection / Temporary Works",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.02,
+    "laborFactorMax": 1.08,
+    "materialFactorMin": 1.02,
+    "materialFactorMax": 1.08,
+    "aiTags": ["erosion", "sediment", "silt fence", "stormwater"],
+    "displayOrder": 46
+  },
+  {
+    "name": "Winter protection",
+    "category": "Protection / Temporary Works",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "materialFactorMin": 1.05,
+    "materialFactorMax": 1.1,
+    "aiTags": ["winter", "cold weather", "heating", "enclosure"],
+    "displayOrder": 47
+  },
+  {
+    "name": "Dust control",
+    "category": "Protection / Temporary Works",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.02,
+    "laborFactorMax": 1.08,
+    "aiTags": ["dust", "containment", "negative air", "barrier"],
+    "displayOrder": 48
+  },
+  {
+    "name": "Hazardous waste disposal",
+    "category": "Waste / Disposal",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.2,
+    "materialFactorMax": 1.5,
+    "aiTags": ["hazardous", "disposal", "manifest", "regulated"],
+    "displayOrder": 49
+  },
+  {
+    "name": "Recycling required",
+    "category": "Waste / Disposal",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.1,
+    "aiTags": ["recycling", "diversion", "salvage", "reclaim"],
+    "displayOrder": 50
+  },
+  {
+    "name": "High waste factor",
+    "category": "Waste / Disposal",
+    "layer": "universal",
+    "effectType": "mixed",
+    "wasteFactorMin": 0.05,
+    "wasteFactorMax": 0.15,
+    "aiTags": ["waste", "scrap", "cutoff", "excess"],
+    "displayOrder": 51
+  },
+  {
+    "name": "Offsite disposal",
+    "category": "Waste / Disposal",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.25,
+    "aiTags": ["offsite", "hauling", "dump", "landfill"],
+    "displayOrder": 52
+  },
+  {
+    "name": "Premium finish",
+    "category": "Quality / Specification Level",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.15,
+    "laborFactorMax": 1.3,
+    "materialFactorMin": 1.15,
+    "materialFactorMax": 1.35,
+    "aiTags": ["premium", "high-end", "luxury", "architectural"],
+    "displayOrder": 53
+  },
+  {
+    "name": "LEED requirements",
+    "category": "Quality / Specification Level",
+    "layer": "universal",
+    "effectType": "mixed",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.2,
+    "aiTags": ["LEED", "green", "sustainable", "certification"],
+    "displayOrder": 54
+  },
+  {
+    "name": "Testing/inspection intensive",
+    "category": "Quality / Specification Level",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["testing", "inspection", "QC", "quality control"],
+    "displayOrder": 55
+  },
+  {
+    "name": "Mock-up required",
+    "category": "Quality / Specification Level",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.1,
+    "aiTags": ["mock-up", "sample", "prototype", "approval"],
+    "displayOrder": 56
+  },
+  {
+    "name": "Extreme heat",
+    "category": "Weather / Environmental Exposure",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["heat", "hot", "summer", "high temperature"],
+    "displayOrder": 57
+  },
+  {
+    "name": "Extreme cold",
+    "category": "Weather / Environmental Exposure",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.1,
+    "laborFactorMax": 1.2,
+    "aiTags": ["cold", "freeze", "winter", "low temperature"],
+    "displayOrder": 58
+  },
+  {
+    "name": "High wind area",
+    "category": "Weather / Environmental Exposure",
+    "layer": "universal",
+    "effectType": "labor",
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["wind", "gusty", "exposed", "windbreak"],
+    "displayOrder": 59
+  },
+  {
+    "name": "Coastal/salt exposure",
+    "category": "Weather / Environmental Exposure",
+    "layer": "universal",
+    "effectType": "material",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.2,
+    "aiTags": ["coastal", "salt", "marine", "corrosion"],
+    "displayOrder": 60
+  },
+  {
+    "name": "Seismic zone",
+    "category": "Weather / Environmental Exposure",
+    "layer": "universal",
+    "effectType": "mixed",
+    "materialFactorMin": 1.1,
+    "materialFactorMax": 1.25,
+    "laborFactorMin": 1.05,
+    "laborFactorMax": 1.15,
+    "aiTags": ["seismic", "earthquake", "bracing", "zone 4"],
+    "displayOrder": 61
+  }
+]
