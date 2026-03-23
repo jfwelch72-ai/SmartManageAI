@@ -1134,6 +1134,24 @@ export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurem
 export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
 export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
 
+export const bimStoreyAssociations = pgTable("bim_storey_associations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  bimDocumentId: varchar("bim_document_id").notNull(),
+  storeyExpressId: integer("storey_express_id").notNull(),
+  storeyName: text("storey_name").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sheetIdx: index("bim_storey_assoc_sheet_idx").on(table.sheetId),
+  bidIdx: index("bim_storey_assoc_bid_idx").on(table.bidId),
+}));
+
+export const insertBimStoreyAssociationSchema = createInsertSchema(bimStoreyAssociations).omit({ id: true, createdAt: true });
+export type InsertBimStoreyAssociation = z.infer<typeof insertBimStoreyAssociationSchema>;
+export type BimStoreyAssociation = typeof bimStoreyAssociations.$inferSelect;
+
 // Takeoff Assemblies - reusable templates that auto-calculate quantities from a measurement
 export const takeoffAssemblies = pgTable("takeoff_assemblies", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { bids, bidDocuments, takeoffSheets, quantityCategories } from "@shared/schema";
+import { bids, bidDocuments, takeoffSheets, quantityCategories, bimStoreyAssociations } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, and } from "drizzle-orm";
 import { logAudit } from "./auditLogger";
@@ -171,6 +171,95 @@ router.patch("/api/bids/:bidId/takeoff/sheets/reorder", requireAuth, async (req:
     res.json({ success: true });
   } catch (error) {
     console.error("Reorder bid sheets error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/bids/:bidId/bim/storey-associations", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const bid = await getBidWithAccess(req, res);
+    if (!bid) return;
+
+    const associations = await db.select().from(bimStoreyAssociations)
+      .where(eq(bimStoreyAssociations.bidId, bid.id));
+
+    res.json(associations);
+  } catch (error) {
+    console.error("Get storey associations error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/bids/:bidId/bim/storey-associations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const bid = await getBidWithAccess(req, res);
+    if (!bid) return;
+
+    const { sheetId, bimDocumentId, storeyExpressId, storeyName } = req.body;
+    if (!sheetId || !bimDocumentId || storeyExpressId === undefined || !storeyName) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const parsedStoreyId = Number(storeyExpressId);
+    if (!Number.isInteger(parsedStoreyId)) {
+      return res.status(400).json({ error: "storeyExpressId must be an integer" });
+    }
+
+    const [sheet] = await db.select().from(takeoffSheets)
+      .where(and(eq(takeoffSheets.id, sheetId), eq(takeoffSheets.bidId, bid.id)));
+    if (!sheet) {
+      return res.status(400).json({ error: "Sheet does not belong to this bid" });
+    }
+
+    const [doc] = await db.select().from(bidDocuments)
+      .where(and(eq(bidDocuments.id, bimDocumentId), eq(bidDocuments.bidId, bid.id)));
+    if (!doc) {
+      return res.status(400).json({ error: "Document does not belong to this bid" });
+    }
+
+    const existing = await db.select().from(bimStoreyAssociations)
+      .where(and(
+        eq(bimStoreyAssociations.bidId, bid.id),
+        eq(bimStoreyAssociations.sheetId, sheetId)
+      ));
+
+    if (existing.length > 0) {
+      const [updated] = await db.update(bimStoreyAssociations)
+        .set({ bimDocumentId, storeyExpressId: parsedStoreyId, storeyName })
+        .where(eq(bimStoreyAssociations.id, existing[0].id))
+        .returning();
+      return res.json(updated);
+    }
+
+    const [association] = await db.insert(bimStoreyAssociations).values({
+      bidId: bid.id,
+      sheetId,
+      bimDocumentId,
+      storeyExpressId: parsedStoreyId,
+      storeyName,
+    }).returning();
+
+    res.status(201).json(association);
+  } catch (error) {
+    console.error("Create storey association error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/bids/:bidId/bim/storey-associations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const bid = await getBidWithAccess(req, res);
+    if (!bid) return;
+
+    await db.delete(bimStoreyAssociations)
+      .where(and(
+        eq(bimStoreyAssociations.id, req.params.id),
+        eq(bimStoreyAssociations.bidId, bid.id)
+      ));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete storey association error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

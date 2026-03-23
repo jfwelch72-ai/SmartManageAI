@@ -10,13 +10,38 @@ import {
   RotateCcw, Maximize, Move, ZoomIn, ZoomOut, MousePointer,
   ChevronRight, ChevronDown, Building2, Layers, Box, AlertCircle,
   PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen,
-  Loader2
+  Loader2, Ruler, SquareDashedBottom, Plus, X
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface BimViewerProps {
+export interface BimViewerProps {
   fileUrl: string;
   fileName?: string;
+  onAddToTakeoff?: (elements: BimElementSummary[]) => void;
+  onElementSelect?: (elements: BimSelectedElement[]) => void;
+  highlightStoreyId?: number | null;
+}
+
+export interface BimSelectedElement {
+  expressID: number;
+  type: string;
+  name: string;
+  storeyExpressId?: number;
+  storeyName?: string;
+}
+
+export interface BimElementSummary {
+  expressID: number;
+  type: string;
+  name: string;
+  material?: string;
+  dimensions?: { length?: number; area?: number; volume?: number };
+  properties: { name: string; value: string }[];
+}
+
+export interface BimStoreyInfo {
+  expressID: number;
+  name: string;
 }
 
 interface IFCTreeNode {
@@ -36,6 +61,14 @@ interface IFCElementInfo {
   type: string;
   name: string;
   properties: IFCProperty[];
+}
+
+interface Measurement3D {
+  id: string;
+  type: "distance" | "area";
+  points: THREE.Vector3[];
+  value: number;
+  label: string;
 }
 
 const IFC_TYPE_NAMES: Record<number, string> = {
@@ -85,21 +118,21 @@ function getPropertyValue(prop: any): string {
 function TreeNodeComponent({
   node,
   level,
-  selectedId,
+  selectedIds,
   expandedIds,
   onToggle,
   onSelect,
 }: {
   node: IFCTreeNode;
   level: number;
-  selectedId: number | null;
+  selectedIds: Set<number>;
   expandedIds: Set<number>;
   onToggle: (id: number) => void;
-  onSelect: (id: number) => void;
+  onSelect: (id: number, multi: boolean) => void;
 }) {
   const hasChildren = node.children.length > 0;
   const isExpanded = expandedIds.has(node.expressID);
-  const isSelected = selectedId === node.expressID;
+  const isSelected = selectedIds.has(node.expressID);
 
   return (
     <div>
@@ -109,7 +142,7 @@ function TreeNodeComponent({
           isSelected && "bg-primary/20 text-primary font-medium"
         )}
         style={{ paddingLeft: `${level * 12 + 4}px` }}
-        onClick={() => onSelect(node.expressID)}
+        onClick={(e) => onSelect(node.expressID, e.shiftKey)}
         data-testid={`bim-tree-node-${node.expressID}`}
       >
         {hasChildren ? (
@@ -139,7 +172,7 @@ function TreeNodeComponent({
               key={child.expressID}
               node={child}
               level={level + 1}
-              selectedId={selectedId}
+              selectedIds={selectedIds}
               expandedIds={expandedIds}
               onToggle={onToggle}
               onSelect={onSelect}
@@ -399,7 +432,60 @@ function getElementProperties(ifcApi: WebIFC.IfcAPI, modelID: number, expressID:
   }
 }
 
-export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
+function findElementStorey(ifcApi: WebIFC.IfcAPI, modelID: number, expressID: number): { expressID: number; name: string } | null {
+  try {
+    const relContains = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELCONTAINEDINSPATIALSTRUCTURE);
+    for (let i = 0; i < relContains.size(); i++) {
+      try {
+        const rel = ifcApi.GetLine(modelID, relContains.get(i));
+        const elements = rel?.RelatedElements;
+        if (!Array.isArray(elements)) continue;
+        const isContained = elements.some((e: any) => e.value === expressID);
+        if (!isContained) continue;
+        const structRef = rel?.RelatingStructure?.value;
+        if (!structRef) continue;
+        const struct = ifcApi.GetLine(modelID, structRef);
+        if (struct?.type === WebIFC.IFCBUILDINGSTOREY) {
+          return { expressID: structRef, name: struct?.Name?.value || struct?.LongName?.value || `Storey #${structRef}` };
+        }
+      } catch {}
+    }
+  } catch {}
+  return null;
+}
+
+function getStoreysFromTree(nodes: IFCTreeNode[]): BimStoreyInfo[] {
+  const storeys: BimStoreyInfo[] = [];
+  function walk(node: IFCTreeNode) {
+    if (node.type === "Building Storey") {
+      storeys.push({ expressID: node.expressID, name: node.name });
+    }
+    node.children.forEach(walk);
+  }
+  nodes.forEach(walk);
+  return storeys;
+}
+
+function getElementsInStorey(ifcApi: WebIFC.IfcAPI, modelID: number, storeyExpressId: number): number[] {
+  const elementIds: number[] = [];
+  try {
+    const relContains = ifcApi.GetLineIDsWithType(modelID, WebIFC.IFCRELCONTAINEDINSPATIALSTRUCTURE);
+    for (let i = 0; i < relContains.size(); i++) {
+      try {
+        const rel = ifcApi.GetLine(modelID, relContains.get(i));
+        const structRef = rel?.RelatingStructure?.value;
+        if (structRef !== storeyExpressId) continue;
+        const elements = rel?.RelatedElements;
+        if (Array.isArray(elements)) {
+          elements.forEach((e: any) => { if (e.value) elementIds.push(e.value); });
+        }
+      } catch {}
+    }
+  } catch {}
+  return elementIds;
+}
+
+export default function BimViewer({ fileUrl, fileName, onAddToTakeoff, onElementSelect, highlightStoreyId }: BimViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -411,6 +497,7 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
   const modelIdRef = useRef<number>(0);
   const animFrameRef = useRef<number>(0);
   const allMeshesGroupRef = useRef<THREE.Group>(new THREE.Group());
+  const measureGroupRef = useRef<THREE.Group>(new THREE.Group());
 
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -418,17 +505,95 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [treeData, setTreeData] = useState<IFCTreeNode[]>([]);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
-  const [selectedElementId, setSelectedElementId] = useState<number | null>(null);
+  const [selectedElementIds, setSelectedElementIds] = useState<Set<number>>(new Set());
   const [elementInfo, setElementInfo] = useState<IFCElementInfo | null>(null);
   const [showTree, setShowTree] = useState(true);
   const [showProperties, setShowProperties] = useState(true);
-  const [controlMode, setControlMode] = useState<"orbit" | "pan">("orbit");
+  const [controlMode, setControlMode] = useState<"orbit" | "pan" | "measure_distance" | "measure_area">("orbit");
+  const [measurements, setMeasurements] = useState<Measurement3D[]>([]);
+  const [measurePoints, setMeasurePoints] = useState<THREE.Vector3[]>([]);
+  const [showActionPanel, setShowActionPanel] = useState(false);
 
   const highlightMaterial = useMemo(
     () => new THREE.MeshStandardMaterial({ color: 0x00aaff, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
     []
   );
+  const storeyHighlightMaterial = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: 0xff8800, transparent: true, opacity: 0.6, side: THREE.DoubleSide }),
+    []
+  );
   const originalMaterialsRef = useRef<Map<number, Map<THREE.Mesh, THREE.Material | THREE.Material[]>>>(new Map());
+
+  const storeys = useMemo(() => getStoreysFromTree(treeData), [treeData]);
+
+  const selectedElementSummaries = useMemo((): BimElementSummary[] => {
+    if (selectedElementIds.size === 0 || !ifcApiRef.current) return [];
+    const summaries: BimElementSummary[] = [];
+    for (const id of selectedElementIds) {
+      const info = getElementProperties(ifcApiRef.current, modelIdRef.current, id);
+      if (info) {
+        const dims: BimElementSummary["dimensions"] = {};
+        for (const p of info.properties) {
+          const ln = p.name.toLowerCase();
+          if (ln.includes("length")) dims.length = parseFloat(p.value) || undefined;
+          if (ln.includes("area")) dims.area = parseFloat(p.value) || undefined;
+          if (ln.includes("volume")) dims.volume = parseFloat(p.value) || undefined;
+        }
+        const materialProp = info.properties.find(p => p.name === "Material" || p.name === "Material Layer Set");
+        summaries.push({
+          expressID: info.expressID,
+          type: info.type,
+          name: info.name,
+          material: materialProp?.value,
+          dimensions: dims,
+          properties: info.properties,
+        });
+      }
+    }
+    return summaries;
+  }, [selectedElementIds]);
+
+  useEffect(() => {
+    if (selectedElementIds.size > 0) {
+      setShowActionPanel(true);
+    } else {
+      setShowActionPanel(false);
+    }
+    if (onElementSelect && ifcApiRef.current) {
+      const elements: BimSelectedElement[] = [];
+      for (const id of selectedElementIds) {
+        const info = getElementProperties(ifcApiRef.current, modelIdRef.current, id);
+        if (info) {
+          const storey = findElementStorey(ifcApiRef.current, modelIdRef.current, id);
+          elements.push({
+            expressID: id,
+            type: info.type,
+            name: info.name,
+            storeyExpressId: storey?.expressID,
+            storeyName: storey?.name,
+          });
+        }
+      }
+      onElementSelect(elements);
+    }
+  }, [selectedElementIds, onElementSelect]);
+
+  useEffect(() => {
+    if (!ifcApiRef.current || loading) return;
+    const elementIds = highlightStoreyId
+      ? getElementsInStorey(ifcApiRef.current, modelIdRef.current, highlightStoreyId)
+      : [];
+    meshMapRef.current.forEach((meshes, id) => {
+      const origMap = originalMaterialsRef.current.get(id);
+      if (!origMap) return;
+      if (selectedElementIds.has(id)) return;
+      if (elementIds.includes(id)) {
+        meshes.forEach((m) => { m.material = storeyHighlightMaterial; });
+      } else {
+        meshes.forEach((m) => { const o = origMap.get(m); if (o) m.material = o as THREE.Material; });
+      }
+    });
+  }, [highlightStoreyId, loading, selectedElementIds, storeyHighlightMaterial]);
 
   const initThreeScene = useCallback(() => {
     if (!containerRef.current || !canvasRef.current) return;
@@ -476,6 +641,7 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
     scene.add(new THREE.HemisphereLight(0xddeeff, 0x0f0e0d, 0.3));
     scene.add(new THREE.GridHelper(200, 50, 0xcccccc, 0xe0e0e0));
     scene.add(allMeshesGroupRef.current);
+    scene.add(measureGroupRef.current);
 
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
@@ -678,28 +844,44 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
     }
   }, []);
 
-  const handleSelectElement = useCallback((expressID: number) => {
+  const applySelection = useCallback((ids: Set<number>) => {
+    meshMapRef.current.forEach((meshes, id) => {
+      const origMap = originalMaterialsRef.current.get(id);
+      if (!origMap) return;
+      if (ids.has(id)) {
+        meshes.forEach((m) => { m.material = highlightMaterial; });
+      } else {
+        meshes.forEach((m) => { const o = origMap.get(m); if (o) m.material = o as THREE.Material; });
+      }
+    });
+  }, [highlightMaterial]);
+
+  const handleSelectElement = useCallback((expressID: number, multiSelect = false) => {
     if (expressID < 0) {
-      setSelectedElementId(null);
+      setSelectedElementIds(new Set());
       setElementInfo(null);
-      meshMapRef.current.forEach((meshes, id) => {
-        const origMap = originalMaterialsRef.current.get(id);
-        if (origMap) meshes.forEach((m) => { const o = origMap.get(m); if (o) m.material = o as THREE.Material; });
-      });
+      applySelection(new Set());
       return;
     }
 
-    setSelectedElementId(expressID);
-
-    meshMapRef.current.forEach((meshes, id) => {
-      const origMap = originalMaterialsRef.current.get(id);
-      if (origMap) meshes.forEach((m) => { const o = origMap.get(m); if (o) m.material = o as THREE.Material; });
+    setSelectedElementIds(prev => {
+      let next: Set<number>;
+      if (multiSelect) {
+        next = new Set(prev);
+        if (next.has(expressID)) {
+          next.delete(expressID);
+        } else {
+          next.add(expressID);
+        }
+      } else {
+        next = new Set([expressID]);
+      }
+      applySelection(next);
+      return next;
     });
 
     const selectedMeshes = meshMapRef.current.get(expressID);
     if (selectedMeshes && selectedMeshes.length > 0) {
-      selectedMeshes.forEach((m) => { m.material = highlightMaterial; });
-
       const box = new THREE.Box3();
       selectedMeshes.forEach((m) => box.expandByObject(m));
       const center = box.getCenter(new THREE.Vector3());
@@ -713,7 +895,7 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
       const info = getElementProperties(ifcApiRef.current, modelIdRef.current, expressID);
       setElementInfo(info);
     }
-  }, [highlightMaterial]);
+  }, [applySelection]);
 
   const handleToggleNode = useCallback((id: number) => {
     setExpandedIds((prev) => {
@@ -726,13 +908,11 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
 
   const handleResetView = useCallback(() => {
     fitCameraToModel();
-    meshMapRef.current.forEach((meshes, id) => {
-      const origMap = originalMaterialsRef.current.get(id);
-      if (origMap) meshes.forEach((m) => { const o = origMap.get(m); if (o) m.material = o as THREE.Material; });
-    });
-    setSelectedElementId(null);
+    setSelectedElementIds(new Set());
+    applySelection(new Set());
     setElementInfo(null);
-  }, [fitCameraToModel]);
+    setMeasurePoints([]);
+  }, [fitCameraToModel, applySelection]);
 
   const handleZoomIn = useCallback(() => {
     if (cameraRef.current && controlsRef.current) {
@@ -756,24 +936,71 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
     if (!controlsRef.current) return;
     controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
     setControlMode("orbit");
+    setMeasurePoints([]);
   }, []);
 
   const setPanMode = useCallback(() => {
     if (!controlsRef.current) return;
     controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.PAN;
     setControlMode("pan");
+    setMeasurePoints([]);
   }, []);
 
-  useEffect(() => {
-    const cleanup = initThreeScene();
-    loadIfcModel();
-    return () => {
-      cleanup?.();
-      if (ifcApiRef.current) {
-        try { ifcApiRef.current.CloseModel(modelIdRef.current); } catch (e) { console.warn("[BIM] Failed to close model:", e); }
-      }
-    };
-  }, [initThreeScene, loadIfcModel]);
+  const setMeasureDistanceMode = useCallback(() => {
+    if (!controlsRef.current) return;
+    controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    setControlMode("measure_distance");
+    setMeasurePoints([]);
+  }, []);
+
+  const setMeasureAreaMode = useCallback(() => {
+    if (!controlsRef.current) return;
+    controlsRef.current.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    setControlMode("measure_area");
+    setMeasurePoints([]);
+  }, []);
+
+  const addMeasureAnnotation = useCallback((measurement: Measurement3D) => {
+    const group = measureGroupRef.current;
+    if (measurement.type === "distance" && measurement.points.length === 2) {
+      const p1 = measurement.points[0];
+      const p2 = measurement.points[1];
+      const lineMat = new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 2 });
+      const lineGeom = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+      const line = new THREE.Line(lineGeom, lineMat);
+      line.userData.measurementId = measurement.id;
+      group.add(line);
+
+      const sphereGeom = new THREE.SphereGeometry(0.15, 8, 8);
+      const sphereMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+      const s1 = new THREE.Mesh(sphereGeom, sphereMat);
+      s1.position.copy(p1);
+      s1.userData.measurementId = measurement.id;
+      group.add(s1);
+      const s2 = new THREE.Mesh(sphereGeom, sphereMat);
+      s2.position.copy(p2);
+      s2.userData.measurementId = measurement.id;
+      group.add(s2);
+    } else if (measurement.type === "area" && measurement.points.length >= 3) {
+      const pts = measurement.points;
+      const lineGeom = new THREE.BufferGeometry().setFromPoints([...pts, pts[0]]);
+      const lineMat = new THREE.LineBasicMaterial({ color: 0x44aaff, linewidth: 2 });
+      const line = new THREE.Line(lineGeom, lineMat);
+      line.userData.measurementId = measurement.id;
+      group.add(line);
+    }
+  }, []);
+
+  const clearMeasurement = useCallback((id: string) => {
+    const group = measureGroupRef.current;
+    const toRemove = group.children.filter(c => c.userData.measurementId === id);
+    toRemove.forEach(c => {
+      group.remove(c);
+      if ((c as any).geometry) (c as any).geometry.dispose();
+      if ((c as any).material) (c as any).material.dispose();
+    });
+    setMeasurements(prev => prev.filter(m => m.id !== id));
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -790,19 +1017,94 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
       mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, cameraRef.current);
-      const intersects = raycaster.intersectObjects(allMeshesGroupRef.current.children, true);
 
+      if (controlMode === "measure_distance") {
+        const intersects = raycaster.intersectObjects(allMeshesGroupRef.current.children, true);
+        if (intersects.length > 0) {
+          const point = intersects[0].point.clone();
+          setMeasurePoints(prev => {
+            const next = [...prev, point];
+            if (next.length === 2) {
+              const dist = next[0].distanceTo(next[1]);
+              const id = `dist-${Date.now()}`;
+              const m: Measurement3D = { id, type: "distance", points: next, value: dist, label: `${dist.toFixed(2)} m` };
+              setMeasurements(p => [...p, m]);
+              addMeasureAnnotation(m);
+              return [];
+            }
+            return next;
+          });
+        }
+        return;
+      }
+
+      if (controlMode === "measure_area") {
+        const intersects = raycaster.intersectObjects(allMeshesGroupRef.current.children, true);
+        if (intersects.length > 0) {
+          const face = intersects[0].face;
+          const mesh = intersects[0].object as THREE.Mesh;
+          if (face && mesh.geometry) {
+            const pos = mesh.geometry.attributes.position;
+            const a = new THREE.Vector3().fromBufferAttribute(pos, face.a).applyMatrix4(mesh.matrixWorld);
+            const b = new THREE.Vector3().fromBufferAttribute(pos, face.b).applyMatrix4(mesh.matrixWorld);
+            const c = new THREE.Vector3().fromBufferAttribute(pos, face.c).applyMatrix4(mesh.matrixWorld);
+            const ab = new THREE.Vector3().subVectors(b, a);
+            const ac = new THREE.Vector3().subVectors(c, a);
+            const area = ab.cross(ac).length() / 2;
+            const id = `area-${Date.now()}`;
+            const m: Measurement3D = { id, type: "area", points: [a, b, c], value: area, label: `${area.toFixed(2)} m²` };
+            setMeasurements(p => [...p, m]);
+            addMeasureAnnotation(m);
+          }
+        }
+        return;
+      }
+
+      const intersects = raycaster.intersectObjects(allMeshesGroupRef.current.children, true);
       if (intersects.length > 0) {
         const expressID = intersects[0].object.userData.expressID;
-        if (expressID !== undefined) handleSelectElement(expressID);
+        if (expressID !== undefined) handleSelectElement(expressID, event.shiftKey);
       } else {
-        handleSelectElement(-1);
+        if (!event.shiftKey) handleSelectElement(-1);
       }
     };
 
     canvas.addEventListener("click", handleClick);
     return () => canvas.removeEventListener("click", handleClick);
-  }, [handleSelectElement]);
+  }, [handleSelectElement, controlMode, addMeasureAnnotation]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedElementIds(new Set());
+        applySelection(new Set());
+        setElementInfo(null);
+        setMeasurePoints([]);
+        if (controlMode === "measure_distance" || controlMode === "measure_area") {
+          setOrbitMode();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [applySelection, controlMode, setOrbitMode]);
+
+  useEffect(() => {
+    const cleanup = initThreeScene();
+    loadIfcModel();
+    return () => {
+      cleanup?.();
+      if (ifcApiRef.current) {
+        try { ifcApiRef.current.CloseModel(modelIdRef.current); } catch (e) { console.warn("[BIM] Failed to close model:", e); }
+      }
+    };
+  }, [initThreeScene, loadIfcModel]);
+
+  const handleAddToTakeoff = useCallback(() => {
+    if (onAddToTakeoff && selectedElementSummaries.length > 0) {
+      onAddToTakeoff(selectedElementSummaries);
+    }
+  }, [onAddToTakeoff, selectedElementSummaries]);
 
   if (error) {
     return (
@@ -837,7 +1139,7 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
                     key={node.expressID}
                     node={node}
                     level={0}
-                    selectedId={selectedElementId}
+                    selectedIds={selectedElementIds}
                     expandedIds={expandedIds}
                     onToggle={handleToggleNode}
                     onSelect={handleSelectElement}
@@ -876,6 +1178,26 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
           >
             <Move className="w-3.5 h-3.5" />
           </Button>
+          <Button
+            size="icon"
+            variant={controlMode === "measure_distance" ? "secondary" : "ghost"}
+            className="h-7 w-7"
+            onClick={setMeasureDistanceMode}
+            title="Measure Distance"
+            data-testid="bim-measure-distance-button"
+          >
+            <Ruler className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            size="icon"
+            variant={controlMode === "measure_area" ? "secondary" : "ghost"}
+            className="h-7 w-7"
+            onClick={setMeasureAreaMode}
+            title="Measure Surface Area"
+            data-testid="bim-measure-area-button"
+          >
+            <SquareDashedBottom className="w-3.5 h-3.5" />
+          </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleZoomIn} title="Zoom In" data-testid="bim-zoom-in">
             <ZoomIn className="w-3.5 h-3.5" />
           </Button>
@@ -893,7 +1215,74 @@ export default function BimViewer({ fileUrl, fileName }: BimViewerProps) {
               <PanelRightOpen className="w-3.5 h-3.5" />
             </Button>
           )}
+          {selectedElementIds.size > 0 && (
+            <Badge variant="secondary" className="text-[10px] px-1.5 ml-1" data-testid="bim-selection-count">
+              {selectedElementIds.size} selected
+            </Badge>
+          )}
         </div>
+
+        {(controlMode === "measure_distance" || controlMode === "measure_area") && (
+          <div className="absolute top-12 left-2 z-10 bg-background/90 backdrop-blur-sm rounded-md border p-2 text-xs text-muted-foreground max-w-[220px]" data-testid="bim-measure-hint">
+            {controlMode === "measure_distance" ? (
+              measurePoints.length === 0
+                ? "Click first point on the model to start measuring"
+                : "Click second point to complete distance measurement"
+            ) : (
+              "Click a surface on the model to measure its area"
+            )}
+          </div>
+        )}
+
+        {measurements.length > 0 && (
+          <div className="absolute bottom-2 left-2 z-10 bg-background/90 backdrop-blur-sm rounded-md border p-2 space-y-1 max-w-[250px] max-h-40 overflow-auto" data-testid="bim-measurements-list">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Measurements</span>
+            {measurements.map(m => (
+              <div key={m.id} className="flex items-center justify-between text-xs gap-2">
+                <span className="truncate">{m.type === "distance" ? "Distance" : "Area"}: {m.label}</span>
+                <Button size="icon" variant="ghost" className="h-4 w-4 shrink-0" onClick={() => clearMeasurement(m.id)} data-testid={`bim-clear-measurement-${m.id}`}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showActionPanel && selectedElementSummaries.length > 0 && (
+          <div className="absolute bottom-2 right-2 z-10 bg-background/95 backdrop-blur-sm rounded-lg border shadow-lg p-3 w-72 max-h-60 overflow-auto" data-testid="bim-action-panel">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Selection Summary</span>
+              <Button size="icon" variant="ghost" className="h-5 w-5" onClick={() => setShowActionPanel(false)} data-testid="bim-close-action-panel">
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+            <div className="space-y-1.5 mb-3">
+              {selectedElementSummaries.slice(0, 5).map(el => (
+                <div key={el.expressID} className="text-xs border-b border-border/50 pb-1 last:border-0">
+                  <div className="flex items-center gap-1.5">
+                    <Badge variant="outline" className="text-[9px] px-1 shrink-0">{el.type}</Badge>
+                    <span className="truncate font-medium">{el.name}</span>
+                  </div>
+                  {el.material && <span className="text-[10px] text-muted-foreground">Material: {el.material}</span>}
+                  <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5">
+                    {el.dimensions?.length !== undefined && <span>L: {el.dimensions.length.toFixed(2)}</span>}
+                    {el.dimensions?.area !== undefined && <span>A: {el.dimensions.area.toFixed(2)}</span>}
+                    {el.dimensions?.volume !== undefined && <span>V: {el.dimensions.volume.toFixed(2)}</span>}
+                  </div>
+                </div>
+              ))}
+              {selectedElementSummaries.length > 5 && (
+                <div className="text-[10px] text-muted-foreground">...and {selectedElementSummaries.length - 5} more elements</div>
+              )}
+            </div>
+            {onAddToTakeoff && (
+              <Button size="sm" className="w-full h-7 text-xs" onClick={handleAddToTakeoff} data-testid="bim-add-to-takeoff">
+                <Plus className="w-3 h-3 mr-1" />
+                Add to Takeoff ({selectedElementSummaries.length})
+              </Button>
+            )}
+          </div>
+        )}
 
         {loading && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm" data-testid="bim-loading">
