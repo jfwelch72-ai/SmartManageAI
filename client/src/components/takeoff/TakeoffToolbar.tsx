@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
-  ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download
+  ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle
 } from "lucide-react";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
@@ -42,6 +42,7 @@ interface TakeoffToolbarProps {
   setMarkupThickness: (v: number) => void;
   onExportCurrentSheet?: () => void;
   onExportAllSheets?: () => void;
+  onShowShortcuts?: () => void;
 }
 
 export function TakeoffToolbar({
@@ -53,6 +54,7 @@ export function TakeoffToolbar({
   isDrawing, drawingPoints, isMobile,
   markupColor, setMarkupColor, markupThickness, setMarkupThickness,
   onExportCurrentSheet, onExportAllSheets,
+  onShowShortcuts,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
 
@@ -304,6 +306,20 @@ export function TakeoffToolbar({
             </DropdownMenu>
           </>
         )}
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={() => onShowShortcuts?.()} data-testid="button-shortcuts" className="toggle-elevate">
+              <HelpCircle className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Keyboard Shortcuts</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">?</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="sm:hidden bg-card/90 backdrop-blur-sm border-t px-3 py-1 flex items-center justify-between shrink-0">

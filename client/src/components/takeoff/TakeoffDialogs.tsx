@@ -307,7 +307,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
       </DialogPrimitive.Root>
 
       <Dialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto" data-testid="dialog-keyboard-shortcuts">
           <DialogHeader><DialogTitle>Keyboard Shortcuts</DialogTitle><DialogDescription>Speed up your workflow with these keyboard shortcuts</DialogDescription></DialogHeader>
           <div className="grid gap-6">
             <div>
@@ -330,8 +330,23 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
               <h3 className="font-semibold mb-3">Navigation & View</h3>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ["Temporary Pan", "Space"], ["Zoom In", "+ / ="], ["Zoom Out", "-"],
-                  ["Mouse Wheel Zoom", "Scroll"], ["Toggle Fullscreen", "F"],
+                  ["Temporary Pan", "Space (hold)"], ["Zoom In", "+"], ["Zoom Out", "-"],
+                  ["Mouse Wheel Zoom", "Scroll"], ["Zoom to Fit", "F"],
+                ].map(([label, key]) => (
+                  <div key={key + label} className="flex items-center justify-between p-2 rounded hover-elevate">
+                    <span className="text-sm">{label}</span>
+                    <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">{key}</kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <Separator />
+            <div>
+              <h3 className="font-semibold mb-3">Drawing & Editing</h3>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  ["Cancel / Deselect", "Escape"], ["Complete Polygon", "Enter"],
+                  ["Toggle Ortho Lock", "O"], ["Toggle Snapping", "M"],
                 ].map(([label, key]) => (
                   <div key={key} className="flex items-center justify-between p-2 rounded hover-elevate">
                     <span className="text-sm">{label}</span>
@@ -345,7 +360,9 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
               <h3 className="font-semibold mb-3">Actions</h3>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  ["Undo", "Ctrl+Z"], ["Redo", "Ctrl+Y"], ["Cancel Drawing", "ESC"], ["Complete Polygon", "Enter"],
+                  ["Undo", "Ctrl+Z"], ["Redo", "Ctrl+Y"],
+                  ["Remove Selected", "Delete"], ["Multi-select (BIM)", "Shift+Click"],
+                  ["Add to Selection", "Ctrl+Click"], ["Show Shortcuts", "?"],
                 ].map(([label, key]) => (
                   <div key={key} className="flex items-center justify-between p-2 rounded hover-elevate">
                     <span className="text-sm">{label}</span>

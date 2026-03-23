@@ -78,6 +78,8 @@ interface UseTakeoffInteractionsParams {
   aggregatedMeasurements: any;
   setShortcutsDialogOpen: (v: boolean) => void;
   isMobile: boolean;
+  deleteMeasurementMutation?: any;
+  onZoomToFit?: () => void;
 }
 
 export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
@@ -111,6 +113,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     isFullscreen, setIsFullscreen, workspaceRef, stageRef,
     takeoffHistory, createMeasurementMutation, aggregatedMeasurements,
     setShortcutsDialogOpen, isMobile,
+    deleteMeasurementMutation, onZoomToFit,
   } = params;
 
   const handleToolSelect = useCallback((tool: Tool) => {
@@ -697,14 +700,25 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         if (toolMap[key]) { event.preventDefault(); setActiveTool(toolMap[key]); }
       }
 
-      if (key === 'escape' && isDrawing && canUseNavigationShortcuts) {
+      if (key === 'escape' && canUseNavigationShortcuts) {
         event.preventDefault();
-        setIsDrawing(false);
-        setCurrentDrawingTool(null);
-        setDrawingPoints([]);
-        toast({ title: "Drawing Cancelled", description: "Press ESC to cancel drawing" });
+        if (isDrawing) {
+          setIsDrawing(false);
+          setCurrentDrawingTool(null);
+          setDrawingPoints([]);
+          toast({ title: "Drawing Cancelled" });
+        } else if (selectedMeasurementId) {
+          setSelectedMeasurementId(null);
+        }
       }
-      if (key === 'f' && !event.ctrlKey && !event.metaKey && canUseNavigationShortcuts) { event.preventDefault(); toggleFullscreen(); }
+      if (key === 'o' && !event.ctrlKey && !event.metaKey && canUseToolShortcuts) { event.preventDefault(); setOrthoLock(!orthoLock); }
+      if (key === 'm' && !event.ctrlKey && !event.metaKey && canUseToolShortcuts) { event.preventDefault(); setSnapEnabled(!snapEnabled); }
+      if ((key === 'delete' || key === 'backspace') && !event.ctrlKey && !event.metaKey && canUseNavigationShortcuts && selectedMeasurementId && deleteMeasurementMutation) {
+        event.preventDefault();
+        const selM = measurements.find(mm => mm.id === selectedMeasurementId);
+        if (selM) deleteMeasurementMutation.mutate(selM);
+      }
+      if (key === 'f' && !event.ctrlKey && !event.metaKey && canUseNavigationShortcuts) { event.preventDefault(); if (onZoomToFit) onZoomToFit(); }
       if ((event.key === '?' || (event.shiftKey && event.key === '/')) && canUseNavigationShortcuts) { event.preventDefault(); setShortcutsDialogOpen(true); }
       if ((event.ctrlKey || event.metaKey) && key === 'z' && !event.shiftKey) { event.preventDefault(); takeoffHistory.undo(); return; }
       if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) { event.preventDefault(); takeoffHistory.redo(); return; }
@@ -713,7 +727,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast]);
+  }, [isDrawing, currentDrawingTool, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit]);
 
   return {
     handleToolSelect,

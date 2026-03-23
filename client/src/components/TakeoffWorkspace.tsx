@@ -120,6 +120,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [createLinkTargetSheet, setCreateLinkTargetSheet] = useState<string | null>(null);
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
+  const [flashMeasurementId, setFlashMeasurementId] = useState<string | null>(null);
+  const [flashPulse, setFlashPulse] = useState(0);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -298,6 +300,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   });
   const linkCountsBySheet: Record<string, number> = (allSheetsLinksQuery.data || {}) as Record<string, number>;
 
+  const zoomToFitRef = useRef<() => void>(() => {});
+
   const interactions = useTakeoffInteractions({
     projectId,
     sheetsQueryKey,
@@ -353,6 +357,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     aggregatedMeasurements,
     setShortcutsDialogOpen,
     isMobile,
+    deleteMeasurementMutation,
+    onZoomToFit: () => zoomToFitRef.current(),
   });
 
   const {
@@ -485,6 +491,160 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       }
       return next;
     });
+  };
+
+  const parseMeasurementPoints = (m: any): { x: number; y: number }[] => {
+    try {
+      const pts = typeof m.points === "string" ? JSON.parse(m.points) : m.points;
+      return Array.isArray(pts) ? pts : [];
+    } catch { return []; }
+  };
+
+  const getMeasurementCenter = (m: any): { x: number; y: number } | null => {
+    const pts = parseMeasurementPoints(m);
+    if (pts.length === 0) return null;
+    if (m.type === "COUNT" || m.type === "NOTE") return pts[0];
+    if ((m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && pts.length >= 2) {
+      return { x: (pts[0].x + pts[pts.length - 1].x) / 2, y: (pts[0].y + pts[pts.length - 1].y) / 2 };
+    }
+    if (pts.length >= 3) {
+      let signedArea = 0;
+      let cx = 0;
+      let cy = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const j = (i + 1) % pts.length;
+        const cross = pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+        signedArea += cross;
+        cx += (pts[i].x + pts[j].x) * cross;
+        cy += (pts[i].y + pts[j].y) * cross;
+      }
+      signedArea *= 0.5;
+      if (Math.abs(signedArea) > 1e-6) {
+        cx /= (6 * signedArea);
+        cy /= (6 * signedArea);
+        return { x: cx, y: cy };
+      }
+    }
+    const avgX = pts.reduce((sum: number, p: any) => sum + p.x, 0) / pts.length;
+    const avgY = pts.reduce((sum: number, p: any) => sum + p.y, 0) / pts.length;
+    return { x: avgX, y: avgY };
+  };
+
+  const getMeasurementBounds = (m: any): { minX: number; minY: number; maxX: number; maxY: number } | null => {
+    const pts = parseMeasurementPoints(m);
+    if (pts.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (m.type === "COUNT" || m.type === "NOTE" || pts.length === 1) {
+      const pad = 100;
+      return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad };
+    }
+    return { minX, minY, maxX, maxY };
+  };
+
+  const animateToPosition = (targetScale: number, targetPos: { x: number; y: number }) => {
+    const startScale = stageScale;
+    const startPos = { ...stagePosition };
+    const duration = 300;
+    const startTime = performance.now();
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      setStageScale(startScale + (targetScale - startScale) * ease);
+      setStagePosition({
+        x: startPos.x + (targetPos.x - startPos.x) * ease,
+        y: startPos.y + (targetPos.y - startPos.y) * ease,
+      });
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  };
+
+  zoomToFitRef.current = () => {
+    if (!pdfImage) return;
+    const sw = stageDimensions.width;
+    const sh = stageDimensions.height;
+    const padding = 0.05;
+    const scaleX = sw / (pdfImage.width * (1 + padding * 2));
+    const scaleY = sh / (pdfImage.height * (1 + padding * 2));
+    const targetScale = Math.min(scaleX, scaleY, 10);
+    const targetPos = {
+      x: (sw - pdfImage.width * targetScale) / 2,
+      y: (sh - pdfImage.height * targetScale) / 2,
+    };
+    animateToPosition(targetScale, targetPos);
+  };
+
+  useEffect(() => {
+    if (!flashMeasurementId) return;
+    let animId: number;
+    const startTime = performance.now();
+    const duration = 2000;
+    const tick = (now: number) => {
+      const elapsed = now - startTime;
+      if (elapsed >= duration) {
+        setFlashMeasurementId(null);
+        setFlashPulse(0);
+        return;
+      }
+      const t = elapsed / duration;
+      const pulse = Math.sin(t * Math.PI * 4) * 0.5 + 0.5;
+      const fade = 1 - t;
+      setFlashPulse(pulse * fade);
+      animId = requestAnimationFrame(tick);
+    };
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [flashMeasurementId]);
+
+  const triggerFlash = (measurementId: string) => {
+    setFlashMeasurementId(measurementId);
+  };
+
+  const handleZoomToMeasurement = (m: any) => {
+    if (m.sheetId && m.sheetId !== selectedSheet) {
+      setSelectedSheet(m.sheetId);
+    }
+    const center = getMeasurementCenter(m);
+    if (!center) return;
+    const sw = stageDimensions.width;
+    const sh = stageDimensions.height;
+    const targetPos = {
+      x: sw / 2 - center.x * stageScale,
+      y: sh / 2 - center.y * stageScale,
+    };
+    animateToPosition(stageScale, targetPos);
+    triggerFlash(m.id);
+  };
+
+  const handleZoomToFitMeasurement = (m: any) => {
+    if (m.sheetId && m.sheetId !== selectedSheet) {
+      setSelectedSheet(m.sheetId);
+    }
+    const bounds = getMeasurementBounds(m);
+    if (!bounds) return;
+    const sw = stageDimensions.width;
+    const sh = stageDimensions.height;
+    const bw = bounds.maxX - bounds.minX;
+    const bh = bounds.maxY - bounds.minY;
+    const padding = 0.2;
+    const scaleX = sw / (bw * (1 + padding * 2));
+    const scaleY = sh / (bh * (1 + padding * 2));
+    const targetScale = Math.min(scaleX, scaleY, 10);
+    const cx = (bounds.minX + bounds.maxX) / 2;
+    const cy = (bounds.minY + bounds.maxY) / 2;
+    const targetPos = {
+      x: sw / 2 - cx * targetScale,
+      y: sh / 2 - cy * targetScale,
+    };
+    animateToPosition(targetScale, targetPos);
+    triggerFlash(m.id);
   };
 
   const handleDeleteCategory = async (categoryId: string) => {
@@ -719,6 +879,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setMarkupThickness={setMarkupThickness}
         onExportCurrentSheet={handleExportCurrentSheet}
         onExportAllSheets={handleExportAllSheets}
+        onShowShortcuts={() => setShortcutsDialogOpen(true)}
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
@@ -1350,6 +1511,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   }
                   return null;
                 })}
+
+                {flashMeasurementId && flashPulse > 0 && (() => {
+                  const fm = measurements.find(m => m.id === flashMeasurementId);
+                  if (!fm) return null;
+                  const center = getMeasurementCenter(fm);
+                  if (!center) return null;
+                  const r1 = (20 + flashPulse * 20) / stageScale;
+                  const r2 = (35 + flashPulse * 25) / stageScale;
+                  const r3 = (50 + flashPulse * 30) / stageScale;
+                  return (
+                    <Group key={`flash-${flashMeasurementId}`} listening={false}>
+                      <Circle
+                        x={center.x}
+                        y={center.y}
+                        radius={r1}
+                        fill="transparent"
+                        stroke="#f59e0b"
+                        strokeWidth={(2 + flashPulse * 2) / stageScale}
+                        opacity={flashPulse * 0.9}
+                      />
+                      <Circle
+                        x={center.x}
+                        y={center.y}
+                        radius={r2}
+                        fill="transparent"
+                        stroke="#f59e0b"
+                        strokeWidth={(1.5 + flashPulse) / stageScale}
+                        opacity={flashPulse * 0.6}
+                      />
+                      <Circle
+                        x={center.x}
+                        y={center.y}
+                        radius={r3}
+                        fill="transparent"
+                        stroke="#f59e0b"
+                        strokeWidth={(1 + flashPulse * 0.5) / stageScale}
+                        opacity={flashPulse * 0.3}
+                      />
+                    </Group>
+                  );
+                })()}
 
                 {isDrawing && drawingPoints.length > 0 && (
                   <>
@@ -2060,6 +2262,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         }}
         onExportCurrentSheet={handleExportCurrentSheet}
         onExportAllSheets={handleExportAllSheets}
+        onZoomToMeasurement={handleZoomToMeasurement}
+        onZoomToFitMeasurement={handleZoomToFitMeasurement}
       />
 
       <TakeoffDialogs

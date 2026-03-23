@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +114,8 @@ interface TakeoffSidebarProps {
   onSelectIssue?: (issue: any) => void;
   onExportCurrentSheet?: () => void;
   onExportAllSheets?: () => void;
+  onZoomToMeasurement?: (measurement: TakeoffMeasurement) => void;
+  onZoomToFitMeasurement?: (measurement: TakeoffMeasurement) => void;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -141,8 +143,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     markups = [], deleteMarkupMutation,
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
     onExportCurrentSheet, onExportAllSheets,
+    onZoomToMeasurement, onZoomToFitMeasurement,
   } = props;
 
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { return () => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); }; }, []);
   const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"tools" | "issues">("tools");
   const [saveToLibraryOpen, setSaveToLibraryOpen] = useState(false);
@@ -408,7 +413,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               ) : (
                 <div className="space-y-2">
                   {measurements.map((m) => (
-                    <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id)} data-testid={`measurement-item-${m.id}`}>
+                    <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); clickTimerRef.current = setTimeout(() => { setSelectedMeasurementId(m.id); onZoomToMeasurement?.(m); clickTimerRef.current = null; }, 200); }} onDoubleClick={() => { if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; } setSelectedMeasurementId(m.id); onZoomToFitMeasurement?.(m); }} data-testid={`measurement-item-${m.id}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{m.label || "Untitled"}</span>
