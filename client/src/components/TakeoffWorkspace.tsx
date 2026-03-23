@@ -907,6 +907,41 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     return cleanup;
   }, [selectedMeasurementId, updateMeasurementMutation, toast]);
 
+  const measurementTypeToTool = (mt: string): Tool => {
+    const map: Record<string, Tool> = {
+      LINEAR: "linear", AREA: "area", VOLUME: "volume", COUNT: "count",
+      LINEAR_WITH_DROP: "linear_with_drop", PITCHED_LINEAR: "pitched_linear",
+      PITCHED_AREA: "pitched_area", SURFACE_AREA: "surface_area",
+    };
+    return map[mt] || "linear";
+  };
+
+  const handleActivateCondition = (condition: TakeoffCondition) => {
+    setActiveCondition(condition);
+    const tool = measurementTypeToTool(condition.measurementType);
+    setActiveTool(tool);
+    if (condition.categoryName) {
+      const cat = categories.find(c => c.name === condition.categoryName);
+      if (cat) {
+        setSelectedCategoryId(cat.id);
+      } else {
+        setSelectedCategoryId(null);
+      }
+    } else {
+      setSelectedCategoryId(null);
+    }
+    updateConditionMutation.mutate({ id: condition.id, lastUsedAt: new Date().toISOString() });
+    toast({ title: "Condition Active", description: `"${condition.name}" selected — start drawing` });
+  };
+
+  const handleClearCondition = () => {
+    setActiveCondition(null);
+  };
+
+  const handleSaveCondition = (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string }) => {
+    createConditionMutation.mutate(data);
+  };
+
   return (
     <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative overflow-hidden">
       <TakeoffToolbar

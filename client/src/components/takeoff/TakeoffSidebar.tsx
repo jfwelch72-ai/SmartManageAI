@@ -26,8 +26,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
 import { IssuesTab } from "./IssuesTab";
-import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffCondition } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
+import { Zap } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
   const [localValue, setLocalValue] = useState(currentValue);
@@ -118,6 +120,14 @@ interface TakeoffSidebarProps {
   onExportAllSheets?: () => void;
   onZoomToMeasurement?: (measurement: TakeoffMeasurement) => void;
   onZoomToFitMeasurement?: (measurement: TakeoffMeasurement) => void;
+  conditions?: TakeoffCondition[];
+  activeCondition?: TakeoffCondition | null;
+  onActivateCondition?: (condition: TakeoffCondition) => void;
+  onClearCondition?: () => void;
+  onSaveCondition?: (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string }) => void;
+  onUpdateCondition?: (data: { id: string; [key: string]: any }) => void;
+  onDeleteCondition?: (id: string) => void;
+  saveConditionPending?: boolean;
 }
 
 export function TakeoffSidebar(props: TakeoffSidebarProps) {
@@ -147,18 +157,23 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
     onExportCurrentSheet, onExportAllSheets,
     onZoomToMeasurement, onZoomToFitMeasurement,
+    conditions = [], activeCondition = null, onActivateCondition, onClearCondition,
+    onSaveCondition, onUpdateCondition, onDeleteCondition, saveConditionPending = false,
   } = props;
 
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => { return () => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); }; }, []);
   const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
-  const [sidebarTab, setSidebarTab] = useState<"tools" | "issues">("tools");
+  const [sidebarTab, setSidebarTab] = useState<"tools" | "conditions" | "issues">("tools");
   const [saveToLibraryOpen, setSaveToLibraryOpen] = useState(false);
   const [propagateDialogOpen, setPropagateDialogOpen] = useState(false);
   const [propagateMode, setPropagateMode] = useState<"all" | "same-plan">("all");
   const [isPropagating, setIsPropagating] = useState(false);
   const [saveToLibraryItem, setSaveToLibraryItem] = useState<{ name: string; unitOfMeasure: string; costTypes: string[]; unitCosts: Record<string, string>; notes: string } | null>(null);
   const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
+  const [conditionDialogOpen, setConditionDialogOpen] = useState(false);
+  const [editingCondition, setEditingCondition] = useState<TakeoffCondition | null>(null);
+  const [condForm, setCondForm] = useState({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid" });
 
   const revisionChain = (() => {
     if (!currentSheet) return [];
@@ -195,6 +210,16 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           Tools
         </button>
         <button
+          className={cn("flex-1 py-2 text-xs font-medium transition-colors relative", sidebarTab === "conditions" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
+          onClick={() => setSidebarTab("conditions")}
+          data-testid="tab-conditions"
+        >
+          Conditions
+          {activeCondition && (
+            <span className="absolute -top-0.5 right-2 w-2 h-2 rounded-full" style={{ backgroundColor: activeCondition.color }} />
+          )}
+        </button>
+        <button
           className={cn("flex-1 py-2 text-xs font-medium transition-colors relative", sidebarTab === "issues" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground")}
           onClick={() => setSidebarTab("issues")}
           data-testid="tab-issues"
@@ -207,6 +232,106 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           )}
         </button>
       </div>
+
+      {sidebarTab === "conditions" && (
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-sm">Takeoff Conditions</h3>
+              <Button size="sm" onClick={() => { setEditingCondition(null); setCondForm({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid" }); setConditionDialogOpen(true); }} data-testid="button-add-condition">
+                <Plus className="w-4 h-4 mr-1" />New
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Click a condition to auto-select the tool and pre-assign properties for the next measurement.</p>
+
+            {activeCondition && (
+              <div className="flex items-center gap-2 p-2 bg-primary/10 border border-primary/30 rounded-md">
+                <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: activeCondition.color }} />
+                <span className="text-xs font-medium flex-1 truncate">Active: {activeCondition.name}</span>
+                <Button size="icon" variant="ghost" className="h-5 w-5" onClick={onClearCondition} data-testid="button-clear-active-condition">
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+            )}
+
+            {conditions.length === 0 ? (
+              <div className="text-center py-6 space-y-2">
+                <Zap className="w-8 h-8 mx-auto text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">No conditions yet. Create one to speed up your takeoff workflow.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {conditions.map((cond) => (
+                  <div
+                    key={cond.id}
+                    className={cn(
+                      "p-3 rounded-md border cursor-pointer hover-elevate transition-all",
+                      activeCondition?.id === cond.id ? "ring-2 ring-primary bg-primary/5" : "bg-muted/50"
+                    )}
+                    onClick={() => onActivateCondition?.(cond)}
+                    data-testid={`condition-item-${cond.id}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded-full shrink-0 border" style={{ backgroundColor: cond.color }} />
+                      <span className="font-medium text-sm flex-1 truncate">{cond.name}</span>
+                      <Badge variant="outline" className="text-[10px] shrink-0">{cond.measurementType}</Badge>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
+                      {cond.categoryName && <span className="bg-muted px-1.5 py-0.5 rounded">{cond.categoryName}</span>}
+                      {cond.unitCost && <span className="bg-muted px-1.5 py-0.5 rounded">${Number(cond.unitCost).toFixed(2)}/unit</span>}
+                      {cond.costCodeId && <span className="bg-muted px-1.5 py-0.5 rounded">{cond.costCodeId}</span>}
+                    </div>
+                    <div className="mt-2 flex justify-end gap-1">
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setEditingCondition(cond); setCondForm({ name: cond.name, measurementType: cond.measurementType, color: cond.color, categoryName: cond.categoryName || "", unitCost: cond.unitCost ? String(cond.unitCost) : "", costCodeId: cond.costCodeId || "", labelTemplate: cond.labelTemplate || "", lineStyle: cond.lineStyle || "solid" }); setConditionDialogOpen(true); }} data-testid={`button-edit-condition-${cond.id}`}>
+                        <Pencil className="w-3 h-3" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={(e) => { e.stopPropagation(); onDeleteCondition?.(cond.id); }} data-testid={`button-delete-condition-${cond.id}`}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {selectedMeasurementId && (() => {
+              const selM = measurements.find(m => m.id === selectedMeasurementId);
+              if (!selM) return null;
+              const category = categories.find(c => c.id === selM.categoryId);
+              return (
+                <Card>
+                  <CardContent className="pt-4 space-y-2">
+                    <h4 className="text-xs font-semibold">Save as Condition</h4>
+                    <p className="text-[10px] text-muted-foreground">Create a reusable condition from "{selM.label}"</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full text-xs"
+                      onClick={() => {
+                        setEditingCondition(null);
+                        setCondForm({
+                          name: selM.label || "New Condition",
+                          measurementType: selM.type,
+                          color: selM.color || "#3b82f6",
+                          categoryName: category?.name || "",
+                          unitCost: selM.unitCost ? String(selM.unitCost) : "",
+                          costCodeId: selM.costCodeId || "",
+                          labelTemplate: "",
+                          lineStyle: "solid",
+                        });
+                        setConditionDialogOpen(true);
+                      }}
+                      data-testid="button-save-as-condition"
+                    >
+                      <Save className="w-3 h-3 mr-1" /> Save as Condition
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+          </div>
+        </ScrollArea>
+      )}
 
       {sidebarTab === "issues" && (
         <div className="flex-1 overflow-y-auto p-4">
@@ -1231,6 +1356,97 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               data-testid="button-propagate-confirm"
             >
               {isPropagating ? "Applying..." : "Apply Scale"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={conditionDialogOpen} onOpenChange={setConditionDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingCondition ? "Edit Condition" : "New Condition"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-xs">Name</Label>
+              <Input value={condForm.name} onChange={(e) => setCondForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Concrete Slab" data-testid="input-condition-name" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Measurement Type</Label>
+              <Select value={condForm.measurementType} onValueChange={(v) => setCondForm(f => ({ ...f, measurementType: v }))}>
+                <SelectTrigger data-testid="select-condition-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LINEAR">Linear</SelectItem>
+                  <SelectItem value="AREA">Area</SelectItem>
+                  <SelectItem value="VOLUME">Volume</SelectItem>
+                  <SelectItem value="COUNT">Count</SelectItem>
+                  <SelectItem value="LINEAR_WITH_DROP">Linear + Drop</SelectItem>
+                  <SelectItem value="PITCHED_LINEAR">Pitched Linear</SelectItem>
+                  <SelectItem value="PITCHED_AREA">Pitched Area</SelectItem>
+                  <SelectItem value="SURFACE_AREA">Surface Area</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Color</Label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={condForm.color} onChange={(e) => setCondForm(f => ({ ...f, color: e.target.value }))} className="w-10 h-8 rounded border cursor-pointer" data-testid="input-condition-color" />
+                <span className="text-xs text-muted-foreground">{condForm.color}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Category Name (optional)</Label>
+              <Input value={condForm.categoryName} onChange={(e) => setCondForm(f => ({ ...f, categoryName: e.target.value }))} placeholder="e.g. Foundation" data-testid="input-condition-category" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Unit Cost (optional)</Label>
+              <Input type="number" value={condForm.unitCost} onChange={(e) => setCondForm(f => ({ ...f, unitCost: e.target.value }))} placeholder="0.00" data-testid="input-condition-unit-cost" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Cost Code (optional)</Label>
+              <Input value={condForm.costCodeId} onChange={(e) => setCondForm(f => ({ ...f, costCodeId: e.target.value }))} placeholder="e.g. 03 30 00" data-testid="input-condition-cost-code" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Label Template (optional)</Label>
+              <Input value={condForm.labelTemplate} onChange={(e) => setCondForm(f => ({ ...f, labelTemplate: e.target.value }))} placeholder="e.g. Slab #{n}" data-testid="input-condition-label-template" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs">Line Style</Label>
+              <Select value={condForm.lineStyle} onValueChange={(v) => setCondForm(f => ({ ...f, lineStyle: v }))}>
+                <SelectTrigger data-testid="select-condition-line-style"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="solid">Solid</SelectItem>
+                  <SelectItem value="dashed">Dashed</SelectItem>
+                  <SelectItem value="dotted">Dotted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConditionDialogOpen(false)} data-testid="button-condition-cancel">Cancel</Button>
+            <Button
+              disabled={!condForm.name || !condForm.measurementType || saveConditionPending}
+              onClick={() => {
+                const payload = {
+                  name: condForm.name,
+                  measurementType: condForm.measurementType,
+                  color: condForm.color,
+                  categoryName: condForm.categoryName || undefined,
+                  unitCost: condForm.unitCost ? parseFloat(condForm.unitCost) : undefined,
+                  costCodeId: condForm.costCodeId || undefined,
+                  labelTemplate: condForm.labelTemplate || undefined,
+                  lineStyle: condForm.lineStyle || undefined,
+                };
+                if (editingCondition) {
+                  onUpdateCondition?.({ id: editingCondition.id, ...payload });
+                } else {
+                  onSaveCondition?.(payload);
+                }
+                setConditionDialogOpen(false);
+              }}
+              data-testid="button-condition-save"
+            >
+              {editingCondition ? "Update" : "Save"} Condition
             </Button>
           </DialogFooter>
         </DialogContent>

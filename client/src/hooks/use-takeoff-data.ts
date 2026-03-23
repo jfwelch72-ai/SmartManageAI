@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
-import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffMarkup, TakeoffSheetLink } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 
 export type TakeoffMarkupWithAuthor = TakeoffMarkup & { authorName?: string | null; points: { x: number; y: number }[] };
@@ -191,6 +191,7 @@ export function useTakeoffData({
       pitchRatio?: string;
       costCodeId?: string;
       unitCost?: number;
+      color?: string;
       computedSurfaceAreaFt2?: number;
       computedLengthFt?: number;
       metadata?: string;
@@ -415,6 +416,63 @@ export function useTakeoffData({
     reorderSheetsMutation.mutate(reordered.map((s, i) => ({ id: s.id, sheetIndex: i })));
   };
 
+  const conditionsQueryKey = ["/api/takeoff/conditions"];
+
+  const { data: conditions = [] } = useQuery<TakeoffCondition[]>({
+    queryKey: conditionsQueryKey,
+  });
+
+  const createConditionMutation = useMutation({
+    mutationFn: async (data: {
+      name: string;
+      measurementType: string;
+      color: string;
+      categoryName?: string;
+      unitCost?: number;
+      costCodeId?: string;
+      assemblyId?: string;
+      lineStyle?: string;
+      labelTemplate?: string;
+    }) => {
+      const res = await apiRequest("POST", "/api/takeoff/conditions", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: conditionsQueryKey });
+      toast({ title: "Condition saved" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to save condition", variant: "destructive" });
+    },
+  });
+
+  const updateConditionMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; measurementType?: string; color?: string; categoryName?: string | null; unitCost?: number | null; costCodeId?: string | null; assemblyId?: string | null; lineStyle?: string | null; labelTemplate?: string | null; sortOrder?: number; lastUsedAt?: string | null }) => {
+      const res = await apiRequest("PATCH", `/api/takeoff/conditions/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: conditionsQueryKey });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update condition", variant: "destructive" });
+    },
+  });
+
+  const deleteConditionMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/takeoff/conditions/${id}`);
+      return id;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: conditionsQueryKey });
+      toast({ title: "Condition deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete condition", variant: "destructive" });
+    },
+  });
+
   const aggregatedMeasurements = useMemo(() => {
     const byType = {
       linear: [] as TakeoffMeasurement[], area: [] as TakeoffMeasurement[], volume: [] as TakeoffMeasurement[], count: [] as TakeoffMeasurement[],
@@ -517,5 +575,9 @@ export function useTakeoffData({
     deleteSheetMutation,
     reorderSheetsMutation,
     handleMoveSheet,
+    conditions,
+    createConditionMutation,
+    updateConditionMutation,
+    deleteConditionMutation,
   };
 }

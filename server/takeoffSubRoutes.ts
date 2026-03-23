@@ -1880,6 +1880,23 @@ router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRe
   }
 });
 
+router.get("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const { takeoffConditions } = await import("@shared/schema");
+    const conditions = await db
+      .select()
+      .from(takeoffConditions)
+      .where(eq(takeoffConditions.organizationId, orgId))
+      .orderBy(sql`${takeoffConditions.lastUsedAt} DESC NULLS LAST`, takeoffConditions.sortOrder);
+    res.json(conditions);
+  } catch (error) {
+    console.error("Error fetching conditions:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const { takeoffSheetLinks, insertTakeoffSheetLinkSchema, takeoffSheets } = await import("@shared/schema");
@@ -2165,6 +2182,64 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
     res.json({ detected: detectedLinks.length, links: allLinks });
   } catch (error) {
     console.error("Error detecting links:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const { takeoffConditions, insertTakeoffConditionSchema } = await import("@shared/schema");
+    const body = { ...req.body, organizationId: orgId };
+    const parsed = insertTakeoffConditionSchema.parse(body);
+    const [condition] = await db.insert(takeoffConditions).values(parsed).returning();
+    res.json(condition);
+  } catch (error: any) {
+    if (error.name === "ZodError") {
+      res.status(400).json({ error: "Invalid condition data", details: error.errors });
+      return;
+    }
+    console.error("Error creating condition:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const { takeoffConditions, insertTakeoffConditionSchema } = await import("@shared/schema");
+    const { id } = req.params;
+    const [existing] = await db.select().from(takeoffConditions).where(and(eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgId))).limit(1);
+    if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
+    const updateSchema = insertTakeoffConditionSchema.partial().omit({ organizationId: true });
+    const validated = updateSchema.parse(req.body);
+    const updateData = { ...validated, updatedAt: new Date() };
+    const [updated] = await db.update(takeoffConditions).set(updateData).where(eq(takeoffConditions.id, id)).returning();
+    res.json(updated);
+  } catch (error: any) {
+    if (error.name === "ZodError") {
+      res.status(400).json({ error: "Invalid condition data", details: error.errors });
+      return;
+    }
+    console.error("Error updating condition:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const { takeoffConditions } = await import("@shared/schema");
+    const { id } = req.params;
+    const [existing] = await db.select().from(takeoffConditions).where(and(eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgId))).limit(1);
+    if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
+    await db.delete(takeoffConditions).where(eq(takeoffConditions.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting condition:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

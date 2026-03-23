@@ -1229,6 +1229,31 @@ export const insertTakeoffMeasurementAssemblySchema = createInsertSchema(takeoff
 export type InsertTakeoffMeasurementAssembly = z.infer<typeof insertTakeoffMeasurementAssemblySchema>;
 export type TakeoffMeasurementAssembly = typeof takeoffMeasurementAssemblies.$inferSelect;
 
+export const takeoffConditions = pgTable("takeoff_conditions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  measurementType: text("measurement_type").notNull(),
+  color: text("color").notNull().default("#3b82f6"),
+  categoryName: text("category_name"),
+  unitCost: doublePrecision("unit_cost"),
+  costCodeId: varchar("cost_code_id"),
+  assemblyId: varchar("assembly_id"),
+  lineStyle: text("line_style"),
+  labelTemplate: text("label_template"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("takeoff_conditions_org_idx").on(table.organizationId),
+  lastUsedIdx: index("takeoff_conditions_last_used_idx").on(table.lastUsedAt),
+}));
+
+export const insertTakeoffConditionSchema = createInsertSchema(takeoffConditions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffCondition = z.infer<typeof insertTakeoffConditionSchema>;
+export type TakeoffCondition = typeof takeoffConditions.$inferSelect;
+
 export const insertProjectSpecSchema = createInsertSchema(projectSpecs).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectSpec = z.infer<typeof insertProjectSpecSchema>;
 export type ProjectSpec = typeof projectSpecs.$inferSelect;
