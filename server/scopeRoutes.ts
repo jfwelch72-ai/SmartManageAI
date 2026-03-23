@@ -1843,25 +1843,38 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
 
     const { lineItemId } = req.params;
 
-    const [lineItem] = await db
-      .select({ id: estimateLineItems.id })
+    const lineItemRows = await db
+      .select({
+        id: estimateLineItems.id,
+        bidId: estimates.bidId,
+        projectId: estimates.projectId,
+      })
       .from(estimateLineItems)
       .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
-      .leftJoin(bids, eq(bids.id, estimates.bidId))
-      .leftJoin(projects, eq(projects.id, estimates.projectId))
-      .where(
-        and(
-          eq(estimateLineItems.id, lineItemId),
-          or(
-            eq(bids.gcOrganizationId, organizationId),
-            eq(projects.organizationId, organizationId)
-          )
-        )
-      )
+      .where(eq(estimateLineItems.id, lineItemId))
       .limit(1);
 
-    if (!lineItem) {
+    if (lineItemRows.length === 0) {
       res.status(404).json({ error: "Line item not found" });
+      return;
+    }
+
+    const lineItem = lineItemRows[0];
+
+    let hasAccess = false;
+    if (lineItem.bidId) {
+      const [bid] = await db.select({ id: bids.id }).from(bids)
+        .where(and(eq(bids.id, lineItem.bidId), eq(bids.gcOrganizationId, organizationId))).limit(1);
+      hasAccess = !!bid;
+    }
+    if (!hasAccess && lineItem.projectId) {
+      const [proj] = await db.select({ id: projects.id }).from(projects)
+        .where(and(eq(projects.id, lineItem.projectId), eq(projects.organizationId, organizationId))).limit(1);
+      hasAccess = !!proj;
+    }
+
+    if (!hasAccess) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -1961,29 +1974,39 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
 
     const { lineItemId, bidId, selections } = parsed.data;
 
-    const [lineItem] = await db
+    const lineItemRows = await db
       .select({
         id: estimateLineItems.id,
         estimateId: estimateLineItems.estimateId,
         estimateBidId: estimates.bidId,
+        estimateProjectId: estimates.projectId,
       })
       .from(estimateLineItems)
       .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
-      .leftJoin(bids, eq(bids.id, estimates.bidId))
-      .leftJoin(projects, eq(projects.id, estimates.projectId))
-      .where(
-        and(
-          eq(estimateLineItems.id, lineItemId),
-          or(
-            eq(bids.gcOrganizationId, organizationId),
-            eq(projects.organizationId, organizationId)
-          )
-        )
-      )
+      .where(eq(estimateLineItems.id, lineItemId))
       .limit(1);
 
-    if (!lineItem) {
+    if (lineItemRows.length === 0) {
       res.status(404).json({ error: "Line item not found" });
+      return;
+    }
+
+    const lineItem = lineItemRows[0];
+
+    let hasAccess = false;
+    if (lineItem.estimateBidId) {
+      const [bid] = await db.select({ id: bids.id }).from(bids)
+        .where(and(eq(bids.id, lineItem.estimateBidId), eq(bids.gcOrganizationId, organizationId))).limit(1);
+      hasAccess = !!bid;
+    }
+    if (!hasAccess && lineItem.estimateProjectId) {
+      const [proj] = await db.select({ id: projects.id }).from(projects)
+        .where(and(eq(projects.id, lineItem.estimateProjectId), eq(projects.organizationId, organizationId))).limit(1);
+      hasAccess = !!proj;
+    }
+
+    if (!hasAccess) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
