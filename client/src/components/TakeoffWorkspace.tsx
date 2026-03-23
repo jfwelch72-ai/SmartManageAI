@@ -96,6 +96,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [editingCategory, setEditingCategory] = useState<any>(null);
   const [categoryName, setCategoryName] = useState("");
   const [categoryColor, setCategoryColor] = useState("#3b82f6");
+  const [categoryLineStyle, setCategoryLineStyle] = useState("solid");
+  const [categoryLineWidth, setCategoryLineWidth] = useState(3);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
@@ -217,6 +219,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
     deleteSheetMutation, handleMoveSheet,
+    measurementGroups, createGroupMutation, updateGroupMutation,
+    deleteGroupMutation, toggleGroupVisibilityMutation,
   } = data;
 
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
@@ -529,9 +533,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (editingCategory) {
       setCategoryName(editingCategory.name);
       setCategoryColor(editingCategory.color);
+      setCategoryLineStyle(editingCategory.lineStyle || "solid");
+      setCategoryLineWidth(editingCategory.lineWidth || 3);
     } else {
       setCategoryName("");
       setCategoryColor("#3b82f6");
+      setCategoryLineStyle("solid");
+      setCategoryLineWidth(3);
     }
   }, [editingCategory]);
 
@@ -767,6 +775,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       id: editingCategory?.id,
       name: categoryName,
       color: categoryColor,
+      lineStyle: categoryLineStyle,
+      lineWidth: categoryLineWidth,
     });
   };
 
@@ -1584,6 +1594,38 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     }
                   };
 
+                  const mCategory = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
+                  const mLineStyle = m.lineStyle || mCategory?.lineStyle || "solid";
+                  const mLineWidth = m.lineWidth || mCategory?.lineWidth || 3;
+                  const dashMap: Record<string, number[]> = {
+                    solid: [],
+                    dashed: [10, 5],
+                    dotted: [2, 4],
+                    "dash-dot": [10, 5, 2, 5],
+                  };
+                  const dashArray = dashMap[mLineStyle] || [];
+                  const effectiveWidth = isSelected ? mLineWidth + 2 : mLineWidth;
+
+                  const offsetLinePoints = (pts: number[], offset: number): number[] => {
+                    const result: number[] = [];
+                    for (let i = 0; i < pts.length - 2; i += 2) {
+                      const dx = pts[i + 2] - pts[i];
+                      const dy = pts[i + 3] - pts[i + 1];
+                      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                      const nx = -dy / len * offset;
+                      const ny = dx / len * offset;
+                      result.push(pts[i] + nx, pts[i + 1] + ny);
+                    }
+                    const lastI = pts.length - 2;
+                    const dx = pts[lastI] - pts[lastI - 2];
+                    const dy = pts[lastI + 1] - pts[lastI - 1];
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const nx = -dy / len * offset;
+                    const ny = dx / len * offset;
+                    result.push(pts[lastI] + nx, pts[lastI + 1] + ny);
+                    return result;
+                  };
+
                   if ((m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && points.length >= 2) {
                     if (points.length === 3 && currentSheet?.scalePxPerFoot) {
                       const [startPoint, middlePoint, endPoint] = points;
@@ -1591,12 +1633,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       if (arcSegment) {
                         const arcPoints = sampleArcPoints(arcSegment, 30);
                         const flatPoints = arcPoints.flatMap(p => [p.x, p.y]);
-                        return (
+                        return mLineStyle === "double" ? (
+                          <Fragment key={m.id}>
+                            <Line points={offsetLinePoints(flatPoints, 2)} stroke={baseColor} strokeWidth={effectiveWidth} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                            <Line points={offsetLinePoints(flatPoints, -2)} stroke={baseColor} strokeWidth={effectiveWidth} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                          </Fragment>
+                        ) : (
                           <Line
                             key={m.id}
                             points={flatPoints}
                             stroke={baseColor}
-                            strokeWidth={isSelected ? 5 : 3}
+                            strokeWidth={effectiveWidth}
+                            dash={dashArray.length > 0 ? dashArray : undefined}
                             opacity={isSelected ? 1 : 0.8}
                             onClick={handleMeasurementClick}
                             onTap={handleMeasurementClick}
@@ -1604,12 +1652,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         );
                       }
                     }
-                    return (
+                    return mLineStyle === "double" ? (
+                      <Fragment key={m.id}>
+                        <Line points={offsetLinePoints([points[0].x, points[0].y, points[1].x, points[1].y], 2)} stroke={baseColor} strokeWidth={effectiveWidth} hitStrokeWidth={isMobile ? 20 : 0} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                        <Line points={offsetLinePoints([points[0].x, points[0].y, points[1].x, points[1].y], -2)} stroke={baseColor} strokeWidth={effectiveWidth} hitStrokeWidth={isMobile ? 20 : 0} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                      </Fragment>
+                    ) : (
                       <Line
                         key={m.id}
                         points={[points[0].x, points[0].y, points[1].x, points[1].y]}
                         stroke={baseColor}
-                        strokeWidth={isSelected ? 5 : 3}
+                        strokeWidth={effectiveWidth}
+                        dash={dashArray.length > 0 ? dashArray : undefined}
                         hitStrokeWidth={isMobile ? 20 : 0}
                         opacity={isSelected ? 1 : 0.8}
                         onClick={handleMeasurementClick}
@@ -1623,7 +1677,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         key={m.id}
                         points={flatPoints}
                         stroke={baseColor}
-                        strokeWidth={isSelected ? 5 : 3}
+                        strokeWidth={effectiveWidth}
+                        dash={dashArray.length > 0 ? dashArray : undefined}
                         hitStrokeWidth={isMobile ? 20 : 0}
                         fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
                         opacity={isSelected ? 1 : 0.8}
@@ -1639,7 +1694,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         key={m.id}
                         points={flatPoints}
                         stroke={baseColor}
-                        strokeWidth={isSelected ? 5 : 3}
+                        strokeWidth={effectiveWidth}
+                        dash={dashArray.length > 0 ? dashArray : undefined}
                         hitStrokeWidth={isMobile ? 20 : 0}
                         fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
                         opacity={isSelected ? 1 : 0.8}
@@ -2523,6 +2579,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onSelectSheet={setSelectedSheet}
         markups={markups}
         deleteMarkupMutation={deleteMarkupMutation}
+        measurementGroups={measurementGroups}
+        createGroupMutation={createGroupMutation}
+        updateGroupMutation={updateGroupMutation}
+        deleteGroupMutation={deleteGroupMutation}
+        toggleGroupVisibilityMutation={toggleGroupVisibilityMutation}
         issues={issues}
         allSheetIssues={allIssues}
         selectedIssueId={selectedIssueId}
@@ -2575,6 +2636,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setCategoryName={setCategoryName}
         categoryColor={categoryColor}
         setCategoryColor={setCategoryColor}
+        categoryLineStyle={categoryLineStyle}
+        setCategoryLineStyle={setCategoryLineStyle}
+        categoryLineWidth={categoryLineWidth}
+        setCategoryLineWidth={setCategoryLineWidth}
         onSaveCategory={handleSaveCategory}
         saveCategoryPending={saveCategoryMutation.isPending}
         shortcutsDialogOpen={shortcutsDialogOpen}

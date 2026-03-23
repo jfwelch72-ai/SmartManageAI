@@ -300,6 +300,8 @@ export const quantityCategories = pgTable("quantity_categories", {
   bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   color: text("color").notNull().default("#3b82f6"),
+  lineStyle: text("line_style").notNull().default("solid"),
+  lineWidth: integer("line_width").notNull().default(3),
   displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -332,11 +334,29 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   planIdx: index("takeoff_sheets_plan_idx").on(table.planId),
 }));
 
+// Takeoff Measurement Groups table
+export const takeoffMeasurementGroups = pgTable("takeoff_measurement_groups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  sheetId: varchar("sheet_id").references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  color: text("color").notNull().default("#6b7280"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("takeoff_measurement_groups_project_idx").on(table.projectId),
+  bidIdx: index("takeoff_measurement_groups_bid_idx").on(table.bidId),
+  sheetIdx: index("takeoff_measurement_groups_sheet_idx").on(table.sheetId),
+}));
+
 // Takeoff Measurements table
 export const takeoffMeasurements = pgTable("takeoff_measurements", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
   categoryId: varchar("category_id").references(() => quantityCategories.id, { onDelete: "set null" }),
+  groupId: varchar("group_id").references(() => takeoffMeasurementGroups.id, { onDelete: "set null" }),
   type: measurementTypeEnum("type").notNull(),
   label: text("label").notNull(),
   points: text("points").notNull(),
@@ -351,6 +371,8 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   pitchRatio: text("pitch_ratio"),
   costCodeId: varchar("cost_code_id"),
   unitCost: doublePrecision("unit_cost"),
+  lineStyle: text("line_style").notNull().default("solid"),
+  lineWidth: integer("line_width").notNull().default(3),
   computedLengthFt: doublePrecision("computed_length_ft"),
   computedAreaFt2: doublePrecision("computed_area_ft2"),
   computedVolumeCy: doublePrecision("computed_volume_cy"),
@@ -361,6 +383,7 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
 }, (table) => ({
   sheetIdx: index("takeoff_measurements_sheet_idx").on(table.sheetId),
   categoryIdx: index("takeoff_measurements_category_idx").on(table.categoryId),
+  groupIdx: index("takeoff_measurements_group_idx").on(table.groupId),
   typeIdx: index("takeoff_measurements_type_idx").on(table.type),
   statusIdx: index("takeoff_measurements_status_idx").on(table.status),
 }));
@@ -1154,6 +1177,10 @@ export type TakeoffSheet = typeof takeoffSheets.$inferSelect;
 export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
 export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
+
+export const insertTakeoffMeasurementGroupSchema = createInsertSchema(takeoffMeasurementGroups).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffMeasurementGroup = z.infer<typeof insertTakeoffMeasurementGroupSchema>;
+export type TakeoffMeasurementGroup = typeof takeoffMeasurementGroups.$inferSelect;
 
 export const bimStoreyAssociations = pgTable("bim_storey_associations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

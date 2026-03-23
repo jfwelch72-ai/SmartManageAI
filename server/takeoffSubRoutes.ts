@@ -1077,6 +1077,160 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
   }
 });
 
+// ==================== Measurement Groups CRUD ====================
+
+// Helper: verify group access by looking up its sheet
+async function verifyGroupAccess(groupId: string, user: { id: string; organizationId: string | null; role: string }): Promise<{ allowed: boolean; group: any | null; reason?: string }> {
+  const { takeoffMeasurementGroups } = await import("@shared/schema");
+  const [group] = await db.select().from(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.id, groupId)).limit(1);
+  if (!group) return { allowed: false, group: null, reason: "Group not found" };
+  if (!group.sheetId) return { allowed: false, group, reason: "Group has no sheet" };
+  const sheetAccess = await verifySheetAccess(group.sheetId, user);
+  return { allowed: sheetAccess.allowed, group, reason: sheetAccess.reason };
+}
+
+// Get groups for a sheet
+router.get("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
+    const { takeoffMeasurementGroups } = await import("@shared/schema");
+    const groups = await db
+      .select()
+      .from(takeoffMeasurementGroups)
+      .where(eq(takeoffMeasurementGroups.sheetId, sheetId))
+      .orderBy(takeoffMeasurementGroups.sortOrder);
+    res.json(groups);
+  } catch (error) {
+    console.error("Error fetching groups:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Create a group
+router.post("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
+    const { takeoffMeasurementGroups, takeoffSheets } = await import("@shared/schema");
+
+    const [sheet] = await db.select({ projectId: takeoffSheets.projectId, bidId: takeoffSheets.bidId }).from(takeoffSheets).where(eq(takeoffSheets.id, sheetId)).limit(1);
+    if (!sheet) { res.status(404).json({ error: "Sheet not found" }); return; }
+
+    const name = sanitizeShortText(req.body.name || "Untitled Group");
+    if (!name || name.length > 200) { res.status(400).json({ error: "Invalid group name" }); return; }
+    const color = typeof req.body.color === "string" ? req.body.color.slice(0, 20) : "#6b7280";
+    const sortOrder = typeof req.body.sortOrder === "number" ? req.body.sortOrder : 0;
+
+    const [group] = await db.insert(takeoffMeasurementGroups).values({
+      name,
+      sheetId,
+      projectId: sheet.projectId,
+      bidId: sheet.bidId,
+      sortOrder,
+      color,
+    }).returning();
+
+    res.status(201).json(group);
+  } catch (error) {
+    console.error("Error creating group:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Update a group
+router.patch("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const groupAccess = await verifyGroupAccess(id, req.user!);
+    if (!groupAccess.allowed) { res.status(groupAccess.group ? 403 : 404).json({ error: groupAccess.reason || "Access denied" }); return; }
+
+    const { takeoffMeasurementGroups } = await import("@shared/schema");
+
+    const updates: any = { updatedAt: new Date() };
+    if (typeof req.body.name === "string") updates.name = sanitizeShortText(req.body.name);
+    if (typeof req.body.color === "string") updates.color = req.body.color.slice(0, 20);
+    if (typeof req.body.sortOrder === "number") updates.sortOrder = req.body.sortOrder;
+
+    const [updated] = await db.update(takeoffMeasurementGroups).set(updates).where(eq(takeoffMeasurementGroups.id, id)).returning();
+    if (!updated) { res.status(404).json({ error: "Group not found" }); return; }
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating group:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Delete a group (measurements get groupId set to null via FK constraint)
+router.delete("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const groupAccess = await verifyGroupAccess(id, req.user!);
+    if (!groupAccess.allowed) { res.status(groupAccess.group ? 403 : 404).json({ error: groupAccess.reason || "Access denied" }); return; }
+
+    const { takeoffMeasurementGroups } = await import("@shared/schema");
+
+    const [deleted] = await db.delete(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.id, id)).returning();
+    if (!deleted) { res.status(404).json({ error: "Group not found" }); return; }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting group:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Reorder groups
+router.patch("/api/takeoff/sheets/:sheetId/groups/reorder", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
+    const { takeoffMeasurementGroups } = await import("@shared/schema");
+    const { order } = req.body;
+    if (!Array.isArray(order)) { res.status(400).json({ error: "order must be an array" }); return; }
+
+    for (const item of order) {
+      if (typeof item.id === "string" && typeof item.sortOrder === "number") {
+        await db.update(takeoffMeasurementGroups)
+          .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
+          .where(and(eq(takeoffMeasurementGroups.id, item.id), eq(takeoffMeasurementGroups.sheetId, sheetId)));
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error reordering groups:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Bulk visibility toggle for a group's measurements
+router.patch("/api/takeoff/groups/:id/visibility", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const groupAccess = await verifyGroupAccess(id, req.user!);
+    if (!groupAccess.allowed) { res.status(groupAccess.group ? 403 : 404).json({ error: groupAccess.reason || "Access denied" }); return; }
+
+    const { visible } = req.body;
+    if (typeof visible !== "boolean") { res.status(400).json({ error: "visible must be a boolean" }); return; }
+    const { takeoffMeasurements } = await import("@shared/schema");
+
+    await db.update(takeoffMeasurements).set({ visible, updatedAt: new Date() }).where(eq(takeoffMeasurements.groupId, id));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error toggling group visibility:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Update sheet calibration
 router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: AuthRequest, res) => {
   try {
@@ -1663,6 +1817,7 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
         sourceMeasurements.map((m) => ({
           sheetId: newSheet.id,
           categoryId: m.categoryId,
+          groupId: null,
           type: m.type,
           label: m.label,
           points: m.points,
@@ -1674,6 +1829,8 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
           visible: m.visible,
           source: m.source,
           status: m.status,
+          lineStyle: m.lineStyle,
+          lineWidth: m.lineWidth,
           computedLengthFt: m.computedLengthFt,
           computedAreaFt2: m.computedAreaFt2,
           computedVolumeCy: m.computedVolumeCy,

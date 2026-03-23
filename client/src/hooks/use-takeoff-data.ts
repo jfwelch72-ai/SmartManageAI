@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
-import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 
 export type TakeoffMarkupWithAuthor = TakeoffMarkup & { authorName?: string | null; points: { x: number; y: number }[] };
@@ -195,8 +195,18 @@ export function useTakeoffData({
       computedSurfaceAreaFt2?: number;
       computedLengthFt?: number;
       metadata?: string;
+      lineStyle?: string;
+      lineWidth?: number;
     }) => {
-      const res = await apiRequest("POST", "/api/takeoff/measurements", data);
+      const payload = { ...data };
+      if (payload.categoryId && !payload.lineStyle && !payload.lineWidth) {
+        const cat = categories.find(c => c.id === payload.categoryId);
+        if (cat) {
+          payload.lineStyle = cat.lineStyle || "solid";
+          payload.lineWidth = cat.lineWidth || 3;
+        }
+      }
+      const res = await apiRequest("POST", "/api/takeoff/measurements", payload);
       return res.json();
     },
     onSuccess: (data: TakeoffMeasurement) => {
@@ -213,7 +223,7 @@ export function useTakeoffData({
   });
 
   const updateMeasurementMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; metadata?: string; points?: string; computedLengthFt?: number }) => {
+    mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number }) => {
       const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
       return res.json();
     },
@@ -252,12 +262,14 @@ export function useTakeoffData({
   });
 
   const saveCategoryMutation = useMutation({
-    mutationFn: async (data: { id?: string; name: string; color: string; displayOrder?: number }) => {
+    mutationFn: async (data: { id?: string; name: string; color: string; lineStyle?: string; lineWidth?: number; displayOrder?: number }) => {
       let response;
       if (data.id) {
         response = await apiRequest("PATCH", `/api/quantity-categories/${data.id}`, {
           name: data.name,
-          color: data.color
+          color: data.color,
+          lineStyle: data.lineStyle || "solid",
+          lineWidth: data.lineWidth || 3,
         });
       } else {
         const url = isBid
@@ -266,6 +278,8 @@ export function useTakeoffData({
         response = await apiRequest("POST", url, {
           name: data.name,
           color: data.color,
+          lineStyle: data.lineStyle || "solid",
+          lineWidth: data.lineWidth || 3,
           displayOrder: categories.length
         });
       }
@@ -544,6 +558,68 @@ export function useTakeoffData({
     [sheets, selectedSheet]
   );
 
+  const groupsQueryKey = ["/api/takeoff/sheets", selectedSheet, "groups"];
+
+  const { data: measurementGroups = [] } = useQuery<TakeoffMeasurementGroup[]>({
+    queryKey: groupsQueryKey,
+    enabled: !!selectedSheet,
+  });
+
+  const createGroupMutation = useMutation({
+    mutationFn: async (data: { name: string; color?: string; sortOrder?: number }) => {
+      const res = await apiRequest("POST", `/api/takeoff/sheets/${selectedSheet}/groups`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupsQueryKey });
+      toast({ title: "Group created" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create group", variant: "destructive" });
+    },
+  });
+
+  const updateGroupMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; color?: string; sortOrder?: number }) => {
+      const res = await apiRequest("PATCH", `/api/takeoff/groups/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupsQueryKey });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update group", variant: "destructive" });
+    },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      await apiRequest("DELETE", `/api/takeoff/groups/${groupId}`);
+      return groupId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupsQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      toast({ title: "Group deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete group", variant: "destructive" });
+    },
+  });
+
+  const toggleGroupVisibilityMutation = useMutation({
+    mutationFn: async ({ groupId, visible }: { groupId: string; visible: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/takeoff/groups/${groupId}/visibility`, { visible });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to toggle visibility", variant: "destructive" });
+    },
+  });
+
   return {
     sheets,
     sheetsLoading,
@@ -579,5 +655,10 @@ export function useTakeoffData({
     createConditionMutation,
     updateConditionMutation,
     deleteConditionMutation,
+    measurementGroups,
+    createGroupMutation,
+    updateGroupMutation,
+    deleteGroupMutation,
+    toggleGroupVisibilityMutation,
   };
 }

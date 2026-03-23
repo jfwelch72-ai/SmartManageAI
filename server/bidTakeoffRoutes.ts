@@ -136,6 +136,8 @@ router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADM
 
     const name = sanitizeShortText(req.body.name);
     const color = req.body.color || "#3b82f6";
+    const lineStyle = req.body.lineStyle || "solid";
+    const lineWidth = req.body.lineWidth ?? 3;
     const displayOrder = req.body.displayOrder ?? 0;
 
     if (!name) return res.status(400).json({ error: "Category name is required" });
@@ -144,6 +146,8 @@ router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADM
       bidId: bid.id,
       name,
       color,
+      lineStyle,
+      lineWidth,
       displayOrder,
     }).returning();
 

@@ -52,6 +52,10 @@ interface TakeoffDialogsProps {
   setCategoryName: (v: string) => void;
   categoryColor: string;
   setCategoryColor: (v: string) => void;
+  categoryLineStyle: string;
+  setCategoryLineStyle: (v: string) => void;
+  categoryLineWidth: number;
+  setCategoryLineWidth: (v: number) => void;
   onSaveCategory: () => void;
   saveCategoryPending: boolean;
   shortcutsDialogOpen: boolean;
@@ -76,7 +80,9 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
     deleteSheetConfirmOpen, setDeleteSheetConfirmOpen, currentSheet, deleteSheetMutation,
     noteDialogOpen, setNoteDialogOpen, noteText, setNoteText, notePosition, setNotePosition, onSaveNote,
     categoryDialogOpen, setCategoryDialogOpen, editingCategory, setEditingCategory,
-    categoryName, setCategoryName, categoryColor, setCategoryColor, onSaveCategory, saveCategoryPending,
+    categoryName, setCategoryName, categoryColor, setCategoryColor,
+    categoryLineStyle, setCategoryLineStyle, categoryLineWidth, setCategoryLineWidth,
+    onSaveCategory, saveCategoryPending,
     shortcutsDialogOpen, setShortcutsDialogOpen,
     uploadDialogOpen, setUploadDialogOpen, planDocuments, documentsLoading, sheets, importPlanMutation,
     supersedeSheetMutation,
@@ -292,6 +298,66 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
                 <div className="flex gap-2 items-center">
                   <Input id="category-color" type="color" value={categoryColor} onChange={(e) => setCategoryColor(e.target.value)} className="w-20 h-10 cursor-pointer" data-testid="input-category-color" />
                   <Input type="text" value={categoryColor} onChange={(e) => setCategoryColor(e.target.value)} placeholder="#3b82f6" className="flex-1 font-mono" data-testid="input-category-color-text" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Line Style</Label>
+                  <Select value={categoryLineStyle} onValueChange={setCategoryLineStyle}>
+                    <SelectTrigger data-testid="select-category-line-style">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="solid">
+                        <div className="flex items-center gap-2">
+                          <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" /></svg>
+                          <span>Solid</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="dashed">
+                        <div className="flex items-center gap-2">
+                          <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray="6,3" /></svg>
+                          <span>Dashed</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="dotted">
+                        <div className="flex items-center gap-2">
+                          <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray="2,2" /></svg>
+                          <span>Dotted</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="dash-dot">
+                        <div className="flex items-center gap-2">
+                          <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray="8 3 2 3" /></svg>
+                          <span>Dash-Dot</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="double">
+                        <div className="flex items-center gap-2">
+                          <svg width="40" height="12"><line x1="0" y1="3" x2="40" y2="3" stroke="currentColor" strokeWidth="1.5" /><line x1="0" y1="9" x2="40" y2="9" stroke="currentColor" strokeWidth="1.5" /></svg>
+                          <span>Double</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Line Width</Label>
+                  <Select value={String(categoryLineWidth)} onValueChange={(v) => setCategoryLineWidth(Number(v))}>
+                    <SelectTrigger data-testid="select-category-line-width">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[1, 2, 3, 4, 5, 6].map((w) => (
+                        <SelectItem key={w} value={String(w)}>
+                          <div className="flex items-center gap-2">
+                            <svg width="40" height="12"><line x1="0" y1="6" x2="40" y2="6" stroke="currentColor" strokeWidth={w} /></svg>
+                            <span>{w}px</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>

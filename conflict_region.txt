@@ -1,0 +1,61 @@
+   450	              )}
+   451	
+   452	              {measurements.length === 0 ? (
+   453	                <p className="text-sm text-muted-foreground text-center py-4">No measurements yet</p>
+   454	              ) : (
+   455	                <div className="space-y-2">
+   456	<<<<<<< HEAD
+   457	                  {measurements.map((m) => (
+   458	                    <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); clickTimerRef.current = setTimeout(() => { setSelectedMeasurementId(m.id); onZoomToMeasurement?.(m); clickTimerRef.current = null; }, 200); }} onDoubleClick={() => { if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; } setSelectedMeasurementId(m.id); onZoomToFitMeasurement?.(m); }} data-testid={`measurement-item-${m.id}`}>
+   459	                      <div className="flex items-center justify-between mb-2">
+   460	                        <div className="flex items-center gap-2">
+   461	                          <span className="font-medium text-sm">{m.label || "Untitled"}</span>
+   462	                          <Badge variant="outline" className="text-xs">{m.type}</Badge>
+   463	                          {m.source === "BIM" && (
+   464	                            <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
+   465	                          )}
+   466	=======
+   467	                  {(() => {
+   468	                    const grouped: Record<string, TakeoffMeasurement[]> = {};
+   469	                    const ungrouped: TakeoffMeasurement[] = [];
+   470	                    measurements.forEach((m) => {
+   471	                      if ((m as any).groupId) {
+   472	                        if (!grouped[(m as any).groupId]) grouped[(m as any).groupId] = [];
+   473	                        grouped[(m as any).groupId].push(m);
+   474	                      } else {
+   475	                        ungrouped.push(m);
+   476	                      }
+   477	                    });
+   478	
+   479	                    const renderMeasurementItem = (m: TakeoffMeasurement) => (
+   480	                      <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id)} data-testid={`measurement-item-${m.id}`}>
+   481	                        <div className="flex items-center justify-between mb-2">
+   482	                          <div className="flex items-center gap-2">
+   483	                            <span className="font-medium text-sm">{m.label || "Untitled"}</span>
+   484	                            <Badge variant="outline" className="text-xs">{m.type}</Badge>
+   485	                            {m.source === "BIM" && (
+   486	                              <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
+   487	                            )}
+   488	                          </div>
+   489	                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
+   490	                            <Trash2 className="w-4 h-4 text-destructive" />
+   491	                          </Button>
+   492	>>>>>>> 2d3582f (Task #104: Custom Line Styles & Measurement Grouping)
+   493	                        </div>
+   494	                        <p className="text-sm text-muted-foreground">
+   495	                          {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
+   496	                            ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+   497	                            : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
+   498	                            ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+   499	                            : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+   500	                            : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
+   501	                        </p>
+   502	                        {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
+   503	                        {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
+   504	                      </div>
+   505	                    );
+   506	
+   507	                    const computeGroupTotals = (items: TakeoffMeasurement[]) => {
+   508	                      let linear = 0, area = 0, volume = 0, count = 0;
+   509	                      items.forEach(m => {
+   510	                        if (m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") { const v = Number(m.computedLengthFt); linear += Number.isFinite(v) ? v : 0; }

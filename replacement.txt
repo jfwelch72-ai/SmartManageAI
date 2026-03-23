@@ -1,0 +1,214 @@
+                <div className="space-y-2">
+                  {(() => {
+                    const grouped: Record<string, TakeoffMeasurement[]> = {};
+                    const ungrouped: TakeoffMeasurement[] = [];
+                    measurements.forEach((m) => {
+                      if ((m as any).groupId) {
+                        if (!grouped[(m as any).groupId]) grouped[(m as any).groupId] = [];
+                        grouped[(m as any).groupId].push(m);
+                      } else {
+                        ungrouped.push(m);
+                      }
+                    });
+
+                    const renderMeasurementItem = (m: TakeoffMeasurement) => (
+                      <div
+                        key={m.id}
+                        className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? "ring-2 ring-primary" : ""}`}
+                        onClick={() => {
+                          if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+                          clickTimerRef.current = setTimeout(() => {
+                            setSelectedMeasurementId(m.id);
+                            setSelectedSegmentIndex(null);
+                            onZoomToMeasurement?.(m);
+                            clickTimerRef.current = null;
+                          }, 200);
+                        }}
+                        onDoubleClick={() => {
+                          if (clickTimerRef.current) {
+                            clearTimeout(clickTimerRef.current);
+                            clickTimerRef.current = null;
+                          }
+                          setSelectedMeasurementId(m.id);
+                          setSelectedSegmentIndex(null);
+                          onZoomToFitMeasurement?.(m);
+                        }}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("measurement-id", m.id);
+                        }}
+                        data-testid={`measurement-item-${m.id}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{m.label || "Untitled"}</span>
+                            <Badge variant="outline" className="text-xs">{m.type}</Badge>
+                            {m.source === "BIM" && (
+                              <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
+                            )}
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
+                            ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
+                            ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+                            : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
+                            : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
+                        </p>
+                        {m.type === "SEGMENT" && (() => {
+                          const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                          let segProps: any[] = [];
+                          try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch {}
+                          if (points.length < 2 || !currentSheet?.scalePxPerFoot) return null;
+                          return (
+                            <Collapsible>
+                              <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1" data-testid={`button-expand-segments-${m.id}`}>
+                                <ChevronRight className="w-3 h-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                                <span>{points.length - 1} segments</span>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="mt-1 space-y-1 ml-2 border-l-2 border-muted pl-2">
+                                  {points.slice(0, -1).map((_: any, i: number) => {
+                                    const segLabel = segProps[i]?.label || `Seg ${i + 1}`;
+                                    const segColor = segProps[i]?.color || "#2563eb";
+                                    const p1 = points[i];
+                                    const p2 = points[i + 1];
+                                    const dx = p2.x - p1.x;
+                                    const dy = p2.y - p1.y;
+                                    const pxDist = Math.sqrt(dx * dx + dy * dy);
+                                    const segLenFt = pxDist / currentSheet.scalePxPerFoot;
+                                    return (
+                                      <div
+                                        key={i}
+                                        className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors ${selectedMeasurementId === m.id && selectedSegmentIndex === i ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted'}`}
+                                        onClick={(e) => { e.stopPropagation(); setSelectedMeasurementId(m.id); setSelectedSegmentIndex(i); }}
+                                        data-testid={`segment-child-${m.id}-${i}`}
+                                      >
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: segColor }} />
+                                        <span className="text-muted-foreground">{segLabel}:</span>
+                                        <span>{segLenFt.toFixed(2)} LF</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          );
+                        })()}
+                        {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
+                        {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
+                      </div>
+                    );
+
+                    const computeGroupTotals = (items: TakeoffMeasurement[]) => {
+                      let linear = 0, area = 0, volume = 0, count = 0, segment = 0;
+                      items.forEach(m => {
+                        if (m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") { const v = Number(m.computedLengthFt); linear += Number.isFinite(v) ? v : 0; }
+                        else if (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") { const v = Number((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2); area += Number.isFinite(v) ? v : 0; }
+                        else if (m.type === "VOLUME") { const v = Number(m.computedVolumeCy); volume += Number.isFinite(v) ? v : 0; }
+                        else if (m.type === "COUNT") { count += 1; }
+                        else if (m.type === "SEGMENT") { const v = Number(m.computedLengthFt); segment += Number.isFinite(v) ? v : 0; }
+                      });
+                      const totalCost = items.reduce((sum, m) => {
+                        const qty = Number((m as any).computedSurfaceAreaFt2 || m.computedLengthFt || m.computedAreaFt2 || (m.type === "COUNT" ? 1 : 0));
+                        return sum + (Number.isFinite(qty) ? qty : 0) * (Number((m as any).unitCost) || 0);
+                      }, 0);
+                      return { linear, area, volume, count, segment, totalCost };
+                    };
+
+                    return (
+                      <>
+                        {measurementGroups.map((group) => {
+                          const groupItems = grouped[group.id] || [];
+                          const isCollapsed = collapsedGroups.has(group.id);
+                          const totals = computeGroupTotals(groupItems);
+                          const allVisible = groupItems.every(m => m.visible !== false);
+                          return (
+                            <div
+                              key={group.id}
+                              className="border rounded-md"
+                              style={{ borderColor: group.color }}
+                              onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"; }}
+                              onDragLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                e.currentTarget.style.backgroundColor = "";
+                                const mId = e.dataTransfer.getData("measurement-id");
+                                if (mId) updateMeasurementMutation.mutate({ id: mId, groupId: group.id });
+                              }}
+                              data-testid={`group-${group.id}`}
+                            >
+                              <div
+                                className="flex items-center gap-1 p-2 cursor-pointer hover:bg-muted/50"
+                                onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}
+                              >
+                                {isCollapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+                                <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: group.color }} />
+                                <span className="font-medium text-sm flex-1 truncate">{group.name}</span>
+                                <Badge variant="outline" className="text-[10px]">{groupItems.length}</Badge>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); toggleGroupVisibilityMutation?.mutate({ groupId: group.id, visible: !allVisible }); }} data-testid={`button-toggle-group-visibility-${group.id}`}>
+                                  {allVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setDeleteGroupConfirm(group.id); }} data-testid={`button-delete-group-${group.id}`}>
+                                  <Trash2 className="w-3 h-3 text-destructive" />
+                                </Button>
+                              </div>
+
+                              {deleteGroupConfirm === group.id && (
+                                <div className="px-2 pb-2 flex items-center gap-2">
+                                  <span className="text-xs text-destructive">Delete group?</span>
+                                  <Button size="sm" variant="destructive" className="h-6 text-xs px-2" onClick={() => { deleteGroupMutation?.mutate(group.id); setDeleteGroupConfirm(null); }} data-testid={`button-confirm-delete-group-${group.id}`}>Yes</Button>
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setDeleteGroupConfirm(null)}>No</Button>
+                                </div>
+                              )}
+
+                              {!isCollapsed && (
+                                <div className="px-2 pb-2 space-y-1">
+                                  {groupItems.length > 0 && (
+                                    <div className="text-[10px] text-muted-foreground flex flex-wrap gap-2 mb-1">
+                                      {totals.linear > 0 && <span>{totals.linear.toFixed(1)} LF</span>}
+                                      {totals.area > 0 && <span>{totals.area.toFixed(1)} SF</span>}
+                                      {totals.volume > 0 && <span>{totals.volume.toFixed(1)} CY</span>}
+                                      {totals.count > 0 && <span>{totals.count} ct</span>}
+                                      {totals.segment > 0 && <span>{totals.segment.toFixed(1)} LF (seg)</span>}
+                                      {totals.totalCost > 0 && <span className="text-green-500">${totals.totalCost.toFixed(2)}</span>}
+                                    </div>
+                                  )}
+                                  {groupItems.map(renderMeasurementItem)}
+                                  {groupItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No measurements</p>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {ungrouped.length > 0 && (
+                          <div
+                            className="space-y-1"
+                            onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.backgroundColor = "rgba(0,0,0,0.05)"; }}
+                            onDragLeave={(e) => { e.currentTarget.style.backgroundColor = ""; }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.currentTarget.style.backgroundColor = "";
+                              const mId = e.dataTransfer.getData("measurement-id");
+                              if (mId) updateMeasurementMutation.mutate({ id: mId, groupId: null });
+                            }}
+                          >
+                            {measurementGroups.length > 0 && (
+                              <div className="flex items-center gap-2 py-1">
+                                <span className="text-xs font-medium text-muted-foreground">Ungrouped</span>
+                                <Badge variant="outline" className="text-[10px]">{ungrouped.length}</Badge>
+                              </div>
+                            )}
+                            {ungrouped.map(renderMeasurementItem)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}

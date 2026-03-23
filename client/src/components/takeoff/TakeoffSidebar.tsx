@@ -13,7 +13,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
-  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download
+  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy, Download,
+  FolderPlus, GripVertical, FolderOpen
 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
@@ -26,7 +27,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
 import { IssuesTab } from "./IssuesTab";
-import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffCondition } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffCondition } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
 import { Zap } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -112,6 +113,11 @@ interface TakeoffSidebarProps {
   onSelectSheet?: (id: string) => void;
   markups?: TakeoffMarkupWithAuthor[];
   deleteMarkupMutation?: any;
+  measurementGroups?: TakeoffMeasurementGroup[];
+  createGroupMutation?: any;
+  updateGroupMutation?: any;
+  deleteGroupMutation?: any;
+  toggleGroupVisibilityMutation?: any;
   issues?: any[];
   allSheetIssues?: any[];
   selectedIssueId?: string | null;
@@ -154,6 +160,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     workspaceRef, aiPanelOpen, onApplyPresetScale,
     sheets = [], onCompareRevisions, onSelectSheet,
     markups = [], deleteMarkupMutation,
+    measurementGroups = [], createGroupMutation, updateGroupMutation, deleteGroupMutation, toggleGroupVisibilityMutation,
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
     onExportCurrentSheet, onExportAllSheets,
     onZoomToMeasurement, onZoomToFitMeasurement,
@@ -170,6 +177,40 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const [propagateMode, setPropagateMode] = useState<"all" | "same-plan">("all");
   const [isPropagating, setIsPropagating] = useState(false);
   const [saveToLibraryItem, setSaveToLibraryItem] = useState<{ name: string; unitOfMeasure: string; costTypes: string[]; unitCosts: Record<string, string>; notes: string } | null>(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [deleteGroupConfirm, setDeleteGroupConfirm] = useState<string | null>(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
+
+  const exportGroupCSV = (groupName: string, items: TakeoffMeasurement[]) => {
+    const rows = [["Label", "Type", "Length (LF)", "Area (SF)", "Volume (CY)", "Category", "Line Style", "Line Width"]];
+    items.forEach((m) => {
+      const cat = categories.find(c => c.id === m.categoryId);
+      rows.push([
+        m.label || "Untitled",
+        m.type,
+        m.computedLengthFt ? String(m.computedLengthFt.toFixed(2)) : "",
+        m.computedAreaFt2 ? String(m.computedAreaFt2.toFixed(2)) : "",
+        m.computedVolumeCy ? String(m.computedVolumeCy.toFixed(2)) : "",
+        cat?.name || "",
+        m.lineStyle || "solid",
+        String(m.lineWidth || 3),
+      ]);
+    });
+    const csv = rows.map(r => r.map(c => `"${c.replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${groupName.replace(/[^a-zA-Z0-9]/g, "_")}_measurements.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${items.length} measurements exported as CSV` });
+  };
+
   const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
   const [conditionDialogOpen, setConditionDialogOpen] = useState(false);
   const [editingCondition, setEditingCondition] = useState<TakeoffCondition | null>(null);
@@ -534,79 +575,253 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     </DropdownMenu>
                   )}
                   <Badge variant="secondary" data-testid="badge-measurement-count">{measurements.length}</Badge>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowNewGroupInput(true)} title="Create group" data-testid="button-create-group">
+                    <FolderPlus className="w-4 h-4" />
+                  </Button>
                 </div>
               </div>
+
+              {showNewGroupInput && (
+                <div className="flex items-center gap-2 mb-3">
+                  <Input
+                    placeholder="Group name..."
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newGroupName.trim()) {
+                        createGroupMutation?.mutate({ name: newGroupName.trim(), sortOrder: measurementGroups.length });
+                        setNewGroupName("");
+                        setShowNewGroupInput(false);
+                      }
+                    }}
+                    className="h-8 text-sm"
+                    autoFocus
+                    data-testid="input-new-group-name"
+                  />
+                  <Button size="sm" className="h-8 px-2" onClick={() => { if (newGroupName.trim()) { createGroupMutation?.mutate({ name: newGroupName.trim(), sortOrder: measurementGroups.length }); setNewGroupName(""); setShowNewGroupInput(false); } }} data-testid="button-save-group">
+                    <Save className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => { setNewGroupName(""); setShowNewGroupInput(false); }} data-testid="button-cancel-group">
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
+
               {measurements.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No measurements yet</p>
               ) : (
                 <div className="space-y-2">
-                  {measurements.map((m) => (
-                    <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); clickTimerRef.current = setTimeout(() => { setSelectedMeasurementId(m.id); setSelectedSegmentIndex(null); onZoomToMeasurement?.(m); clickTimerRef.current = null; }, 200); }} onDoubleClick={() => { if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; } setSelectedMeasurementId(m.id); setSelectedSegmentIndex(null); onZoomToFitMeasurement?.(m); }} data-testid={`measurement-item-${m.id}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm">{m.label || "Untitled"}</span>
-                          <Badge variant="outline" className="text-xs">{m.type}</Badge>
-                          {m.source === "BIM" && (
-                            <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
-                          )}
+                <div className="space-y-2">
+                  {(() => {
+                    const grouped: Record<string, TakeoffMeasurement[]> = {};
+                    const ungrouped: TakeoffMeasurement[] = [];
+                    measurements.forEach((m) => {
+                      if (m.groupId) {
+                        if (!grouped[m.groupId]) grouped[m.groupId] = [];
+                        grouped[m.groupId].push(m);
+                      } else {
+                        ungrouped.push(m);
+                      }
+                    });
+
+                    const renderMeasurementItem = (m: TakeoffMeasurement) => (
+                      <div
+                        key={m.id}
+                        className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? "ring-2 ring-primary" : ""}`}
+                        onClick={() => {
+                          if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+                          clickTimerRef.current = setTimeout(() => {
+                            setSelectedMeasurementId(m.id);
+                            setSelectedSegmentIndex(null);
+                            onZoomToMeasurement?.(m);
+                            clickTimerRef.current = null;
+                          }, 200);
+                        }}
+                        onDoubleClick={() => {
+                          if (clickTimerRef.current) {
+                            clearTimeout(clickTimerRef.current);
+                            clickTimerRef.current = null;
+                          }
+                          setSelectedMeasurementId(m.id);
+                          setSelectedSegmentIndex(null);
+                          onZoomToFitMeasurement?.(m);
+                        }}
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.setData("measurement-id", m.id); e.dataTransfer.effectAllowed = "move"; }}
+                        data-testid={`measurement-item-${m.id}`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{m.label || "Untitled"}</span>
+                            <Badge variant="outline" className="text-xs">{m.type}</Badge>
+                            {m.source === "BIM" && (
+                              <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
+                            )}
+                          </div>
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </Button>
                         </div>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </Button>
+                        <p className="text-sm text-muted-foreground">
+                          {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
+                            ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
+                            ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+                            : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
+                            : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
+                        </p>
+                        {m.type === "SEGMENT" && (() => {
+                          const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                          let segProps: any[] = [];
+                          try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch {}
+                          if (points.length < 2 || !currentSheet?.scalePxPerFoot) return null;
+                          return (
+                            <Collapsible>
+                              <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1" data-testid={`button-expand-segments-${m.id}`}>
+                                <ChevronRight className="w-3 h-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                                <span>{points.length - 1} segments</span>
+                              </CollapsibleTrigger>
+                              <CollapsibleContent>
+                                <div className="mt-1 space-y-1 ml-2 border-l-2 border-muted pl-2">
+                                  {points.slice(0, -1).map((_: any, i: number) => {
+                                    const segLabel = segProps[i]?.label || `Seg ${i + 1}`;
+                                    const segColor = segProps[i]?.color || "#2563eb";
+                                    const p1 = points[i];
+                                    const p2 = points[i + 1];
+                                    const dx = p2.x - p1.x;
+                                    const dy = p2.y - p1.y;
+                                    const pxDist = Math.sqrt(dx * dx + dy * dy);
+                                    const segLenFt = pxDist / currentSheet.scalePxPerFoot;
+                                    return (
+                                      <div
+                                        key={i}
+                                        className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors ${selectedMeasurementId === m.id && selectedSegmentIndex === i ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted'}`}
+                                        onClick={(e) => { e.stopPropagation(); setSelectedMeasurementId(m.id); setSelectedSegmentIndex(i); }}
+                                        data-testid={`segment-child-${m.id}-${i}`}
+                                      >
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: segColor }} />
+                                        <span className="text-muted-foreground">{segLabel}:</span>
+                                        <span>{segLenFt.toFixed(2)} LF</span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </CollapsibleContent>
+                            </Collapsible>
+                          );
+                        })()}
+                        {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
+                        {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
-                          ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
-                          : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
-                          ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
-                          : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
-                          : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
-                          : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
-                      </p>
-                      {m.type === "SEGMENT" && (() => {
-                        const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
-                        let segProps: any[] = [];
-                        try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch {}
-                        if (points.length < 2 || !currentSheet?.scalePxPerFoot) return null;
-                        return (
-                          <Collapsible>
-                            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1" data-testid={`button-expand-segments-${m.id}`}>
-                              <ChevronRight className="w-3 h-3 transition-transform [[data-state=open]>&]:rotate-90" />
-                              <span>{points.length - 1} segments</span>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                              <div className="mt-1 space-y-1 ml-2 border-l-2 border-muted pl-2">
-                                {points.slice(0, -1).map((_: any, i: number) => {
-                                  const segLabel = segProps[i]?.label || `Seg ${i + 1}`;
-                                  const segColor = segProps[i]?.color || "#2563eb";
-                                  const p1 = points[i];
-                                  const p2 = points[i + 1];
-                                  const dx = p2.x - p1.x;
-                                  const dy = p2.y - p1.y;
-                                  const pxDist = Math.sqrt(dx * dx + dy * dy);
-                                  const segLenFt = pxDist / currentSheet.scalePxPerFoot;
-                                  return (
-                                    <div
-                                      key={i}
-                                      className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors ${selectedMeasurementId === m.id && selectedSegmentIndex === i ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted'}`}
-                                      onClick={(e) => { e.stopPropagation(); setSelectedMeasurementId(m.id); setSelectedSegmentIndex(i); }}
-                                      data-testid={`segment-child-${m.id}-${i}`}
-                                    >
-                                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: segColor }} />
-                                      <span className="text-muted-foreground">{segLabel}:</span>
-                                      <span>{segLenFt.toFixed(2)} LF</span>
-                                    </div>
-                                  );
-                                })}
+                    );
+
+                    const computeGroupTotals = (items: TakeoffMeasurement[]) => {
+                      let linear = 0, area = 0, volume = 0, count = 0, segment = 0;
+                      items.forEach(m => {
+                        if (m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") { const v = Number(m.computedLengthFt); linear += Number.isFinite(v) ? v : 0; }
+                        else if (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") { const v = Number((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2); area += Number.isFinite(v) ? v : 0; }
+                        else if (m.type === "VOLUME") { const v = Number(m.computedVolumeCy); volume += Number.isFinite(v) ? v : 0; }
+                        else if (m.type === "COUNT") { count += 1; }
+                        else if (m.type === "SEGMENT") { const v = Number(m.computedLengthFt); segment += Number.isFinite(v) ? v : 0; }
+                      });
+                      const totalCost = items.reduce((sum, m) => {
+                        const qty = Number((m as any).computedSurfaceAreaFt2 || m.computedLengthFt || m.computedAreaFt2 || (m.type === "COUNT" ? 1 : 0));
+                        return sum + (Number.isFinite(qty) ? qty : 0) * (Number((m as any).unitCost) || 0);
+                      }, 0);
+                      return { linear, area, volume, count, segment, totalCost };
+                    };
+
+                    return (
+                      <>
+                        {measurementGroups.map((group) => {
+                          const groupItems = grouped[group.id] || [];
+                          const isCollapsed = collapsedGroups.has(group.id);
+                          const totals = computeGroupTotals(groupItems);
+                          const allVisible = groupItems.every(m => m.visible !== false);
+                          return (
+                            <div key={group.id} className={`border rounded-md transition-colors ${dragOverGroupId === group.id ? 'bg-primary/10 border-primary' : ''}`} style={{ borderColor: dragOverGroupId === group.id ? undefined : group.color }} data-testid={`group-${group.id}`}
+                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverGroupId(group.id); }}
+                              onDragLeave={() => setDragOverGroupId(null)}
+                              onDrop={(e) => { e.preventDefault(); setDragOverGroupId(null); const mId = e.dataTransfer.getData("measurement-id"); if (mId) updateMeasurementMutation.mutate({ id: mId, groupId: group.id }); }}>
+                              <div
+                                className="flex items-center gap-1 p-2 cursor-pointer hover:bg-muted/50"
+                                onClick={() => setCollapsedGroups(prev => { const next = new Set(prev); if (next.has(group.id)) next.delete(group.id); else next.add(group.id); return next; })}
+                              >
+                                {isCollapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+                                <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: group.color }} />
+                                <span className="font-medium text-sm flex-1 truncate">{group.name}</span>
+                                <Badge variant="outline" className="text-[10px]">{groupItems.length}</Badge>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); toggleGroupVisibilityMutation?.mutate({ groupId: group.id, visible: !allVisible }); }} data-testid={`button-toggle-group-visibility-${group.id}`}>
+                                  {allVisible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); exportGroupCSV(group.name, groupItems); }} data-testid={`button-export-group-${group.id}`} title="Export group as CSV">
+                                  <Download className="w-3 h-3" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setDeleteGroupConfirm(group.id); }} data-testid={`button-delete-group-${group.id}`}>
+                                  <Trash2 className="w-3 h-3 text-destructive" />
+                                </Button>
                               </div>
-                            </CollapsibleContent>
-                          </Collapsible>
-                        );
-                      })()}
-                      {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
-                      {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
-                    </div>
-                  ))}
+
+                              {deleteGroupConfirm === group.id && (
+                                <div className="px-2 pb-2 flex items-center gap-2">
+                                  <span className="text-xs text-destructive">Delete group?</span>
+                                  <Button size="sm" variant="destructive" className="h-6 text-xs px-2" onClick={() => { deleteGroupMutation?.mutate(group.id); setDeleteGroupConfirm(null); }} data-testid={`button-confirm-delete-group-${group.id}`}>Yes</Button>
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2" onClick={() => setDeleteGroupConfirm(null)}>No</Button>
+                                </div>
+                              )}
+
+                              {!isCollapsed && (
+                                <div className="px-2 pb-2 space-y-1">
+                                  {groupItems.length > 0 && (
+                                    <div className="text-[10px] text-muted-foreground flex flex-wrap gap-2 mb-1">
+                                      {totals.linear > 0 && <span>{totals.linear.toFixed(1)} LF</span>}
+                                      {totals.area > 0 && <span>{totals.area.toFixed(1)} SF</span>}
+                                      {totals.volume > 0 && <span>{totals.volume.toFixed(1)} CY</span>}
+                                      {totals.count > 0 && <span>{totals.count} ct</span>}
+                                      {totals.segment > 0 && <span>{totals.segment.toFixed(1)} LF (seg)</span>}
+                                      {totals.totalCost > 0 && <span className="text-green-500">${totals.totalCost.toFixed(2)}</span>}
+                                    </div>
+                                  )}
+                                  {groupItems.map(renderMeasurementItem)}
+                                  {groupItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No measurements</p>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {(ungrouped.length > 0 || measurementGroups.length > 0) && (
+                          <div className={`space-y-1 ${measurementGroups.length > 0 ? 'border rounded-md p-2' : ''} ${dragOverGroupId === "__ungrouped__" ? 'bg-primary/10 border-primary' : ''}`}
+                            onDragOver={(e) => { if (measurementGroups.length > 0) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverGroupId("__ungrouped__"); } }}
+                            onDragLeave={() => setDragOverGroupId(null)}
+                            onDrop={(e) => { e.preventDefault(); setDragOverGroupId(null); const mId = e.dataTransfer.getData("measurement-id"); if (mId) updateMeasurementMutation.mutate({ id: mId, groupId: null }); }}
+                          >
+                            {measurementGroups.length > 0 && (
+                              <div className="flex items-center gap-2 py-1">
+                                <span className="text-xs font-medium text-muted-foreground">Ungrouped</span>
+                                <Badge variant="outline" className="text-[10px]">{ungrouped.length}</Badge>
+                              </div>
+                            )}
+                            {ungrouped.map(renderMeasurementItem)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {(m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") && m.computedLengthFt
+                            ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
+                            ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
+                            : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+                            : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
+                        </p>
+                        {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
+                        {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
+                      </div>
                 </div>
               )}
             </CardContent>
@@ -792,6 +1007,98 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       </>
                     );
                   })()}
+                  <Separator />
+                  <div className="space-y-2">
+                    <Label className="text-xs">Line Style</Label>
+                    <Select
+                      value={selM.lineStyle || "solid"}
+                      onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, lineStyle: val })}
+                      data-testid="select-line-style"
+                    >
+                      <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-line-style">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent container={workspaceRef.current}>
+                        <SelectItem value="solid">
+                          <div className="flex items-center gap-2">
+                            <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" /></svg>
+                            <span>Solid</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="dashed">
+                          <div className="flex items-center gap-2">
+                            <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray="6 3" /></svg>
+                            <span>Dashed</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="dotted">
+                          <div className="flex items-center gap-2">
+                            <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray="2 3" /></svg>
+                            <span>Dotted</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="dash-dot">
+                          <div className="flex items-center gap-2">
+                            <svg width="40" height="8"><line x1="0" y1="4" x2="40" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray="8 3 2 3" /></svg>
+                            <span>Dash-Dot</span>
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="double">
+                          <div className="flex items-center gap-2">
+                            <svg width="40" height="10"><line x1="0" y1="3" x2="40" y2="3" stroke="currentColor" strokeWidth="1.5" /><line x1="0" y1="7" x2="40" y2="7" stroke="currentColor" strokeWidth="1.5" /></svg>
+                            <span>Double</span>
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs">Line Width</Label>
+                    <Select
+                      value={String(selM.lineWidth || 3)}
+                      onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, lineWidth: parseInt(val) })}
+                      data-testid="select-line-width"
+                    >
+                      <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-line-width">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent container={workspaceRef.current}>
+                        {[1, 2, 3, 4, 5].map(w => (
+                          <SelectItem key={w} value={String(w)}>
+                            <div className="flex items-center gap-2">
+                              <svg width="30" height="10"><line x1="0" y1="5" x2="30" y2="5" stroke="currentColor" strokeWidth={w} /></svg>
+                              <span>{w}px</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {measurementGroups.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-xs">Group</Label>
+                      <Select
+                        value={selM.groupId || "__none__"}
+                        onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, groupId: val === "__none__" ? null : val })}
+                        data-testid="select-measurement-group"
+                      >
+                        <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-measurement-group">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent container={workspaceRef.current}>
+                          <SelectItem value="__none__">Ungrouped</SelectItem>
+                          {measurementGroups.map(g => (
+                            <SelectItem key={g.id} value={g.id}>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: g.color }} />
+                                <span>{g.name}</span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                   <Separator />
                   <CostCodeField measurementId={selM.id} currentValue={(selM as any).costCodeId || ""} onCommit={(val) => { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); }} />
                   <div className="space-y-2">
