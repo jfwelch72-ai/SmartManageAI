@@ -8,8 +8,20 @@ import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { verifyOrgAccess } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
 import { createArcSegment } from "@shared/utils/geometry";
+import { z } from "zod";
 
 const router = Router();
+
+function safeParsePoints(raw: any): any[] | null {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 // ========================================
 // Routes from bidTakeoffRoutes.ts
@@ -164,19 +176,27 @@ router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADM
   }
 });
 
-router.patch("/api/bids/:bidId/takeoff/sheets/reorder", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/bids/:bidId/takeoff/sheets/reorder", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
 
     const { order } = req.body;
-    if (!Array.isArray(order)) return res.status(400).json({ error: "Order array is required" });
+    if (!Array.isArray(order) || order.length === 0) return res.status(400).json({ error: "Order array is required" });
 
     for (const item of order) {
-      await db.update(takeoffSheets)
-        .set({ sheetIndex: item.sheetIndex })
-        .where(and(eq(takeoffSheets.id, item.id), eq(takeoffSheets.bidId, bid.id)));
+      if (typeof item.id !== "string" || typeof item.sheetIndex !== "number") {
+        return res.status(400).json({ error: "Each item must have id (string) and sheetIndex (number)" });
+      }
     }
+
+    await db.transaction(async (tx) => {
+      for (const item of order) {
+        await tx.update(takeoffSheets)
+          .set({ sheetIndex: item.sheetIndex })
+          .where(and(eq(takeoffSheets.id, item.id), eq(takeoffSheets.bidId, bid.id)));
+      }
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -1392,7 +1412,7 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
 
     const parsedMeasurements = measurements.map(m => ({
       ...m,
-      points: JSON.parse(m.points),
+      points: safeParsePoints(m.points) || [],
     }));
 
     res.json(parsedMeasurements);
@@ -1439,7 +1459,7 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
 
     const parsedMeasurements = measurements.map(m => ({
       ...m,
-      points: JSON.parse(m.points),
+      points: safeParsePoints(m.points) || [],
     }));
 
     res.json(parsedMeasurements);
@@ -1461,10 +1481,9 @@ router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req:
       .where(eq(takeoffMeasurements.sheetId, sheetId))
       .orderBy(takeoffMeasurements.createdAt);
 
-    // Parse points JSON string to array for frontend
     const parsedMeasurements = measurements.map(m => ({
       ...m,
-      points: JSON.parse(m.points),
+      points: safeParsePoints(m.points) || [],
     }));
 
     res.json(parsedMeasurements);
@@ -1480,7 +1499,9 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
     const { sheetId } = req.params;
     const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
-    // SECURITY: Sanitize text inputs for data integrity
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
     const sanitizedBody = {
       ...req.body,
       label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
@@ -1510,7 +1531,16 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
     const { id } = req.params;
     const { takeoffMeasurements, takeoffSheets, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
-    // SECURITY: Sanitize text inputs for data integrity
+    const [existingMeasurement] = await db
+      .select({ sheetId: takeoffMeasurements.sheetId })
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, id))
+      .limit(1);
+    if (!existingMeasurement) { res.status(404).json({ error: "Measurement not found" }); return; }
+
+    const access = await verifySheetAccess(existingMeasurement.sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
     const sanitizedBody = {
       ...req.body,
       label: req.body.label ? sanitizeShortText(req.body.label) : undefined,
@@ -1518,42 +1548,31 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
 
     const validated = insertTakeoffMeasurementSchema.partial().parse(sanitizedBody);
 
-    // PHASE 2.3a: If updating points, recompute arc length if applicable
     let finalValues = { ...validated };
     if (validated.points && validated.type === "LINEAR") {
-      // Get the sheet's scale to compute arc length
-      const measurement = await db
-        .select({ sheetId: takeoffMeasurements.sheetId })
-        .from(takeoffMeasurements)
-        .where(eq(takeoffMeasurements.id, id))
+      const sheet = await db
+        .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+        .from(takeoffSheets)
+        .where(eq(takeoffSheets.id, existingMeasurement.sheetId))
         .limit(1);
 
-      if (measurement && measurement.length > 0) {
-        const sheet = await db
-          .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
-          .from(takeoffSheets)
-          .where(eq(takeoffSheets.id, measurement[0].sheetId))
-          .limit(1);
-
-        if (sheet && sheet.length > 0 && sheet[0].scalePxPerFoot) {
-          const points = typeof validated.points === 'string' ? JSON.parse(validated.points) : validated.points;
-          
-          // If 3 points, this is an arc - compute arc length
-          if (points.length === 3) {
-            try {
-              const [start, middle, end] = points;
-              const arcSegment = createArcSegment(start, end, middle, sheet[0].scalePxPerFoot);
-              
-              if (arcSegment) {
-                finalValues = {
-                  ...validated,
-                  computedLengthFt: arcSegment.arcLength,
-                };
-                console.log(`[Arc Measurement Update] Recomputed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
-              }
-            } catch (error) {
-              console.error("Error computing arc length during update:", error);
+      if (sheet && sheet.length > 0 && sheet[0].scalePxPerFoot) {
+        const points = safeParsePoints(validated.points);
+        
+        if (points && points.length === 3) {
+          try {
+            const [start, middle, end] = points;
+            const arcSegment = createArcSegment(start, end, middle, sheet[0].scalePxPerFoot);
+            
+            if (arcSegment) {
+              finalValues = {
+                ...validated,
+                computedLengthFt: arcSegment.arcLength,
+              };
+              console.log(`[Arc Measurement Update] Recomputed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
             }
+          } catch (error) {
+            console.error("Error computing arc length during update:", error);
           }
         }
       }
@@ -1564,11 +1583,6 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       .set({ ...finalValues, updatedAt: new Date() })
       .where(eq(takeoffMeasurements.id, id))
       .returning();
-
-    if (!updated) {
-      res.status(404).json({ error: "Measurement not found" });
-      return;
-    }
 
     res.json(updated);
   } catch (error: any) {
@@ -1643,10 +1657,9 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
     // PHASE 2.3a: Compute arc length for 3-point LINEAR measurements (arcs)
     let finalValues = { ...validated };
     if (validated.type === "LINEAR" && sheetWithProject[0].scalePxPerFoot) {
-      const points = JSON.parse(validated.points);
+      const points = safeParsePoints(validated.points);
       
-      // If 3 points, this is an arc - compute arc length
-      if (points.length === 3) {
+      if (points && points.length === 3) {
         try {
           const [start, middle, end] = points;
           const arcSegment = createArcSegment(start, end, middle, sheetWithProject[0].scalePxPerFoot);
@@ -1686,15 +1699,17 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
     const { id } = req.params;
     const { takeoffMeasurements } = await import("@shared/schema");
 
-    const [deleted] = await db
-      .delete(takeoffMeasurements)
+    const [existing] = await db
+      .select({ sheetId: takeoffMeasurements.sheetId })
+      .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.id, id))
-      .returning();
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Measurement not found" }); return; }
 
-    if (!deleted) {
-      res.status(404).json({ error: "Measurement not found" });
-      return;
-    }
+    const access = await verifySheetAccess(existing.sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
+    await db.delete(takeoffMeasurements).where(eq(takeoffMeasurements.id, id));
 
     res.json({ success: true });
   } catch (error) {
@@ -1812,23 +1827,27 @@ router.delete("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, r
 });
 
 // Reorder groups
+const groupReorderItemSchema = z.object({ id: z.string().min(1), sortOrder: z.number().int().min(0) });
+const groupReorderSchema = z.object({ order: z.array(groupReorderItemSchema).min(1) });
 router.patch("/api/takeoff/sheets/:sheetId/groups/reorder", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { sheetId } = req.params;
     const access = await verifySheetAccess(sheetId, req.user!);
     if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
 
-    const { takeoffMeasurementGroups } = await import("@shared/schema");
-    const { order } = req.body;
-    if (!Array.isArray(order)) { res.status(400).json({ error: "order must be an array" }); return; }
+    const parsed = groupReorderSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "order must be a non-empty array of { id: string, sortOrder: number }" }); return; }
+    const { order } = parsed.data;
 
-    for (const item of order) {
-      if (typeof item.id === "string" && typeof item.sortOrder === "number") {
-        await db.update(takeoffMeasurementGroups)
+    const { takeoffMeasurementGroups } = await import("@shared/schema");
+
+    await db.transaction(async (tx) => {
+      for (const item of order) {
+        await tx.update(takeoffMeasurementGroups)
           .set({ sortOrder: item.sortOrder, updatedAt: new Date() })
           .where(and(eq(takeoffMeasurementGroups.id, item.id), eq(takeoffMeasurementGroups.sheetId, sheetId)));
       }
-    }
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -2004,101 +2023,98 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
 
     const skipCalibrated = req.body.skipCalibrated !== false;
 
+    const allowedSheetIds: string[] = [];
+    for (const sheetId of sheetIds) {
+      const access = await verifySheetAccess(sheetId, req.user!);
+      if (access.allowed) allowedSheetIds.push(sheetId);
+    }
+
     const results: any[] = [];
     let updatedCount = 0;
     let skippedCount = 0;
 
-    for (const sheetId of sheetIds) {
-      const access = await verifySheetAccess(sheetId, req.user!);
-      if (!access.allowed) continue;
-
-      if (skipCalibrated) {
-        const [existing] = await db
-          .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
-          .from(takeoffSheets)
-          .where(eq(takeoffSheets.id, sheetId))
-          .limit(1);
-        if (existing?.scalePxPerFoot) {
-          skippedCount++;
-          continue;
-        }
-      }
-
-      const [updated] = await db
-        .update(takeoffSheets)
-        .set({
-          scalePxPerFoot,
-          units: units || "ft",
-          updatedAt: new Date(),
-        })
-        .where(eq(takeoffSheets.id, sheetId))
-        .returning();
-
-      if (updated) {
-        updatedCount++;
-        results.push(updated);
-
-        const measurements = await db
-          .select()
-          .from(takeoffMeasurements)
-          .where(eq(takeoffMeasurements.sheetId, sheetId));
-
-        for (const measurement of measurements) {
-          if (!measurement.points) continue;
-
-          let points: Array<{ x: number; y: number }>;
-          try {
-            points = typeof measurement.points === 'string'
-              ? JSON.parse(measurement.points)
-              : measurement.points as any;
-          } catch {
+    await db.transaction(async (tx) => {
+      for (const sheetId of allowedSheetIds) {
+        if (skipCalibrated) {
+          const [existing] = await tx
+            .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+            .from(takeoffSheets)
+            .where(eq(takeoffSheets.id, sheetId))
+            .limit(1);
+          if (existing?.scalePxPerFoot) {
+            skippedCount++;
             continue;
           }
+        }
 
-          if (!points || points.length === 0) continue;
+        const [updated] = await tx
+          .update(takeoffSheets)
+          .set({
+            scalePxPerFoot,
+            units: units || "ft",
+            updatedAt: new Date(),
+          })
+          .where(eq(takeoffSheets.id, sheetId))
+          .returning();
 
-          const updates: any = {};
-          try {
-            switch (measurement.type) {
-              case "LINEAR":
-                if (points.length >= 2) {
-                  updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
-                }
-                break;
-              case "AREA":
-                if (points.length >= 3) {
-                  updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
-                }
-                break;
-              case "VOLUME":
-                if (points.length >= 3 && measurement.depthFeet) {
-                  const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
-                  updates.computedAreaFt2 = areaFt2;
-                  updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
-                }
-                break;
-              case "SEGMENT":
-                if (points.length >= 2) {
-                  let totalLen = 0;
-                  for (let si = 0; si < points.length - 1; si++) {
-                    totalLen += computeDistanceInFeet([points[si], points[si + 1]], scalePxPerFoot);
+        if (updated) {
+          updatedCount++;
+          results.push(updated);
+
+          const measurements = await tx
+            .select()
+            .from(takeoffMeasurements)
+            .where(eq(takeoffMeasurements.sheetId, sheetId));
+
+          for (const measurement of measurements) {
+            if (!measurement.points) continue;
+
+            const points = safeParsePoints(measurement.points);
+            if (!points || points.length === 0) continue;
+
+            const updates: any = {};
+            try {
+              switch (measurement.type) {
+                case "LINEAR":
+                  if (points.length >= 2) {
+                    updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
                   }
-                  updates.computedLengthFt = totalLen;
-                }
-                break;
+                  break;
+                case "AREA":
+                  if (points.length >= 3) {
+                    updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                  }
+                  break;
+                case "VOLUME":
+                  if (points.length >= 3 && measurement.depthFeet) {
+                    const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                    updates.computedAreaFt2 = areaFt2;
+                    updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+                  }
+                  break;
+                case "SEGMENT":
+                  if (points.length >= 2) {
+                    let totalLen = 0;
+                    for (let si = 0; si < points.length - 1; si++) {
+                      totalLen += computeDistanceInFeet([points[si], points[si + 1]], scalePxPerFoot);
+                    }
+                    updates.computedLengthFt = totalLen;
+                  }
+                  break;
+              }
+              if (Object.keys(updates).length > 0) {
+                await tx
+                  .update(takeoffMeasurements)
+                  .set({ ...updates, updatedAt: new Date() })
+                  .where(eq(takeoffMeasurements.id, measurement.id));
+              }
+            } catch (error) {
+              console.error(`Error recalculating measurement ${measurement.id}:`, error);
             }
-            if (Object.keys(updates).length > 0) {
-              await db
-                .update(takeoffMeasurements)
-                .set({ ...updates, updatedAt: new Date() })
-                .where(eq(takeoffMeasurements.id, measurement.id));
-            }
-          } catch (error) {
-            console.error(`Error recalculating measurement ${measurement.id}:`, error);
           }
         }
       }
-    }
+    });
 
     console.log(`Batch calibration: updated ${updatedCount}/${sheetIds.length} sheets, skipped ${skippedCount} already calibrated`);
     res.json({ updated: updatedCount, skipped: skippedCount, sheets: results });
@@ -2225,9 +2241,25 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
 router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
+    const { quantityCategories, insertQuantityCategorySchema, takeoffSheets, projects, bids } = await import("@shared/schema");
 
-    // SECURITY: Sanitize text inputs for data integrity
+    const [existing] = await db.select().from(quantityCategories).where(eq(quantityCategories.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Category not found" }); return; }
+
+    if (existing.projectId) {
+      const [project] = await db.select({ id: projects.id }).from(projects)
+        .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!project) { res.status(403).json({ error: "Access denied" }); return; }
+    } else if (existing.bidId) {
+      const [bid] = await db.select({ id: bids.id }).from(bids)
+        .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
+    } else {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+
     const sanitizedBody = {
       ...req.body,
       name: req.body.name ? sanitizeShortText(req.body.name) : undefined,
@@ -2263,16 +2295,18 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
 // ====================
 
 // Rename a sheet
+const renameSchema = z.object({ sheetName: z.string().min(1).max(200) });
 router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { sheetName } = req.body;
     const { takeoffSheets } = await import("@shared/schema");
 
-    if (!sheetName || typeof sheetName !== "string" || sheetName.trim().length === 0) {
-      res.status(400).json({ error: "sheetName is required" });
+    const parsed = renameSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "sheetName is required (1-200 characters)" });
       return;
     }
+    const { sheetName } = parsed.data;
 
     const access = await verifySheetAccess(id, req.user!);
     if (!access.allowed) {
@@ -2293,16 +2327,18 @@ router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequ
   }
 });
 
+const folderGroupSchema = z.object({ folderGroup: z.string().min(1).max(200) });
 router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { folderGroup } = req.body;
     const { takeoffSheets } = await import("@shared/schema");
 
-    if (!folderGroup || typeof folderGroup !== "string" || folderGroup.trim().length === 0) {
-      res.status(400).json({ error: "folderGroup is required" });
+    const parsed = folderGroupSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "folderGroup is required (1-200 characters)" });
       return;
     }
+    const folderGroup = sanitizeShortText(parsed.data.folderGroup.trim());
 
     const access = await verifySheetAccess(id, req.user!);
     if (!access.allowed) {
@@ -2312,7 +2348,7 @@ router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: Au
 
     const [updated] = await db
       .update(takeoffSheets)
-      .set({ folderGroup: folderGroup.trim(), updatedAt: new Date() })
+      .set({ folderGroup, updatedAt: new Date() })
       .where(eq(takeoffSheets.id, id))
       .returning();
 
@@ -2324,16 +2360,19 @@ router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: Au
 });
 
 // Reorder sheets (batch update sheetIndex)
+const reorderItemSchema = z.object({ id: z.string().min(1), sheetIndex: z.number().int().min(0) });
+const reorderSchema = z.object({ order: z.array(reorderItemSchema).min(1) });
 router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { projectId } = req.params;
-    const { order } = req.body;
     const { takeoffSheets, projects } = await import("@shared/schema");
 
-    if (!Array.isArray(order) || order.length === 0) {
-      res.status(400).json({ error: "order must be a non-empty array of { id, sheetIndex }" });
+    const parsed = reorderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "order must be a non-empty array of { id: string, sheetIndex: number }" });
       return;
     }
+    const { order } = parsed.data;
 
     const [project] = await db
       .select({ id: projects.id })
@@ -2362,13 +2401,14 @@ router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, asy
     }
 
     const now = new Date();
-    for (const item of order) {
-      if (!item.id || typeof item.sheetIndex !== "number") continue;
-      await db
-        .update(takeoffSheets)
-        .set({ sheetIndex: item.sheetIndex, updatedAt: now })
-        .where(and(eq(takeoffSheets.id, item.id), eq(takeoffSheets.projectId, projectId)));
-    }
+    await db.transaction(async (tx) => {
+      for (const item of order) {
+        await tx
+          .update(takeoffSheets)
+          .set({ sheetIndex: item.sheetIndex, updatedAt: now })
+          .where(and(eq(takeoffSheets.id, item.id), eq(takeoffSheets.projectId, projectId)));
+      }
+    });
 
     const sheets = await db
       .select()
@@ -2497,17 +2537,26 @@ router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, r
 router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { quantityCategories } = await import("@shared/schema");
+    const { quantityCategories, projects, bids } = await import("@shared/schema");
 
-    const [deleted] = await db
-      .delete(quantityCategories)
-      .where(eq(quantityCategories.id, id))
-      .returning();
+    const [existing] = await db.select().from(quantityCategories).where(eq(quantityCategories.id, id)).limit(1);
+    if (!existing) { res.status(404).json({ error: "Category not found" }); return; }
 
-    if (!deleted) {
-      res.status(404).json({ error: "Category not found" });
-      return;
+    if (existing.projectId) {
+      const [project] = await db.select({ id: projects.id }).from(projects)
+        .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!project) { res.status(403).json({ error: "Access denied" }); return; }
+    } else if (existing.bidId) {
+      const [bid] = await db.select({ id: bids.id }).from(bids)
+        .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
+    } else {
+      res.status(403).json({ error: "Access denied" }); return;
     }
+
+    await db.delete(quantityCategories).where(eq(quantityCategories.id, id));
 
     res.json({ success: true });
   } catch (error) {
@@ -2556,7 +2605,7 @@ router.get("/api/takeoff/sheets/:sheetId/markups", requireAuth, async (req: Auth
 
     const parsed = markups.map(m => ({
       ...m,
-      points: JSON.parse(m.points),
+      points: safeParsePoints(m.points) || [],
     }));
 
     res.json(parsed);
@@ -2590,7 +2639,7 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
 
     res.status(201).json({
       ...markup,
-      points: JSON.parse(markup.points),
+      points: safeParsePoints(markup.points) || [],
       authorName: req.user!.name,
     });
   } catch (error: any) {

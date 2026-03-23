@@ -153,9 +153,16 @@ app.use((req, res, next) => {
   // this fix was deployed.
   await backfillMissingFeatureFlags();
 
+  let portRetryCount = 0;
+  const MAX_PORT_RETRIES = 3;
   server.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`Port ${port} is in use. Attempting to free it...`);
+      portRetryCount++;
+      if (portRetryCount > MAX_PORT_RETRIES) {
+        console.error(`Port ${port} is still in use after ${MAX_PORT_RETRIES} attempts. Exiting.`);
+        process.exit(1);
+      }
+      console.error(`Port ${port} is in use. Retry ${portRetryCount}/${MAX_PORT_RETRIES}...`);
       try {
         execSync(`fuser -k ${port}/tcp`, { stdio: "ignore" });
       } catch (_) { /* ignore */ }
