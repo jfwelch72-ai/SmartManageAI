@@ -3,7 +3,7 @@ import { db } from "./db";
 import { portalChatThreads, portalChatMessages } from "@shared/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requirePortalAuth, type PortalRequest } from "./portalAuth";
-import { notifyChatTeamMembers } from "./portalChatRoutes";
+import { notifyChatTeamMembers } from "./portalRoutes";
 
 const router = Router();
 

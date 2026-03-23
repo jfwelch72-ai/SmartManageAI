@@ -4,7 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { users, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
-import { getRoleDefaults, mergePermissions } from "./dashboardLayoutRoutes";
+import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
 
 // Enforce SESSION_SECRET - fail fast if not set
 if (!process.env.SESSION_SECRET) {

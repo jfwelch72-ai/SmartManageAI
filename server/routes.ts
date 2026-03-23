@@ -67,76 +67,53 @@ import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from ".
 import timeClockRoutes from "./timeClockRoutes";
 import overtimeRoutes from "./overtimeRoutes";
 import timeEntryRoutes from "./timeEntryRoutes";
-import payrollNotificationRoutes from "./payrollNotificationRoutes";
-import payrollSettingsRoutes from "./payrollSettingsRoutes";
-import payrollManagementRoutes from "./payrollManagementRoutes";
+import payrollRoutes from "./payrollRoutes";
 import changeOrderRoutes from "./changeOrderRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
-import aiRoutes from "./aiRoutes";
-import aiOnboardingRoutes from "./aiOnboardingRoutes";
-import aiScopeRoutes from "./aiScopeRoutes";
-import aiInsightsRoutes from "./aiInsightsRoutes";
+import aiCoreRoutes from "./aiCoreRoutes";
+import aiDocumentRoutes from "./aiDocumentRoutes";
 import notesRoutes from "./notesRoutes";
-import aiNotesRoutes from "./aiNotesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
-import { registerTMTicketRoutes } from "./tmTicketRoutes";
-import platformAdminRoutes from "./platformAdminRoutes";
+import { registerTMTicketRoutes } from "./tmRoutes";
+import platformRoutes from "./platformRoutes";
+import platformBillingRoutes from "./platformBillingRoutes";
 import calculatorRoutes from "./calculatorRoutes";
-import aiAssistantRoutes from "./aiAssistantRoutes";
-import aiFeatureRoutes from "./aiFeatureRoutes";
 import organizationDocumentRoutes from "./organizationDocumentRoutes";
-import aiBidDocumentRoutes from "./aiBidDocumentRoutes";
-import aiContractDocumentRoutes from "./aiContractDocumentRoutes";
 import sovRoutes from "./sovRoutes";
-import sovLineItemRoutes from "./sovLineItemRoutes";
-import sovPaymentRoutes from "./sovPaymentRoutes";
-import sovBillingRoutes from "./sovBillingRoutes";
 import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
-import websiteBuilderRoutes from "./websiteBuilderRoutes";
-import socialAccountRoutes from "./socialAccountRoutes";
-import socialPostRoutes from "./socialPostRoutes";
-import socialAnalyticsRoutes from "./socialAnalyticsRoutes";
-import socialOAuthRoutes from "./socialOAuthRoutes";
+import websiteRoutes from "./websiteRoutes";
+import websiteAiRoutes from "./websiteAiRoutes";
+import socialRoutes from "./socialRoutes";
 import laborRateRoutes from "./laborRateRoutes";
 import procurementModuleRoutes from "./procurementModuleRoutes";
-import emailAccountRoutes from "./emailAccountRoutes";
+import emailRoutes from "./emailRoutes";
 import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
-import emailAiRoutes from "./emailAiRoutes";
-import emailAnalysisRoutes from "./emailAnalysisRoutes";
-import emailTaskRoutes from "./emailTaskRoutes";
-import dashboardCustomizationRoutes from "./dashboardCustomizationRoutes";
+import dashboardRoutes from "./dashboardRoutes";
 import libraryRoutes from "./libraryRoutes";
 import opsRoutes from "./opsRoutes";
 import hustlerRoutes from "./hustlerRoutes";
 import bidNetworkRoutes from "./bidNetworkRoutes";
-import marketplaceContractorRoutes from "./marketplaceContractorRoutes";
-import weatherRoutes from "./weatherRoutes";
-import vendorPricebookRoutes from "./vendorPricebookRoutes";
-import delayClaimsRoutes from "./delayClaimsRoutes";
-import fieldProductivityRoutes from "./fieldProductivityRoutes";
 import marketplaceRoutes from "./marketplaceRoutes";
-import aiScheduleRoutes from "./aiScheduleRoutes";
+import weatherRoutes from "./weatherRoutes";
+import vendorRoutes from "./vendorRoutes";
+import fieldProductivityRoutes from "./fieldProductivityRoutes";
 import rfiRoutes from "./rfiRoutes";
 import transmittalRoutes from "./transmittalRoutes";
 import submittalRoutes from "./submittalRoutes";
-import submittalWorkflowRoutes from "./submittalWorkflowRoutes";
 import portalRoutes from "./portalRoutes";
-import portalChatRoutes from "./portalChatRoutes";
 import subChatRoutes from "./subChatRoutes";
 import clientChatRoutes from "./clientChatRoutes";
 import integrationRoutes from "./integrationRoutes";
 import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
-import aiGovernanceRoutes from "./aiGovernanceRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
 import addendaRoutes from "./addendaRoutes";
-import projectHealthRoutes from "./projectHealthRoutes";
 import devSeedEnterpriseRoutes from "./devSeedEnterprise";
 import featureFlagRoutes from "./featureFlagRoutes";
 import ssoRoutes from "./ssoRoutes";
@@ -151,20 +128,13 @@ import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter, verifyOrgAccess, verifyUserOrgAccess, isSuperAdmin } from "./orgFilter";
 import bidRoutes2 from "./bidRoutes2";
-import bidTakeoffRoutes from "./bidTakeoffRoutes";
+import takeoffRoutes from "./takeoffRoutes";
 import bimRoutes from "./bimRoutes";
-import dashboardUserRoutes from "./dashboardUserRoutes";
-import projectCoreRoutes from "./projectCoreRoutes";
-import scopeItemRoutes from "./scopeItemRoutes";
+import projectRoutes from "./projectRoutes";
+import scopeRoutes from "./scopeRoutes";
 import materialTrackingRoutes from "./materialTrackingRoutes";
 import productionRateRoutes from "./productionRateRoutes";
-import crmVendorRoutes from "./crmVendorRoutes";
-import crmContactRoutes from "./crmContactRoutes";
-import crmPipelineRoutes from "./crmPipelineRoutes";
-import vendorEnrollmentRoutes from "./vendorEnrollmentRoutes";
-import vendorPricingRoutes from "./vendorPricingRoutes";
-import scopeConfigRoutes from "./scopeConfigRoutes";
-import projectContentRoutes from "./projectContentRoutes";
+import crmRoutes from "./crmRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
 import notificationRoutes2 from "./notificationRoutes2";
 import notificationPreferencesRoutes from "./notificationPreferencesRoutes";
@@ -173,13 +143,9 @@ import { insertNotification } from "./services/notificationService";
 import auditBillingStorageRoutes from "./auditBillingStorageRoutes";
 import crewRoutes2 from "./crewRoutes2";
 import skillRoutes from "./skillRoutes";
-import takeoffSubRoutes from "./takeoffSubRoutes";
-import takeoffIssueRoutes from "./takeoffIssueRoutes";
 import assemblyRoutes from "./assemblyRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
-import equipmentMgmtRoutes from "./equipmentMgmtRoutes";
-import rentalEquipmentRoutes from "./rentalEquipmentRoutes";
-import equipmentPlanRoutes from "./equipmentPlanRoutes";
+import equipmentRoutes from "./equipmentRoutes";
 import mobileSyncRoutes from "./mobileSyncRoutes";
 import clientPortalRoutes from "./clientPortalRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
@@ -188,8 +154,6 @@ import safetyTrainingRoutes from "./safetyTrainingRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
 import hiringRoutes from "./hiringRoutes";
-import marketplaceEquipmentRoutes from "./marketplaceEquipmentRoutes";
-import marketplaceCrewRoutes from "./marketplaceCrewRoutes";
 import overheadRoutes from "./overheadRoutes";
 import modifierRoutes from "./modifierRoutes";
 
@@ -212,14 +176,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register time entry approval routes
   app.use(timeEntryRoutes);
 
-  // Register payroll notification routes
-  app.use(payrollNotificationRoutes);
-  
-  // Register payroll settings routes (work week config, weekly reports)
-  app.use(payrollSettingsRoutes);
-
-  // Register payroll management routes (pay runs, workers, time entries)
-  app.use(payrollManagementRoutes);
+  // Register payroll routes
+  app.use(payrollRoutes);
 
   // Register change order state machine routes
   app.use("/api/change-orders", changeOrderRoutes);
@@ -227,15 +185,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register delay tracking routes
   app.use("/api", delayRoutes);
 
-  // Register delay claims routes
-  app.use("/api/delay-claims", delayClaimsRoutes);
   app.use("/api/field-productivity", fieldProductivityRoutes);
 
-  // Register marketplace routes (vendor scores, material prices, crew marketplace)
+  // Register marketplace routes (consolidated)
   app.use("/api/marketplace", marketplaceRoutes);
-  // Register crew marketplace routes at /api/marketplace/crews
-  app.use("/api/marketplace/crews", marketplaceCrewRoutes);
-  app.use(aiScheduleRoutes);
 
   // Register inspection scheduling routes
   app.use("/api", inspectionRoutes);
@@ -244,26 +197,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", punchListRoutes);
   app.use("/api", warrantyRoutes);
 
-  // Register AI PM + CFO routes
-  app.use("/api", aiRoutes);
+  // Register AI core routes (analysis, features, governance, onboarding)
+  app.use("/api", aiCoreRoutes);
 
-  // Register AI Onboarding & Walkthrough routes
-  app.use("/api", aiOnboardingRoutes);
-
-  // Register AI Trade Discovery & Scope Prediction routes
-  app.use("/api", aiScopeRoutes);
-
-  // Register AI Insights routes
-  app.use("/api", aiInsightsRoutes);
+  // Register AI document routes (bids, contracts, notes, scope, insights, schedule, assistant)
+  app.use("/api", aiDocumentRoutes);
 
   // Register onboarding library routes (read-only reference data)
   app.use(onboardingLibraryRoutes);
 
   // Register daily notes routes
   app.use("/api", notesRoutes);
-
-  // Register AI notes analysis routes
-  app.use("/api/ai-notes", aiNotesRoutes);
 
   // Register task management routes
   app.use(taskRoutes);
@@ -274,34 +218,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register T&M ticket routes
   registerTMTicketRoutes(app);
 
-  // Register platform admin routes (SUPER_ADMIN only)
-  app.use("/api", platformAdminRoutes);
+  // Register platform routes (admin, org, user)
+  app.use("/api", platformRoutes);
+  app.use("/api", platformBillingRoutes);
 
   // Register material calculator routes
   app.use("/api/calculators", calculatorRoutes);
 
-  // Register AI Assistant routes (SOW and UOM management)
-  app.use("/api/ai-assistant", aiAssistantRoutes);
-
-  // Register AI Feature routes (7 major AI-enhanced features)
-  app.use("/api/ai-features", aiFeatureRoutes);
-
   // Register organization document routes
   app.use("/api", organizationDocumentRoutes);
 
-  // Register AI bid document analysis routes
-  app.use("/api", aiBidDocumentRoutes);
-
-  // Register AI contract/award document analysis routes
-  app.use("/api", aiContractDocumentRoutes);
-
-  // Register Schedule of Values (SOV) routes
-  // Payment/lien-waiver/billing routes must be registered BEFORE core SOV routes
-  // because they have paths like /sov/payments that would conflict with /sov/:id
-  app.use("/api", sovPaymentRoutes);
-  app.use("/api", sovBillingRoutes);
+  // Register Schedule of Values (SOV) routes (consolidated)
   app.use("/api", sovRoutes);
-  app.use("/api", sovLineItemRoutes);
 
   // Register Subcontract Agreement routes
   app.use("/api", subcontractRoutes);
@@ -312,29 +240,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Procurement Module routes
   app.use(procurementModuleRoutes);
 
-  // Register Website Builder routes
-  app.use("/api/website", websiteBuilderRoutes);
-  app.use("/api/social", socialAccountRoutes);
-  app.use("/api/social", socialPostRoutes);
-  app.use("/api/social", socialAnalyticsRoutes);
-  app.use(socialOAuthRoutes);
+  // Register Website routes (consolidated)
+  app.use("/api/website", websiteRoutes);
+  app.use("/api/website", websiteAiRoutes);
+  app.use("/api/social", socialRoutes);
 
   // Register Labor Rate routes
   app.use("/api/labor-rates", laborRateRoutes);
 
-  // Register Email Account routes
-  app.use("/api/email", emailAccountRoutes);
+  // Register Email routes (consolidated)
+  app.use("/api/email", emailRoutes);
   app.use("/api/kpis", kpiRoutes);
-
-  // Register Email AI routes (threads, messages, sync)
-  app.use("/api/email", emailAiRoutes);
-  // Register Email Analysis routes (AI analysis, summarization, digests)
-  app.use("/api/email", emailAnalysisRoutes);
-  // Register Email Task routes (task CRUD from email)
-  app.use("/api/email", emailTaskRoutes);
-
-  // Register Dashboard Customization routes
-  app.use("/api/dashboard", dashboardCustomizationRoutes);
 
   app.use(libraryRoutes);
 
@@ -344,16 +260,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Subcontractor Bid Network routes
   app.use("/api/bid-network", bidNetworkRoutes);
 
-  // Register Marketplace Contractor Directory routes
-  app.use("/api/marketplace/contractors", marketplaceContractorRoutes);
-
   app.use("/api", rfiRoutes);
   app.use("/api", transmittalRoutes);
   app.use("/api", submittalRoutes);
-  app.use("/api", submittalWorkflowRoutes);
 
   app.use("/api", portalRoutes);
-  app.use("/api", portalChatRoutes);
   app.use("/api", subChatRoutes);
   app.use("/api", clientChatRoutes);
 
@@ -364,14 +275,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use("/api/weather", weatherRoutes);
 
-  // Register Vendor Pricebook routes (PDF upload and AI extraction)
-  app.use("/api/vendor", vendorPricebookRoutes);
+  // Register Vendor routes (consolidated)
+  app.use(vendorRoutes);
 
   app.use("/api/approvals", approvalRoutes);
-  app.use("/api/ai-governance", aiGovernanceRoutes);
   app.use("/api/documents", documentRevisionRoutes);
   app.use("/api", addendaRoutes);
-  app.use("/api/project-health", projectHealthRoutes);
 
   app.use("/api/feature-flags", featureFlagRoutes);
 
@@ -388,9 +297,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Hiring Module routes
   app.use("/api/hiring", hiringRoutes);
 
-  // Register Equipment Rental Marketplace routes
-  app.use("/api/marketplace", marketplaceEquipmentRoutes);
-
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);
   }
@@ -404,8 +310,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Workforce/Workers routes (extracted to workforceRoutes.ts)
   app.use(workforceRoutes);
 
-  // Dashboard + User Management routes (extracted to dashboardUserRoutes.ts)
-  app.use(dashboardUserRoutes);
+  // Dashboard + User Management routes (consolidated into dashboardRoutes)
+  app.use(dashboardRoutes);
 
   // ====================
   // Validation Helpers
@@ -508,33 +414,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return { valid: true };
   }
 
-  // Bid Routes (extracted to bidRoutes2.ts)
+  // Bid Routes
   app.use(bidRoutes2);
-  app.use(bidTakeoffRoutes);
+  app.use(takeoffRoutes);
   app.use(bimRoutes);
 
-
-  // Project Routes (extracted to projectCoreRoutes.ts, scopeItemRoutes.ts, materialTrackingRoutes.ts, productionRateRoutes.ts)
-  app.use(projectCoreRoutes);
-  app.use(scopeItemRoutes);
+  // Project Routes (consolidated: core + content)
+  app.use(projectRoutes);
   app.use(materialTrackingRoutes);
   app.use(productionRateRoutes);
 
+  // CRM Routes (consolidated: vendor, contact, pipeline, enrollment, pricing)
+  app.use(crmRoutes);
 
-  // CRM + Vendor Routes (extracted to crmVendorRoutes.ts, crmContactRoutes.ts, vendorEnrollmentRoutes.ts, vendorPricingRoutes.ts)
-  app.use(crmVendorRoutes);
-  app.use(crmContactRoutes);
-  app.use(crmPipelineRoutes);
-  app.use(vendorEnrollmentRoutes);
-  app.use(vendorPricingRoutes);
+  // Scope Routes (consolidated: scope items + scope config)
+  app.use(scopeRoutes);
 
-  // Scope Config, Material Calculator, Trade Config, Org Work Categories (extracted to scopeConfigRoutes.ts)
-  app.use(scopeConfigRoutes);
-
-  // Project Content Routes (Notes, Media, Cost Codes, Time Entries, T&M Sheets, Estimates, Procurement, Pending Quotes)
-  app.use(projectContentRoutes);
-
-  // Project Operations Routes (Receipts, Plan Documents, File Permissions, Change Orders, Change Order Line Items, Calendar Events)
+  // Project Operations Routes (consolidated: receipts, plan docs, file perms, change orders, calendar)
   app.use(projectOpsRoutes);
 
   // Notifications Routes
@@ -548,23 +444,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Skills & User Skills Routes
   app.use(skillRoutes);
 
-  // Subcontractor, Data Quality, Takeoff/Estimating, Quantity Category routes
-  app.use(takeoffSubRoutes);
-  app.use(takeoffIssueRoutes);
+  // Assembly routes
   app.use(assemblyRoutes);
 
   // Internal Messaging System Routes (extracted to messagingRoutes.ts)
   await messagingSetup;
   app.use(messagingRoutes);
 
-  // Equipment & Tool Management Routes (extracted to equipmentMgmtRoutes.ts)
-  app.use(equipmentMgmtRoutes);
-
-  // Rental Equipment & Vendor Routes (extracted from equipmentMgmtRoutes.ts)
-  app.use(rentalEquipmentRoutes);
-
-  // Equipment Plan & Bid Equipment Routes (extracted from equipmentMgmtRoutes.ts)
-  app.use(equipmentPlanRoutes);
+  // Equipment Routes (consolidated: management, rental, plan)
+  app.use(equipmentRoutes);
 
   // Mobile & Offline Sync Routes
   app.use(mobileSyncRoutes);

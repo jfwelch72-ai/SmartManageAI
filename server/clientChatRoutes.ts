@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { portalChatThreads, portalChatMessages, clientPortalAccess } from "@shared/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
-import { notifyChatTeamMembers } from "./portalChatRoutes";
+import { notifyChatTeamMembers } from "./portalRoutes";
 
 const router = Router();
 
