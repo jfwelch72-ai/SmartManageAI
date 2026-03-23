@@ -547,7 +547,6 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
       if (!estimateId) throw new Error("No estimate found. Create an estimate in Step 2 first.");
       const catRes = await apiRequest("GET", `/api/bids/${bidId}/takeoff/categories`);
       const categories: { id: string; name: string }[] = await catRes.json();
-      if (!categories.length) throw new Error("No takeoff categories found. Add measurements in the workspace first.");
       const categoryIds = categories.map((c) => c.id);
       const res = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, { estimateId, categoryIds });
       if (!res.ok) {

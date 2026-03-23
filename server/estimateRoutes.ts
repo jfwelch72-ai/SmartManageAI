@@ -425,13 +425,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(404).json({ error: "Estimate not found" });
       }
 
-      // Get selected categories
-      if (!categoryIds?.length) {
-        return res.status(400).json({ error: "No takeoff categories selected" });
-      }
-      const categories = await db.query.quantityCategories.findMany({
-        where: inArray(quantityCategories.id, categoryIds),
-      });
+      const categories = categoryIds?.length
+        ? await db.query.quantityCategories.findMany({
+            where: inArray(quantityCategories.id, categoryIds),
+          })
+        : [];
 
       const lineItemsToCreate = [];
 
@@ -588,6 +586,91 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
       }
 
+      // Also import uncategorized measurements from this project's sheets
+      const projectSheets = await db.query.takeoffSheets.findMany({
+        where: eq(takeoffSheets.projectId, projectId),
+      });
+      if (projectSheets.length > 0) {
+        const sheetIds = projectSheets.map(s => s.id);
+        const uncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
+          where: and(
+            inArray(takeoffMeasurements.sheetId, sheetIds),
+            isNull(takeoffMeasurements.categoryId)
+          ),
+        });
+
+        if (uncategorizedMeasurements.length > 0) {
+          let uncatLinear = 0, uncatArea = 0, uncatVolume = 0, uncatCount = 0;
+
+          for (const measurement of uncategorizedMeasurements) {
+            if (measurement.type === "LINEAR") {
+              if (measurement.computedLengthFt) {
+                uncatLinear += Number(measurement.computedLengthFt);
+              } else if (measurement.points) {
+                try {
+                  const { computeDistanceInFeet } = await import("@shared/utils/geometry");
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = projectSheets.find(s => s.id === measurement.sheetId);
+                  if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
+                    const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
+                    uncatLinear += length;
+                    await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
+                  }
+                } catch { /* skip */ }
+              }
+            } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
+              if (measurement.computedAreaFt2) {
+                uncatArea += Number(measurement.computedAreaFt2);
+              } else if (measurement.points) {
+                try {
+                  const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = projectSheets.find(s => s.id === measurement.sheetId);
+                  if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
+                    const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                    uncatArea += area;
+                    await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
+                  }
+                } catch { /* skip */ }
+              }
+            } else if (measurement.type === "VOLUME") {
+              if (measurement.computedVolumeCy) {
+                uncatVolume += Number(measurement.computedVolumeCy);
+              } else if (measurement.points) {
+                try {
+                  const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = projectSheets.find(s => s.id === measurement.sheetId);
+                  if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3 && measurement.depthFeet) {
+                    const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                    const volume = computeVolumeInCY(area, measurement.depthFeet);
+                    uncatVolume += volume;
+                    await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
+                  }
+                } catch { /* skip */ }
+              }
+            } else if (measurement.type === "COUNT") {
+              uncatCount += 1;
+            }
+          }
+
+          const buildUncatLineItem = (description: string, qty: number, unit: string) => ({
+            estimateId, category: "GENERAL" as const, description,
+            quantity: qty.toString(), unit, source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: null as unknown as string,
+            computedQuantity: qty.toString(),
+            materialCost: "0", laborHours: "0", laborCost: "0",
+            equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
+            overheadAllocation: "0", profitAllocation: "0", totalCost: "0",
+          });
+
+          if (uncatLinear > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Linear", uncatLinear, "LF"));
+          if (uncatArea > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Area", uncatArea, "SF"));
+          if (uncatVolume > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Volume", uncatVolume, "CY"));
+          if (uncatCount > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Count", uncatCount, "EA"));
+        }
+      }
+
       if (lineItemsToCreate.length > 0) {
         const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
         try {
@@ -631,13 +714,11 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(404).json({ error: "Estimate not found for this bid" });
       }
 
-      if (!categoryIds?.length) {
-        return res.status(400).json({ error: "No takeoff categories selected" });
-      }
-
-      const categories = await db.query.quantityCategories.findMany({
-        where: inArray(quantityCategories.id, categoryIds),
-      });
+      const categories = categoryIds?.length
+        ? await db.query.quantityCategories.findMany({
+            where: inArray(quantityCategories.id, categoryIds),
+          })
+        : [];
 
       // Resolve labor classification rate if provided — scoped to org for tenant isolation
       let classificationRate: number | null = null;
@@ -796,6 +877,91 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
         if (countTotal > 0) {
           lineItemsToCreate.push(await buildLineItem(`${category.name} - Count`, countTotal, "EA"));
+        }
+      }
+
+      // Also import uncategorized measurements from this bid's sheets
+      const bidSheets = await db.query.takeoffSheets.findMany({
+        where: eq(takeoffSheets.bidId, bidId),
+      });
+      if (bidSheets.length > 0) {
+        const sheetIds = bidSheets.map(s => s.id);
+        const uncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
+          where: and(
+            inArray(takeoffMeasurements.sheetId, sheetIds),
+            isNull(takeoffMeasurements.categoryId)
+          ),
+        });
+
+        if (uncategorizedMeasurements.length > 0) {
+          let uncatLinear = 0, uncatArea = 0, uncatVolume = 0, uncatCount = 0;
+
+          for (const measurement of uncategorizedMeasurements) {
+            if (measurement.type === "LINEAR") {
+              if (measurement.computedLengthFt) {
+                uncatLinear += Number(measurement.computedLengthFt);
+              } else if (measurement.points) {
+                try {
+                  const { computeDistanceInFeet } = await import("@shared/utils/geometry");
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = bidSheets.find(s => s.id === measurement.sheetId);
+                  if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
+                    const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
+                    uncatLinear += length;
+                    await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
+                  }
+                } catch { /* skip */ }
+              }
+            } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
+              if (measurement.computedAreaFt2) {
+                uncatArea += Number(measurement.computedAreaFt2);
+              } else if (measurement.points) {
+                try {
+                  const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = bidSheets.find(s => s.id === measurement.sheetId);
+                  if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
+                    const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                    uncatArea += area;
+                    await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
+                  }
+                } catch { /* skip */ }
+              }
+            } else if (measurement.type === "VOLUME") {
+              if (measurement.computedVolumeCy) {
+                uncatVolume += Number(measurement.computedVolumeCy);
+              } else if (measurement.points) {
+                try {
+                  const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
+                  const points = typeof measurement.points === "string" ? JSON.parse(measurement.points) : measurement.points;
+                  const sheet = bidSheets.find(s => s.id === measurement.sheetId);
+                  if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3 && measurement.depthFeet) {
+                    const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
+                    const volume = computeVolumeInCY(area, measurement.depthFeet);
+                    uncatVolume += volume;
+                    await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
+                  }
+                } catch { /* skip */ }
+              }
+            } else if (measurement.type === "COUNT") {
+              uncatCount += 1;
+            }
+          }
+
+          const buildUncatLineItem = (description: string, qty: number, unit: string) => ({
+            estimateId, category: "GENERAL" as const, description,
+            quantity: qty.toString(), unit, source: "TAKEOFF" as const,
+            sourceTakeoffCategoryId: null as unknown as string,
+            computedQuantity: qty.toString(),
+            materialCost: "0", laborHours: "0", laborCost: "0",
+            equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
+            overheadAllocation: "0", profitAllocation: "0", totalCost: "0",
+          });
+
+          if (uncatLinear > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Linear", uncatLinear, "LF"));
+          if (uncatArea > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Area", uncatArea, "SF"));
+          if (uncatVolume > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Volume", uncatVolume, "CY"));
+          if (uncatCount > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Count", uncatCount, "EA"));
         }
       }
 
