@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ChevronDown, Search, Star, Plus, Sparkles, Globe, Building2, Lightbulb,
-  X, TrendingUp, ArrowUpRight
+  X, TrendingUp, ArrowUpRight, Check, AlertTriangle, Info, Loader2
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -66,12 +66,49 @@ export interface ModifierSelection {
   costImpactType: string;
 }
 
+interface AiCustomModifier {
+  name: string;
+  category: string;
+  effect_type: "labor" | "material" | "mixed";
+  labor_factor_min: number;
+  labor_factor_max: number;
+  material_factor_min: number;
+  material_factor_max: number;
+  duration_factor_min: number;
+  duration_factor_max: number;
+  waste_factor_min: number;
+  waste_factor_max: number;
+  confidence: number;
+  reasoning: string;
+  ai_tags: string[];
+}
+
+interface AiSuggestResponse {
+  suggested_modifier_categories: Array<{
+    category: string;
+    layer: "universal" | "trade" | "scope";
+    reason: string;
+  }>;
+  custom_modifiers: AiCustomModifier[];
+  warnings: string[];
+  assumptions: string[];
+}
+
 interface ModifierSelectorProps {
   trade?: string;
   scopeName?: string;
   lineItemId?: string;
   onSelectionsChange?: (selections: ModifierSelection[]) => void;
+  onAcceptAiModifier?: (modifier: AiCustomModifier) => void;
+  onSaveToLibrary?: (modifier: AiCustomModifier) => void;
+  autoSuggest?: boolean;
+  uom?: string;
+  materialFamilies?: string[];
+  estimatorNotes?: string;
+  description?: string;
 }
+
+export type { AiCustomModifier };
 
 const COST_IMPACT_OPTIONS = [
   { value: "labor", label: "Labor" },
@@ -80,11 +117,33 @@ const COST_IMPACT_OPTIONS = [
   { value: "equipment", label: "Equipment" },
 ];
 
+function getConfidenceLabel(confidence: number): { label: string; variant: "default" | "secondary" | "outline" } {
+  if (confidence > 0.8) return { label: "High", variant: "default" };
+  if (confidence >= 0.5) return { label: "Medium", variant: "secondary" };
+  return { label: "Low", variant: "outline" };
+}
+
+function formatFactorRange(min: number, max: number, isWaste?: boolean): string {
+  if (isWaste) {
+    if (min === 0 && max === 0) return "—";
+    return `${(min * 100).toFixed(0)}–${(max * 100).toFixed(0)}%`;
+  }
+  if (min === 1 && max === 1) return "—";
+  return `${min.toFixed(2)}–${max.toFixed(2)}x`;
+}
+
 export default function ModifierSelector({
   trade,
   scopeName,
   lineItemId,
   onSelectionsChange,
+  onAcceptAiModifier,
+  onSaveToLibrary,
+  autoSuggest = false,
+  uom,
+  materialFamilies = [],
+  estimatorNotes,
+  description,
 }: ModifierSelectorProps) {
   const { toast } = useToast();
   const [selections, setSelections] = useState<Map<string, ModifierSelection>>(new Map());
@@ -99,6 +158,15 @@ export default function ModifierSelector({
   const [suggestionsApplied, setSuggestionsApplied] = useState(false);
   const [prevScopeKey, setPrevScopeKey] = useState("");
 
+  const [aiResponse, setAiResponse] = useState<AiSuggestResponse | null>(null);
+  const [acceptedNames, setAcceptedNames] = useState<Set<string>>(new Set());
+  const [dismissedNames, setDismissedNames] = useState<Set<string>>(new Set());
+  const [showInfoSection, setShowInfoSection] = useState(false);
+  const autoSuggestTriggered = useRef(false);
+  const autoSuggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoSuggestCancelled, setAutoSuggestCancelled] = useState(false);
+  const [autoSuggestPending, setAutoSuggestPending] = useState(false);
+
   const scopeKey = `${trade || ""}|${scopeName || ""}|${lineItemId || ""}`;
   useEffect(() => {
     if (scopeKey !== prevScopeKey && prevScopeKey !== "") {
@@ -108,6 +176,11 @@ export default function ModifierSelector({
       setSearchQuery("");
       setExpandedCategories(new Set());
       onSelectionsChange?.([]);
+      setAiResponse(null);
+      setAcceptedNames(new Set());
+      setDismissedNames(new Set());
+      autoSuggestTriggered.current = false;
+      setAutoSuggestCancelled(false);
     }
     setPrevScopeKey(scopeKey);
   }, [scopeKey]);
@@ -133,7 +206,7 @@ export default function ModifierSelector({
   const saveMutation = useMutation({
     mutationFn: async (sels: ModifierSelection[]) => {
       if (!canPersist) return null;
-      const persistable = sels.filter(s => !s.modifierId.startsWith("custom-"));
+      const persistable = sels.filter(s => !s.modifierId.startsWith("custom-") && !s.modifierId.startsWith("ai-"));
       const response = await apiRequest("POST", "/api/bid-modifier-selections", {
         lineItemId,
         selections: persistable.map(s => ({
@@ -155,6 +228,45 @@ export default function ModifierSelector({
         description: error.message || "Selections are preserved locally but could not be saved to the database.",
         variant: "destructive",
       });
+    },
+  });
+
+  const aiSuggestMutation = useMutation({
+    mutationFn: async () => {
+      const realModifierIds = Array.from(selections.keys()).filter(
+        id => !id.startsWith("custom-") && !id.startsWith("ai-")
+      );
+      const res = await apiRequest("POST", "/api/modifiers/ai-suggest", {
+        trade_name: trade || "",
+        scope_name: scopeName || "",
+        uom: uom || "EA",
+        material_families: materialFamilies,
+        estimator_notes: estimatorNotes,
+        description,
+        existing_modifier_ids: realModifierIds,
+      });
+      return res.json() as Promise<AiSuggestResponse>;
+    },
+    onSuccess: (data) => {
+      setAiResponse(data);
+      setAcceptedNames(new Set());
+      setDismissedNames(new Set());
+    },
+    onError: (error: Error) => {
+      const msg = error.message || "Failed to get AI suggestions";
+      if (msg.includes("429")) {
+        toast({
+          title: "AI Usage Limit Reached",
+          description: "Your organization has reached its daily AI usage limit. Try again tomorrow.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "AI Suggestion Error",
+          description: msg,
+          variant: "destructive",
+        });
+      }
     },
   });
 
@@ -202,6 +314,92 @@ export default function ModifierSelector({
       onSelectionsChange?.(Array.from(newSelections.values()));
     }
   }, [modifierData?.suggested, initialLoadDone, suggestionsApplied, savedSelections]);
+
+  useEffect(() => {
+    if (!autoSuggest || autoSuggestTriggered.current || autoSuggestCancelled) return;
+    if (!scopeName || !trade) return;
+    if (!modifierData || isLoading) return;
+    const suggested = modifierData.suggested || [];
+    if (suggested.length > 0) return;
+
+    autoSuggestTriggered.current = true;
+    setAutoSuggestPending(true);
+    autoSuggestTimer.current = setTimeout(() => {
+      if (!autoSuggestCancelled) {
+        aiSuggestMutation.mutate();
+      }
+      setAutoSuggestPending(false);
+    }, 1500);
+
+    return () => {
+      if (autoSuggestTimer.current) {
+        clearTimeout(autoSuggestTimer.current);
+        setAutoSuggestPending(false);
+      }
+    };
+  }, [autoSuggest, scopeName, trade, modifierData, isLoading, autoSuggestCancelled]);
+
+  const handleCancelAutoSuggest = () => {
+    setAutoSuggestCancelled(true);
+    setAutoSuggestPending(false);
+    if (autoSuggestTimer.current) {
+      clearTimeout(autoSuggestTimer.current);
+      autoSuggestTimer.current = null;
+    }
+  };
+
+  const handleAcceptAiModifier = (modifier: AiCustomModifier) => {
+    setAcceptedNames((prev) => new Set(prev).add(modifier.name));
+
+    const aiModId = `ai-${modifier.name.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`;
+    const costType = modifier.effect_type === "mixed" ? "both" : modifier.effect_type;
+    const factor = modifier.effect_type === "labor"
+      ? (modifier.labor_factor_min + modifier.labor_factor_max) / 2
+      : modifier.effect_type === "material"
+        ? (modifier.material_factor_min + modifier.material_factor_max) / 2
+        : (modifier.labor_factor_min + modifier.labor_factor_max) / 2;
+
+    setSelections(prev => {
+      const next = new Map(prev);
+      next.set(aiModId, {
+        modifierId: aiModId,
+        modifierName: modifier.name,
+        modifierCode: modifier.name.toLowerCase().replace(/\s+/g, "_"),
+        categoryName: modifier.category,
+        layer: "suggested",
+        selectedFactor: Math.round(factor * 100) / 100,
+        costImpactType: costType,
+      });
+      emitChanges(next);
+      return next;
+    });
+
+    onAcceptAiModifier?.(modifier);
+  };
+
+  const handleDismissAiModifier = (modifierName: string) => {
+    setDismissedNames((prev) => new Set(prev).add(modifierName));
+  };
+
+  const handleSaveToLibrary = (modifier: AiCustomModifier) => {
+    if (onSaveToLibrary) {
+      onSaveToLibrary(modifier);
+      toast({
+        title: "Saved to Library",
+        description: `"${modifier.name}" has been saved as an org-specific modifier.`,
+      });
+    }
+  };
+
+  const visibleAiModifiers = aiResponse?.custom_modifiers.filter(
+    (m) => !dismissedNames.has(m.name)
+  ) || [];
+
+  const showAutoSuggestIndicator =
+    autoSuggest &&
+    !autoSuggestCancelled &&
+    autoSuggestTriggered.current &&
+    (autoSuggestPending || aiSuggestMutation.isPending);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -305,13 +503,6 @@ export default function ModifierSelector({
     setCustomFactor("1.00");
     setCustomCostType("labor");
   }, [customName, customCategory, customFactor, customCostType, emitChanges]);
-
-  const handleAiSuggest = useCallback(() => {
-    toast({
-      title: "AI Suggestions",
-      description: `AI modifier suggestions for ${scopeName || trade || "this scope"} will be available soon. This feature is under development.`,
-    });
-  }, [trade, scopeName, toast]);
 
   const filterModifiers = useCallback((modifiers: LayerModifier[]): LayerModifier[] => {
     if (!searchQuery.trim()) return modifiers;
@@ -501,15 +692,231 @@ export default function ModifierSelector({
           type="button"
           variant="outline"
           size="sm"
-          disabled={!trade && !scopeName}
-          title={trade || scopeName ? "Get AI-powered modifier suggestions" : "Select a trade or scope first"}
-          data-testid="button-ai-modifier-suggestions"
-          onClick={handleAiSuggest}
+          onClick={() => aiSuggestMutation.mutate()}
+          disabled={aiSuggestMutation.isPending || !trade || !scopeName}
+          data-testid="button-ai-suggest-modifiers"
         >
-          <Sparkles className="h-3.5 w-3.5 mr-1" />
+          {aiSuggestMutation.isPending ? (
+            <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5 mr-1" />
+          )}
           AI Suggest
         </Button>
+
+        {showAutoSuggestIndicator && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>AI analyzing scope...</span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs"
+              onClick={handleCancelAutoSuggest}
+              data-testid="button-cancel-auto-suggest"
+            >
+              Cancel
+            </Button>
+          </div>
+        )}
       </div>
+
+      {aiResponse && visibleAiModifiers.length > 0 && (
+        <Card className="border-purple-200 dark:border-purple-800 bg-purple-50/30 dark:bg-purple-950/10">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="text-sm flex items-center gap-2 text-purple-700 dark:text-purple-400">
+              <Sparkles className="h-4 w-4" />
+              AI-Suggested Modifiers
+              <Badge variant="outline" className="ml-auto text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-300 dark:border-purple-700">
+                {visibleAiModifiers.length} suggestions
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-3 pb-3 space-y-2">
+            {visibleAiModifiers.map((mod) => {
+              const conf = getConfidenceLabel(mod.confidence);
+              const isAccepted = acceptedNames.has(mod.name);
+
+              return (
+                <div
+                  key={mod.name}
+                  className={`p-3 rounded-lg border ${
+                    isAccepted
+                      ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
+                      : "bg-background border-border"
+                  }`}
+                  data-testid={`ai-modifier-${mod.name.replace(/\s+/g, "-").toLowerCase()}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{mod.name}</span>
+                        <Badge variant={conf.variant} className="text-xs" data-testid={`badge-confidence-${mod.name.replace(/\s+/g, "-").toLowerCase()}`}>
+                          {conf.label} ({(mod.confidence * 100).toFixed(0)}%)
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {mod.effect_type}
+                        </Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {mod.category}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {mod.reasoning}
+                      </p>
+                      <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                        {formatFactorRange(mod.labor_factor_min, mod.labor_factor_max) !== "—" && (
+                          <span>Labor: {formatFactorRange(mod.labor_factor_min, mod.labor_factor_max)}</span>
+                        )}
+                        {formatFactorRange(mod.material_factor_min, mod.material_factor_max) !== "—" && (
+                          <span>Material: {formatFactorRange(mod.material_factor_min, mod.material_factor_max)}</span>
+                        )}
+                        {formatFactorRange(mod.duration_factor_min, mod.duration_factor_max) !== "—" && (
+                          <span>Duration: {formatFactorRange(mod.duration_factor_min, mod.duration_factor_max)}</span>
+                        )}
+                        {formatFactorRange(mod.waste_factor_min, mod.waste_factor_max, true) !== "—" && (
+                          <span>Waste: {formatFactorRange(mod.waste_factor_min, mod.waste_factor_max, true)}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {!isAccepted ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-100 dark:hover:bg-green-900/30"
+                            onClick={() => handleAcceptAiModifier(mod)}
+                            title="Accept modifier"
+                            data-testid={`button-accept-${mod.name.replace(/\s+/g, "-").toLowerCase()}`}
+                          >
+                            <Check className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30"
+                            onClick={() => handleDismissAiModifier(mod.name)}
+                            title="Dismiss"
+                            data-testid={`button-dismiss-${mod.name.replace(/\s+/g, "-").toLowerCase()}`}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <Badge variant="default" className="text-xs bg-green-600">
+                            <Check className="h-3 w-3 mr-1" />
+                            Accepted
+                          </Badge>
+                          {onSaveToLibrary && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => handleSaveToLibrary(mod)}
+                              data-testid={`button-save-library-${mod.name.replace(/\s+/g, "-").toLowerCase()}`}
+                            >
+                              Save to Library
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {(aiResponse.warnings.length > 0 || aiResponse.assumptions.length > 0) && (
+              <Collapsible open={showInfoSection} onOpenChange={setShowInfoSection}>
+                <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-2" data-testid="button-toggle-ai-info">
+                  <Info className="h-3 w-3" />
+                  <span>Warnings & Assumptions</span>
+                  <ChevronDown className={`h-3 w-3 transition-transform ${showInfoSection ? "rotate-180" : ""}`} />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-2 space-y-2">
+                  {aiResponse.warnings.length > 0 && (
+                    <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800">
+                      <div className="flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 mb-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Warnings
+                      </div>
+                      <ul className="text-xs text-yellow-600 dark:text-yellow-300 space-y-0.5">
+                        {aiResponse.warnings.map((w, i) => (
+                          <li key={i} data-testid={`text-warning-${i}`}>• {w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {aiResponse.assumptions.length > 0 && (
+                    <div className="p-2 rounded bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">
+                        <Info className="h-3 w-3" />
+                        Assumptions
+                      </div>
+                      <ul className="text-xs text-blue-600 dark:text-blue-300 space-y-0.5">
+                        {aiResponse.assumptions.map((a, i) => (
+                          <li key={i} data-testid={`text-assumption-${i}`}>• {a}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {aiResponse && visibleAiModifiers.length === 0 && (
+        <div className="space-y-2">
+          <div className="text-xs text-muted-foreground italic">
+            All AI suggestions have been addressed.
+          </div>
+          {(aiResponse.warnings.length > 0 || aiResponse.assumptions.length > 0) && (
+            <Collapsible open={showInfoSection} onOpenChange={setShowInfoSection}>
+              <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground" data-testid="button-toggle-ai-info-standalone">
+                <Info className="h-3 w-3" />
+                <span>Warnings & Assumptions</span>
+                <ChevronDown className={`h-3 w-3 transition-transform ${showInfoSection ? "rotate-180" : ""}`} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 space-y-2">
+                {aiResponse.warnings.length > 0 && (
+                  <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800">
+                    <div className="flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 mb-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      Warnings
+                    </div>
+                    <ul className="text-xs text-yellow-600 dark:text-yellow-300 space-y-0.5">
+                      {aiResponse.warnings.map((w, i) => (
+                        <li key={i}>• {w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {aiResponse.assumptions.length > 0 && (
+                  <div className="p-2 rounded bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-1 text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">
+                      <Info className="h-3 w-3" />
+                      Assumptions
+                    </div>
+                    <ul className="text-xs text-blue-600 dark:text-blue-300 space-y-0.5">
+                      {aiResponse.assumptions.map((a, i) => (
+                        <li key={i}>• {a}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </div>
+      )}
 
       {suggested.length > 0 && (() => {
         const filteredSuggested = suggested.filter(s => {

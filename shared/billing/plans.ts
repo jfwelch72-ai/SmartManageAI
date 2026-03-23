@@ -58,7 +58,8 @@ export type FeatureKey =
   | "AUDIT_EXPORT"
   | "DATA_RETENTION"
   | "PRIVACY_COMPLIANCE"
-  | "SESSION_MANAGEMENT";
+  | "SESSION_MANAGEMENT"
+  | "MODIFIER_AI_SUGGEST";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -78,6 +79,7 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "APPROVALS_FRAMEWORK",
     "DOCUMENT_CONTROL",
     "PROJECT_HEALTH_SCORE",
+    "MODIFIER_AI_SUGGEST",
   ],
   enterprise: [
     // Scale ($579) or Hustler ($1199): Everything in Growth, plus:
@@ -102,6 +104,7 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "DATA_RETENTION",
     "PRIVACY_COMPLIANCE",
     "SESSION_MANAGEMENT",
+    "MODIFIER_AI_SUGGEST",
   ],
 };
 
@@ -389,6 +392,10 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   SESSION_MANAGEMENT: {
     name: "Session Management",
     description: "Active session tracking, idle timeout, and concurrent session limits",
+  },
+  MODIFIER_AI_SUGGEST: {
+    name: "AI Modifier Suggestions",
+    description: "AI-powered scope modifier recommendations for estimating",
   },
 };
 

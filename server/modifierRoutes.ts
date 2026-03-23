@@ -1,5 +1,5 @@
 import { Router, type Response } from "express";
-import { eq, and, or, isNull, asc } from "drizzle-orm";
+import { eq, and, or, isNull, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import {
@@ -12,6 +12,10 @@ import {
 import { bids } from "../shared/schema/core";
 import { estimates, estimateLineItems } from "../shared/schema/operations";
 import { requireAuth, type AuthRequest } from "./auth";
+import { governedAiCall } from "./services/aiGovernance";
+import { openai } from "./ai/openaiClient";
+import { MODIFIER_AI_SYSTEM_PROMPT, buildModifierUserPrompt } from "./ai/modifierPrompt";
+import { requireFeature } from "./middleware/requireFeature";
 
 import universalModifiers from "./data/modifiers/universal.json";
 import tradeConcreteModifiers from "./data/modifiers/trade-concrete.json";
@@ -592,6 +596,128 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
   } catch (err: unknown) {
     console.error("[Modifiers] Get selections error:", err);
     res.status(500).json({ message: "Failed to get selections" });
+  }
+});
+
+const aiSuggestSchema = z.object({
+  trade_name: z.string().min(1),
+  scope_name: z.string().min(1),
+  uom: z.string().min(1),
+  material_families: z.array(z.string()).optional().default([]),
+  estimator_notes: z.string().optional(),
+  description: z.string().optional(),
+  existing_modifier_ids: z.array(z.string()).optional().default([]),
+});
+
+router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_AI_SUGGEST"), async (req: AuthRequest, res: Response) => {
+  try {
+    const orgId = req.user?.organizationId;
+    const userId = req.user?.id || null;
+
+    if (!orgId) {
+      return res.status(400).json({ message: "Organization required" });
+    }
+
+    const parsed = aiSuggestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+    }
+
+    const { trade_name, scope_name, uom, material_families, estimator_notes, description, existing_modifier_ids } = parsed.data;
+
+    let existingModifierNames: string[] = [];
+    if (existing_modifier_ids.length > 0) {
+      const existingMods = await db
+        .select({ name: modifiers.name })
+        .from(modifiers)
+        .where(and(
+          inArray(modifiers.id, existing_modifier_ids),
+          buildOrgFilter(orgId),
+          eq(modifiers.isActive, true),
+        ));
+      existingModifierNames = existingMods.map((m) => m.name);
+    }
+
+    const userPrompt = buildModifierUserPrompt({
+      trade_name,
+      scope_name,
+      uom,
+      material_families,
+      estimator_notes,
+      description,
+      existing_modifier_names: existingModifierNames,
+    });
+
+    const aiResult = await governedAiCall({
+      orgId,
+      userId,
+      actionType: "modifier_ai_suggest",
+      inputRefs: { trade_name, scope_name, uom, material_families },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: MODIFIER_AI_SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.4,
+          max_tokens: 2048,
+        });
+
+        const content = completion.choices[0]?.message?.content;
+        if (!content) {
+          throw new Error("No response from AI");
+        }
+
+        const result = JSON.parse(content);
+        return { result, completion };
+      },
+    });
+
+    if (aiResult.blocked) {
+      return res.status(429).json({
+        message: "AI usage limit reached",
+        reason: aiResult.reason,
+      });
+    }
+
+    const aiResponseSchema = z.object({
+      suggested_modifier_categories: z.array(z.object({
+        category: z.string(),
+        layer: z.enum(["universal", "trade", "scope"]),
+        reason: z.string(),
+      })).optional().default([]),
+      custom_modifiers: z.array(z.object({
+        name: z.string(),
+        category: z.string(),
+        effect_type: z.enum(["labor", "material", "mixed"]),
+        labor_factor_min: z.number().default(1.0),
+        labor_factor_max: z.number().default(1.0),
+        material_factor_min: z.number().default(1.0),
+        material_factor_max: z.number().default(1.0),
+        duration_factor_min: z.number().default(1.0),
+        duration_factor_max: z.number().default(1.0),
+        waste_factor_min: z.number().default(0.0),
+        waste_factor_max: z.number().default(0.0),
+        confidence: z.number().min(0).max(1).default(0.5),
+        reasoning: z.string(),
+        ai_tags: z.array(z.string()).optional().default([]),
+      })).optional().default([]),
+      warnings: z.array(z.string()).optional().default([]),
+      assumptions: z.array(z.string()).optional().default([]),
+    });
+
+    const validated = aiResponseSchema.safeParse(aiResult.result);
+    if (!validated.success) {
+      console.error("[Modifiers] AI response validation failed:", validated.error.flatten());
+      return res.status(502).json({ message: "AI returned an invalid response format" });
+    }
+
+    res.json(validated.data);
+  } catch (err: unknown) {
+    console.error("[Modifiers] AI suggest error:", err);
+    res.status(500).json({ message: "Failed to generate AI modifier suggestions" });
   }
 });
 
