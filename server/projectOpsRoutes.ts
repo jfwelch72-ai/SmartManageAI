@@ -1542,7 +1542,7 @@ router.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, 
 // Routes from projectHealthRoutes.ts
 // ========================================
 
-router.get("/overview", requireAuth, async (req, res) => {
+router.get("/api/project-health/overview", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const overview = await healthService.getOrgHealthOverview(user.organizationId);
@@ -1553,7 +1553,7 @@ router.get("/overview", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/:projectId", requireAuth, async (req, res) => {
+router.get("/api/project-health/:projectId", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const snapshot = await healthService.getLatestSnapshot(user.organizationId, req.params.projectId);
@@ -1563,7 +1563,7 @@ router.get("/:projectId", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/:projectId/compute", requireAuth, async (req, res) => {
+router.post("/api/project-health/:projectId/compute", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
@@ -1578,7 +1578,7 @@ router.post("/:projectId/compute", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/:projectId/history", requireAuth, async (req, res) => {
+router.get("/api/project-health/:projectId/history", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
     const limit = parseInt(req.query.limit as string) || 30;
