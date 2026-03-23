@@ -233,6 +233,19 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
   const selectedDoc = documents.find((d) => d.id === selectedDocId);
 
+  const handleOpenFile = async (docId: string, fallbackUrl: string) => {
+    try {
+      const res = await fetch(`/api/bids/${bidCode}/documents/${docId}/preview-url`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        window.open(data.url, "_blank");
+      } else {
+        window.open(fallbackUrl, "_blank");
+      }
+    } catch {
+      window.open(fallbackUrl, "_blank");
+    }
+  };
 
   const handleUploadComplete = (result: any) => {
     if (!result.successful?.length) {
@@ -431,7 +444,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
                                     <DropdownMenuItem
-                                      onClick={() => window.open(doc.fileUrl, '_blank')}
+                                      onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
                                       data-testid={`button-view-bid-doc-${doc.id}`}
                                     >
                                       <Eye className="w-4 h-4 mr-2" />
@@ -639,7 +652,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   <Badge variant="outline" className="text-[10px]">{selectedDoc.type}</Badge>
                 </div>
                 <div className="flex gap-1">
-                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => window.open(selectedDoc.fileUrl, '_blank')} data-testid="button-view-selected-doc">
+                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleOpenFile(selectedDoc.id, selectedDoc.fileUrl)} data-testid="button-view-selected-doc">
                     <Eye className="w-3 h-3 mr-1" /> View
                   </Button>
                   {(selectedDoc.mimeType?.includes("pdf") || selectedDoc.fileName?.toLowerCase().endsWith(".pdf")) && (
@@ -725,7 +738,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                       size="icon"
                       variant="ghost"
                       className="h-7 w-7 shrink-0"
-                      onClick={() => window.open(doc.fileUrl, "_blank")}
+                      onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
                       data-testid="button-open-doc-external"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
@@ -748,7 +761,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         <div className="text-center space-y-4 p-8 max-w-sm">
                           <File className="w-16 h-16 text-muted-foreground/40 mx-auto" />
                           <p className="text-sm text-muted-foreground">Unable to generate preview. Open the file directly.</p>
-                          <Button variant="outline" onClick={() => window.open(doc.fileUrl, "_blank")} data-testid="button-open-pdf-fallback">
+                          <Button variant="outline" onClick={() => handleOpenFile(doc.id, doc.fileUrl)} data-testid="button-open-pdf-fallback">
                             <ExternalLink className="w-4 h-4 mr-2" />Open File
                           </Button>
                         </div>
@@ -775,7 +788,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                           <p className="text-sm text-muted-foreground">This file type cannot be previewed in the browser.</p>
                           <Button
                             variant="outline"
-                            onClick={() => window.open(doc.fileUrl, "_blank")}
+                            onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
                             data-testid="button-open-file-external"
                           >
                             <ExternalLink className="w-4 h-4 mr-2" />
