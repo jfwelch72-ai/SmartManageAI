@@ -610,7 +610,6 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 <p className="text-sm text-muted-foreground text-center py-4">No measurements yet</p>
               ) : (
                 <div className="space-y-2">
-                <div className="space-y-2">
                   {(() => {
                     const grouped: Record<string, TakeoffMeasurement[]> = {};
                     const ungrouped: TakeoffMeasurement[] = [];
