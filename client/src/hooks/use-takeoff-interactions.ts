@@ -81,6 +81,25 @@ interface UseTakeoffInteractionsParams {
   isMobile: boolean;
   deleteMeasurementMutation?: any;
   onZoomToFit?: () => void;
+  sheetRotation: number;
+  imageWidth: number;
+  imageHeight: number;
+  onRotateCW?: () => void;
+  onRotateCCW?: () => void;
+}
+
+function inverseRotatePoint(
+  pt: Point,
+  rotation: number,
+  imgW: number,
+  imgH: number
+): Point {
+  switch (rotation) {
+    case 90: return { x: imgW - pt.y, y: pt.x };
+    case 180: return { x: imgW - pt.x, y: imgH - pt.y };
+    case 270: return { x: pt.y, y: imgH - pt.x };
+    default: return pt;
+  }
 }
 
 export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
@@ -115,6 +134,8 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     takeoffHistory, createMeasurementMutation, aggregatedMeasurements,
     setShortcutsDialogOpen, isMobile,
     deleteMeasurementMutation, onZoomToFit,
+    sheetRotation, imageWidth, imageHeight,
+    onRotateCW, onRotateCCW,
   } = params;
 
   const handleToolSelect = useCallback((tool: Tool) => {
@@ -251,7 +272,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     const transform = stage.getAbsoluteTransform().copy().invert();
-    let point = transform.point(pointerPosition);
+    let point = inverseRotatePoint(transform.point(pointerPosition), sheetRotation, imageWidth, imageHeight);
 
     const isDrawingTool = ["linear", "arc", "area", "volume", "count", "segment"].includes(activeTool);
     if (isDrawingTool) {
@@ -421,7 +442,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     aggregatedMeasurements, createMeasurementMutation, completePolygon,
     setSelectedMeasurementId, setVerifyPoints, setVerifyMode, setVerifyResult,
     setCalibrationPoints, setCalibrationMode, setIsDrawing, setDrawingPoints, setCurrentDrawingTool,
-    setNotePosition, setNoteDialogOpen, toast]);
+    setNotePosition, setNoteDialogOpen, toast, sheetRotation, imageWidth, imageHeight]);
 
   const handleStageMouseDown = useCallback((e: any) => {
     const isTouchEvent = e.evt && (e.evt.type === "touchstart" || e.evt.touches);
@@ -488,7 +509,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
     const transform = stage.getAbsoluteTransform().copy().invert();
-    let pt: Point = transform.point(pointer);
+    let pt: Point = inverseRotatePoint(transform.point(pointer), sheetRotation, imageWidth, imageHeight);
     if (orthoLock && drawingPoints.length > 0) {
       pt = applyOrthoLock(pt, drawingPoints[drawingPoints.length - 1]);
     }
@@ -499,7 +520,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     } else {
       setCurrentSnap(null);
     }
-  }, [snapEnabled, snapTargets, stageScale, orthoLock, drawingPoints]);
+  }, [snapEnabled, snapTargets, stageScale, orthoLock, drawingPoints, sheetRotation, imageWidth, imageHeight]);
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault();
@@ -772,10 +793,12 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       if ((event.ctrlKey || event.metaKey) && (key === 'y' || (key === 'z' && event.shiftKey))) { event.preventDefault(); takeoffHistory.redo(); return; }
       if ((key === '+' || key === '=') && !event.ctrlKey && !event.metaKey && !event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); setStageScale((prev: number) => Math.min(prev * 1.2, 10)); }
       if (key === '-' && !event.ctrlKey && !event.metaKey && !event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); setStageScale((prev: number) => Math.max(prev / 1.2, 0.1)); }
+      if ((event.ctrlKey || event.metaKey) && key === 'r' && !event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); onRotateCW?.(); }
+      if ((event.ctrlKey || event.metaKey) && key === 'r' && event.shiftKey && canUseNavigationShortcuts) { event.preventDefault(); onRotateCCW?.(); }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [isDrawing, currentDrawingTool, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit]);
+  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit, onRotateCW, onRotateCCW]);
 
   return {
     handleToolSelect,

@@ -323,6 +323,7 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   revisionLabel: text("revision_label"),
   isActive: boolean("is_active").notNull().default(true),
   supersededById: varchar("superseded_by_id"),
+  rotation: integer("rotation").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

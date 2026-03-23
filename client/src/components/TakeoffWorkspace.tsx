@@ -58,12 +58,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
   const [selectedSheet, setSelectedSheet] = useState<string | null>(null);
+  const [localRotation, setLocalRotation] = useState<number | null>(null);
   const takeoffHistory = useTakeoffHistory(selectedSheet);
   const prevSheetRef = useRef<string | null>(null);
   useEffect(() => {
     if (prevSheetRef.current !== null && prevSheetRef.current !== selectedSheet) {
       takeoffHistory.clear();
       setHiddenCategoryIds(new Set());
+      setLocalRotation(null);
     }
     prevSheetRef.current = selectedSheet;
   }, [selectedSheet, takeoffHistory]);
@@ -123,6 +125,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
   const [flashMeasurementId, setFlashMeasurementId] = useState<string | null>(null);
   const [flashPulse, setFlashPulse] = useState(0);
+  const [gridEnabled, setGridEnabled] = useState(() => {
+    try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch { return false; }
+  });
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -131,15 +136,27 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const isMarkupTool = (tool: string) => tool.startsWith("markup_");
 
+  const inverseRotate = (pt: { x: number; y: number }): { x: number; y: number } => {
+    const w = pdfImage?.width || 0;
+    const h = pdfImage?.height || 0;
+    switch (sheetRotation) {
+      case 90: return { x: w - pt.y, y: pt.x };
+      case 180: return { x: w - pt.x, y: h - pt.y };
+      case 270: return { x: pt.y, y: h - pt.x };
+      default: return pt;
+    }
+  };
+
   const getStagePointer = (): { x: number; y: number } | null => {
     const stage = stageRef.current;
     if (!stage) return null;
     const pos = stage.getPointerPosition();
     if (!pos) return null;
-    return {
+    const raw = {
       x: (pos.x - stagePosition.x) / stageScale,
       y: (pos.y - stagePosition.y) / stageScale,
     };
+    return inverseRotate(raw);
   };
 
   const toolToMarkupType = (tool: string): string => {
@@ -248,6 +265,39 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     },
     onError: () => toast({ title: "Error", description: "Failed to create issue", variant: "destructive" }),
   });
+
+  const serverRotation = (currentSheet as any)?.rotation ?? 0;
+  const sheetRotation = localRotation ?? serverRotation;
+
+  useEffect(() => {
+    setLocalRotation(null);
+  }, [serverRotation]);
+
+  const rotationMutation = useMutation({
+    mutationFn: async ({ sheetId, rotation }: { sheetId: string; rotation: number }) => {
+      const res = await apiRequest("PATCH", `/api/takeoff/sheets/${sheetId}/rotation`, { rotation });
+      return res.json();
+    },
+    onSuccess: () => {
+      if (sheetsQueryKey) queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+    },
+    onError: () => {
+      setLocalRotation(null);
+      toast({ title: "Error", description: "Failed to save rotation", variant: "destructive" });
+    },
+  });
+
+  const handleRotate = (delta: number) => {
+    if (!selectedSheet) return;
+    const newRotation = ((sheetRotation + delta) % 360 + 360) % 360;
+    setLocalRotation(newRotation);
+    rotationMutation.mutate({ sheetId: selectedSheet, rotation: newRotation });
+  };
+
+  const handleToggleGrid = (v: boolean) => {
+    setGridEnabled(v);
+    try { localStorage.setItem("takeoff-grid-enabled", v ? "true" : "false"); } catch {}
+  };
 
   const selectedIssue = issues.find((i: any) => i.id === selectedIssueId) || null;
 
@@ -361,6 +411,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     isMobile,
     deleteMeasurementMutation,
     onZoomToFit: () => zoomToFitRef.current(),
+    sheetRotation,
+    imageWidth: pdfImage?.width || 0,
+    imageHeight: pdfImage?.height || 0,
+    onRotateCW: () => handleRotate(90),
+    onRotateCCW: () => handleRotate(-90),
   });
 
   const {
@@ -883,6 +938,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onExportCurrentSheet={handleExportCurrentSheet}
         onExportAllSheets={handleExportAllSheets}
         onShowShortcuts={() => setShortcutsDialogOpen(true)}
+        sheetRotation={sheetRotation}
+        onRotateCW={() => handleRotate(90)}
+        onRotateCCW={() => handleRotate(-90)}
+        onRotate180={() => handleRotate(180)}
+        gridEnabled={gridEnabled}
+        onToggleGrid={handleToggleGrid}
+        isCalibrated={!!currentSheet?.scalePxPerFoot}
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
@@ -1302,7 +1364,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   const pointerPosition = stage.getPointerPosition();
                   if (!pointerPosition) return;
                   const transform = stage.getAbsoluteTransform().copy().invert();
-                  const point = transform.point(pointerPosition);
+                  const point = inverseRotate(transform.point(pointerPosition));
                   createIssueMutation.mutate({
                     sheetId: selectedSheet,
                     position: JSON.stringify({ x: point.x, y: point.y }),
@@ -1369,6 +1431,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               onDragEnd={handleStageDragEnd}
             >
               <Layer>
+                <Group
+                  rotation={sheetRotation}
+                  x={sheetRotation === 180 ? (pdfImage?.width || 0) : sheetRotation === 270 ? (pdfImage?.height || 0) : 0}
+                  y={sheetRotation === 90 ? (pdfImage?.width || 0) : sheetRotation === 180 ? (pdfImage?.height || 0) : 0}
+                >
                 {isPdfLoading ? (
                   <Text text="Loading PDF..." x={20} y={20} fontSize={16} fill="#888" />
                 ) : pdfImage ? (
@@ -1388,6 +1455,77 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     />
                   );
                 })}
+
+                {gridEnabled && currentSheet?.scalePxPerFoot && pdfImage && (() => {
+                  const imgW = pdfImage.width;
+                  const imgH = pdfImage.height;
+                  const pxPerFoot = currentSheet.scalePxPerFoot;
+                  let gridSpacingFt = 1;
+                  const screenPxPerFoot = pxPerFoot * stageScale;
+                  if (screenPxPerFoot > 0) {
+                    const steps = [0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+                    gridSpacingFt = steps.find(s => s * screenPxPerFoot >= 30) || 100;
+                  }
+                  const gridSpacingPx = gridSpacingFt * pxPerFoot;
+                  const majorEvery = gridSpacingFt >= 10 ? 5 : gridSpacingFt >= 1 ? (currentSheet.units === "m" ? 10 : 5) : 10;
+                  const gridLines: JSX.Element[] = [];
+                  const unitLabel = currentSheet.units === "m" ? "m" : "ft";
+                  for (let x = 0; x <= imgW; x += gridSpacingPx) {
+                    const idx = Math.round(x / gridSpacingPx);
+                    const isMajor = idx % majorEvery === 0;
+                    gridLines.push(
+                      <Line key={`gv-${idx}`} points={[x, 0, x, imgH]} stroke={isMajor ? "#999" : "#ccc"} strokeWidth={isMajor ? 0.8 : 0.5} opacity={isMajor ? 0.4 : 0.25} listening={false} />
+                    );
+                  }
+                  for (let y = 0; y <= imgH; y += gridSpacingPx) {
+                    const idx = Math.round(y / gridSpacingPx);
+                    const isMajor = idx % majorEvery === 0;
+                    gridLines.push(
+                      <Line key={`gh-${idx}`} points={[0, y, imgW, y]} stroke={isMajor ? "#999" : "#ccc"} strokeWidth={isMajor ? 0.8 : 0.5} opacity={isMajor ? 0.4 : 0.25} listening={false} />
+                    );
+                  }
+                  const rulerSize = 24 / stageScale;
+                  const fontSize = Math.max(8, 10 / stageScale);
+                  const rulerElements: JSX.Element[] = [];
+                  rulerElements.push(
+                    <Rect key="ruler-top-bg" x={0} y={0} width={imgW} height={rulerSize} fill="#f5f5f5" opacity={0.85} listening={false} />,
+                    <Rect key="ruler-left-bg" x={0} y={0} width={rulerSize} height={imgH} fill="#f5f5f5" opacity={0.85} listening={false} />
+                  );
+                  for (let x = 0; x <= imgW; x += gridSpacingPx) {
+                    const idx = Math.round(x / gridSpacingPx);
+                    const isMajor = idx % majorEvery === 0;
+                    const dist = idx * gridSpacingFt;
+                    if (isMajor) {
+                      rulerElements.push(
+                        <Line key={`rt-${idx}`} points={[x, 0, x, rulerSize]} stroke="#666" strokeWidth={0.8} listening={false} />,
+                        <Text key={`rtl-${idx}`} x={x + 2} y={2} text={`${dist}`} fontSize={fontSize} fill="#444" listening={false} />
+                      );
+                    } else {
+                      rulerElements.push(
+                        <Line key={`rt-${idx}`} points={[x, rulerSize * 0.5, x, rulerSize]} stroke="#999" strokeWidth={0.5} listening={false} />
+                      );
+                    }
+                  }
+                  for (let y = gridSpacingPx; y <= imgH; y += gridSpacingPx) {
+                    const idx = Math.round(y / gridSpacingPx);
+                    const isMajor = idx % majorEvery === 0;
+                    const dist = idx * gridSpacingFt;
+                    if (isMajor) {
+                      rulerElements.push(
+                        <Line key={`rl-${idx}`} points={[0, y, rulerSize, y]} stroke="#666" strokeWidth={0.8} listening={false} />,
+                        <Text key={`rll-${idx}`} x={2} y={y + 2} text={`${dist}`} fontSize={fontSize} fill="#444" listening={false} />
+                      );
+                    } else {
+                      rulerElements.push(
+                        <Line key={`rl-${idx}`} points={[rulerSize * 0.5, y, rulerSize, y]} stroke="#999" strokeWidth={0.5} listening={false} />
+                      );
+                    }
+                  }
+                  rulerElements.push(
+                    <Text key="ruler-unit" x={2} y={2} text={unitLabel} fontSize={fontSize} fill="#666" fontStyle="bold" listening={false} />
+                  );
+                  return [...gridLines, ...rulerElements];
+                })()}
 
                 {measurements.map((m) => {
                   if (m.categoryId && hiddenCategoryIds.has(m.categoryId)) return null;
@@ -2140,6 +2278,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     />
                   );
                 })()}
+                </Group>
               </Layer>
             </Stage>
           ) : (

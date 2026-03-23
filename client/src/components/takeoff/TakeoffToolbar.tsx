@@ -6,7 +6,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import {
-  ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle
+  ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle,
+  RotateCw, RotateCcw, FlipVertical2, Grid3X3
 } from "lucide-react";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
@@ -43,6 +44,13 @@ interface TakeoffToolbarProps {
   onExportCurrentSheet?: () => void;
   onExportAllSheets?: () => void;
   onShowShortcuts?: () => void;
+  sheetRotation: number;
+  onRotateCW: () => void;
+  onRotateCCW: () => void;
+  onRotate180: () => void;
+  gridEnabled: boolean;
+  onToggleGrid: (v: boolean) => void;
+  isCalibrated: boolean;
 }
 
 export function TakeoffToolbar({
@@ -55,6 +63,8 @@ export function TakeoffToolbar({
   markupColor, setMarkupColor, markupThickness, setMarkupThickness,
   onExportCurrentSheet, onExportAllSheets,
   onShowShortcuts,
+  sheetRotation, onRotateCW, onRotateCCW, onRotate180,
+  gridEnabled, onToggleGrid, isCalibrated,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
 
@@ -277,6 +287,59 @@ export function TakeoffToolbar({
           </TooltipTrigger>
           <TooltipContent side="right"><p>AI Auto-Takeoff</p></TooltipContent>
         </Tooltip>
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onRotateCW} data-testid="button-rotate-cw" className="toggle-elevate">
+              <RotateCw className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Rotate 90° CW</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+R</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onRotateCCW} data-testid="button-rotate-ccw" className="toggle-elevate">
+              <RotateCcw className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <div className="flex items-center gap-2">
+              <span>Rotate 90° CCW</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">Ctrl+Shift+R</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onRotate180} data-testid="button-rotate-180" className="toggle-elevate">
+              <FlipVertical2 className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right"><p>Rotate 180°</p></TooltipContent>
+        </Tooltip>
+        <Separator className="my-2 w-12" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={gridEnabled ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => onToggleGrid(!gridEnabled)}
+              disabled={!isCalibrated}
+              data-testid="button-toggle-grid"
+              className="toggle-elevate"
+            >
+              <Grid3X3 className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            <p>{!isCalibrated ? "Calibrate sheet to enable grid" : gridEnabled ? "Grid: ON" : "Grid: OFF"}</p>
+          </TooltipContent>
+        </Tooltip>
         {(onExportCurrentSheet || onExportAllSheets) && (
           <>
             <Separator className="my-2 w-12" />
@@ -456,6 +519,38 @@ export function TakeoffToolbar({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top">AI Auto-Takeoff</TooltipContent>
+        </Tooltip>
+        <Separator orientation="vertical" className="h-6 mx-0.5" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onRotateCW} data-testid="button-rotate-cw-mobile" className="h-8 w-8 shrink-0">
+              <RotateCw className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Rotate 90° CW</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onRotateCCW} data-testid="button-rotate-ccw-mobile" className="h-8 w-8 shrink-0">
+              <RotateCcw className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Rotate 90° CCW</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={gridEnabled ? "secondary" : "ghost"}
+              size="icon"
+              onClick={() => onToggleGrid(!gridEnabled)}
+              disabled={!isCalibrated}
+              data-testid="button-toggle-grid-mobile"
+              className="h-8 w-8 shrink-0"
+            >
+              <Grid3X3 className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{!isCalibrated ? "Calibrate to enable grid" : gridEnabled ? "Grid: ON" : "Grid: OFF"}</TooltipContent>
         </Tooltip>
         {(onExportCurrentSheet || onExportAllSheets) && (
           <>

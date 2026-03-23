@@ -1328,6 +1328,38 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
   }
 });
 
+// Update sheet rotation
+router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { rotation } = req.body;
+    const { takeoffSheets } = await import("@shared/schema");
+
+    const validRotations = [0, 90, 180, 270];
+    if (!validRotations.includes(rotation)) {
+      res.status(400).json({ error: "Rotation must be 0, 90, 180, or 270" });
+      return;
+    }
+
+    const access = await verifySheetAccess(id, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    const [updated] = await db
+      .update(takeoffSheets)
+      .set({ rotation, updatedAt: new Date() })
+      .where(eq(takeoffSheets.id, id))
+      .returning();
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating rotation:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ====================
 // QUANTITY CATEGORY ROUTES
 // ====================
