@@ -1308,7 +1308,7 @@ async function generateClaimNumber(projectCode: string): Promise<string> {
 // ============================================================================
 
 // GET /api/delay-claims - List all delay claims for organization
-router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1358,7 +1358,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 // ============================================================================
 
 // GET /api/delay-claims/locks - List locks for a project
-router.get("/locks", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/locks", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1396,7 +1396,7 @@ router.get("/locks", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/delay-claims/locks - Lock a daily report
-router.post("/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1469,7 +1469,7 @@ router.post("/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDE
 });
 
 // GET /api/delay-claims/locks/:projectId/:date - Get lock status for specific date
-router.get("/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1495,7 +1495,7 @@ router.get("/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res:
 });
 
 // POST /api/delay-claims/locks/:id/supervisor-lock - Supervisor-level lock
-router.post("/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1535,7 +1535,7 @@ router.post("/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MAN
 });
 
 // POST /api/delay-claims/locks/:id/unlock - Unlock a locked report
-router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1597,7 +1597,7 @@ router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "S
 // ============================================================================
 
 // GET /api/delay-claims/photo-custody - List photo custody records
-router.get("/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1643,7 +1643,7 @@ router.get("/photo-custody", requireAuth, async (req: AuthRequest, res: Response
 });
 
 // POST /api/delay-claims/photo-custody - Record a custody action
-router.post("/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1677,7 +1677,7 @@ router.post("/photo-custody", requireAuth, async (req: AuthRequest, res: Respons
 });
 
 // GET /api/delay-claims/photo-custody/chain/:photoUrl - Get full chain of custody for a photo
-router.get("/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1724,7 +1724,7 @@ router.get("/photo-custody/chain/:photoUrl", requireAuth, async (req: AuthReques
 // ============================================================================
 
 // GET /api/delay-claims/:id - Get single delay claim
-router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/delay-claims/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1773,7 +1773,7 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/delay-claims - Create new delay claim
-router.post("/", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1835,7 +1835,7 @@ router.post("/", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
 });
 
 // PATCH /api/delay-claims/:id - Update delay claim
-router.patch("/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.patch("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1897,7 +1897,7 @@ router.patch("/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDEN
 });
 
 // POST /api/delay-claims/:id/submit - Submit claim for review
-router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1948,7 +1948,7 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERIN
 });
 
 // POST /api/delay-claims/:id/review - Start review of claim
-router.post("/:id/review", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/review", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -1992,7 +1992,7 @@ router.post("/:id/review", requireAuth, requireRole("ADMIN", "MANAGER"), async (
 });
 
 // POST /api/delay-claims/:id/approve - Approve claim
-router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2047,7 +2047,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
 });
 
 // POST /api/delay-claims/:id/reject - Reject claim
-router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/delay-claims/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2104,7 +2104,7 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
 });
 
 // DELETE /api/delay-claims/:id - Delete claim (draft only)
-router.delete("/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.delete("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
   try {
     const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
@@ -2147,240 +2147,4 @@ router.delete("/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: 
 // NOTE: DAILY REPORT LOCKS ROUTES are defined earlier in this file (before parameterized routes)
 
 // ============================================================================
-// PHOTO CUSTODY RECORDS ROUTES (placeholder - old locks section removed)
-// ============================================================================
-
-// Placeholder to mark where locks used to be - actual locks routes are above
-router.get("/locks-removed-placeholder", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const projectId = req.query.projectId as string | undefined;
-    
-    let conditions = [eq(dailyReportLocks.organizationId, orgId!)];
-    if (projectId) {
-      conditions.push(eq(dailyReportLocks.projectId, projectId));
-    }
-    
-    const locks = await db
-      .select({
-        lock: dailyReportLocks,
-        project: {
-          id: projects.id,
-          name: projects.name,
-          code: projects.code,
-        },
-      })
-      .from(dailyReportLocks)
-      .innerJoin(projects, eq(dailyReportLocks.projectId, projects.id))
-      .where(and(...conditions))
-      .orderBy(desc(dailyReportLocks.reportDate));
-    
-    res.json(locks.map(({ lock, project }) => ({
-      ...lock,
-      project,
-    })));
-  } catch (error) {
-    console.error("Error fetching daily report locks:", error);
-    res.status(500).json({ error: "Failed to fetch daily report locks" });
-  }
-});
-
-// GET /api/daily-report-locks/:projectId/:date - Get lock status for specific date
-router.get("/locks/:projectId/:date", requireAuth, async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const { projectId, date } = req.params;
-    
-    const [lock] = await db
-      .select()
-      .from(dailyReportLocks)
-      .where(and(
-        eq(dailyReportLocks.organizationId, orgId!),
-        eq(dailyReportLocks.projectId, projectId),
-        eq(dailyReportLocks.reportDate, date)
-      ))
-      .limit(1);
-    
-    res.json(lock || { status: "UNLOCKED", projectId, reportDate: date });
-  } catch (error) {
-    console.error("Error fetching lock status:", error);
-    res.status(500).json({ error: "Failed to fetch lock status" });
-  }
-});
-
-// POST /api/daily-report-locks - Lock a daily report
-router.post("/locks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const userId = req.user!.id;
-    const { projectId, reportDate, lockReason, contentHash } = req.body;
-    
-    if (!projectId || !reportDate) {
-      return res.status(400).json({ error: "Project ID and report date are required" });
-    }
-    
-    // Check for existing lock
-    const [existing] = await db
-      .select()
-      .from(dailyReportLocks)
-      .where(and(
-        eq(dailyReportLocks.projectId, projectId),
-        eq(dailyReportLocks.reportDate, reportDate)
-      ))
-      .limit(1);
-    
-    if (existing && existing.status !== "UNLOCKED") {
-      return res.status(400).json({ error: "Report is already locked" });
-    }
-    
-    let lock;
-    if (existing) {
-      [lock] = await db
-        .update(dailyReportLocks)
-        .set({
-          status: "LOCKED",
-          lockedAt: new Date(),
-          lockedById: userId,
-          lockReason: sanitizeText(lockReason),
-          contentHash,
-          updatedAt: new Date(),
-        })
-        .where(eq(dailyReportLocks.id, existing.id))
-        .returning();
-    } else {
-      [lock] = await db
-        .insert(dailyReportLocks)
-        .values({
-          organizationId: orgId,
-          projectId,
-          reportDate,
-          status: "LOCKED",
-          lockedAt: new Date(),
-          lockedById: userId,
-          lockReason: sanitizeText(lockReason),
-          contentHash,
-        })
-        .returning();
-    }
-    
-    await logAudit({
-      userId,
-      action: "CREATE",
-      entityType: "daily_report_lock",
-      entityId: lock.id,
-      newValue: JSON.stringify(lock),
-    }, req);
-    
-    res.status(201).json(lock);
-  } catch (error) {
-    console.error("Error locking daily report:", error);
-    res.status(500).json({ error: "Failed to lock daily report" });
-  }
-});
-
-// POST /api/daily-report-locks/:id/supervisor-lock - Supervisor-level lock
-router.post("/locks/:id/supervisor-lock", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const userId = req.user!.id;
-    const { id } = req.params;
-    const { supervisorLockNotes } = req.body;
-    
-    const [existing] = await db
-      .select()
-      .from(dailyReportLocks)
-      .where(and(eq(dailyReportLocks.id, id), eq(dailyReportLocks.organizationId, orgId!)))
-      .limit(1);
-    
-    if (!existing) {
-      return res.status(404).json({ error: "Lock record not found" });
-    }
-    
-    const [updated] = await db
-      .update(dailyReportLocks)
-      .set({
-        status: "SUPERVISOR_LOCKED",
-        supervisorLockedAt: new Date(),
-        supervisorLockedById: userId,
-        supervisorLockNotes: sanitizeText(supervisorLockNotes),
-        updatedAt: new Date(),
-      })
-      .where(eq(dailyReportLocks.id, id))
-      .returning();
-    
-    res.json(updated);
-  } catch (error) {
-    console.error("Error applying supervisor lock:", error);
-    res.status(500).json({ error: "Failed to apply supervisor lock" });
-  }
-});
-
-// POST /api/delay-claims/locks/:id/unlock - Unlock a locked report
-router.post("/locks/:id/unlock", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
-  try {
-    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    const userId = req.user!.id;
-    const { id } = req.params;
-    const { unlockReason } = req.body;
-    
-    const [existing] = await db
-      .select()
-      .from(dailyReportLocks)
-      .where(and(eq(dailyReportLocks.id, id), eq(dailyReportLocks.organizationId, orgId!)))
-      .limit(1);
-    
-    if (!existing) {
-      return res.status(404).json({ error: "Lock record not found" });
-    }
-    
-    if (existing.status === "SUPERVISOR_LOCKED") {
-      return res.status(400).json({ error: "Supervisor locked reports cannot be unlocked" });
-    }
-    
-    if (existing.status === "UNLOCKED") {
-      return res.status(400).json({ error: "Report is already unlocked" });
-    }
-    
-    const [updated] = await db
-      .update(dailyReportLocks)
-      .set({
-        status: "UNLOCKED",
-        updatedAt: new Date(),
-      })
-      .where(eq(dailyReportLocks.id, id))
-      .returning();
-    
-    await logAudit({
-      userId,
-      action: "UPDATE",
-      entityType: "daily_report_lock",
-      entityId: id,
-      oldValue: JSON.stringify({ status: existing.status }),
-      newValue: JSON.stringify({ status: "UNLOCKED", unlockReason }),
-    }, req);
-    
-    res.json(updated);
-  } catch (error) {
-    console.error("Error unlocking daily report:", error);
-    res.status(500).json({ error: "Failed to unlock daily report" });
-  }
-});
-
-// NOTE: Photo custody routes are defined earlier in this file (before parameterized routes)
-
 export default router;
