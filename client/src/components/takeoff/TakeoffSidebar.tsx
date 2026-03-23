@@ -30,7 +30,6 @@ import { IssuesTab } from "./IssuesTab";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffCondition } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
 import { Zap } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
   const [localValue, setLocalValue] = useState(currentValue);

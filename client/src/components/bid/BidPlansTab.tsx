@@ -1319,7 +1319,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
             <Button
               size="icon"
               variant="ghost"
-              className="absolute top-2 left-2 z-10 h-7 w-7 hidden md:flex"
+              className="absolute top-2 left-2 z-10 h-7 w-7 hidden md:flex mt-[11px] mb-[11px]"
               onClick={() => setLeftPanelCollapsed(true)}
               data-testid="button-collapse-panel"
             >
