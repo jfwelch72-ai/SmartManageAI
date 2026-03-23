@@ -460,14 +460,14 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                               <div
                                 key={doc.id}
                                 className={cn(
-                                  "flex items-center gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
+                                  "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
                                   selectedDocId === doc.id && "bg-accent"
                                 )}
                                 onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                 data-testid={`bid-document-${doc.id}`}
                               >
-                                <File className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                <span className="truncate flex-1 text-sm">{doc.title || doc.fileName}</span>
+                                <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button
@@ -572,13 +572,13 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                     onDragStart={(e) => handleSheetDragStart(e, sheet.id)}
                                     onDragEnd={() => setDraggedSheetId(null)}
                                     className={cn(
-                                      "flex items-center gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
+                                      "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
                                       draggedSheetId === sheet.id && "opacity-50"
                                     )}
                                     data-testid={`sheet-${sheet.id}`}
                                   >
-                                    <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab" />
-                                    <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                    <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
+                                    <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
                                     {renameSheetId === sheet.id ? (
                                       <Input
                                         value={renameSheetValue}
@@ -602,7 +602,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                         data-testid={`input-rename-sheet-${sheet.id}`}
                                       />
                                     ) : (
-                                      <span className="truncate flex-1">{sheet.sheetName}</span>
+                                      <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
                                     )}
                                     {sheet.scalePxPerFoot && renameSheetId !== sheet.id && (
                                       <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
@@ -685,7 +685,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
             {selectedDoc && (
               <div className="border-t p-3 bg-muted/30 space-y-2 shrink-0">
-                <p className="text-xs font-medium truncate">{selectedDoc.title || selectedDoc.fileName}</p>
+                <p className="text-xs font-medium break-words">{selectedDoc.title || selectedDoc.fileName}</p>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="outline" className="text-[10px]">{selectedDoc.type}</Badge>
                 </div>
