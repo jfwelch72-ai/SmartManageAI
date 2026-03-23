@@ -2079,7 +2079,7 @@ router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANA
       objectKey: z.string().optional(),
       fileSize: z.number().optional(),
       mimeType: z.string().optional(),
-      type: z.enum(["PLANS", "SPECS", "TAKEOFF", "OTHER"]).default("OTHER"),
+      type: z.enum(["PLANS", "SPECS", "TAKEOFF", "OTHER", "BIM"]).default("OTHER"),
     });
 
     const parsed = bodySchema.safeParse(req.body);

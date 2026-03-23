@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
@@ -6,8 +6,10 @@ import { ObjectUploader } from "@/components/ObjectUploader";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2,
-  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw
+  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box
 } from "lucide-react";
+
+const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
@@ -55,6 +57,7 @@ const DEFAULT_GROUPS: DocGroup[] = [
   { name: "Plans", expanded: true, types: ["PLANS"] },
   { name: "Specifications", expanded: true, types: ["SPECS"] },
   { name: "Takeoff", expanded: false, types: ["TAKEOFF"] },
+  { name: "BIM Models", expanded: true, types: ["BIM"] },
   { name: "Supporting Documents", expanded: true, types: ["OTHER"] },
 ];
 
@@ -549,6 +552,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         <SelectItem value="PLANS">Plans</SelectItem>
                         <SelectItem value="SPECS">Specs</SelectItem>
                         <SelectItem value="TAKEOFF">Takeoff</SelectItem>
+                        <SelectItem value="BIM">BIM</SelectItem>
                         <SelectItem value="OTHER">Other</SelectItem>
                       </SelectContent>
                     </Select>
@@ -556,9 +560,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   <ObjectUploader
                     key={docType}
                     maxNumberOfFiles={20}
-                    maxFileSize={104857600}
-                    allowedFileTypes={docType === "PLANS" ? [".pdf"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
-                    fileType="DOCUMENT"
+                    maxFileSize={docType === "BIM" ? 209715200 : 104857600}
+                    allowedFileTypes={docType === "PLANS" ? [".pdf"] : docType === "BIM" ? [".ifc"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
+                    fileType={docType === "BIM" ? "BIM" : "DOCUMENT"}
                     onComplete={handleUploadComplete}
                     testId="button-upload-bid-plan"
                   >
@@ -569,6 +573,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   </ObjectUploader>
                   {docType === "PLANS" && (
                     <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
+                  )}
+                  {docType === "BIM" && (
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>
                   )}
                 </div>
               )}
@@ -737,7 +744,11 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                 data-testid={`bid-document-${doc.id}`}
                               >
                                 <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
-                                <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                {doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc") ? (
+                                  <Box className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+                                ) : (
+                                  <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                )}
                                 <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
@@ -1132,6 +1143,57 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
               if (!doc) return <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} />;
               const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
               const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
+              const isBim = doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc");
+
+              if (isBim && previewUrlData?.url) {
+                return (
+                  <div className="flex flex-col h-full" data-testid="bim-preview-panel">
+                    <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => setPreviewDocId(null)}
+                        data-testid="button-back-to-takeoff"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Back to Takeoff
+                      </Button>
+                      <span className="text-sm font-medium truncate flex-1" data-testid="preview-doc-title">{doc.title || doc.fileName}</span>
+                      <Badge variant="outline" className="text-[10px] shrink-0">
+                        <Box className="w-3 h-3 mr-1" />
+                        BIM
+                      </Badge>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                      <Suspense fallback={
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                        </div>
+                      }>
+                        <BimViewer fileUrl={previewUrlData.url} fileName={doc.title || doc.fileName} />
+                      </Suspense>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isBim && previewUrlLoading) {
+                return (
+                  <div className="flex flex-col h-full" data-testid="bim-preview-panel">
+                    <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+                      <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setPreviewDocId(null)} data-testid="button-back-to-takeoff">
+                        <X className="w-3.5 h-3.5" /> Back to Takeoff
+                      </Button>
+                      <span className="text-sm font-medium truncate flex-1">{doc.title || doc.fileName}</span>
+                    </div>
+                    <div className="flex items-center justify-center h-full">
+                      <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div className="flex flex-col h-full" data-testid="doc-preview-panel">
                   <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
