@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
@@ -86,6 +86,40 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [panelWidth, setPanelWidth] = useState(256);
+  const isResizingRef = useRef(false);
+  const resizeStartXRef = useRef(0);
+  const resizeStartWidthRef = useRef(256);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    resizeStartXRef.current = e.clientX;
+    resizeStartWidthRef.current = panelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [panelWidth]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientX - resizeStartXRef.current;
+      const newWidth = Math.min(480, Math.max(180, resizeStartWidthRef.current + delta));
+      setPanelWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      if (!isResizingRef.current) return;
+      isResizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   const { data: previewUrlData, isLoading: previewUrlLoading } = useQuery<{ url: string }>({
     queryKey: ["/api/bids", bidCode, "documents", previewDocId, "preview-url"],
@@ -262,6 +296,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
         title,
         fileName: file.name,
         fileUrl,
+        objectKey: fileUrl,
         fileSize: file.size,
         mimeType: file.type,
         type: docType,
@@ -314,7 +349,10 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     <div className="flex flex-col h-[calc(100vh-280px)] min-h-[500px]">
       <div className="flex flex-1 min-h-0 relative">
         {!leftPanelCollapsed && (
-          <div className="absolute inset-0 z-20 md:relative md:inset-auto md:h-full w-full md:w-64 bg-card border-r flex flex-col shrink-0">
+          <div
+            className="absolute inset-0 z-20 md:relative md:inset-auto md:h-full w-full bg-card border-r flex flex-col shrink-0"
+            style={{ width: panelWidth }}
+          >
             <div className="p-2 border-b space-y-2">
               <div className="flex items-center gap-1">
                 <Button
@@ -686,6 +724,13 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 Continue to Scope of Work
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
+            </div>
+            <div
+              className="absolute top-0 right-0 h-full w-1 cursor-col-resize hidden md:flex items-center justify-center group z-30 hover:bg-primary/20 active:bg-primary/30 transition-colors"
+              onMouseDown={handleResizeMouseDown}
+              data-testid="panel-resize-handle"
+            >
+              <div className="w-0.5 h-8 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
             </div>
           </div>
         )}

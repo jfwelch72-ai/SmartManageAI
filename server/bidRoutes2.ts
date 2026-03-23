@@ -2143,11 +2143,12 @@ router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (r
       .where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id)))
       .limit(1);
     if (!doc) return res.status(404).json({ error: "Document not found" });
-    if (!doc.objectKey) return res.status(404).json({ error: "No file associated with this document" });
+    const storageKey = doc.objectKey || doc.fileUrl;
+    if (!storageKey) return res.status(404).json({ error: "No file associated with this document" });
 
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
-    const objectFile = await objectStorageService.getObjectEntityFile(doc.objectKey);
+    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
     const [signedUrl] = await objectFile.getSignedUrl({
       version: 'v4',
       action: 'read',
