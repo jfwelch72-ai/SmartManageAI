@@ -102,6 +102,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [createFolderParent, setCreateFolderParent] = useState<string | null>(null);
   const [hiddenSheetIds, setHiddenSheetIds] = useState<Set<string>>(new Set());
   const uploadButtonRef = useRef<HTMLButtonElement>(null);
+  const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  const [subFolderDocs, setSubFolderDocs] = useState<Record<string, string[]>>({});
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -265,17 +268,64 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
         )
       : documents;
 
+    const allSubFolderDocIds = new Set(Object.values(subFolderDocs).flat());
+
     return groups.map((group) => ({
       ...group,
-      docs: filtered.filter((d) => group.types.includes(d.type)),
+      docs: filtered.filter((d) => group.types.includes(d.type) && !allSubFolderDocIds.has(d.id)),
     }));
-  }, [documents, searchQuery, groups]);
+  }, [documents, searchQuery, groups, subFolderDocs]);
 
   const toggleGroup = (name: string) => {
     setGroups((prev) =>
       prev.map((g) => (g.name === name ? { ...g, expanded: !g.expanded } : g))
     );
   };
+
+  const subFolderKey = (parentName: string, childName: string) => `${parentName}/${childName}`;
+
+  const handleDocDragStart = useCallback((e: React.DragEvent, docId: string) => {
+    setDraggedDocId(docId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", docId);
+  }, []);
+
+  const handleDocDragEnd = useCallback(() => {
+    setDraggedDocId(null);
+    setDragOverTarget(null);
+  }, []);
+
+  const handleSubfolderDrop = useCallback((e: React.DragEvent, parentName: string, childName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!draggedDocId) return;
+
+    const key = `${parentName}/${childName}`;
+    setSubFolderDocs((prev) => {
+      const existing = prev[key] || [];
+      if (existing.includes(draggedDocId)) return prev;
+      const cleaned = Object.fromEntries(
+        Object.entries(prev).map(([k, ids]) => [k, ids.filter((id) => id !== draggedDocId)])
+      );
+      return { ...cleaned, [key]: [...existing, draggedDocId] };
+    });
+    setDraggedDocId(null);
+  }, [draggedDocId]);
+
+  const handleParentFolderDrop = useCallback((e: React.DragEvent, groupName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!draggedDocId) return;
+
+    setSubFolderDocs((prev) => {
+      return Object.fromEntries(
+        Object.entries(prev).map(([k, ids]) => [k, ids.filter((id) => id !== draggedDocId)])
+      );
+    });
+    setDraggedDocId(null);
+  }, [draggedDocId]);
 
   const handleRenameGroupStart = (name: string) => {
     setRenameGroupValue(name);
@@ -538,8 +588,14 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   groupedDocuments.map((group) => (
                     <div key={group.name}>
                       <div
-                        className="flex items-center gap-1.5 w-full px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/folder"
+                        className={cn(
+                          "flex items-center gap-1.5 w-full px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/folder",
+                          dragOverTarget === `parent:${group.name}` && draggedDocId !== null && "bg-blue-500/20 ring-1 ring-blue-500/50 rounded"
+                        )}
                         onClick={() => { if (renamingGroupName !== group.name) toggleGroup(group.name); }}
+                        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverTarget(`parent:${group.name}`); }}
+                        onDragLeave={() => setDragOverTarget(null)}
+                        onDrop={(e) => { setDragOverTarget(null); handleParentFolderDrop(e, group.name); }}
                         data-testid={`folder-${group.name.toLowerCase().replace(/\s+/g, '-')}`}
                       >
                         {group.expanded ? (
@@ -669,13 +725,18 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                             group.docs.map((doc) => (
                               <div
                                 key={doc.id}
+                                draggable
+                                onDragStart={(e) => handleDocDragStart(e, doc.id)}
+                                onDragEnd={handleDocDragEnd}
                                 className={cn(
                                   "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
-                                  selectedDocId === doc.id && "bg-accent"
+                                  selectedDocId === doc.id && "bg-accent",
+                                  draggedDocId === doc.id && "opacity-50"
                                 )}
                                 onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                 data-testid={`bid-document-${doc.id}`}
                               >
+                                <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
                                 <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                                 <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
                                 <DropdownMenu>
@@ -725,59 +786,101 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                               </div>
                             ))
                           )}
-                          {(group.children || []).map((child) => (
-                            <div key={child.name} className="mt-0.5">
-                              <div
-                                className="flex items-center gap-1.5 px-2 py-1 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/subfolder"
-                                onClick={() => {
-                                  setGroups((prev) =>
-                                    prev.map((g) =>
-                                      g.name === group.name
-                                        ? { ...g, children: (g.children || []).map((c) => c.name === child.name ? { ...c, expanded: !c.expanded } : c) }
-                                        : g
-                                    )
-                                  );
-                                }}
-                                data-testid={`subfolder-${child.name.toLowerCase().replace(/\s+/g, '-')}`}
-                              >
-                                {child.expanded ? (
-                                  <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
-                                ) : (
-                                  <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                                )}
-                                {child.expanded ? (
-                                  <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                                ) : (
-                                  <Folder className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                                )}
-                                <span className="truncate font-medium text-xs flex-1">{child.name}</span>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="h-4 w-4 opacity-0 group-hover/subfolder:opacity-100 shrink-0"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
+                          {(group.children || []).map((child) => {
+                            const sfKey = subFolderKey(group.name, child.name);
+                            const sfDocIds = subFolderDocs[sfKey] || [];
+                            const sfDocs = documents.filter((d) => sfDocIds.includes(d.id));
+                            const isDropTarget = dragOverTarget === sfKey && draggedDocId !== null;
+                            return (
+                              <div key={child.name} className="mt-0.5">
+                                <div
+                                  className={cn(
+                                    "flex items-center gap-1.5 px-2 py-1 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/subfolder",
+                                    isDropTarget && "bg-blue-500/20 ring-1 ring-blue-500/50 rounded"
+                                  )}
+                                  onClick={() => {
                                     setGroups((prev) =>
                                       prev.map((g) =>
                                         g.name === group.name
-                                          ? { ...g, children: (g.children || []).filter((c) => c.name !== child.name) }
+                                          ? { ...g, children: (g.children || []).map((c) => c.name === child.name ? { ...c, expanded: !c.expanded } : c) }
                                           : g
                                       )
                                     );
-                                    toast({ description: `Subfolder "${child.name}" removed.` });
                                   }}
-                                  data-testid={`delete-subfolder-${child.name}`}
+                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; setDragOverTarget(sfKey); }}
+                                  onDragLeave={() => setDragOverTarget(null)}
+                                  onDrop={(e) => handleSubfolderDrop(e, group.name, child.name)}
+                                  data-testid={`subfolder-${child.name.toLowerCase().replace(/\s+/g, '-')}`}
                                 >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-                              {child.expanded && (
-                                <div className="ml-4 px-2 py-1 text-xs text-muted-foreground italic">
-                                  No files
+                                  {child.expanded ? (
+                                    <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+                                  ) : (
+                                    <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                                  )}
+                                  {child.expanded ? (
+                                    <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                                  ) : (
+                                    <Folder className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                                  )}
+                                  <span className="truncate font-medium text-xs flex-1">{child.name}</span>
+                                  <Badge variant="secondary" className="text-[10px] h-3.5 px-1 shrink-0">
+                                    {sfDocs.length}
+                                  </Badge>
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="h-4 w-4 opacity-0 group-hover/subfolder:opacity-100 shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSubFolderDocs((prev) => {
+                                        const next = { ...prev };
+                                        delete next[sfKey];
+                                        return next;
+                                      });
+                                      setGroups((prev) =>
+                                        prev.map((g) =>
+                                          g.name === group.name
+                                            ? { ...g, children: (g.children || []).filter((c) => c.name !== child.name) }
+                                            : g
+                                        )
+                                      );
+                                      toast({ description: `Subfolder "${child.name}" removed. Files moved back to parent.` });
+                                    }}
+                                    data-testid={`delete-subfolder-${child.name}`}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
                                 </div>
-                              )}
-                            </div>
-                          ))}
+                                {child.expanded && (
+                                  <div className="ml-4">
+                                    {sfDocs.length === 0 ? (
+                                      <div className="px-2 py-1 text-xs text-muted-foreground italic">No files — drag documents here</div>
+                                    ) : (
+                                      sfDocs.map((doc) => (
+                                        <div
+                                          key={doc.id}
+                                          draggable
+                                          onDragStart={(e) => handleDocDragStart(e, doc.id)}
+                                          onDragEnd={handleDocDragEnd}
+                                          className={cn(
+                                            "flex items-start gap-1.5 px-2 py-1 text-xs cursor-pointer hover:bg-accent/50 transition-colors group",
+                                            selectedDocId === doc.id && "bg-accent",
+                                            draggedDocId === doc.id && "opacity-50"
+                                          )}
+                                          onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
+                                          data-testid={`subfolder-doc-${doc.id}`}
+                                        >
+                                          <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
+                                          <File className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+                                          <span className="break-words flex-1 min-w-0 leading-snug">{doc.title || doc.fileName}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
