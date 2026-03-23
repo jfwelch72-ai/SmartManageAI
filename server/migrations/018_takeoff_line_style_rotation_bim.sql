@@ -10,16 +10,17 @@ ALTER TABLE takeoff_sheets ADD COLUMN IF NOT EXISTS rotation INTEGER NOT NULL DE
 -- 3. Create bim_storey_associations table
 CREATE TABLE IF NOT EXISTS bim_storey_associations (
   id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id VARCHAR NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  bim_storey_id TEXT NOT NULL,
-  bim_storey_name TEXT NOT NULL,
-  sheet_id VARCHAR REFERENCES takeoff_sheets(id) ON DELETE SET NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+  bid_id VARCHAR REFERENCES bids(id) ON DELETE CASCADE,
+  project_id VARCHAR REFERENCES projects(id) ON DELETE CASCADE,
+  sheet_id VARCHAR NOT NULL REFERENCES takeoff_sheets(id) ON DELETE CASCADE,
+  bim_document_id VARCHAR NOT NULL,
+  storey_express_id INTEGER NOT NULL,
+  storey_name TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS bim_storey_assoc_project_idx ON bim_storey_associations(project_id);
 CREATE INDEX IF NOT EXISTS bim_storey_assoc_sheet_idx ON bim_storey_associations(sheet_id);
+CREATE INDEX IF NOT EXISTS bim_storey_assoc_bid_idx ON bim_storey_associations(bid_id);
 
 -- 4. Create takeoff_conditions table (organization-scoped)
 CREATE TABLE IF NOT EXISTS takeoff_conditions (
@@ -41,3 +42,4 @@ CREATE TABLE IF NOT EXISTS takeoff_conditions (
 );
 
 CREATE INDEX IF NOT EXISTS takeoff_conditions_org_idx ON takeoff_conditions(organization_id);
+CREATE INDEX IF NOT EXISTS takeoff_conditions_last_used_idx ON takeoff_conditions(last_used_at);
