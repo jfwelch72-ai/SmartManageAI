@@ -807,6 +807,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       </>
                     );
                   })()}
+                </div>
+              )}
             </CardContent>
           </Card>
 
