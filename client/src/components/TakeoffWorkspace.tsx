@@ -14,7 +14,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
-  Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare
+  Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
+  CheckCircle2, AlertCircle
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -22,6 +23,7 @@ import {
   sampleArcPoints,
 } from "@shared/utils/geometry";
 import { type Tool, validateHexColor, hexToRgba } from "./takeoff/types";
+import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
@@ -108,6 +110,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupDrawing, setMarkupDrawing] = useState(false);
   const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
+  const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -497,6 +500,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           setPdfImage(img);
           setIsPdfLoading(false);
         };
+
+        if (!currentSheet.scalePxPerFoot) {
+          try {
+            const textContent = await page.getTextContent();
+            const textItems = textContent.items
+              .filter((item: any) => item.str && item.str.trim())
+              .map((item: any) => item.str as string);
+            const detected = detectScaleFromText(textItems);
+            if (detected) {
+              setDetectedScale(detected);
+            }
+          } catch (textErr) {
+            console.warn("Could not extract text from PDF for scale detection:", textErr);
+          }
+        }
       } catch (error) {
         console.error('Error loading PDF:', error);
         setIsPdfLoading(false);
@@ -509,6 +527,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     };
 
     loadPDF();
+    setDetectedScale(null);
   }, [currentSheet?.id, currentSheet?.imageUrl, toast]);
 
   useLayoutEffect(() => {
@@ -598,6 +617,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0">
+        {detectedScale && !currentSheet?.scalePxPerFoot && (
+          <div className="bg-blue-50 dark:bg-blue-950/30 border-b border-blue-200 dark:border-blue-800 px-4 py-2 flex items-center gap-2 text-sm text-blue-800 dark:text-blue-200" data-testid="banner-detected-scale">
+            <Ruler className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+            <span>Detected scale: <strong>{detectedScale.label}</strong></span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                className="h-7 px-3 text-xs"
+                onClick={async () => {
+                  if (!selectedSheet) return;
+                  try {
+                    await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
+                      scalePxPerFoot: detectedScale.pxPerFoot,
+                      units: detectedScale.units,
+                    });
+                    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                    toast({ title: "Scale Applied", description: `Auto-detected scale ${detectedScale.label} applied` });
+                    setDetectedScale(null);
+                  } catch {
+                    toast({ title: "Error", description: "Failed to apply detected scale", variant: "destructive" });
+                  }
+                }}
+                data-testid="button-accept-detected-scale"
+              >
+                Accept
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-3 text-xs text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30"
+                onClick={() => setDetectedScale(null)}
+                data-testid="button-reject-detected-scale"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
         {currentSheetIsSuperseded && (
           <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200" data-testid="banner-sheet-superseded">
             <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
@@ -620,6 +678,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 {sheets.map((sheet: any) => (
                   <SelectItem key={sheet.id} value={sheet.id}>
                     <span className="flex items-center gap-2">
+                      {sheet.scalePxPerFoot ? (
+                        <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                      )}
                       {sheet.sheetName}
                       {sheet.revisionLabel && (
                         <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{sheet.revisionLabel}</Badge>

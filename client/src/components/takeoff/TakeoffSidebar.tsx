@@ -10,9 +10,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, Target, Info, Ruler, X,
-  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen
+  Plus, Pencil, Trash2, Save, Layers, Eye, EyeOff, CheckCircle2, AlertTriangle, AlertCircle, Target, Info, Ruler, X,
+  History, ChevronDown, ChevronRight, GitCompare, Pen, Square, Highlighter, Type, Spline, Flag, BookOpen, Copy
 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
@@ -138,6 +141,9 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const [markupsPanelOpen, setMarkupsPanelOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"tools" | "issues">("tools");
   const [saveToLibraryOpen, setSaveToLibraryOpen] = useState(false);
+  const [propagateDialogOpen, setPropagateDialogOpen] = useState(false);
+  const [propagateMode, setPropagateMode] = useState<"all" | "same-plan">("all");
+  const [isPropagating, setIsPropagating] = useState(false);
   const [saveToLibraryItem, setSaveToLibraryItem] = useState<{ name: string; unitOfMeasure: string; costTypes: string[]; unitCosts: Record<string, string>; notes: string } | null>(null);
   const openIssueCount = allSheetIssues.filter((i: any) => i.status === "OPEN").length;
 
@@ -635,6 +641,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   }} data-testid="button-start-multi-calib">
                     <Ruler className="w-3 h-3 mr-1" /> Multi-Point Calibration
                   </Button>
+                  {sheets.length > 1 && currentSheet?.scalePxPerFoot && sheets.some((s: any) => s.id !== selectedSheet && !s.scalePxPerFoot) && (
+                    <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setPropagateDialogOpen(true)} data-testid="button-apply-to-all-sheets">
+                      <Copy className="w-3 h-3 mr-1" /> Apply to All Sheets
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -768,7 +779,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                             onClick={() => !isCurrent && onSelectSheet?.(s.id)}
                             data-testid={`revision-item-${s.id}`}
                           >
-                            <span className="text-muted-foreground text-xs w-5 shrink-0">{idx + 1}.</span>
+                            {s.scalePxPerFoot ? (
+                              <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                            ) : (
+                              <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                            )}
                             <span className={cn("flex-1 truncate", isSuperseded && "text-muted-foreground")}>
                               {s.sheetName}
                             </span>
@@ -866,6 +881,109 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
           initialValues={saveToLibraryItem || undefined}
         />
       )}
+
+      <Dialog open={propagateDialogOpen} onOpenChange={setPropagateDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Apply Scale to Other Sheets</DialogTitle>
+            <DialogDescription>
+              Apply the current calibration ({currentSheet?.scalePxPerFoot?.toFixed(2)} px/{currentSheet?.units || "ft"}) to uncalibrated sheets.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <Button
+                variant={propagateMode === "all" ? "default" : "outline"}
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setPropagateMode("all")}
+                data-testid="button-propagate-all"
+              >
+                All Uncalibrated
+              </Button>
+              <Button
+                variant={propagateMode === "same-plan" ? "default" : "outline"}
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => setPropagateMode("same-plan")}
+                data-testid="button-propagate-same-plan"
+              >
+                Same Plan Only
+              </Button>
+            </div>
+            {(() => {
+              const uncalibratedSheets = sheets.filter((s: any) => {
+                if (s.id === selectedSheet) return false;
+                if (s.scalePxPerFoot) return false;
+                if (propagateMode === "same-plan" && currentSheet?.planId) {
+                  return s.planId === currentSheet.planId;
+                }
+                return propagateMode === "all";
+              });
+              return (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    {uncalibratedSheets.length === 0
+                      ? "No uncalibrated sheets found."
+                      : `${uncalibratedSheets.length} sheet${uncalibratedSheets.length !== 1 ? "s" : ""} will be updated:`}
+                  </p>
+                  {uncalibratedSheets.length > 0 && (
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {uncalibratedSheets.map((s: any) => (
+                        <div key={s.id} className="flex items-center gap-2 text-xs p-1.5 bg-muted rounded" data-testid={`propagate-sheet-${s.id}`}>
+                          <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                          <span className="truncate">{s.sheetName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setPropagateDialogOpen(false)} data-testid="button-propagate-cancel">
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={isPropagating}
+              onClick={async () => {
+                const uncalibratedSheets = sheets.filter((s: any) => {
+                  if (s.id === selectedSheet) return false;
+                  if (s.scalePxPerFoot) return false;
+                  if (propagateMode === "same-plan" && currentSheet?.planId) {
+                    return s.planId === currentSheet.planId;
+                  }
+                  return propagateMode === "all";
+                });
+                if (uncalibratedSheets.length === 0) {
+                  setPropagateDialogOpen(false);
+                  return;
+                }
+                setIsPropagating(true);
+                try {
+                  await apiRequest("PATCH", "/api/takeoff/sheets/batch-calibration", {
+                    sheetIds: uncalibratedSheets.map((s: any) => s.id),
+                    scalePxPerFoot: currentSheet?.scalePxPerFoot,
+                    units: currentSheet?.units || "ft",
+                  });
+                  queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "takeoff", "sheets"] });
+                  toast({ title: "Scale Propagated", description: `Applied calibration to ${uncalibratedSheets.length} sheet${uncalibratedSheets.length !== 1 ? "s" : ""}` });
+                  setPropagateDialogOpen(false);
+                } catch {
+                  toast({ title: "Error", description: "Failed to propagate scale", variant: "destructive" });
+                } finally {
+                  setIsPropagating(false);
+                }
+              }}
+              data-testid="button-propagate-confirm"
+            >
+              {isPropagating ? "Applying..." : "Apply Scale"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

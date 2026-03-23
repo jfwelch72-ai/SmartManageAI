@@ -1086,6 +1086,123 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
   }
 });
 
+// Batch update calibration for multiple sheets
+router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { sheetIds, scalePxPerFoot, units } = req.body;
+    const { takeoffSheets, takeoffMeasurements, projects } = await import("@shared/schema");
+    const {
+      computeDistanceInFeet,
+      computePolygonAreaInFt2,
+      computeVolumeInCY,
+    } = await import("@shared/utils/geometry");
+
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
+      res.status(400).json({ error: "sheetIds array is required" });
+      return;
+    }
+    if (!scalePxPerFoot || !Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
+      res.status(400).json({ error: "Valid scale is required" });
+      return;
+    }
+
+    const skipCalibrated = req.body.skipCalibrated !== false;
+
+    const results: any[] = [];
+    let updatedCount = 0;
+    let skippedCount = 0;
+
+    for (const sheetId of sheetIds) {
+      const access = await verifySheetAccess(sheetId, req.user!);
+      if (!access.allowed) continue;
+
+      if (skipCalibrated) {
+        const [existing] = await db
+          .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+          .from(takeoffSheets)
+          .where(eq(takeoffSheets.id, sheetId))
+          .limit(1);
+        if (existing?.scalePxPerFoot) {
+          skippedCount++;
+          continue;
+        }
+      }
+
+      const [updated] = await db
+        .update(takeoffSheets)
+        .set({
+          scalePxPerFoot,
+          units: units || "ft",
+          updatedAt: new Date(),
+        })
+        .where(eq(takeoffSheets.id, sheetId))
+        .returning();
+
+      if (updated) {
+        updatedCount++;
+        results.push(updated);
+
+        const measurements = await db
+          .select()
+          .from(takeoffMeasurements)
+          .where(eq(takeoffMeasurements.sheetId, sheetId));
+
+        for (const measurement of measurements) {
+          if (!measurement.points) continue;
+
+          let points: Array<{ x: number; y: number }>;
+          try {
+            points = typeof measurement.points === 'string'
+              ? JSON.parse(measurement.points)
+              : measurement.points as any;
+          } catch {
+            continue;
+          }
+
+          if (!points || points.length === 0) continue;
+
+          const updates: any = {};
+          try {
+            switch (measurement.type) {
+              case "LINEAR":
+                if (points.length >= 2) {
+                  updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
+                }
+                break;
+              case "AREA":
+                if (points.length >= 3) {
+                  updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                }
+                break;
+              case "VOLUME":
+                if (points.length >= 3 && measurement.depthFeet) {
+                  const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+                  updates.computedAreaFt2 = areaFt2;
+                  updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+                }
+                break;
+            }
+            if (Object.keys(updates).length > 0) {
+              await db
+                .update(takeoffMeasurements)
+                .set({ ...updates, updatedAt: new Date() })
+                .where(eq(takeoffMeasurements.id, measurement.id));
+            }
+          } catch (error) {
+            console.error(`Error recalculating measurement ${measurement.id}:`, error);
+          }
+        }
+      }
+    }
+
+    console.log(`Batch calibration: updated ${updatedCount}/${sheetIds.length} sheets, skipped ${skippedCount} already calibrated`);
+    res.json({ updated: updatedCount, skipped: skippedCount, sheets: results });
+  } catch (error) {
+    console.error("Error in batch calibration:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ====================
 // QUANTITY CATEGORY ROUTES
 // ====================
