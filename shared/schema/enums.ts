@@ -291,7 +291,7 @@ export const aiBidDocumentAnalysisStatusEnum = pgEnum("ai_bid_document_analysis_
 export const aiContractDocumentAnalysisStatusEnum = pgEnum("ai_contract_document_analysis_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);
 
 export const measurementTypeEnum = pgEnum("measurement_type", ["LINEAR", "AREA", "VOLUME", "COUNT", "NOTE", "LINEAR_WITH_DROP", "PITCHED_AREA", "PITCHED_LINEAR", "SURFACE_AREA"]);
-export const measurementSourceEnum = pgEnum("measurement_source", ["USER", "AI"]);
+export const measurementSourceEnum = pgEnum("measurement_source", ["USER", "AI", "BIM"]);
 export const measurementStatusEnum = pgEnum("measurement_status", ["DRAFT", "CONFIRMED"]);
 export const scopeTypeEnum = pgEnum("scope_type", ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "UNDERDRAIN", "BASE", "BEDDING", "GENERAL"]);
 export const estimateItemCategoryEnum = pgEnum("estimate_item_category", ["CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL"]);

@@ -371,6 +371,9 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{m.label || "Untitled"}</span>
                           <Badge variant="outline" className="text-xs">{m.type}</Badge>
+                          {m.source === "BIM" && (
+                            <Badge variant="secondary" className="text-[10px] bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-source-${m.id}`}>BIM</Badge>
+                          )}
                         </div>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); deleteMeasurementMutation.mutate(m); }} data-testid={`button-delete-measurement-${m.id}`}>
                           <Trash2 className="w-4 h-4 text-destructive" />

@@ -10,6 +10,9 @@ import {
 } from "lucide-react";
 
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
+import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
+import type { BimExtractionResult } from "@/utils/ifc-quantity-parser";
+import type { QuantityCategory } from "@shared/schema";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
@@ -108,6 +111,56 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
   const [subFolderDocs, setSubFolderDocs] = useState<Record<string, string[]>>({});
+  const [bimDialogOpen, setBimDialogOpen] = useState(false);
+  const [bimExtractionResult, setBimExtractionResult] = useState<BimExtractionResult | null>(null);
+  const [bimIsExtracting, setBimIsExtracting] = useState(false);
+  const [bimExtractionProgress, setBimExtractionProgress] = useState(0);
+
+  const { data: categories = [] } = useQuery<QuantityCategory[]>({
+    queryKey: ["/api/bids", bidId, "takeoff", "categories"],
+    enabled: !!bidId,
+  });
+
+  const isIfcFile = (fileName: string) => {
+    return fileName?.toLowerCase().endsWith(".ifc");
+  };
+
+  const handleExtractBimQuantities = async (doc: BidDocument) => {
+    setBimDialogOpen(true);
+    setBimIsExtracting(true);
+    setBimExtractionProgress(0);
+    setBimExtractionResult(null);
+
+    try {
+      const previewRes = await fetch(`/api/bids/${bidCode}/documents/${doc.id}/preview-url`, { credentials: "include" });
+      let fileUrl = doc.fileUrl;
+      if (previewRes.ok) {
+        const data = await previewRes.json();
+        fileUrl = data.url;
+      }
+
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error("Failed to fetch IFC file");
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { parseIfcFile } = await import("@/utils/ifc-quantity-parser");
+      const result = await parseIfcFile(arrayBuffer, doc.fileName, (pct) => {
+        setBimExtractionProgress(pct);
+      });
+
+      setBimExtractionResult(result);
+    } catch (error: any) {
+      console.error("BIM extraction error:", error);
+      toast({
+        title: "Extraction failed",
+        description: error?.message || "Failed to parse IFC file",
+        variant: "destructive",
+      });
+      setBimDialogOpen(false);
+    } finally {
+      setBimIsExtracting(false);
+    }
+  };
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -150,7 +203,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     staleTime: 50 * 60 * 1000,
   });
 
-  const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents"];
+  const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents", "BIM"];
 
   const createDocMutation = useMutation({
     mutationFn: async (data: { title: string; fileName: string; fileUrl: string; objectKey?: string; fileSize?: number; mimeType?: string; type: string }) => {
@@ -561,7 +614,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     key={docType}
                     maxNumberOfFiles={20}
                     maxFileSize={docType === "BIM" ? 209715200 : 104857600}
-                    allowedFileTypes={docType === "PLANS" ? [".pdf"] : docType === "BIM" ? [".ifc"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
+                    allowedFileTypes={docType === "PLANS" ? [".pdf"] : docType === "BIM" ? [".ifc"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx", ".ifc"]}
                     fileType={docType === "BIM" ? "BIM" : "DOCUMENT"}
                     onComplete={handleUploadComplete}
                     testId="button-upload-bid-plan"
@@ -572,7 +625,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     </Button>
                   </ObjectUploader>
                   {docType === "PLANS" && (
-                    <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF and IFC files for Plans</p>
                   )}
                   {docType === "BIM" && (
                     <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>
@@ -750,6 +803,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                   <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
                                 )}
                                 <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
+                                {isIfcFile(doc.fileName) && (
+                                  <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-ifc-${doc.id}`}>IFC</Badge>
+                                )}
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button
@@ -777,6 +833,15 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                       >
                                         <FileText className="w-4 h-4 mr-2" />
                                         Import to Takeoff
+                                      </DropdownMenuItem>
+                                    )}
+                                    {isIfcFile(doc.fileName) && (
+                                      <DropdownMenuItem
+                                        onClick={() => handleExtractBimQuantities(doc)}
+                                        data-testid={`button-extract-bim-${doc.id}`}
+                                      >
+                                        <Box className="w-4 h-4 mr-2" />
+                                        Extract Quantities
                                       </DropdownMenuItem>
                                     )}
                                     {canEdit && (
@@ -982,6 +1047,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                       />
                                     ) : (
                                       <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
+                                    )}
+                                    {(sheet as any).folderGroup === "BIM" && (
+                                      <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-sheet-${sheet.id}`}>BIM</Badge>
                                     )}
                                     {sheet.scalePxPerFoot && renameSheetId !== sheet.id && (
                                       <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
@@ -1367,6 +1435,15 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <BimQuantityDialog
+        open={bimDialogOpen}
+        onOpenChange={setBimDialogOpen}
+        bidId={bidId}
+        extractionResult={bimExtractionResult}
+        isExtracting={bimIsExtracting}
+        extractionProgress={bimExtractionProgress}
+        categories={categories}
+      />
     </div>
   );
 }

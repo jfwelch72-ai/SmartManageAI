@@ -430,6 +430,27 @@ export const insertTakeoffIssueCommentSchema = createInsertSchema(takeoffIssueCo
 export type InsertTakeoffIssueComment = z.infer<typeof insertTakeoffIssueCommentSchema>;
 export type TakeoffIssueComment = typeof takeoffIssueComments.$inferSelect;
 
+export const bimExtractions = pgTable("bim_extractions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  documentId: varchar("document_id"),
+  documentName: text("document_name"),
+  extractedData: text("extracted_data").notNull(),
+  mappings: text("mappings"),
+  importedAt: timestamp("imported_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  bidIdx: index("bim_extractions_bid_idx").on(table.bidId),
+  projectIdx: index("bim_extractions_project_idx").on(table.projectId),
+  documentIdx: index("bim_extractions_document_idx").on(table.documentId),
+}));
+
+export const insertBimExtractionSchema = createInsertSchema(bimExtractions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertBimExtraction = z.infer<typeof insertBimExtractionSchema>;
+export type BimExtraction = typeof bimExtractions.$inferSelect;
+
 // Project Specs table (uploaded spec books)
 export const projectSpecs = pgTable("project_specs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -152,6 +152,7 @@ import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-s
 import { getOrgIdForFilter, verifyOrgAccess, verifyUserOrgAccess, isSuperAdmin } from "./orgFilter";
 import bidRoutes2 from "./bidRoutes2";
 import bidTakeoffRoutes from "./bidTakeoffRoutes";
+import bimRoutes from "./bimRoutes";
 import dashboardUserRoutes from "./dashboardUserRoutes";
 import projectCoreRoutes from "./projectCoreRoutes";
 import scopeItemRoutes from "./scopeItemRoutes";
@@ -509,6 +510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bid Routes (extracted to bidRoutes2.ts)
   app.use(bidRoutes2);
   app.use(bidTakeoffRoutes);
+  app.use(bimRoutes);
 
 
   // Project Routes (extracted to projectCoreRoutes.ts, scopeItemRoutes.ts, materialTrackingRoutes.ts, productionRateRoutes.ts)
