@@ -52,6 +52,7 @@ interface UseTakeoffInteractionsParams {
   selectedCategoryId: string | null;
   selectedMeasurementId: string | null;
   setSelectedMeasurementId: (v: string | null) => void;
+  setSelectedSegmentIndex: (v: number | null) => void;
   notePosition: { x: number; y: number } | null;
   setNotePosition: (v: { x: number; y: number } | null) => void;
   setNoteDialogOpen: (v: boolean) => void;
@@ -105,7 +106,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     calibrationMode, setCalibrationMode, calibrationPoints, setCalibrationPoints,
     calibrationDistance, setCalibrationDistance, units,
     stageScale, setStageScale, stagePosition, setStagePosition,
-    selectedCategoryId, selectedMeasurementId, setSelectedMeasurementId,
+    selectedCategoryId, selectedMeasurementId, setSelectedMeasurementId, setSelectedSegmentIndex,
     notePosition, setNotePosition, setNoteDialogOpen, noteText, setNoteText,
     pitchRatio, dropDistance,
     verifyMode, setVerifyMode, verifyPoints, setVerifyPoints, verifyExpectedDistance, setVerifyResult,
@@ -212,13 +213,47 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     setDrawingPoints([]);
   }, [selectedSheet, currentSheet, drawingPoints, activeTool, selectedCategoryId, pitchRatio, measurements.length, aggregatedMeasurements, createMeasurementMutation, setIsDrawing, setDrawingPoints, toast]);
 
+  const completeSegment = useCallback(() => {
+    if (!selectedSheet || !currentSheet?.scalePxPerFoot || drawingPoints.length < 2) {
+      toast({ title: "Error", description: "Need at least 2 points for a segment measurement", variant: "destructive" });
+      return;
+    }
+
+    const segmentProperties: Array<{ label: string; color: string; unitCost?: number; costCodeId?: string; categoryId?: string }> = [];
+    const segmentColors = ["#2563eb", "#dc2626", "#16a34a", "#ea580c", "#8b5cf6", "#0891b2", "#d97706", "#be185d"];
+    let totalLengthFt = 0;
+
+    for (let i = 0; i < drawingPoints.length - 1; i++) {
+      const segLen = computeDistanceInFeet([drawingPoints[i], drawingPoints[i + 1]], currentSheet.scalePxPerFoot);
+      totalLengthFt += segLen;
+      segmentProperties.push({
+        label: `Seg ${i + 1}`,
+        color: segmentColors[i % segmentColors.length],
+      });
+    }
+
+    createMeasurementMutation.mutate({
+      sheetId: selectedSheet,
+      type: "SEGMENT",
+      points: drawingPoints,
+      label: `Segment ${(aggregatedMeasurements.byType.segment?.length || 0) + 1}`,
+      categoryId: selectedCategoryId,
+      computedLengthFt: totalLengthFt,
+      metadata: JSON.stringify({ segmentProperties }),
+    });
+    toast({ title: "Segment Created", description: `${drawingPoints.length - 1} segments, ${totalLengthFt.toFixed(2)} LF total` });
+
+    setIsDrawing(false);
+    setDrawingPoints([]);
+  }, [selectedSheet, currentSheet, drawingPoints, selectedCategoryId, aggregatedMeasurements, createMeasurementMutation, setIsDrawing, setDrawingPoints, toast]);
+
   const handleStageClick = useCallback((e: any) => {
     const stage = e.target.getStage();
     const pointerPosition = stage.getPointerPosition();
     const transform = stage.getAbsoluteTransform().copy().invert();
     let point = transform.point(pointerPosition);
 
-    const isDrawingTool = ["linear", "arc", "area", "volume", "count"].includes(activeTool);
+    const isDrawingTool = ["linear", "arc", "area", "volume", "count", "segment"].includes(activeTool);
     if (isDrawingTool) {
       point = resolvePoint(point);
     }
@@ -226,6 +261,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     if (activeTool === "select") {
       if (e.target === stage) {
         setSelectedMeasurementId(null);
+        setSelectedSegmentIndex(null);
       }
       return;
     }
@@ -357,6 +393,16 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           const distance = computePixelDistance(point, firstPoint);
           if (distance < 10) { completePolygon(); return; }
         }
+        setDrawingPoints([...drawingPoints, point]);
+      }
+    } else if (activeTool === "segment") {
+      if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
+      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!isDrawing) {
+        setIsDrawing(true);
+        setDrawingPoints([point]);
+        toast({ title: "Segment Tool", description: "Click to add segment points. Double-click or press Enter to finish." });
+      } else {
         setDrawingPoints([...drawingPoints, point]);
       }
     } else if (activeTool === "count") {
@@ -623,12 +669,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   useEffect(() => {
     if (!isDrawing) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Enter" && drawingPoints.length >= 3) completePolygon();
-      else if (e.key === "Escape") { setIsDrawing(false); setDrawingPoints([]); toast({ title: "Drawing Cancelled" }); }
+      if (e.key === "Enter") {
+        if (activeTool === "segment" && drawingPoints.length >= 2) completeSegment();
+        else if (drawingPoints.length >= 3) completePolygon();
+      } else if (e.key === "Escape") { setIsDrawing(false); setDrawingPoints([]); toast({ title: "Drawing Cancelled" }); }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isDrawing, drawingPoints, completePolygon, setIsDrawing, setDrawingPoints, toast]);
+  }, [isDrawing, drawingPoints, activeTool, completePolygon, completeSegment, setIsDrawing, setDrawingPoints, toast]);
 
   useEffect(() => {
     const handleFullscreenChange = () => setIsFullscreen(!!document.fullscreenElement);
@@ -696,7 +744,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       const key = event.key.toLowerCase();
 
       if (canUseToolShortcuts) {
-        const toolMap: Record<string, Tool> = { s: "select", h: "pan", l: "linear", a: "area", v: "volume", c: "count", n: "note", r: "arc", d: "linear_with_drop", p: "pitched_linear", t: "pitched_area", g: "surface_area" };
+        const toolMap: Record<string, Tool> = { s: "select", h: "pan", l: "linear", a: "area", v: "volume", c: "count", n: "note", r: "arc", d: "linear_with_drop", p: "pitched_linear", t: "pitched_area", g: "surface_area", e: "segment" };
         if (toolMap[key]) { event.preventDefault(); setActiveTool(toolMap[key]); }
       }
 
@@ -744,6 +792,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     handleSaveCalibration,
     handleApplyPresetScale,
     completePolygon,
+    completeSegment,
     toggleFullscreen,
     resolvePoint,
     snapEnabled,

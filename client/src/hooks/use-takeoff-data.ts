@@ -193,6 +193,7 @@ export function useTakeoffData({
       unitCost?: number;
       computedSurfaceAreaFt2?: number;
       computedLengthFt?: number;
+      metadata?: string;
     }) => {
       const res = await apiRequest("POST", "/api/takeoff/measurements", data);
       return res.json();
@@ -211,7 +212,7 @@ export function useTakeoffData({
   });
 
   const updateMeasurementMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null }) => {
+    mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; metadata?: string; points?: string; computedLengthFt?: number }) => {
       const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
       return res.json();
     },
@@ -418,11 +419,13 @@ export function useTakeoffData({
     const byType = {
       linear: [] as TakeoffMeasurement[], area: [] as TakeoffMeasurement[], volume: [] as TakeoffMeasurement[], count: [] as TakeoffMeasurement[],
       linearWithDrop: [] as TakeoffMeasurement[], pitchedLinear: [] as TakeoffMeasurement[], pitchedArea: [] as TakeoffMeasurement[], surfaceArea: [] as TakeoffMeasurement[],
+      segment: [] as TakeoffMeasurement[],
     };
     const byCategory: Record<string, TakeoffMeasurement[]> = {};
     const uncategorized: TakeoffMeasurement[] = [];
     let linearTotal = 0, areaTotal = 0, volumeTotal = 0, countTotal = 0;
     let pitchedLinearTotal = 0, pitchedAreaTotal = 0, surfaceAreaTotal = 0, linearWithDropTotal = 0;
+    let segmentTotal = 0;
 
     measurements.forEach(m => {
       if (m.type === "LINEAR") {
@@ -456,6 +459,10 @@ export function useTakeoffData({
         byType.surfaceArea.push(m);
         const val = Number((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2);
         surfaceAreaTotal += Number.isFinite(val) ? val : 0;
+      } else if (m.type === "SEGMENT") {
+        byType.segment.push(m);
+        const val = Number(m.computedLengthFt);
+        segmentTotal += Number.isFinite(val) ? val : 0;
       }
 
       if (m.categoryId) {
@@ -470,7 +477,7 @@ export function useTakeoffData({
       byType,
       byCategory,
       uncategorized,
-      grandTotals: { linearTotal, areaTotal, volumeTotal, countTotal, pitchedLinearTotal, pitchedAreaTotal, surfaceAreaTotal, linearWithDropTotal }
+      grandTotals: { linearTotal, areaTotal, volumeTotal, countTotal, pitchedLinearTotal, pitchedAreaTotal, surfaceAreaTotal, linearWithDropTotal, segmentTotal }
     };
   }, [measurements]);
 

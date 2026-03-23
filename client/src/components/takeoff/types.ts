@@ -1,7 +1,7 @@
 import {
   MousePointer2, Hand, Ruler, Square, Circle as CircleIcon,
   Box, MapPin, StickyNote, MoveVertical, Triangle, Scaling, Grid3x3,
-  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine, Flag
+  MoveUpRight, Type, RectangleHorizontal, MessageSquare, Highlighter, PenLine, Flag, GitBranch
 } from "lucide-react";
 
 export type Tool =
@@ -18,6 +18,7 @@ export type Tool =
   | "pitched_area"
   | "pitched_linear"
   | "surface_area"
+  | "segment"
   | "markup_arrow"
   | "markup_text"
   | "markup_rectangle"
@@ -30,7 +31,7 @@ export type MarkupToolId = "markup_arrow" | "markup_text" | "markup_rectangle" |
 
 export const MARKUP_TOOL_IDS: MarkupToolId[] = ["markup_arrow", "markup_text", "markup_rectangle", "markup_cloud", "markup_highlight", "markup_freehand"];
 
-export type MeasurementType = "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE" | "LINEAR_WITH_DROP" | "PITCHED_AREA" | "PITCHED_LINEAR" | "SURFACE_AREA";
+export type MeasurementType = "LINEAR" | "AREA" | "VOLUME" | "COUNT" | "NOTE" | "LINEAR_WITH_DROP" | "PITCHED_AREA" | "PITCHED_LINEAR" | "SURFACE_AREA" | "SEGMENT";
 
 export interface PlanDocument {
   id: string;
@@ -64,6 +65,7 @@ export const TOOL_CONFIG = [
   { id: "pitched_linear", icon: Triangle, label: "Pitched Linear", color: "primary", shortcut: "P", group: "measure" },
   { id: "pitched_area", icon: Scaling, label: "Pitched Area", color: "primary", shortcut: "T", group: "measure" },
   { id: "surface_area", icon: Grid3x3, label: "Surface Area", color: "primary", shortcut: "G", group: "measure" },
+  { id: "segment", icon: GitBranch, label: "Segment", color: "primary", shortcut: "E", group: "measure" },
   { id: "markup_arrow", icon: MoveUpRight, label: "Arrow", color: "default", shortcut: null, group: "markup" },
   { id: "markup_text", icon: Type, label: "Text Label", color: "default", shortcut: null, group: "markup" },
   { id: "markup_rectangle", icon: RectangleHorizontal, label: "Rectangle", color: "default", shortcut: null, group: "markup" },

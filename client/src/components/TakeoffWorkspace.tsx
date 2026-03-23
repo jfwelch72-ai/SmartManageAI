@@ -83,6 +83,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [dropDistance, setDropDistance] = useState("");
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
   const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
   const [isSpacebarHeld, setIsSpacebarHeld] = useState(false);
   const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
@@ -331,6 +332,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     selectedCategoryId,
     selectedMeasurementId,
     setSelectedMeasurementId,
+    setSelectedSegmentIndex,
     notePosition,
     setNotePosition,
     setNoteDialogOpen,
@@ -376,6 +378,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     handleSaveCalibration,
     handleApplyPresetScale,
     completePolygon,
+    completeSegment,
     toggleFullscreen,
     snapEnabled,
     setSnapEnabled,
@@ -1345,12 +1348,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
                   completePolygon();
+                } else if (activeTool === "segment" && isDrawing && drawingPoints.length >= 2) {
+                  e.evt.preventDefault();
+                  completeSegment();
                 }
               }}
               onDblTap={(e: any) => {
                 if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
                   completePolygon();
+                } else if (activeTool === "segment" && isDrawing && drawingPoints.length >= 2) {
+                  e.evt.preventDefault();
+                  completeSegment();
                 }
               }}
               onWheel={handleWheel}
@@ -1398,6 +1407,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       e.cancelBubble = true;
                       e.evt.stopPropagation();
                       setSelectedMeasurementId(m.id === selectedMeasurementId ? null : m.id);
+                      setSelectedSegmentIndex(null);
                     }
                   };
 
@@ -1508,6 +1518,75 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         />
                       </Fragment>
                     );
+                  } else if (m.type === "SEGMENT" && points.length >= 2) {
+                    const segProps = (() => {
+                      try {
+                        const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+                        return meta?.segmentProperties || [];
+                      } catch { return []; }
+                    })();
+                    const segmentColors = ["#2563eb", "#dc2626", "#16a34a", "#ea580c", "#8b5cf6", "#0891b2", "#d97706", "#be185d"];
+                    return (
+                      <Fragment key={m.id}>
+                        {points.slice(0, -1).map((p: any, i: number) => {
+                          const segColor = segProps[i]?.color || segmentColors[i % segmentColors.length];
+                          const isSegSelected = isSelected && selectedSegmentIndex === i;
+                          return (
+                            <Line
+                              key={`${m.id}-seg-${i}`}
+                              points={[p.x, p.y, points[i + 1].x, points[i + 1].y]}
+                              stroke={segColor}
+                              strokeWidth={isSegSelected ? 6 : isSelected ? 4 : 3}
+                              hitStrokeWidth={isMobile ? 20 : 10}
+                              opacity={isSegSelected ? 1 : isSelected ? 0.9 : 0.8}
+                              onClick={(e: any) => {
+                                if (activeTool === "select") {
+                                  e.cancelBubble = true;
+                                  e.evt.stopPropagation();
+                                  setSelectedMeasurementId(m.id);
+                                  setSelectedSegmentIndex(i);
+                                }
+                              }}
+                              onTap={(e: any) => {
+                                if (activeTool === "select") {
+                                  e.cancelBubble = true;
+                                  e.evt.stopPropagation();
+                                  setSelectedMeasurementId(m.id);
+                                  setSelectedSegmentIndex(i);
+                                }
+                              }}
+                            />
+                          );
+                        })}
+                        {points.map((p: any, i: number) => (
+                          <Circle
+                            key={`${m.id}-node-${i}`}
+                            x={p.x}
+                            y={p.y}
+                            radius={isSelected ? (isMobile ? 8 : 6) : (isMobile ? 6 : 4)}
+                            fill="white"
+                            stroke={baseColor}
+                            strokeWidth={2}
+                            onClick={(e: any) => {
+                              if (activeTool === "select") {
+                                e.cancelBubble = true;
+                                e.evt.stopPropagation();
+                                setSelectedMeasurementId(m.id);
+                                setSelectedSegmentIndex(null);
+                              }
+                            }}
+                            onTap={(e: any) => {
+                              if (activeTool === "select") {
+                                e.cancelBubble = true;
+                                e.evt.stopPropagation();
+                                setSelectedMeasurementId(m.id);
+                                setSelectedSegmentIndex(null);
+                              }
+                            }}
+                          />
+                        ))}
+                      </Fragment>
+                    );
                   }
                   return null;
                 })}
@@ -1571,6 +1650,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         strokeWidth={2}
                         dash={[5, 5]}
                       />
+                    )}
+
+                    {activeTool === "segment" && drawingPoints.length >= 2 && (
+                      <>
+                        {drawingPoints.slice(0, -1).map((p, i) => {
+                          const segmentColors = ["#2563eb", "#dc2626", "#16a34a", "#ea580c", "#8b5cf6", "#0891b2", "#d97706", "#be185d"];
+                          return (
+                            <Line
+                              key={`temp-seg-${i}`}
+                              points={[p.x, p.y, drawingPoints[i + 1].x, drawingPoints[i + 1].y]}
+                              stroke={segmentColors[i % segmentColors.length]}
+                              strokeWidth={2}
+                              dash={[5, 5]}
+                            />
+                          );
+                        })}
+                      </>
                     )}
 
                     {activeTool === "arc" && drawingPoints.length === 2 && currentSheet?.scalePxPerFoot && (
@@ -2223,6 +2319,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         measurements={measurements}
         selectedMeasurementId={selectedMeasurementId}
         setSelectedMeasurementId={setSelectedMeasurementId}
+        selectedSegmentIndex={selectedSegmentIndex}
+        setSelectedSegmentIndex={setSelectedSegmentIndex}
         deleteMeasurementMutation={deleteMeasurementMutation}
         updateMeasurementMutation={updateMeasurementMutation}
         aggregatedMeasurements={aggregatedMeasurements}

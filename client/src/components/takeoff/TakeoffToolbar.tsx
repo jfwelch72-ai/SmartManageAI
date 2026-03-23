@@ -334,6 +334,8 @@ export function TakeoffToolbar({
             ? `${drawingPoints.length} pts — Double-tap to close`
             : isDrawing && (activeTool === "linear" || activeTool === "pitched_linear" || activeTool === "linear_with_drop")
             ? `${drawingPoints.length}/2 pts — Tap to place`
+            : isDrawing && activeTool === "segment"
+            ? `${drawingPoints.length} pts — Double-tap to finish`
             : isDrawing && activeTool === "arc"
             ? `${drawingPoints.length}/3 pts — Tap to place`
             : activeTool === "calibrate"

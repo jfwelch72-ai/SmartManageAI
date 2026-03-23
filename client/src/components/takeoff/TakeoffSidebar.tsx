@@ -80,6 +80,8 @@ interface TakeoffSidebarProps {
   measurements: TakeoffMeasurement[];
   selectedMeasurementId: string | null;
   setSelectedMeasurementId: (v: string | null) => void;
+  selectedSegmentIndex: number | null;
+  setSelectedSegmentIndex: (v: number | null) => void;
   deleteMeasurementMutation: any;
   updateMeasurementMutation: any;
   aggregatedMeasurements: any;
@@ -132,6 +134,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     hiddenCategoryIds, onToggleCategoryVisibility,
     pitchRatio, setPitchRatio, dropDistance, setDropDistance,
     measurements, selectedMeasurementId, setSelectedMeasurementId,
+    selectedSegmentIndex, setSelectedSegmentIndex,
     deleteMeasurementMutation, updateMeasurementMutation, aggregatedMeasurements,
     projectAddenda, addendaOverlays, setAddendaOverlays,
     verifyMode, setVerifyMode, verifyPoints, setVerifyPoints,
@@ -413,7 +416,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               ) : (
                 <div className="space-y-2">
                   {measurements.map((m) => (
-                    <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); clickTimerRef.current = setTimeout(() => { setSelectedMeasurementId(m.id); onZoomToMeasurement?.(m); clickTimerRef.current = null; }, 200); }} onDoubleClick={() => { if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; } setSelectedMeasurementId(m.id); onZoomToFitMeasurement?.(m); }} data-testid={`measurement-item-${m.id}`}>
+                    <div key={m.id} className={`p-3 rounded-md bg-muted hover-elevate cursor-pointer ${selectedMeasurementId === m.id ? 'ring-2 ring-primary' : ''}`} onClick={() => { if (clickTimerRef.current) clearTimeout(clickTimerRef.current); clickTimerRef.current = setTimeout(() => { setSelectedMeasurementId(m.id); setSelectedSegmentIndex(null); onZoomToMeasurement?.(m); clickTimerRef.current = null; }, 200); }} onDoubleClick={() => { if (clickTimerRef.current) { clearTimeout(clickTimerRef.current); clickTimerRef.current = null; } setSelectedMeasurementId(m.id); setSelectedSegmentIndex(null); onZoomToFitMeasurement?.(m); }} data-testid={`measurement-item-${m.id}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">{m.label || "Untitled"}</span>
@@ -432,8 +435,49 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           : (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") && (m.computedAreaFt2 || (m as any).computedSurfaceAreaFt2)
                           ? `${((m as any).computedSurfaceAreaFt2 || m.computedAreaFt2 || 0).toFixed(2)} SF${(m as any).pitchRatio ? ` (${(m as any).pitchRatio})` : ""}`
                           : m.type === "VOLUME" && m.computedVolumeCy ? `${(Number.isFinite(m.computedVolumeCy) ? m.computedVolumeCy : 0).toFixed(2)} CY`
+                          : m.type === "SEGMENT" && m.computedLengthFt ? `${(Number.isFinite(m.computedLengthFt) ? m.computedLengthFt : 0).toFixed(2)} LF total`
                           : m.type === "COUNT" ? "Count marker" : m.type === "NOTE" ? "Note" : ""}
                       </p>
+                      {m.type === "SEGMENT" && (() => {
+                        const points = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
+                        let segProps: any[] = [];
+                        try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch {}
+                        if (points.length < 2 || !currentSheet?.scalePxPerFoot) return null;
+                        return (
+                          <Collapsible>
+                            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1" data-testid={`button-expand-segments-${m.id}`}>
+                              <ChevronRight className="w-3 h-3 transition-transform [[data-state=open]>&]:rotate-90" />
+                              <span>{points.length - 1} segments</span>
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <div className="mt-1 space-y-1 ml-2 border-l-2 border-muted pl-2">
+                                {points.slice(0, -1).map((_: any, i: number) => {
+                                  const segLabel = segProps[i]?.label || `Seg ${i + 1}`;
+                                  const segColor = segProps[i]?.color || "#2563eb";
+                                  const p1 = points[i];
+                                  const p2 = points[i + 1];
+                                  const dx = p2.x - p1.x;
+                                  const dy = p2.y - p1.y;
+                                  const pxDist = Math.sqrt(dx * dx + dy * dy);
+                                  const segLenFt = pxDist / currentSheet.scalePxPerFoot;
+                                  return (
+                                    <div
+                                      key={i}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer rounded px-1 py-0.5 transition-colors ${selectedMeasurementId === m.id && selectedSegmentIndex === i ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted'}`}
+                                      onClick={(e) => { e.stopPropagation(); setSelectedMeasurementId(m.id); setSelectedSegmentIndex(i); }}
+                                      data-testid={`segment-child-${m.id}-${i}`}
+                                    >
+                                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: segColor }} />
+                                      <span className="text-muted-foreground">{segLabel}:</span>
+                                      <span>{segLenFt.toFixed(2)} LF</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        );
+                      })()}
                       {(m as any).costCodeId && <p className="text-xs text-blue-500 mt-1">Cost Code: {(m as any).costCodeId}</p>}
                       {(m as any).unitCost && <p className="text-xs text-green-500">Unit Cost: ${Number((m as any).unitCost).toFixed(2)}</p>}
                     </div>
@@ -452,12 +496,177 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                   <h3 className="font-semibold text-sm">Measurement Properties</h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between"><span className="text-muted-foreground">Type:</span><Badge variant="outline">{selM.type}</Badge></div>
-                    {selM.computedLengthFt && <div className="flex justify-between"><span className="text-muted-foreground">Length:</span><span>{Number(selM.computedLengthFt).toFixed(2)} LF</span></div>}
+                    {selM.computedLengthFt && <div className="flex justify-between"><span className="text-muted-foreground">{selM.type === "SEGMENT" ? "Total Length:" : "Length:"}</span><span>{Number(selM.computedLengthFt).toFixed(2)} LF</span></div>}
+                    {selM.type === "SEGMENT" && (() => {
+                      const pts = typeof selM.points === 'string' ? JSON.parse(selM.points) : selM.points;
+                      return pts.length >= 2 ? <div className="flex justify-between"><span className="text-muted-foreground">Segments:</span><span>{pts.length - 1}</span></div> : null;
+                    })()}
                     {selM.computedAreaFt2 && <div className="flex justify-between"><span className="text-muted-foreground">Area:</span><span>{Number(selM.computedAreaFt2).toFixed(2)} SF</span></div>}
                     {(selM as any).computedSurfaceAreaFt2 && <div className="flex justify-between"><span className="text-muted-foreground">Surface Area:</span><span>{Number((selM as any).computedSurfaceAreaFt2).toFixed(2)} SF</span></div>}
                     {selM.computedVolumeCy && <div className="flex justify-between"><span className="text-muted-foreground">Volume:</span><span>{Number(selM.computedVolumeCy).toFixed(2)} CY</span></div>}
                     {(selM as any).pitchRatio && <div className="flex justify-between"><span className="text-muted-foreground">Pitch:</span><span>{(selM as any).pitchRatio}</span></div>}
                   </div>
+                  {selM.type === "SEGMENT" && selectedSegmentIndex !== null && (() => {
+                    const pts = typeof selM.points === 'string' ? JSON.parse(selM.points) : selM.points;
+                    let segProps: any[] = [];
+                    try { const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata) : selM.metadata; segProps = meta?.segmentProperties || []; } catch {}
+                    if (selectedSegmentIndex >= pts.length - 1) return null;
+                    const p1 = pts[selectedSegmentIndex];
+                    const p2 = pts[selectedSegmentIndex + 1];
+                    const dx = p2.x - p1.x;
+                    const dy = p2.y - p1.y;
+                    const pxDist = Math.sqrt(dx * dx + dy * dy);
+                    const segLenFt = currentSheet?.scalePxPerFoot ? pxDist / currentSheet.scalePxPerFoot : 0;
+                    const segProp = segProps[selectedSegmentIndex] || {};
+                    return (
+                      <>
+                        <Separator />
+                        <div className="space-y-2" key={`${selM.id}-seg-${selectedSegmentIndex}`}>
+                          <h4 className="font-semibold text-xs text-primary">Selected Segment: {segProp.label || `Seg ${selectedSegmentIndex + 1}`}</h4>
+                          <div className="flex justify-between text-sm"><span className="text-muted-foreground">Length:</span><span>{segLenFt.toFixed(2)} LF</span></div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Segment Label</Label>
+                            <Input
+                              className="h-8 text-sm"
+                              defaultValue={segProp.label || `Seg ${selectedSegmentIndex + 1}`}
+                              onBlur={(e) => {
+                                const newLabel = e.target.value.trim();
+                                if (!newLabel || newLabel === segProp.label) return;
+                                const newSegProps = [...segProps];
+                                newSegProps[selectedSegmentIndex] = { ...newSegProps[selectedSegmentIndex], label: newLabel };
+                                const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata || '{}') : (selM.metadata || {});
+                                updateMeasurementMutation.mutate({ id: selM.id, metadata: JSON.stringify({ ...meta, segmentProperties: newSegProps }) });
+                              }}
+                              data-testid={`input-segment-label-${selectedSegmentIndex}`}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Segment Color</Label>
+                            <input
+                              type="color"
+                              className="w-full h-8 cursor-pointer rounded border"
+                              defaultValue={segProp.color || "#2563eb"}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const newSegProps = [...segProps];
+                                newSegProps[selectedSegmentIndex] = { ...newSegProps[selectedSegmentIndex], color: val };
+                                const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata || '{}') : (selM.metadata || {});
+                                updateMeasurementMutation.mutate({ id: selM.id, metadata: JSON.stringify({ ...meta, segmentProperties: newSegProps }) });
+                              }}
+                              data-testid={`input-segment-color-${selectedSegmentIndex}`}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Segment Unit Cost ($)</Label>
+                            <Input
+                              type="number"
+                              className="h-8 text-sm"
+                              placeholder="0.00"
+                              defaultValue={segProp.unitCost || ""}
+                              onBlur={(e) => {
+                                const val = parseFloat(e.target.value) || undefined;
+                                if (val === segProp.unitCost) return;
+                                const newSegProps = [...segProps];
+                                newSegProps[selectedSegmentIndex] = { ...newSegProps[selectedSegmentIndex], unitCost: val };
+                                const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata || '{}') : (selM.metadata || {});
+                                updateMeasurementMutation.mutate({ id: selM.id, metadata: JSON.stringify({ ...meta, segmentProperties: newSegProps }) });
+                              }}
+                              data-testid={`input-segment-unit-cost-${selectedSegmentIndex}`}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Segment Cost Code</Label>
+                            <Input
+                              className="h-8 text-sm"
+                              placeholder="Cost code"
+                              defaultValue={segProp.costCodeId || ""}
+                              onBlur={(e) => {
+                                const val = e.target.value.trim() || undefined;
+                                if (val === segProp.costCodeId) return;
+                                const newSegProps = [...segProps];
+                                newSegProps[selectedSegmentIndex] = { ...newSegProps[selectedSegmentIndex], costCodeId: val };
+                                const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata || '{}') : (selM.metadata || {});
+                                updateMeasurementMutation.mutate({ id: selM.id, metadata: JSON.stringify({ ...meta, segmentProperties: newSegProps }) });
+                              }}
+                              data-testid={`input-segment-cost-code-${selectedSegmentIndex}`}
+                            />
+                          </div>
+                          {categories.length > 0 && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Segment Category</Label>
+                              <select
+                                className="w-full h-8 text-sm border rounded px-2 bg-background"
+                                value={segProp.categoryId || ""}
+                                onChange={(e) => {
+                                  const val = e.target.value || undefined;
+                                  if (val === segProp.categoryId) return;
+                                  const newSegProps = [...segProps];
+                                  newSegProps[selectedSegmentIndex] = { ...newSegProps[selectedSegmentIndex], categoryId: val };
+                                  const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata || '{}') : (selM.metadata || {});
+                                  updateMeasurementMutation.mutate({ id: selM.id, metadata: JSON.stringify({ ...meta, segmentProperties: newSegProps }) });
+                                }}
+                                data-testid={`select-segment-category-${selectedSegmentIndex}`}
+                              >
+                                <option value="">No category</option>
+                                {categories.map(c => (
+                                  <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {segProp.unitCost && segLenFt > 0 && (
+                            <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded text-sm">
+                              <div className="flex justify-between font-medium">
+                                <span>Segment Cost:</span>
+                                <span className="text-green-600 dark:text-green-400">
+                                  ${(Number(segProp.unitCost) * segLenFt).toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          {pts.length > 2 && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="w-full text-xs"
+                              onClick={() => {
+                                const newPts = [...pts];
+                                const removeIdx = selectedSegmentIndex;
+                                if (removeIdx === 0) {
+                                  newPts.splice(0, 1);
+                                } else if (removeIdx === pts.length - 2) {
+                                  newPts.splice(pts.length - 1, 1);
+                                } else {
+                                  newPts.splice(removeIdx + 1, 1);
+                                }
+                                const newSegProps = [...segProps];
+                                newSegProps.splice(removeIdx, 1);
+                                let newTotalLen = 0;
+                                if (currentSheet?.scalePxPerFoot) {
+                                  for (let i = 0; i < newPts.length - 1; i++) {
+                                    const ddx = newPts[i + 1].x - newPts[i].x;
+                                    const ddy = newPts[i + 1].y - newPts[i].y;
+                                    newTotalLen += Math.sqrt(ddx * ddx + ddy * ddy) / currentSheet.scalePxPerFoot;
+                                  }
+                                }
+                                const meta = typeof selM.metadata === 'string' ? JSON.parse(selM.metadata || '{}') : (selM.metadata || {});
+                                updateMeasurementMutation.mutate({
+                                  id: selM.id,
+                                  points: JSON.stringify(newPts),
+                                  computedLengthFt: newTotalLen,
+                                  metadata: JSON.stringify({ ...meta, segmentProperties: newSegProps }),
+                                });
+                                setSelectedSegmentIndex(null);
+                              }}
+                              data-testid={`button-delete-segment-${selectedSegmentIndex}`}
+                            >
+                              <Trash2 className="w-3 h-3 mr-1" /> Delete This Segment
+                            </Button>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
                   <Separator />
                   <CostCodeField measurementId={selM.id} currentValue={(selM as any).costCodeId || ""} onCommit={(val) => { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); }} />
                   <div className="space-y-2">
@@ -480,7 +689,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     size="sm"
                     className="w-full text-xs"
                     onClick={() => {
-                      const uom = selM.type === "LINEAR" || selM.type === "PITCHED_LINEAR" || selM.type === "LINEAR_WITH_DROP"
+                      const uom = selM.type === "LINEAR" || selM.type === "PITCHED_LINEAR" || selM.type === "LINEAR_WITH_DROP" || selM.type === "SEGMENT"
                         ? "LF"
                         : selM.type === "AREA" || selM.type === "PITCHED_AREA" || selM.type === "SURFACE_AREA"
                         ? "SF"
@@ -553,6 +762,9 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "COUNT").length > 0 && (
                         <div className="flex justify-between"><span className="text-muted-foreground">Count:</span><span>{aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "COUNT").length}</span></div>
                       )}
+                      {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "SEGMENT").length > 0 && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Segment:</span><span>{(() => { const total = aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "SEGMENT").reduce((sum: number, m: any) => { const val = Number(m.computedLengthFt); return sum + (Number.isFinite(val) ? val : 0); }, 0); return (Number.isFinite(total) ? total : 0).toFixed(2); })()} LF</span></div>
+                      )}
                       {aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA").length > 0 && (
                         <div className="flex justify-between"><span className="text-muted-foreground">Pitched/Surface:</span><span>{aggregatedMeasurements.uncategorized.filter((m: any) => m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA").length} items</span></div>
                       )}
@@ -572,6 +784,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       {aggregatedMeasurements.grandTotals.pitchedLinearTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Pitched Linear:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.pitchedLinearTotal.toFixed(2)} LF</span></div>}
                       {aggregatedMeasurements.grandTotals.pitchedAreaTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Pitched Area:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.pitchedAreaTotal.toFixed(2)} SF</span></div>}
                       {aggregatedMeasurements.grandTotals.surfaceAreaTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Surface Area:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.surfaceAreaTotal.toFixed(2)} SF</span></div>}
+                      {aggregatedMeasurements.grandTotals.segmentTotal > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Segment:</span><span className="font-medium">{aggregatedMeasurements.grandTotals.segmentTotal.toFixed(2)} LF</span></div>}
                     </div>
                   </div>
                 )}

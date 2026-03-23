@@ -1168,8 +1168,17 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
             }
             break;
 
+          case "SEGMENT":
+            if (points.length >= 2) {
+              let totalLen = 0;
+              for (let i = 0; i < points.length - 1; i++) {
+                totalLen += computeDistanceInFeet([points[i], points[i + 1]], scalePxPerFoot);
+              }
+              updates.computedLengthFt = totalLen;
+            }
+            break;
+
           default:
-            // COUNT and NOTE don't have computed quantities
             break;
         }
 
@@ -1286,6 +1295,15 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                   const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
                   updates.computedAreaFt2 = areaFt2;
                   updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+                }
+                break;
+              case "SEGMENT":
+                if (points.length >= 2) {
+                  let totalLen = 0;
+                  for (let si = 0; si < points.length - 1; si++) {
+                    totalLen += computeDistanceInFeet([points[si], points[si + 1]], scalePxPerFoot);
+                  }
+                  updates.computedLengthFt = totalLen;
                 }
                 break;
             }
