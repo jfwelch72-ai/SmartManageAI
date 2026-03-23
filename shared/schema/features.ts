@@ -389,6 +389,26 @@ export const insertTakeoffMarkupSchema = createInsertSchema(takeoffMarkups).omit
 export type InsertTakeoffMarkup = z.infer<typeof insertTakeoffMarkupSchema>;
 export type TakeoffMarkup = typeof takeoffMarkups.$inferSelect;
 
+export const takeoffSheetLinks = pgTable("takeoff_sheet_links", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sourceSheetId: varchar("source_sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  targetSheetId: varchar("target_sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  x: doublePrecision("x").notNull(),
+  y: doublePrecision("y").notNull(),
+  width: doublePrecision("width").notNull(),
+  height: doublePrecision("height").notNull(),
+  label: text("label"),
+  autoDetected: boolean("auto_detected").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sourceSheetIdx: index("takeoff_sheet_links_source_idx").on(table.sourceSheetId),
+  targetSheetIdx: index("takeoff_sheet_links_target_idx").on(table.targetSheetId),
+}));
+
+export const insertTakeoffSheetLinkSchema = createInsertSchema(takeoffSheetLinks).omit({ id: true, createdAt: true });
+export type InsertTakeoffSheetLink = z.infer<typeof insertTakeoffSheetLinkSchema>;
+export type TakeoffSheetLink = typeof takeoffSheetLinks.$inferSelect;
+
 // Takeoff Issues table - flagged issues placed as pins on the plan canvas
 export const takeoffIssues = pgTable("takeoff_issues", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

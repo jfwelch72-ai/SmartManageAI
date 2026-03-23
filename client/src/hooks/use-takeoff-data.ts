@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
-import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffMarkup } from "@shared/schema";
+import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory, TakeoffMarkup, TakeoffSheetLink } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 
 export type TakeoffMarkupWithAuthor = TakeoffMarkup & { authorName?: string | null; points: { x: number; y: number }[] };
@@ -123,6 +123,61 @@ export function useTakeoffData({
   const { data: markups = [] } = useQuery<TakeoffMarkupWithAuthor[]>({
     queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"],
     enabled: !!selectedSheet,
+  });
+
+  const { data: sheetLinks = [] } = useQuery<TakeoffSheetLink[]>({
+    queryKey: ["/api/takeoff/sheets", selectedSheet, "links"],
+    enabled: !!selectedSheet,
+  });
+
+  const createSheetLinkMutation = useMutation({
+    mutationFn: async (data: {
+      sourceSheetId: string;
+      targetSheetId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      label?: string;
+    }) => {
+      const res = await apiRequest("POST", "/api/takeoff/sheet-links", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "links"] });
+      toast({ title: "Link created" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create link", variant: "destructive" });
+    },
+  });
+
+  const deleteSheetLinkMutation = useMutation({
+    mutationFn: async (linkId: string) => {
+      await apiRequest("DELETE", `/api/takeoff/sheet-links/${linkId}`);
+      return linkId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "links"] });
+      toast({ title: "Link deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete link", variant: "destructive" });
+    },
+  });
+
+  const detectLinksMutation = useMutation({
+    mutationFn: async (sheetId: string) => {
+      const res = await apiRequest("POST", `/api/takeoff/sheets/${sheetId}/detect-links`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "links"] });
+      toast({ title: "Link Detection Complete", description: `${data.detected} links detected` });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to detect links", variant: "destructive" });
+    },
   });
 
   const createMeasurementMutation = useMutation({
@@ -434,6 +489,7 @@ export function useTakeoffData({
     measurements,
     measurementsLoading,
     markups,
+    sheetLinks,
     categories,
     currentSheet,
     aggregatedMeasurements,
@@ -444,6 +500,9 @@ export function useTakeoffData({
     deleteMeasurementMutation,
     createMarkupMutation,
     deleteMarkupMutation,
+    createSheetLinkMutation,
+    deleteSheetLinkMutation,
+    detectLinksMutation,
     saveCategoryMutation,
     deleteCategoryMutation,
     renameSheetMutation,

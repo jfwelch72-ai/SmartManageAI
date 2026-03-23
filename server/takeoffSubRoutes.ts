@@ -1807,4 +1807,316 @@ router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthReq
   }
 });
 
+router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const { takeoffSheetLinks } = await import("@shared/schema");
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(403).json({ error: access.reason });
+      return;
+    }
+
+    const links = await db
+      .select()
+      .from(takeoffSheetLinks)
+      .where(eq(takeoffSheetLinks.sourceSheetId, sheetId));
+
+    res.json(links);
+  } catch (error) {
+    console.error("Error fetching sheet links:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { takeoffSheetLinks, insertTakeoffSheetLinkSchema, takeoffSheets } = await import("@shared/schema");
+
+    const sourceAccess = await verifySheetAccess(req.body.sourceSheetId, req.user!);
+    if (!sourceAccess.allowed) {
+      res.status(403).json({ error: sourceAccess.reason });
+      return;
+    }
+
+    const targetAccess = await verifySheetAccess(req.body.targetSheetId, req.user!);
+    if (!targetAccess.allowed) {
+      res.status(403).json({ error: "No access to target sheet" });
+      return;
+    }
+
+    const [sourceSheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, req.body.sourceSheetId)).limit(1);
+    const [targetSheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, req.body.targetSheetId)).limit(1);
+
+    if (!sourceSheet || !targetSheet) {
+      res.status(404).json({ error: "Source or target sheet not found" });
+      return;
+    }
+
+    const sameContext = (sourceSheet.projectId && sourceSheet.projectId === targetSheet.projectId) ||
+                        (sourceSheet.bidId && sourceSheet.bidId === targetSheet.bidId);
+    if (!sameContext) {
+      res.status(400).json({ error: "Source and target sheets must belong to the same project or bid" });
+      return;
+    }
+
+    if (req.body.width <= 0 || req.body.height <= 0) {
+      res.status(400).json({ error: "Link width and height must be positive" });
+      return;
+    }
+
+    const validated = insertTakeoffSheetLinkSchema.parse(req.body);
+
+    const [link] = await db
+      .insert(takeoffSheetLinks)
+      .values(validated)
+      .returning();
+
+    res.status(201).json(link);
+  } catch (error: any) {
+    console.error("Error creating sheet link:", error);
+    if (error.name === "ZodError") {
+      res.status(400).json({ error: "Invalid link data", details: error.errors });
+    } else {
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+});
+
+router.delete("/api/takeoff/sheet-links/:linkId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { linkId } = req.params;
+    const { takeoffSheetLinks } = await import("@shared/schema");
+
+    const [link] = await db
+      .select()
+      .from(takeoffSheetLinks)
+      .where(eq(takeoffSheetLinks.id, linkId))
+      .limit(1);
+
+    if (!link) {
+      res.status(404).json({ error: "Link not found" });
+      return;
+    }
+
+    const access = await verifySheetAccess(link.sourceSheetId, req.user!);
+    if (!access.allowed) {
+      res.status(403).json({ error: access.reason });
+      return;
+    }
+
+    await db.delete(takeoffSheetLinks).where(eq(takeoffSheetLinks.id, linkId));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting sheet link:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { sheetId } = req.params;
+    const { takeoffSheetLinks, takeoffSheets } = await import("@shared/schema");
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(403).json({ error: access.reason });
+      return;
+    }
+
+    const sheet = access.sheet!;
+
+    const allSheets = await db
+      .select()
+      .from(takeoffSheets)
+      .where(
+        sheet.projectId
+          ? eq(takeoffSheets.projectId, sheet.projectId)
+          : eq(takeoffSheets.bidId, sheet.bidId!)
+      );
+
+    const sheetNameMap = new Map<string, string>();
+    for (const s of allSheets) {
+      if (s.id === sheetId) continue;
+      if (s.sheetName) {
+        sheetNameMap.set(s.sheetName.toUpperCase(), s.id);
+        const simplified = s.sheetName.replace(/\s+/g, "").toUpperCase();
+        sheetNameMap.set(simplified, s.id);
+      }
+    }
+
+    const detectedLinks: Array<{
+      sourceSheetId: string;
+      targetSheetId: string;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      label: string;
+      autoDetected: boolean;
+    }> = [];
+
+    await db.delete(takeoffSheetLinks).where(
+      and(
+        eq(takeoffSheetLinks.sourceSheetId, sheetId),
+        eq(takeoffSheetLinks.autoDetected, true)
+      )
+    );
+
+    if (sheet.projectId || sheet.bidId) {
+      try {
+        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const { planDocuments, projectPlans, bidDocuments } = await import("@shared/schema");
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+
+        const planSheet = allSheets.find(s => s.id === sheetId);
+        let pdfBuffer: Buffer | null = null;
+
+        if (planSheet && sheet.bidId) {
+          const [bidDoc] = await db.select({ objectKey: bidDocuments.objectKey, fileUrl: bidDocuments.fileUrl })
+            .from(bidDocuments)
+            .where(and(eq(bidDocuments.bidId, sheet.bidId), eq(bidDocuments.fileUrl, planSheet.imageUrl)))
+            .limit(1);
+          if (bidDoc?.objectKey) {
+            const objectFile = await objectStorageService.getObjectEntityFile(bidDoc.objectKey);
+            const [buf] = await objectFile.download();
+            pdfBuffer = buf;
+          }
+        } else if (planSheet?.planId) {
+          const [sheetWithDoc] = await db
+            .select({ objectKey: planDocuments.objectKey, fileUrl: planDocuments.fileUrl })
+            .from(takeoffSheets)
+            .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
+            .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
+            .where(eq(takeoffSheets.id, sheetId))
+            .limit(1);
+          if (sheetWithDoc?.objectKey) {
+            const objectFile = await objectStorageService.getObjectEntityFile(sheetWithDoc.objectKey);
+            const [buf] = await objectFile.download();
+            pdfBuffer = buf;
+          }
+        }
+
+        if (pdfBuffer && planSheet) {
+            const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true }).promise;
+            const pageNumber = (planSheet.sheetIndex || 0) + 1;
+
+            const samePdfSheets = allSheets.filter(s => s.planId === planSheet.planId);
+
+            if (pageNumber <= pdf.numPages) {
+              const page = await pdf.getPage(pageNumber);
+              const viewport = page.getViewport({ scale: 1.5 });
+
+              const annotations = await page.getAnnotations();
+              for (const ann of annotations) {
+                if (ann.subtype === "Link" && ann.dest) {
+                  let targetPageIndex: number | null = null;
+                  if (typeof ann.dest === "string") {
+                    const destinations = await pdf.getDestinations();
+                    const dest = destinations[ann.dest];
+                    if (dest) {
+                      const ref = dest[0];
+                      targetPageIndex = await pdf.getPageIndex(ref);
+                    }
+                  } else if (Array.isArray(ann.dest) && ann.dest[0]) {
+                    targetPageIndex = await pdf.getPageIndex(ann.dest[0]);
+                  }
+
+                  if (targetPageIndex !== null) {
+                    const targetSheet = samePdfSheets.find(s => s.sheetIndex === targetPageIndex);
+                    if (targetSheet && targetSheet.id !== sheetId) {
+                      const rect = ann.rect;
+                      const [x1, y1, x2, y2] = [
+                        rect[0] * 1.5,
+                        viewport.height - rect[3] * 1.5,
+                        rect[2] * 1.5,
+                        viewport.height - rect[1] * 1.5,
+                      ];
+                      detectedLinks.push({
+                        sourceSheetId: sheetId,
+                        targetSheetId: targetSheet.id,
+                        x: x1,
+                        y: y1,
+                        width: x2 - x1,
+                        height: y2 - y1,
+                        label: targetSheet.sheetName || `Page ${targetPageIndex + 1}`,
+                        autoDetected: true,
+                      });
+                    }
+                  }
+                }
+              }
+
+              if (detectedLinks.length === 0) {
+                const textContent = await page.getTextContent();
+                const refPatterns = [
+                  /\bSEE\s+(DWG|DRAWING|DETAIL|SHEET|PLAN)\s+([A-Z]-?\d{2,3})\b/gi,
+                  /\bREFER\s+TO\s+([A-Z]-?\d{2,3})\b/gi,
+                  /\bDETAIL\s+(\d+)\s*[/\\]\s*([A-Z]-?\d{2,3})\b/gi,
+                  /\bSECTION\s+(\d+)\s*[/\\]\s*([A-Z]-?\d{2,3})\b/gi,
+                  /\bSEE\s+([A-Z]-?\d{2,3})\b/gi,
+                ];
+
+                for (const item of textContent.items) {
+                  const textItem = item as any;
+                  if (!textItem.str) continue;
+
+                  for (const pattern of refPatterns) {
+                    pattern.lastIndex = 0;
+                    let match;
+                    while ((match = pattern.exec(textItem.str)) !== null) {
+                      const refName = match[match.length - 1].toUpperCase();
+                      const targetId = sheetNameMap.get(refName);
+                      if (targetId) {
+                        const tx = textItem.transform?.[4] * 1.5 || 0;
+                        const ty = viewport.height - (textItem.transform?.[5] * 1.5 || 0);
+                        const tw = (textItem.width || 80) * 1.5;
+                        const th = (textItem.height || 14) * 1.5;
+
+                        const alreadyExists = detectedLinks.some(
+                          l => l.targetSheetId === targetId && Math.abs(l.x - tx) < 10 && Math.abs(l.y - ty) < 10
+                        );
+                        if (!alreadyExists) {
+                          detectedLinks.push({
+                            sourceSheetId: sheetId,
+                            targetSheetId: targetId,
+                            x: tx,
+                            y: ty,
+                            width: Math.max(tw, 40),
+                            height: Math.max(th, 20),
+                            label: match[0],
+                            autoDetected: true,
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        }
+      } catch (pdfError) {
+        console.error("PDF link detection error:", pdfError);
+      }
+    }
+
+    if (detectedLinks.length > 0) {
+      await db.insert(takeoffSheetLinks).values(detectedLinks);
+    }
+
+    const allLinks = await db
+      .select()
+      .from(takeoffSheetLinks)
+      .where(eq(takeoffSheetLinks.sourceSheetId, sheetId));
+
+    res.json({ detected: detectedLinks.length, links: allLinks });
+  } catch (error) {
+    console.error("Error detecting links:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

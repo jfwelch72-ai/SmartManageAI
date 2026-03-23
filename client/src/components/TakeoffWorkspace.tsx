@@ -15,7 +15,8 @@ import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import {
   Upload, Pencil, Keyboard, MoreVertical, Copy, ArrowUp, ArrowDown,
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
-  CheckCircle2, AlertCircle, GalleryHorizontal, List
+  CheckCircle2, AlertCircle, GalleryHorizontal, List,
+  Link2, ArrowLeft, Search, X
 } from "lucide-react";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
@@ -114,6 +115,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
   const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
+  const [linkNavigationHistory, setLinkNavigationHistory] = useState<string[]>([]);
+  const [createLinkMode, setCreateLinkMode] = useState<{ step: "select-area" | "select-target"; startPoint?: { x: number; y: number }; endPoint?: { x: number; y: number } } | null>(null);
+  const [createLinkTargetSheet, setCreateLinkTargetSheet] = useState<string | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number; canvasX: number; canvasY: number } | null>(null);
+  const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -181,12 +187,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const {
     sheets, sheetsLoading, planDocuments, documentsLoading,
     projectAddenda, measurements, measurementsLoading,
-    markups,
+    markups, sheetLinks,
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
     createMarkupMutation, deleteMarkupMutation,
+    createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
     deleteSheetMutation, handleMoveSheet,
@@ -251,6 +258,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const hasRevisionHistory = !!(predecessorSheet || supersededBySheet);
   const compareOldSheet = predecessorSheet || currentSheet;
   const compareNewSheet = supersededBySheet || (predecessorSheet ? currentSheet : null);
+
+  const handleLinkNavigate = (targetSheetId: string) => {
+    if (selectedSheet) {
+      setLinkNavigationHistory(prev => [...prev, selectedSheet]);
+    }
+    setSelectedSheet(targetSheetId);
+  };
+
+  const handleLinkBack = () => {
+    if (linkNavigationHistory.length > 0) {
+      const prevSheet = linkNavigationHistory[linkNavigationHistory.length - 1];
+      setLinkNavigationHistory(prev => prev.slice(0, -1));
+      setSelectedSheet(prevSheet);
+    }
+  };
+
+  const allSheetsLinksQueryKey = ["__all_links__", sheets.map((s: any) => s.id).join(",")];
+  const allSheetsLinksQuery = useQuery({
+    queryKey: allSheetsLinksQueryKey,
+    enabled: sheets.length > 0,
+    queryFn: async () => {
+      const results = await Promise.all(
+        sheets.map((sheet: any) =>
+          fetch(`/api/takeoff/sheets/${sheet.id}/links`, { credentials: "include" })
+            .then(r => r.ok ? r.json() : [])
+            .catch(() => [])
+        )
+      );
+      const linksBySheet: Record<string, number> = {};
+      results.forEach((links: any[], i: number) => {
+        if (links.length > 0) {
+          linksBySheet[sheets[i].id] = links.length;
+        }
+      });
+      return linksBySheet;
+    },
+    staleTime: 30000,
+  });
+  const linkCountsBySheet: Record<string, number> = (allSheetsLinksQuery.data || {}) as Record<string, number>;
 
   const interactions = useTakeoffInteractions({
     projectId,
@@ -579,6 +625,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setDetectedScale(null);
   }, [currentSheet?.id, currentSheet?.imageUrl, toast]);
 
+  const autoDetectedSheetsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (currentSheet?.id && sheetLinks.length === 0 && !autoDetectedSheetsRef.current.has(currentSheet.id)) {
+      autoDetectedSheetsRef.current.add(currentSheet.id);
+      detectLinksMutation.mutate(currentSheet.id);
+    }
+  }, [currentSheet?.id, sheetLinks.length]);
+
   useLayoutEffect(() => {
     const updateDimensions = () => {
       if (containerRef.current) {
@@ -741,6 +795,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       {sheet.isActive === false && (
                         <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Superseded</Badge>
                       )}
+                      {linkCountsBySheet[sheet.id] > 0 && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0 text-blue-600 border-blue-300" data-testid={`badge-links-count-${sheet.id}`}>
+                          <Link2 className="w-2.5 h-2.5 mr-0.5" />{linkCountsBySheet[sheet.id]}
+                        </Badge>
+                      )}
                     </span>
                   </SelectItem>
                 ))}
@@ -795,6 +854,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
+                    onClick={() => selectedSheet && detectLinksMutation.mutate(selectedSheet)}
+                    disabled={detectLinksMutation.isPending}
+                    data-testid="menu-detect-links"
+                  >
+                    <Search className="h-4 w-4 mr-2" /> {detectLinksMutation.isPending ? "Detecting..." : "Detect Links"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setCreateLinkMode({ step: "select-area" })}
+                    data-testid="menu-create-link"
+                  >
+                    <Link2 className="h-4 w-4 mr-2" /> Create Link to Sheet
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
                     onClick={() => setDeleteSheetConfirmOpen(true)}
                     data-testid="menu-delete-sheet"
@@ -821,6 +894,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   <p>{thumbnailStripOpen ? "Hide Thumbnails" : "Show Page Thumbnails"}</p>
                 </TooltipContent>
               </Tooltip>
+            )}
+            {linkNavigationHistory.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLinkBack}
+                className="gap-1 h-7 px-2 text-xs"
+                data-testid="button-link-back"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                <span className="hidden sm:inline">Back</span>
+              </Button>
             )}
             {currentSheet && (
               <Badge variant="outline" data-testid="badge-calibration-status">
@@ -861,6 +946,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   </p>
                 </TooltipContent>
               </Tooltip>
+            )}
+            {sheetLinks.length > 0 && (
+              <Badge variant="outline" className="text-blue-600 border-blue-300" data-testid="badge-sheet-links">
+                <Link2 className="w-3 h-3 mr-1" />{sheetLinks.length} Links
+              </Badge>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -983,10 +1073,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           ref={containerRef}
           className="flex-1 overflow-hidden relative"
           style={{
-            cursor: activeTool === "pan" ? "grab" :
+            cursor: createLinkMode?.step === "select-area" ? "crosshair" :
+                   activeTool === "pan" ? "grab" :
                    activeTool === "select" ? "default" :
                    "crosshair"
           }}
+          onContextMenu={(e) => {
+            if (!selectedSheet) return;
+            e.preventDefault();
+            const stage = stageRef.current;
+            if (stage) {
+              const rect = containerRef.current?.getBoundingClientRect();
+              if (rect) {
+                const stageX = (e.clientX - rect.left - stagePosition.x) / stageScale;
+                const stageY = (e.clientY - rect.top - stagePosition.y) / stageScale;
+                setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top, canvasX: stageX, canvasY: stageY });
+              }
+            }
+          }}
+          onClick={() => { if (contextMenuPos) setContextMenuPos(null); }}
         >
           {selectedSheet ? (
             <Stage
@@ -997,8 +1102,36 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               scaleY={stageScale}
               x={stagePosition.x}
               y={stagePosition.y}
-              onMouseDown={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
+              onMouseDown={(e) => {
+                if (createLinkMode?.step === "select-area") {
+                  const stage = e.target.getStage();
+                  const pos = stage?.getPointerPosition();
+                  if (pos) {
+                    const transform = stage.getAbsoluteTransform().copy().invert();
+                    const point = transform.point(pos);
+                    setCreateLinkMode({ ...createLinkMode, startPoint: point, endPoint: point });
+                  }
+                  return;
+                }
+                if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); }
+              }}
               onMouseUp={(e: any) => {
+                if (createLinkMode?.step === "select-area" && createLinkMode.startPoint) {
+                  const stage = e.target.getStage();
+                  const pos = stage?.getPointerPosition();
+                  if (pos) {
+                    const transform = stage.getAbsoluteTransform().copy().invert();
+                    const point = transform.point(pos);
+                    const dx = Math.abs(point.x - createLinkMode.startPoint.x);
+                    const dy = Math.abs(point.y - createLinkMode.startPoint.y);
+                    if (dx > 10 && dy > 10) {
+                      setCreateLinkMode({ step: "select-target", startPoint: createLinkMode.startPoint, endPoint: point });
+                    } else {
+                      setCreateLinkMode({ step: "select-area" });
+                    }
+                  }
+                  return;
+                }
                 if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); return; }
                 if (activeTool === "issue_pin" && selectedSheet) {
                   const stage = e.target.getStage();
@@ -1023,6 +1156,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 handleStageMouseUp(e);
               }}
               onMouseMove={(e) => {
+                if (createLinkMode?.step === "select-area" && createLinkMode.startPoint) {
+                  const stage = e.target.getStage();
+                  const pos = stage?.getPointerPosition();
+                  if (pos) {
+                    const transform = stage.getAbsoluteTransform().copy().invert();
+                    const point = transform.point(pos);
+                    setCreateLinkMode({ ...createLinkMode, endPoint: point });
+                  }
+                  return;
+                }
                 if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleStageMouseMove(e); }
                 const stage = stageRef.current;
                 if (stage) {
@@ -1542,6 +1685,72 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   return null;
                 })}
 
+                {sheetLinks.map((link: any) => {
+                  const targetSheet = sheets.find((s: any) => s.id === link.targetSheetId);
+                  const isHovered = hoveredLinkId === link.id;
+                  return (
+                    <Group
+                      key={`link-${link.id}`}
+                      x={link.x}
+                      y={link.y}
+                      onClick={(e: any) => {
+                        e.cancelBubble = true;
+                        handleLinkNavigate(link.targetSheetId);
+                      }}
+                      onTap={(e: any) => {
+                        e.cancelBubble = true;
+                        handleLinkNavigate(link.targetSheetId);
+                      }}
+                      onMouseEnter={(e: any) => {
+                        setHoveredLinkId(link.id);
+                        const container = e.target.getStage()?.container();
+                        if (container) container.style.cursor = "pointer";
+                      }}
+                      onMouseLeave={(e: any) => {
+                        setHoveredLinkId(null);
+                        const container = e.target.getStage()?.container();
+                        if (container) container.style.cursor = activeTool === "pan" ? "grab" : activeTool === "select" ? "default" : "crosshair";
+                      }}
+                    >
+                      <Rect
+                        width={link.width}
+                        height={link.height}
+                        fill={isHovered ? "rgba(59, 130, 246, 0.15)" : "transparent"}
+                        stroke={isHovered ? "rgba(59, 130, 246, 0.7)" : "rgba(59, 130, 246, 0.2)"}
+                        strokeWidth={isHovered ? 2 / stageScale : 1 / stageScale}
+                        cornerRadius={2 / stageScale}
+                        dash={isHovered ? undefined : [4 / stageScale, 2 / stageScale]}
+                      />
+                      {isHovered && (
+                        <Text
+                          text={link.label || targetSheet?.sheetName || "→"}
+                          fontSize={Math.max(10 / stageScale, 8)}
+                          fill="rgba(59, 130, 246, 0.9)"
+                          fontStyle="bold"
+                          y={link.height + 2 / stageScale}
+                          width={Math.max(link.width, 60 / stageScale)}
+                          align="center"
+                          listening={false}
+                        />
+                      )}
+                    </Group>
+                  );
+                })}
+
+                {createLinkMode?.step === "select-area" && createLinkMode.startPoint && createLinkMode.endPoint && (
+                  <Rect
+                    x={Math.min(createLinkMode.startPoint.x, createLinkMode.endPoint.x)}
+                    y={Math.min(createLinkMode.startPoint.y, createLinkMode.endPoint.y)}
+                    width={Math.abs(createLinkMode.endPoint.x - createLinkMode.startPoint.x)}
+                    height={Math.abs(createLinkMode.endPoint.y - createLinkMode.startPoint.y)}
+                    fill="rgba(59, 130, 246, 0.15)"
+                    stroke="rgba(59, 130, 246, 0.8)"
+                    strokeWidth={2 / stageScale}
+                    dash={[6 / stageScale, 3 / stageScale]}
+                    listening={false}
+                  />
+                )}
+
                 {collab.visibleCursors.map((cursor) => (
                   <Group key={`collab-cursor-${cursor.userId}`} x={cursor.x} y={cursor.y} listening={false}>
                     <Line
@@ -1669,6 +1878,92 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 }}
                 onBlur={(e) => handleMarkupTextSubmit(e.currentTarget.value)}
               />
+            </div>
+          )}
+
+          {createLinkMode && (
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-card border rounded-lg shadow-lg px-4 py-3 flex items-center gap-3" data-testid="create-link-panel">
+              {createLinkMode.step === "select-area" && (
+                <>
+                  <Link2 className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium">Draw rectangle on the area to create a link hotspot</span>
+                  <Button variant="ghost" size="sm" onClick={() => setCreateLinkMode(null)} data-testid="button-cancel-create-link">
+                    <X className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
+              {createLinkMode.step === "select-target" && (
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm font-medium">Select target sheet:</span>
+                  <Select
+                    value={createLinkTargetSheet || ""}
+                    onValueChange={(val) => {
+                      setCreateLinkTargetSheet(val);
+                      if (val && selectedSheet && createLinkMode.startPoint && createLinkMode.endPoint) {
+                        const x = Math.min(createLinkMode.startPoint.x, createLinkMode.endPoint.x);
+                        const y = Math.min(createLinkMode.startPoint.y, createLinkMode.endPoint.y);
+                        const width = Math.abs(createLinkMode.endPoint.x - createLinkMode.startPoint.x);
+                        const height = Math.abs(createLinkMode.endPoint.y - createLinkMode.startPoint.y);
+                        const targetSheet = sheets.find((s: any) => s.id === val);
+                        createSheetLinkMutation.mutate({
+                          sourceSheetId: selectedSheet,
+                          targetSheetId: val,
+                          x, y, width, height,
+                          label: targetSheet?.sheetName || undefined,
+                        }, {
+                          onSuccess: () => {
+                            queryClient.invalidateQueries({ queryKey: allSheetsLinksQueryKey });
+                            setCreateLinkMode(null);
+                            setCreateLinkTargetSheet(null);
+                          },
+                        });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-48" data-testid="select-link-target">
+                      <SelectValue placeholder="Choose sheet..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {sheets.filter((s: any) => s.id !== selectedSheet).map((s: any) => (
+                        <SelectItem key={s.id} value={s.id}>{s.sheetName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="sm" onClick={() => { setCreateLinkMode(null); setCreateLinkTargetSheet(null); }} data-testid="button-cancel-link-target">
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {contextMenuPos && (
+            <div
+              className="absolute z-50 bg-card border rounded-md shadow-lg py-1 min-w-44"
+              style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+              data-testid="canvas-context-menu"
+            >
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  setCreateLinkMode({ step: "select-area" });
+                  setContextMenuPos(null);
+                }}
+                data-testid="context-menu-create-link"
+              >
+                <Link2 className="w-3.5 h-3.5" /> Create Link to Sheet
+              </button>
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => {
+                  if (selectedSheet) detectLinksMutation.mutate(selectedSheet);
+                  setContextMenuPos(null);
+                }}
+                data-testid="context-menu-detect-links"
+              >
+                <Search className="w-3.5 h-3.5" /> Detect Links
+              </button>
             </div>
           )}
         </div>
