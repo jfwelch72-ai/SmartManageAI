@@ -1598,7 +1598,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
 // Create a new measurement (with sheetId in body)
 router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { takeoffMeasurements, takeoffSheets, projects, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
+    const { takeoffMeasurements, takeoffSheets, projects, bids, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
     // SECURITY: Sanitize text inputs for data integrity
     const sanitizedBody = {
@@ -1614,35 +1614,56 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
 
     const validated = insertTakeoffMeasurementSchema.parse(bodyWithStringifiedPoints);
 
-    // Validate that the sheet exists and belongs to a valid project
+    // Validate that the sheet exists (supports both project-based and bid-based sheets)
     const sheetWithProject = await db
       .select({
         sheetId: takeoffSheets.id,
         projectId: takeoffSheets.projectId,
-        projectCode: projects.code,
+        bidId: takeoffSheets.bidId,
         scalePxPerFoot: takeoffSheets.scalePxPerFoot,
       })
       .from(takeoffSheets)
-      .innerJoin(projects, eq(takeoffSheets.projectId, projects.id))
       .where(eq(takeoffSheets.id, validated.sheetId))
       .limit(1);
 
     if (!sheetWithProject || sheetWithProject.length === 0) {
-      res.status(404).json({ error: "Sheet not found or does not belong to a valid project" });
+      res.status(404).json({ error: "Sheet not found" });
       return;
     }
 
-    // Authorization check: Only ADMIN/MANAGER or users assigned to the project can create measurements
+    const sheet = sheetWithProject[0];
+    const orgId = req.user!.organizationId;
+
+    // Authorization: verify the sheet belongs to the user's organization
+    if (sheet.projectId) {
+      const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+        .from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
+      if (!project || project.gcOrganizationId !== orgId) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    } else if (sheet.bidId) {
+      const [bid] = await db.select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
+        .from(bids).where(eq(bids.id, sheet.bidId)).limit(1);
+      if (!bid || bid.gcOrganizationId !== orgId) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    } else {
+      res.status(404).json({ error: "Sheet has no parent project or bid" });
+      return;
+    }
+
+    // Additional authorization for non-admin/manager on project-based sheets
     const userRole = req.user!.role;
-    if (userRole !== "ADMIN" && userRole !== "MANAGER") {
-      // Check if user is assigned to this project via crew assignments
+    if (sheet.projectId && userRole !== "ADMIN" && userRole !== "MANAGER") {
       const userAssignment = await db
         .select({ id: crewProjectAssignments.id })
         .from(crewProjectAssignments)
         .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
         .where(
           and(
-            eq(crewProjectAssignments.projectId, sheetWithProject[0].projectId),
+            eq(crewProjectAssignments.projectId, sheet.projectId),
             eq(crewMembers.userId, req.user!.id)
           )
         )
@@ -1656,13 +1677,13 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
 
     // PHASE 2.3a: Compute arc length for 3-point LINEAR measurements (arcs)
     let finalValues = { ...validated };
-    if (validated.type === "LINEAR" && sheetWithProject[0].scalePxPerFoot) {
+    if (validated.type === "LINEAR" && sheet.scalePxPerFoot) {
       const points = safeParsePoints(validated.points);
       
       if (points && points.length === 3) {
         try {
           const [start, middle, end] = points;
-          const arcSegment = createArcSegment(start, end, middle, sheetWithProject[0].scalePxPerFoot);
+          const arcSegment = createArcSegment(start, end, middle, sheet.scalePxPerFoot);
           
           if (arcSegment) {
             // Store the computed arc length in feet
