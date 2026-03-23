@@ -187,6 +187,44 @@ router.get("/api/projects/:code/documents", requireAuth, async (req: AuthRequest
   }
 });
 
+router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const [doc] = await db.select().from(planDocuments)
+      .where(and(eq(planDocuments.id, req.params.docId), eq(planDocuments.projectId, project.id)))
+      .limit(1);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    const { filterFilesByPermissions } = await import("./fileAccessHelpers");
+    const permitted = await filterFilesByPermissions(
+      [doc],
+      req.user!.id,
+      req.user!.role,
+      "DOCUMENT"
+    );
+    if (permitted.length === 0) return res.status(403).json({ error: "You do not have permission to access this document" });
+
+    const storageKey = doc.objectKey || doc.fileUrl;
+    if (!storageKey) return res.status(404).json({ error: "No file associated with this document" });
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    const [signedUrl] = await objectFile.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + 60 * 60 * 1000,
+    });
+    res.json({ url: signedUrl });
+  } catch (error) {
+    console.error("Project document preview-url error:", error);
+    res.status(500).json({ error: "Failed to generate preview URL" });
+  }
+});
+
 router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
   try {
     const validationResult = insertPlanDocumentSchema.extend({

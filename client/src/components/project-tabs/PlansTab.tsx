@@ -1,18 +1,22 @@
-import { useState, useMemo, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
+import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
-import { UploadSourcePicker } from "@/components/UploadSourcePicker";
+import { ObjectUploader } from "@/components/ObjectUploader";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
-  Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy
+  Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
+  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box
 } from "lucide-react";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
@@ -37,12 +41,15 @@ interface DocGroup {
   name: string;
   expanded: boolean;
   types: string[];
+  children?: DocGroup[];
+  parentName?: string;
 }
 
 const DEFAULT_GROUPS: DocGroup[] = [
   { name: "Plans", expanded: true, types: ["PLANS"] },
   { name: "Specifications", expanded: true, types: ["SPECS"] },
   { name: "Takeoff", expanded: false, types: ["TAKEOFF"] },
+  { name: "BIM Models", expanded: true, types: ["BIM"] },
   { name: "Supporting Documents", expanded: true, types: ["OTHER"] },
 ];
 
@@ -57,10 +64,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   });
 
   const [subTab, setSubTab] = useState<SubTab>("plans");
-  const [showDocumentDialog, setShowDocumentDialog] = useState(false);
   const [documentTitle, setDocumentTitle] = useState("");
-  const [documentType, setDocumentType] = useState<"PLANS" | "SPECS" | "TAKEOFF" | "OTHER">("OTHER");
-  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [documentType, setDocumentType] = useState<string>("OTHER");
   const [searchQuery, setSearchQuery] = useState("");
   const [groups, setGroups] = useState(DEFAULT_GROUPS);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -72,6 +77,64 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [renameSheetId, setRenameSheetId] = useState<string | null>(null);
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [panelWidth, setPanelWidth] = useState(256);
+  const isResizingRef = useRef(false);
+  const resizeStartXRef = useRef(0);
+  const resizeStartWidthRef = useRef(256);
+
+  const [renamingGroupName, setRenamingGroupName] = useState<string | null>(null);
+  const [renameGroupValue, setRenameGroupValue] = useState("");
+  const [deletingGroupName, setDeletingGroupName] = useState<string | null>(null);
+  const [createFolderOpen, setCreateFolderOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [createFolderParent, setCreateFolderParent] = useState<string | null>(null);
+  const [hiddenSheetIds, setHiddenSheetIds] = useState<Set<string>>(new Set());
+  const uploadButtonRef = useRef<HTMLButtonElement>(null);
+  const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
+  const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
+  const [subFolderDocs, setSubFolderDocs] = useState<Record<string, string[]>>({});
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    resizeStartXRef.current = e.clientX;
+    resizeStartWidthRef.current = panelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [panelWidth]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientX - resizeStartXRef.current;
+      const newWidth = Math.min(480, Math.max(180, resizeStartWidthRef.current + delta));
+      setPanelWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      if (!isResizingRef.current) return;
+      isResizingRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
+
+  const { data: previewUrlData, isLoading: previewUrlLoading } = useQuery<{ url: string }>({
+    queryKey: ["/api/projects", projectCode, "documents", previewDocId, "preview-url"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectCode}/documents/${previewDocId}/preview-url`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to get preview URL");
+      return res.json();
+    },
+    enabled: !!previewDocId,
+    staleTime: 50 * 60 * 1000,
+  });
 
   const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents"];
 
@@ -164,11 +227,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
         )
       : documents;
 
+    const allSubFolderDocIds = new Set(Object.values(subFolderDocs).flat());
+
     return groups.map((group) => ({
       ...group,
-      docs: filtered.filter((d: any) => group.types.includes(d.type)),
+      docs: filtered.filter((d: any) => group.types.includes(d.type) && !allSubFolderDocIds.has(d.id)),
     }));
-  }, [documents, searchQuery, groups]);
+  }, [documents, searchQuery, groups, subFolderDocs]);
 
   const toggleGroup = (name: string) => {
     setGroups((prev) =>
@@ -176,42 +241,191 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     );
   };
 
-  const selectedDoc = documents.find((d: any) => d.id === selectedDocId);
+  const subFolderKey = (parentName: string, childName: string) => `${parentName}/${childName}`;
 
+  const handleDocDragStart = useCallback((e: React.DragEvent, docId: string) => {
+    setDraggedDocId(docId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", docId);
+  }, []);
 
-  const handleDocumentUploadComplete = async (result: any) => {
-    if (!result.successful || result.successful.length === 0) {
-      toast({ title: "Error", description: "File upload failed", variant: "destructive" });
-      setIsUploadingDocument(false);
+  const handleDocDragEnd = useCallback(() => {
+    setDraggedDocId(null);
+    setDragOverTarget(null);
+  }, []);
+
+  const handleSubfolderDrop = useCallback((e: React.DragEvent, parentName: string, childName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!draggedDocId) return;
+
+    const key = `${parentName}/${childName}`;
+    setSubFolderDocs((prev) => {
+      const existing = prev[key] || [];
+      if (existing.includes(draggedDocId)) return prev;
+      const cleaned = Object.fromEntries(
+        Object.entries(prev).map(([k, ids]) => [k, ids.filter((id) => id !== draggedDocId)])
+      );
+      return { ...cleaned, [key]: [...existing, draggedDocId] };
+    });
+    setDraggedDocId(null);
+  }, [draggedDocId]);
+
+  const handleParentFolderDrop = useCallback((e: React.DragEvent, groupName: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverTarget(null);
+    if (!draggedDocId) return;
+
+    setSubFolderDocs((prev) => {
+      return Object.fromEntries(
+        Object.entries(prev).map(([k, ids]) => [k, ids.filter((id) => id !== draggedDocId)])
+      );
+    });
+    setDraggedDocId(null);
+  }, [draggedDocId]);
+
+  const handleRenameGroupStart = (name: string) => {
+    setRenameGroupValue(name);
+    setRenamingGroupName(name);
+  };
+
+  const handleRenameGroupSubmit = (oldName: string) => {
+    const trimmed = renameGroupValue.trim();
+    if (trimmed && trimmed !== oldName) {
+      setGroups((prev) => prev.map((g) => g.name === oldName ? { ...g, name: trimmed } : g));
+    }
+    setRenamingGroupName(null);
+  };
+
+  const handleDeleteGroupConfirm = () => {
+    if (!deletingGroupName) return;
+    setGroups((prev) => prev.filter((g) => g.name !== deletingGroupName));
+    setDeletingGroupName(null);
+    toast({ description: `Folder "${deletingGroupName}" removed.` });
+  };
+
+  const handleCreateFolderSubmit = () => {
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
+    const newChild: DocGroup = { name: trimmed, expanded: true, types: [], parentName: createFolderParent || undefined };
+    if (createFolderParent) {
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.name === createFolderParent
+            ? { ...g, expanded: true, children: [...(g.children || []), newChild] }
+            : g
+        )
+      );
+    } else {
+      setGroups((prev) => [...prev, { name: trimmed, expanded: true, types: ["OTHER"] }]);
+    }
+    setCreateFolderOpen(false);
+    setNewFolderName("");
+    setCreateFolderParent(null);
+    toast({ description: `Folder "${trimmed}" created.` });
+  };
+
+  const handlePrintAllSheets = async (docs: any[]) => {
+    const pdfs = docs.filter((d: any) => (d.fileName || "").toLowerCase().endsWith(".pdf"));
+    if (pdfs.length === 0) {
+      toast({ description: "No PDF documents found in this folder." });
       return;
     }
+    toast({ description: `Opening ${pdfs.length} PDF(s) for printing…` });
+    for (const doc of pdfs) {
+      await handleOpenFile(doc.id, doc.fileUrl);
+    }
+  };
 
-    const uploadedFile = result.successful[0];
-    const fileUrl = uploadedFile.uploadURL;
-    const fileName = uploadedFile.name;
-    const fileSize = uploadedFile.size;
-    const mimeType = uploadedFile.type;
-    const meta = result._uploadMeta || {};
+  const handleAutonameSheets = (folderName: string) => {
+    const folderSheets = groupedSheets[folderName] || [];
+    if (folderSheets.length === 0) {
+      toast({ description: "No takeoff sheets in this folder to rename." });
+      return;
+    }
+    folderSheets.forEach((sheet, i) => {
+      renameSheetMutation.mutate({ sheetId: sheet.id, sheetName: `Sheet ${i + 1}` });
+    });
+    toast({ description: `Auto-named ${folderSheets.length} sheet(s).` });
+  };
 
+  const handleHideAllSheets = (folderName: string) => {
+    const folderSheets = groupedSheets[folderName] || [];
+    if (folderSheets.length === 0) {
+      toast({ description: "No takeoff sheets to hide in this folder." });
+      return;
+    }
+    setHiddenSheetIds((prev) => {
+      const next = new Set(prev);
+      folderSheets.forEach((s) => next.add(s.id));
+      return next;
+    });
+    toast({ description: `${folderSheets.length} sheet(s) hidden.` });
+  };
+
+  const handleUnhideAllSheets = (folderName: string) => {
+    const folderSheets = groupedSheets[folderName] || [];
+    setHiddenSheetIds((prev) => {
+      const next = new Set(prev);
+      folderSheets.forEach((s) => next.delete(s.id));
+      return next;
+    });
+    toast({ description: "All sheets in this folder are now visible." });
+  };
+
+  const handleUploadForType = (type: string) => {
+    setDocumentType(type);
+    setTimeout(() => uploadButtonRef.current?.click(), 80);
+  };
+
+  const selectedDoc = documents.find((d: any) => d.id === selectedDocId);
+
+  const handleOpenFile = async (docId: string, fallbackUrl: string) => {
     try {
-      await apiRequest("POST", "/api/documents", {
+      const res = await fetch(`/api/projects/${projectCode}/documents/${docId}/preview-url`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        window.open(data.url, "_blank");
+      } else {
+        window.open(fallbackUrl, "_blank");
+      }
+    } catch {
+      window.open(fallbackUrl, "_blank");
+    }
+  };
+
+  const handleObjectUploadComplete = (result: any) => {
+    if (!result.successful?.length) {
+      toast({ title: "Error", description: "No file uploaded", variant: "destructive" });
+      return;
+    }
+    const isSingle = result.successful.length === 1;
+    result.successful.forEach((uploaded: any) => {
+      const file = uploaded.data as File;
+      const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
+      const baseName = file.name.replace(/\.[^/.]+$/, "");
+      const title = isSingle && documentTitle.trim() ? documentTitle.trim() : baseName;
+      apiRequest("POST", "/api/documents", {
         projectId: project?.id,
-        title: meta.title || documentTitle || fileName,
-        type: meta.type || documentType,
+        title,
+        type: documentType,
         fileUrl,
-        fileName,
-        fileSize,
-        mimeType,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        objectKey: fileUrl,
+      }).then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
+        toast({ title: "Document uploaded" });
+        setDocumentTitle("");
+      }).catch(() => {
+        toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
       });
-      await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
-      toast({ title: "Success", description: "Document uploaded successfully" });
-      setShowDocumentDialog(false);
-      setDocumentTitle("");
-      setDocumentType("OTHER");
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
-    } finally {
-      setIsUploadingDocument(false);
+    });
+    if (result.successful.length > 1) {
+      toast({ title: `${result.successful.length} files uploaded`, description: "All documents have been added." });
     }
   };
 
@@ -222,6 +436,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
       if (selectedDocId === docId) setSelectedDocId(null);
+      if (previewDocId === docId) setPreviewDocId(null);
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Failed to delete document", variant: "destructive" });
     }
@@ -300,7 +515,10 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       {subTab === "plans" && project && (
         <div className="flex flex-1 min-h-0 relative">
           {!leftPanelCollapsed && (
-            <div className="absolute inset-0 z-20 md:relative md:inset-auto md:h-full w-full md:w-64 bg-card border-r flex flex-col shrink-0">
+            <div
+              className="absolute inset-0 z-20 md:relative md:inset-auto md:h-full w-full bg-card border-r flex flex-col shrink-0"
+              style={{ width: panelWidth }}
+            >
               <div className="p-2 border-b space-y-2">
                 <div className="flex items-center gap-1">
                   <Button
@@ -322,26 +540,49 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       data-testid="input-search-documents"
                     />
                   </div>
-                  <Button
-                    size="icon"
-                    variant="default"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => setShowDocumentDialog(true)}
-                    data-testid="button-upload-document"
-                    title="Upload Document"
+                </div>
+                <div className="space-y-2">
+                  <div className="flex gap-1">
+                    <Input
+                      value={documentTitle}
+                      onChange={(e) => setDocumentTitle(e.target.value)}
+                      placeholder="Title (optional)"
+                      className="h-7 text-xs flex-1"
+                      data-testid="input-doc-title"
+                    />
+                    <Select value={documentType} onValueChange={setDocumentType}>
+                      <SelectTrigger className="h-7 w-24 text-xs" data-testid="select-doc-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PLANS">Plans</SelectItem>
+                        <SelectItem value="SPECS">Specs</SelectItem>
+                        <SelectItem value="TAKEOFF">Takeoff</SelectItem>
+                        <SelectItem value="BIM">BIM</SelectItem>
+                        <SelectItem value="OTHER">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <ObjectUploader
+                    key={documentType}
+                    maxNumberOfFiles={20}
+                    maxFileSize={documentType === "BIM" ? 209715200 : 104857600}
+                    allowedFileTypes={documentType === "PLANS" ? [".pdf"] : documentType === "BIM" ? [".ifc"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
+                    fileType={documentType === "BIM" ? "BIM" : "DOCUMENT"}
+                    onComplete={handleObjectUploadComplete}
+                    testId="button-upload-document"
                   >
-                    <Upload className="w-4 h-4" />
-                  </Button>
-                  <UploadSourcePicker
-                    open={showDocumentDialog}
-                    onOpenChange={setShowDocumentDialog}
-                    fileType="DOCUMENT"
-                    onComplete={(result) => {
-                      setIsUploadingDocument(true);
-                      handleDocumentUploadComplete(result);
-                    }}
-                    projectId={project!.id}
-                  />
+                    <Button ref={uploadButtonRef} variant="default" size="sm" className="w-full h-7 text-xs" data-testid="button-upload-document">
+                      <Upload className="w-3 h-3 mr-1" />
+                      Upload
+                    </Button>
+                  </ObjectUploader>
+                  {documentType === "PLANS" && (
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
+                  )}
+                  {documentType === "BIM" && (
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>
+                  )}
                 </div>
               </div>
 
@@ -358,9 +599,15 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   ) : (
                     groupedDocuments.map((group) => (
                       <div key={group.name}>
-                        <button
-                          className="flex items-center gap-1.5 w-full px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors"
-                          onClick={() => toggleGroup(group.name)}
+                        <div
+                          className={cn(
+                            "flex items-center gap-1.5 w-full px-2 py-1.5 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/folder",
+                            dragOverTarget === `parent:${group.name}` && draggedDocId !== null && "bg-blue-500/20 ring-1 ring-blue-500/50 rounded"
+                          )}
+                          onClick={() => { if (renamingGroupName !== group.name) toggleGroup(group.name); }}
+                          onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverTarget(`parent:${group.name}`); }}
+                          onDragLeave={() => setDragOverTarget(null)}
+                          onDrop={(e) => { setDragOverTarget(null); handleParentFolderDrop(e, group.name); }}
                           data-testid={`folder-${group.name.toLowerCase().replace(/\s+/g, '-')}`}
                         >
                           {group.expanded ? (
@@ -373,11 +620,115 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                           ) : (
                             <Folder className="w-4 h-4 text-yellow-500 shrink-0" />
                           )}
-                          <span className="truncate font-medium">{group.name}</span>
-                          <Badge variant="secondary" className="ml-auto text-[10px] h-4 px-1">
+                          {renamingGroupName === group.name ? (
+                            <Input
+                              autoFocus
+                              value={renameGroupValue}
+                              className="h-5 text-xs px-1 py-0 flex-1"
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setRenameGroupValue(e.target.value)}
+                              onBlur={() => handleRenameGroupSubmit(group.name)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleRenameGroupSubmit(group.name);
+                                if (e.key === "Escape") setRenamingGroupName(null);
+                              }}
+                              data-testid={`input-rename-folder-${group.name}`}
+                            />
+                          ) : (
+                            <span className="truncate font-medium flex-1">{group.name}</span>
+                          )}
+                          <Badge variant="secondary" className="text-[10px] h-4 px-1 shrink-0">
                             {group.docs.length}
                           </Badge>
-                        </button>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-5 w-5 opacity-0 group-hover/folder:opacity-100 shrink-0 ml-0.5"
+                                onClick={(e) => e.stopPropagation()}
+                                data-testid={`menu-folder-${group.name.toLowerCase().replace(/\s+/g, '-')}`}
+                              >
+                                <MoreVertical className="w-3 h-3" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-56">
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); setNewFolderName(""); setCreateFolderParent(group.name); setCreateFolderOpen(true); }}
+                                data-testid="menu-item-create-folder"
+                              >
+                                <FolderPlus className="w-4 h-4 mr-2" />
+                                Create Folder
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handleRenameGroupStart(group.name); }}
+                                data-testid="menu-item-rename-folder"
+                              >
+                                <Pencil className="w-4 h-4 mr-2" />
+                                Rename Folder
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); setDeletingGroupName(group.name); }}
+                                className="text-destructive focus:text-destructive"
+                                data-testid="menu-item-delete-folder"
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete Folder
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handleAutonameSheets(group.name); }}
+                                data-testid="menu-item-autoname-sheets"
+                              >
+                                <RefreshCw className="w-4 h-4 mr-2" />
+                                Autoname Sheets
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handlePrintAllSheets(group.docs); }}
+                                data-testid="menu-item-print-all-sheets"
+                              >
+                                <Printer className="w-4 h-4 mr-2" />
+                                Print All Sheets
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); toast({ description: "Rotating blank sheets right — feature coming soon." }); }}
+                                data-testid="menu-item-rotate-sheets"
+                              >
+                                <RotateCw className="w-4 h-4 mr-2" />
+                                Rotate All Blank Sheets Right
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handleHideAllSheets(group.name); }}
+                                data-testid="menu-item-hide-sheets"
+                              >
+                                <EyeOff className="w-4 h-4 mr-2" />
+                                Hide All Sheets
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handleUnhideAllSheets(group.name); }}
+                                data-testid="menu-item-unhide-sheets"
+                              >
+                                <Eye className="w-4 h-4 mr-2" />
+                                Unhide All Sheets
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handleUploadForType("PLANS"); }}
+                                data-testid="menu-item-upload-plans"
+                              >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload Plans
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => { e.stopPropagation(); handleUploadForType("OTHER"); }}
+                                data-testid="menu-item-upload-supporting"
+                              >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Upload Supporting Documents
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                         {group.expanded && (
                           <div className="ml-2">
                             {group.docs.length === 0 ? (
@@ -386,15 +737,24 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                               group.docs.map((doc: any) => (
                                 <div
                                   key={doc.id}
+                                  draggable
+                                  onDragStart={(e) => handleDocDragStart(e, doc.id)}
+                                  onDragEnd={handleDocDragEnd}
                                   className={cn(
-                                    "flex items-center gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
-                                    selectedDocId === doc.id && "bg-accent"
+                                    "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
+                                    selectedDocId === doc.id && "bg-accent",
+                                    draggedDocId === doc.id && "opacity-50"
                                   )}
-                                  onClick={() => setSelectedDocId(doc.id)}
+                                  onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
                                   data-testid={`document-${doc.id}`}
                                 >
-                                  <File className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                  <span className="truncate flex-1 text-sm">{doc.title || doc.fileName}</span>
+                                  <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
+                                  {doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc") ? (
+                                    <Box className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
+                                  ) : (
+                                    <File className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                                  )}
+                                  <span className="break-words flex-1 min-w-0 text-sm leading-snug">{doc.title || doc.fileName}</span>
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <Button
@@ -409,7 +769,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                     </DropdownMenuTrigger>
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuItem
-                                        onClick={() => window.open(doc.fileUrl, '_blank')}
+                                        onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
                                         data-testid={`button-view-document-${doc.id}`}
                                       >
                                         <Eye className="w-4 h-4 mr-2" />
@@ -429,7 +789,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                         <Download className="w-4 h-4 mr-2" />
                                         Download
                                       </DropdownMenuItem>
-                                      {doc.mimeType === 'application/pdf' && (
+                                      {(doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf")) && (
                                         <DropdownMenuItem
                                           onClick={() => handleImportToTakeoff(doc.id)}
                                           data-testid={`button-import-takeoff-${doc.id}`}
@@ -452,6 +812,101 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                 </div>
                               ))
                             )}
+                            {(group.children || []).map((child) => {
+                              const sfKey = subFolderKey(group.name, child.name);
+                              const sfDocIds = subFolderDocs[sfKey] || [];
+                              const sfDocs = documents.filter((d: any) => sfDocIds.includes(d.id));
+                              const isDropTarget = dragOverTarget === sfKey && draggedDocId !== null;
+                              return (
+                                <div key={child.name} className="mt-0.5">
+                                  <div
+                                    className={cn(
+                                      "flex items-center gap-1.5 px-2 py-1 text-sm hover:bg-accent/50 transition-colors cursor-pointer group/subfolder",
+                                      isDropTarget && "bg-blue-500/20 ring-1 ring-blue-500/50 rounded"
+                                    )}
+                                    onClick={() => {
+                                      setGroups((prev) =>
+                                        prev.map((g) =>
+                                          g.name === group.name
+                                            ? { ...g, children: (g.children || []).map((c) => c.name === child.name ? { ...c, expanded: !c.expanded } : c) }
+                                            : g
+                                        )
+                                      );
+                                    }}
+                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "move"; setDragOverTarget(sfKey); }}
+                                    onDragLeave={() => setDragOverTarget(null)}
+                                    onDrop={(e) => handleSubfolderDrop(e, group.name, child.name)}
+                                    data-testid={`subfolder-${child.name.toLowerCase().replace(/\s+/g, '-')}`}
+                                  >
+                                    {child.expanded ? (
+                                      <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+                                    ) : (
+                                      <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                                    )}
+                                    {child.expanded ? (
+                                      <FolderOpen className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                                    ) : (
+                                      <Folder className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+                                    )}
+                                    <span className="truncate font-medium text-xs flex-1">{child.name}</span>
+                                    <Badge variant="secondary" className="text-[10px] h-3.5 px-1 shrink-0">
+                                      {sfDocs.length}
+                                    </Badge>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-4 w-4 opacity-0 group-hover/subfolder:opacity-100 shrink-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSubFolderDocs((prev) => {
+                                          const next = { ...prev };
+                                          delete next[sfKey];
+                                          return next;
+                                        });
+                                        setGroups((prev) =>
+                                          prev.map((g) =>
+                                            g.name === group.name
+                                              ? { ...g, children: (g.children || []).filter((c) => c.name !== child.name) }
+                                              : g
+                                          )
+                                        );
+                                        toast({ description: `Subfolder "${child.name}" removed. Files moved back to parent.` });
+                                      }}
+                                      data-testid={`delete-subfolder-${child.name}`}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                  {child.expanded && (
+                                    <div className="ml-4">
+                                      {sfDocs.length === 0 ? (
+                                        <div className="px-2 py-1 text-xs text-muted-foreground italic">No files — drag documents here</div>
+                                      ) : (
+                                        sfDocs.map((doc: any) => (
+                                          <div
+                                            key={doc.id}
+                                            draggable
+                                            onDragStart={(e) => handleDocDragStart(e, doc.id)}
+                                            onDragEnd={handleDocDragEnd}
+                                            className={cn(
+                                              "flex items-start gap-1.5 px-2 py-1 text-xs cursor-pointer hover:bg-accent/50 transition-colors group",
+                                              selectedDocId === doc.id && "bg-accent",
+                                              draggedDocId === doc.id && "opacity-50"
+                                            )}
+                                            onClick={() => { setSelectedDocId(doc.id); setPreviewDocId(doc.id); }}
+                                            data-testid={`subfolder-doc-${doc.id}`}
+                                          >
+                                            <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
+                                            <File className="w-3 h-3 text-muted-foreground shrink-0 mt-0.5" />
+                                            <span className="break-words flex-1 min-w-0 leading-snug">{doc.title || doc.fileName}</span>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -502,20 +957,20 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                 {folderSheets.length === 0 ? (
                                   <div className="px-6 py-1 text-xs text-muted-foreground italic">No sheets</div>
                                 ) : (
-                                  folderSheets.map((sheet) => (
+                                  folderSheets.filter((s) => !hiddenSheetIds.has(s.id)).map((sheet) => (
                                     <div
                                       key={sheet.id}
                                       draggable
                                       onDragStart={(e) => handleSheetDragStart(e, sheet.id)}
                                       onDragEnd={() => setDraggedSheetId(null)}
                                       className={cn(
-                                        "flex items-center gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
+                                        "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
                                         draggedSheetId === sheet.id && "opacity-50"
                                       )}
                                       data-testid={`sheet-${sheet.id}`}
                                     >
-                                      <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab" />
-                                      <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                      <GripVertical className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5" />
+                                      <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
                                       {renameSheetId === sheet.id ? (
                                         <Input
                                           value={renameSheetValue}
@@ -539,7 +994,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                           data-testid={`input-rename-sheet-${sheet.id}`}
                                         />
                                       ) : (
-                                        <span className="truncate flex-1">{sheet.sheetName}</span>
+                                        <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
                                       )}
                                       {sheet.scalePxPerFoot && renameSheetId !== sheet.id && (
                                         <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
@@ -622,13 +1077,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
 
               {selectedDoc && (
                 <div className="border-t p-3 bg-muted/30 space-y-2 shrink-0">
-                  <p className="text-xs font-medium truncate">{selectedDoc.title || selectedDoc.fileName}</p>
+                  <p className="text-xs font-medium break-words">{selectedDoc.title || selectedDoc.fileName}</p>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Badge variant="outline" className="text-[10px]">{selectedDoc.type}</Badge>
                     <span>{format(new Date(selectedDoc.uploadedAt), "MMM d, yyyy")}</span>
                   </div>
                   <div className="flex gap-1">
-                    <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => window.open(selectedDoc.fileUrl, '_blank')}>
+                    <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleOpenFile(selectedDoc.id, selectedDoc.fileUrl)} data-testid="button-view-selected-doc">
                       <Eye className="w-3 h-3 mr-1" /> View
                     </Button>
                     <DocumentRevisionPanel
@@ -639,11 +1094,19 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   </div>
                 </div>
               )}
+
+              <div
+                className="absolute top-0 right-0 h-full w-1 cursor-col-resize hidden md:flex items-center justify-center group z-30 hover:bg-primary/20 active:bg-primary/30 transition-colors"
+                onMouseDown={handleResizeMouseDown}
+                data-testid="panel-resize-handle"
+              >
+                <div className="w-0.5 h-8 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+              </div>
             </div>
           )}
 
-          <div className="flex-1 min-w-0 relative">
-            {leftPanelCollapsed && (
+          <div className="flex-1 min-w-0 relative flex flex-col">
+            {leftPanelCollapsed && !previewDocId && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -654,7 +1117,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 <ChevronRight className="w-4 h-4" />
               </Button>
             )}
-            {!leftPanelCollapsed && (
+            {!leftPanelCollapsed && !previewDocId && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -665,10 +1128,194 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 <ChevronDown className="w-4 h-4 rotate-90" />
               </Button>
             )}
-            <TakeoffWorkspace projectId={project.id} projectCode={project.code} />
+            {previewDocId ? (
+              (() => {
+                const doc = documents.find((d: any) => d.id === previewDocId);
+                if (!doc) return <TakeoffWorkspace projectId={project.id} projectCode={project.code} />;
+                const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
+                const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
+                const isBim = doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc");
+
+                if (isBim && previewUrlData?.url) {
+                  return (
+                    <div className="flex flex-col h-full" data-testid="bim-preview-panel">
+                      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => setPreviewDocId(null)}
+                          data-testid="button-back-to-takeoff"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Back to Takeoff
+                        </Button>
+                        <span className="text-sm font-medium truncate flex-1" data-testid="preview-doc-title">{doc.title || doc.fileName}</span>
+                        <Badge variant="outline" className="text-[10px] shrink-0">
+                          <Box className="w-3 h-3 mr-1" />
+                          BIM
+                        </Badge>
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-hidden">
+                        <Suspense fallback={
+                          <div className="flex items-center justify-center h-full">
+                            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                          </div>
+                        }>
+                          <BimViewer fileUrl={previewUrlData.url} fileName={doc.title || doc.fileName} />
+                        </Suspense>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (isBim && previewUrlLoading) {
+                  return (
+                    <div className="flex flex-col h-full" data-testid="bim-preview-panel">
+                      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+                        <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setPreviewDocId(null)} data-testid="button-back-to-takeoff">
+                          <X className="w-3.5 h-3.5" /> Back to Takeoff
+                        </Button>
+                        <span className="text-sm font-medium truncate flex-1">{doc.title || doc.fileName}</span>
+                      </div>
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="flex flex-col h-full" data-testid="doc-preview-panel">
+                    <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-xs gap-1"
+                        onClick={() => setPreviewDocId(null)}
+                        data-testid="button-back-to-takeoff"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Back to Takeoff
+                      </Button>
+                      <span className="text-sm font-medium truncate flex-1" data-testid="preview-doc-title">{doc.title || doc.fileName}</span>
+                      <Badge variant="outline" className="text-[10px] shrink-0">{doc.type}</Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
+                        data-testid="button-open-doc-external"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-hidden">
+                      {previewUrlLoading ? (
+                        <div className="flex items-center justify-center h-full" data-testid="preview-loading">
+                          <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : isPdf && previewUrlData?.url ? (
+                        <iframe
+                          src={previewUrlData.url}
+                          className="w-full h-full border-0"
+                          title={doc.title || doc.fileName}
+                          data-testid="preview-pdf-iframe"
+                        />
+                      ) : isPdf ? (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="text-center space-y-4 p-8 max-w-sm">
+                            <File className="w-16 h-16 text-muted-foreground/40 mx-auto" />
+                            <p className="text-sm text-muted-foreground">Unable to generate preview. Open the file directly.</p>
+                            <Button variant="outline" onClick={() => handleOpenFile(doc.id, doc.fileUrl)} data-testid="button-open-pdf-fallback">
+                              <ExternalLink className="w-4 h-4 mr-2" />Open File
+                            </Button>
+                          </div>
+                        </div>
+                      ) : isImage ? (
+                        <div className="flex items-center justify-center h-full bg-muted/20 p-4">
+                          <img
+                            src={previewUrlData?.url || doc.fileUrl}
+                            alt={doc.title || doc.fileName}
+                            className="max-w-full max-h-full object-contain"
+                            data-testid="preview-image"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <div className="text-center space-y-4 p-8 max-w-sm">
+                            <div className="flex justify-center">
+                              <File className="w-16 h-16 text-muted-foreground/40" />
+                            </div>
+                            <div>
+                              <p className="font-medium text-sm" data-testid="preview-filename">{doc.title || doc.fileName}</p>
+                              <Badge variant="secondary" className="mt-1 text-xs">{doc.fileName.split(".").pop()?.toUpperCase() || doc.type}</Badge>
+                            </div>
+                            <p className="text-sm text-muted-foreground">This file type cannot be previewed in the browser.</p>
+                            <Button
+                              variant="outline"
+                              onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
+                              data-testid="button-open-file-external"
+                            >
+                              <ExternalLink className="w-4 h-4 mr-2" />
+                              Open File
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <TakeoffWorkspace projectId={project.id} projectCode={project.code} />
+            )}
           </div>
         </div>
       )}
+
+      <Dialog open={createFolderOpen} onOpenChange={(open) => { setCreateFolderOpen(open); if (!open) { setNewFolderName(""); setCreateFolderParent(null); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Create Folder{createFolderParent ? ` inside ${createFolderParent}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <Label htmlFor="new-folder-name" className="text-sm mb-1 block">Folder name</Label>
+            <Input
+              id="new-folder-name"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="e.g. Structural Plans"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateFolderSubmit(); if (e.key === "Escape") setCreateFolderOpen(false); }}
+              data-testid="input-new-folder-name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreateFolderSubmit} disabled={!newFolderName.trim()} data-testid="button-create-folder-confirm">
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deletingGroupName} onOpenChange={(open) => !open && setDeletingGroupName(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Folder</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove the <strong>{deletingGroupName}</strong> folder from view? Documents already uploaded will not be deleted — they will reappear if you reload the page.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteGroupConfirm} className="bg-destructive hover:bg-destructive/90" data-testid="button-confirm-delete-folder">
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteDocId} onOpenChange={(open) => !open && setDeleteDocId(null)}>
         <AlertDialogContent>
