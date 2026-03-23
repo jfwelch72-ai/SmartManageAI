@@ -30,6 +30,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus,
@@ -47,11 +48,18 @@ import {
   CheckSquare,
   Square,
   ArrowRight,
+  BookOpen,
+  Package,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { getTradeDisplayName } from "@shared/tradeTypeUtils";
-import { useLibraryData, type Scope } from "@/hooks/use-library-data";
+import {
+  useLibraryData,
+  type Scope,
+  type MaterialFamily,
+} from "@/hooks/use-library-data";
 
 interface WorkTypeCategory {
   id: string;
@@ -293,6 +301,7 @@ const TRADE_SUBCATEGORIES: Record<string, string[]> = {
 export default function ScopeSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("work-types");
 
   const { data: tradeConfig } = useQuery<TradeConfigResponse>({
@@ -475,8 +484,104 @@ export default function ScopeSettings() {
   const {
     trades: libraryTrades,
     scopes: libraryAllScopes,
+    components: libraryComponents,
+    materials: libraryMaterials,
     isLoading: loadingLibrary,
   } = useLibraryData();
+
+  const [librarySubTab, setLibrarySubTab] = useState("scopes");
+  const [libraryBrowseSearch, setLibraryBrowseSearch] = useState("");
+  const [expandedLibTrades, setExpandedLibTrades] = useState<Set<string>>(new Set());
+  const [expandedLibComponents, setExpandedLibComponents] = useState<Set<string>>(new Set());
+  const [expandedLibMaterialGroups, setExpandedLibMaterialGroups] = useState<Set<string>>(new Set());
+
+  const libLowerSearch = libraryBrowseSearch.toLowerCase().trim();
+
+  const filteredLibBrowseScopes = useMemo(() => {
+    if (!libLowerSearch) return libraryAllScopes;
+    return libraryAllScopes.filter(
+      (s) =>
+        s.scope_name.toLowerCase().includes(libLowerSearch) ||
+        s.category.toLowerCase().includes(libLowerSearch) ||
+        s.trade_name.toLowerCase().includes(libLowerSearch) ||
+        s.uom.toLowerCase().includes(libLowerSearch) ||
+        s.material_families.some((mf) => mf.toLowerCase().includes(libLowerSearch)),
+    );
+  }, [libraryAllScopes, libLowerSearch]);
+
+  const libScopesByTrade = useMemo(() => {
+    const groups: Record<string, { trade_name: string; scopes: Scope[] }> = {};
+    filteredLibBrowseScopes.forEach((s) => {
+      if (!groups[s.trade_id]) {
+        groups[s.trade_id] = { trade_name: s.trade_name, scopes: [] };
+      }
+      groups[s.trade_id].scopes.push(s);
+    });
+    return Object.entries(groups)
+      .map(([trade_id, data]) => ({ trade_id, ...data }))
+      .sort((a, b) => a.trade_name.localeCompare(b.trade_name));
+  }, [filteredLibBrowseScopes]);
+
+  const filteredLibBrowseComponents = useMemo(() => {
+    if (!libLowerSearch) return libraryComponents;
+    return libraryComponents.filter(
+      (c) =>
+        c.display_name.toLowerCase().includes(libLowerSearch) ||
+        (c.description || "").toLowerCase().includes(libLowerSearch) ||
+        c.trade_name.toLowerCase().includes(libLowerSearch) ||
+        c.variants.some((v) => v.display_name.toLowerCase().includes(libLowerSearch)),
+    );
+  }, [libraryComponents, libLowerSearch]);
+
+  const filteredLibBrowseMaterials = useMemo(() => {
+    if (!libLowerSearch) return libraryMaterials;
+    return libraryMaterials.filter(
+      (m) =>
+        m.display_name.toLowerCase().includes(libLowerSearch) ||
+        m.group.toLowerCase().includes(libLowerSearch) ||
+        m.canonical_uom.toLowerCase().includes(libLowerSearch),
+    );
+  }, [libraryMaterials, libLowerSearch]);
+
+  const libMaterialsByGroup = useMemo(() => {
+    const groups: Record<string, MaterialFamily[]> = {};
+    filteredLibBrowseMaterials.forEach((m) => {
+      if (!groups[m.group]) {
+        groups[m.group] = [];
+      }
+      groups[m.group].push(m);
+    });
+    return Object.entries(groups)
+      .map(([group, items]) => ({ group, items }))
+      .sort((a, b) => a.group.localeCompare(b.group));
+  }, [filteredLibBrowseMaterials]);
+
+  const toggleLibTrade = (tradeId: string) => {
+    setExpandedLibTrades((prev) => {
+      const next = new Set(prev);
+      if (next.has(tradeId)) next.delete(tradeId);
+      else next.add(tradeId);
+      return next;
+    });
+  };
+
+  const toggleLibComponent = (componentId: string) => {
+    setExpandedLibComponents((prev) => {
+      const next = new Set(prev);
+      if (next.has(componentId)) next.delete(componentId);
+      else next.add(componentId);
+      return next;
+    });
+  };
+
+  const toggleLibMaterialGroup = (group: string) => {
+    setExpandedLibMaterialGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
 
   const availableTrades = useMemo(() => {
     const libraryTradeNames = libraryTrades.map((t) => t.trade_name);
@@ -949,6 +1054,14 @@ export default function ScopeSettings() {
             <Tag className="h-4 w-4" />
             Modifiers
           </TabsTrigger>
+          <TabsTrigger
+            value="library"
+            className="flex items-center gap-2"
+            data-testid="tab-library"
+          >
+            <BookOpen className="h-4 w-4" />
+            Library
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="work-types">
@@ -1172,6 +1285,335 @@ export default function ScopeSettings() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="library">
+          {loadingLibrary ? (
+            <div className="space-y-6">
+              <Skeleton className="h-10 w-full" />
+              <div className="space-y-4">
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-32 w-full" />
+                <Skeleton className="h-32 w-full" />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="text-sm text-muted-foreground" data-testid="text-library-counts">
+                  {libraryAllScopes.length} scopes &middot; {libraryComponents.length} components &middot; {libraryMaterials.length} materials
+                </div>
+              </div>
+
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search scopes, components, materials..."
+                  value={libraryBrowseSearch}
+                  onChange={(e) => setLibraryBrowseSearch(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-library-search"
+                />
+              </div>
+
+              <Tabs value={librarySubTab} onValueChange={setLibrarySubTab}>
+                {isMobile ? (
+                  <Select value={librarySubTab} onValueChange={setLibrarySubTab}>
+                    <SelectTrigger className="mb-4" data-testid="select-library-sub-tab">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="scopes">Scopes ({filteredLibBrowseScopes.length})</SelectItem>
+                      <SelectItem value="components">Components ({filteredLibBrowseComponents.length})</SelectItem>
+                      <SelectItem value="materials">Materials ({filteredLibBrowseMaterials.length})</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <TabsList className="mb-6">
+                    <TabsTrigger value="scopes" className="flex items-center gap-2" data-testid="tab-lib-scopes">
+                      <Layers className="h-4 w-4" />
+                      Scopes
+                      <Badge variant="secondary" className="ml-1">{filteredLibBrowseScopes.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="components" className="flex items-center gap-2" data-testid="tab-lib-components">
+                      <Package className="h-4 w-4" />
+                      Components
+                      <Badge variant="secondary" className="ml-1">{filteredLibBrowseComponents.length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="materials" className="flex items-center gap-2" data-testid="tab-lib-materials">
+                      <Wrench className="h-4 w-4" />
+                      Materials
+                      <Badge variant="secondary" className="ml-1">{filteredLibBrowseMaterials.length}</Badge>
+                    </TabsTrigger>
+                  </TabsList>
+                )}
+
+                <TabsContent value="scopes">
+                  {libScopesByTrade.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-8 text-center text-muted-foreground" data-testid="text-no-scopes">
+                        No scopes found{libLowerSearch ? ` matching "${libraryBrowseSearch}"` : ""}.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-3">
+                      {libScopesByTrade.map((group) => {
+                        const isExpanded = expandedLibTrades.has(group.trade_id);
+                        return (
+                          <Card key={group.trade_id} data-testid={`card-trade-${group.trade_id}`}>
+                            <CardHeader
+                              className="py-3 cursor-pointer hover-elevate"
+                              onClick={() => toggleLibTrade(group.trade_id)}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={isExpanded}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  toggleLibTrade(group.trade_id);
+                                }
+                              }}
+                              data-testid={`toggle-trade-${group.trade_id}`}
+                            >
+                              <CardTitle className="text-base flex items-center gap-2">
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                {group.trade_name}
+                                <Badge variant="secondary">{group.scopes.length}</Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            {isExpanded && (
+                              <CardContent>
+                                {isMobile ? (
+                                  <div className="space-y-3">
+                                    {group.scopes.map((scope) => (
+                                      <div key={scope.scope_id} className="p-3 rounded-md border space-y-2" data-testid={`row-scope-${scope.scope_id}`}>
+                                        <div className="font-medium">{scope.scope_name}</div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <Badge variant="outline">{scope.category}</Badge>
+                                          <Badge variant="secondary">{scope.uom}</Badge>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                          {scope.material_families.length > 0 ? (
+                                            scope.material_families.map((mf) => (
+                                              <Badge key={mf} variant="outline" className="text-xs">{mf}</Badge>
+                                            ))
+                                          ) : (
+                                            <span className="text-muted-foreground text-xs">No materials</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="border-b text-left text-muted-foreground">
+                                          <th className="pb-2 pr-4 font-medium">Scope Name</th>
+                                          <th className="pb-2 pr-4 font-medium">Category</th>
+                                          <th className="pb-2 pr-4 font-medium">UOM</th>
+                                          <th className="pb-2 font-medium">Material Families</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {group.scopes.map((scope) => (
+                                          <tr key={scope.scope_id} className="border-b last:border-0" data-testid={`row-scope-${scope.scope_id}`}>
+                                            <td className="py-2 pr-4 font-medium">{scope.scope_name}</td>
+                                            <td className="py-2 pr-4"><Badge variant="outline">{scope.category}</Badge></td>
+                                            <td className="py-2 pr-4"><Badge variant="secondary">{scope.uom}</Badge></td>
+                                            <td className="py-2">
+                                              <div className="flex flex-wrap gap-1">
+                                                {scope.material_families.length > 0 ? (
+                                                  scope.material_families.map((mf) => (
+                                                    <Badge key={mf} variant="outline" className="text-xs">{mf}</Badge>
+                                                  ))
+                                                ) : (
+                                                  <span className="text-muted-foreground text-xs">None</span>
+                                                )}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </CardContent>
+                            )}
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="components">
+                  {filteredLibBrowseComponents.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-8 text-center text-muted-foreground" data-testid="text-no-components">
+                        No components found{libLowerSearch ? ` matching "${libraryBrowseSearch}"` : ""}.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredLibBrowseComponents.map((comp) => {
+                        const isExpanded = expandedLibComponents.has(comp.component_id);
+                        const hasVariants = comp.variants && comp.variants.length > 0;
+                        return (
+                          <Card key={comp.component_id} data-testid={`card-component-${comp.component_id}`}>
+                            <CardHeader
+                              className={`py-3 ${hasVariants ? "cursor-pointer hover-elevate" : ""}`}
+                              onClick={() => hasVariants && toggleLibComponent(comp.component_id)}
+                              role={hasVariants ? "button" : undefined}
+                              tabIndex={hasVariants ? 0 : undefined}
+                              aria-expanded={hasVariants ? isExpanded : undefined}
+                              onKeyDown={hasVariants ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleLibComponent(comp.component_id); } } : undefined}
+                              data-testid={`toggle-component-${comp.component_id}`}
+                            >
+                              <div className="flex items-start justify-between gap-3 flex-wrap">
+                                <div className="flex items-center gap-2">
+                                  {hasVariants && (isExpanded ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />)}
+                                  <div>
+                                    <CardTitle className="text-base">{comp.display_name}</CardTitle>
+                                    {comp.description && <p className="text-sm text-muted-foreground mt-1">{comp.description}</p>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Badge variant="secondary">{comp.trade_name}</Badge>
+                                  {hasVariants && <Badge variant="outline">{comp.variants.length} variants</Badge>}
+                                </div>
+                              </div>
+                            </CardHeader>
+                            {isExpanded && hasVariants && (
+                              <CardContent>
+                                <div className="space-y-2">
+                                  {comp.variants.map((variant) => (
+                                    <div key={variant.variant_id} className="flex items-start justify-between p-3 rounded-md border bg-muted/30 gap-3 flex-wrap" data-testid={`variant-${variant.variant_id}`}>
+                                      <div>
+                                        <span className="font-medium text-sm">{variant.display_name}</span>
+                                        {Object.keys(variant.qualifiers).length > 0 && (
+                                          <div className="flex flex-wrap gap-1 mt-1">
+                                            {Object.entries(variant.qualifiers).map(([key, val]) => (
+                                              <Badge key={key} variant="outline" className="text-xs">{key}: {val}</Badge>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                      {Object.keys(variant.default_parameters).length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                          {Object.entries(variant.default_parameters).map(([key, val]) => (
+                                            <Badge key={key} variant="secondary" className="text-xs">{key}: {String(val)}</Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </CardContent>
+                            )}
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="materials">
+                  {libMaterialsByGroup.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-8 text-center text-muted-foreground" data-testid="text-no-materials">
+                        No materials found{libLowerSearch ? ` matching "${libraryBrowseSearch}"` : ""}.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="space-y-3">
+                      {libMaterialsByGroup.map(({ group, items }) => {
+                        const isExpanded = expandedLibMaterialGroups.has(group);
+                        return (
+                          <Card key={group} data-testid={`card-material-group-${group.toLowerCase().replace(/\s+/g, "-")}`}>
+                            <CardHeader
+                              className="py-3 cursor-pointer hover-elevate"
+                              onClick={() => toggleLibMaterialGroup(group)}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={isExpanded}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleLibMaterialGroup(group); } }}
+                              data-testid={`toggle-material-group-${group.toLowerCase().replace(/\s+/g, "-")}`}
+                            >
+                              <CardTitle className="text-base flex items-center gap-2">
+                                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                {group}
+                                <Badge variant="secondary">{items.length}</Badge>
+                              </CardTitle>
+                            </CardHeader>
+                            {isExpanded && (
+                              <CardContent>
+                                {isMobile ? (
+                                  <div className="space-y-3">
+                                    {items.map((mat) => (
+                                      <div key={mat.material_family_id} className="p-3 rounded-md border space-y-2" data-testid={`row-material-${mat.material_family_id}`}>
+                                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                                          <span className="font-medium">{mat.display_name}</span>
+                                          <Badge variant="secondary">{mat.canonical_uom}</Badge>
+                                        </div>
+                                        <div className="flex flex-wrap gap-1">
+                                          {mat.attributes.length > 0 ? (
+                                            mat.attributes.map((attr) => (
+                                              <Badge key={attr} variant="outline" className="text-xs">{attr}</Badge>
+                                            ))
+                                          ) : (
+                                            <span className="text-muted-foreground text-xs">No attributes</span>
+                                          )}
+                                        </div>
+                                        {mat.notes && <div className="text-muted-foreground text-xs">{mat.notes}</div>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="border-b text-left text-muted-foreground">
+                                          <th className="pb-2 pr-4 font-medium">Material</th>
+                                          <th className="pb-2 pr-4 font-medium">UOM</th>
+                                          <th className="pb-2 pr-4 font-medium">Attributes</th>
+                                          <th className="pb-2 font-medium">Notes</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {items.map((mat) => (
+                                          <tr key={mat.material_family_id} className="border-b last:border-0" data-testid={`row-material-${mat.material_family_id}`}>
+                                            <td className="py-2 pr-4 font-medium">{mat.display_name}</td>
+                                            <td className="py-2 pr-4"><Badge variant="secondary">{mat.canonical_uom}</Badge></td>
+                                            <td className="py-2 pr-4">
+                                              <div className="flex flex-wrap gap-1">
+                                                {mat.attributes.length > 0 ? (
+                                                  mat.attributes.map((attr) => (
+                                                    <Badge key={attr} variant="outline" className="text-xs">{attr}</Badge>
+                                                  ))
+                                                ) : (
+                                                  <span className="text-muted-foreground text-xs">None</span>
+                                                )}
+                                              </div>
+                                            </td>
+                                            <td className="py-2 text-muted-foreground text-xs">{mat.notes || "-"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </CardContent>
+                            )}
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+                </TabsContent>
+              </Tabs>
             </div>
           )}
         </TabsContent>

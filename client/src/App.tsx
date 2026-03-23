@@ -60,7 +60,6 @@ const TasksPage = lazy(() => import("@/pages/tasks"));
 const ProductionRatesPage = lazy(() => import("@/pages/production-rates"));
 const CRMPage = lazy(() => import("@/pages/crm"));
 const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
-const ScopeLibraryPage = lazy(() => import("@/pages/scope-library"));
 const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const EquipmentPage = lazy(() => import("@/pages/equipment"));
 const EquipmentDetailPage = lazy(() => import("@/pages/equipment-detail"));
@@ -270,7 +269,6 @@ function Router() {
       <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} featurePerm={["canAccessFinancials", "canUseAiFeatures"]} />} />
       <Route path="/production-rates" component={() => <ProtectedRoute component={ProductionRatesPage} permission={RoutePermissions.PRODUCTION_RATES} />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
-      <Route path="/scope-library" component={() => <ProtectedRoute component={ScopeLibraryPage} permission={RoutePermissions.SCOPE_LIBRARY} />} />
       <Route path="/scope-settings" component={() => <ProtectedRoute component={ScopeSettingsPage} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
