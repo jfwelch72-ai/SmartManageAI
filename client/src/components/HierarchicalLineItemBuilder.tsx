@@ -26,6 +26,7 @@ interface WorkType {
   categoryName: string | null;
   requiresDimensions: boolean;
   dimensionLabel: string | null;
+  defaultCostCode: string | null;
 }
 
 interface Subcategory {
@@ -331,6 +332,7 @@ export default function HierarchicalLineItemBuilder({
     setSelectedModifierIds([]);
     setSelectedModifierNames([]);
     setModifierSelectionsState([]);
+    setCostCodeOverride("");
   };
 
   const handleSubcategoryChange = (subcategory: string) => {
@@ -339,6 +341,7 @@ export default function HierarchicalLineItemBuilder({
     setSelectedModifierIds([]);
     setSelectedModifierNames([]);
     setModifierSelectionsState([]);
+    setCostCodeOverride("");
   };
 
   const handleWorkTypeChange = (workTypeId: string) => {
@@ -347,7 +350,9 @@ export default function HierarchicalLineItemBuilder({
     setSelectedModifierNames([]);
     setModifierSelectionsState([]);
     const wt = availableWorkTypes.find(w => w.id === workTypeId);
-    setCostCodeOverride(wt?.code || "");
+    if (wt?.defaultCostCode && !costCodeOverride) {
+      setCostCodeOverride(wt.defaultCostCode);
+    }
     if (wt?.unit) {
       onUnitChange(wt.unit);
     }

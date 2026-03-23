@@ -36,10 +36,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Plus, Search, Pencil, FolderOpen } from "lucide-react";
+import { Plus, Search, Pencil, FolderOpen, Wrench } from "lucide-react";
 import { format } from "date-fns";
 import type { CostCode } from "@shared/costCodes";
 import { CSI_DIVISIONS } from "@shared/costCodes";
+
+interface LinkedWorkType {
+  id: string;
+  name: string;
+  code: string;
+  categoryName: string;
+}
+
+type WorkTypesByCostCode = Record<string, LinkedWorkType[]>;
 
 interface OrgCostCode {
   id: number;
@@ -72,6 +81,10 @@ export default function CostCodesPage() {
 
   const { data: orgCodes = [] } = useQuery<OrgCostCode[]>({
     queryKey: ["/api/cost-codes/org"],
+  });
+
+  const { data: workTypesByCostCode = {} } = useQuery<WorkTypesByCostCode>({
+    queryKey: ["/api/scope/work-types-by-cost-code"],
   });
 
   const orgCodeMap = useMemo(() => {
@@ -264,6 +277,7 @@ export default function CostCodesPage() {
                     <TableRow>
                       <TableHead className="w-[120px]">Code</TableHead>
                       <TableHead>Description</TableHead>
+                      <TableHead>Linked Work Types</TableHead>
                       <TableHead className="w-[100px] text-center">Active</TableHead>
                       <TableHead className="w-[80px] text-center">Type</TableHead>
                       <TableHead className="w-[160px]">Deactivated</TableHead>
@@ -274,7 +288,7 @@ export default function CostCodesPage() {
                     {grouped.map((group) => (
                       <Fragment key={group.division}>
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
-                          <TableCell colSpan={6} className="py-2">
+                          <TableCell colSpan={7} className="py-2">
                             <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
                               <FolderOpen className="w-4 h-4" />
                               {group.division}
@@ -294,6 +308,26 @@ export default function CostCodesPage() {
                                 <code className="text-sm font-mono" data-testid={`text-code-${code.code}`}>{code.code}</code>
                               </TableCell>
                               <TableCell data-testid={`text-desc-${code.code}`}>{code.description}</TableCell>
+                              <TableCell data-testid={`text-linked-work-types-${code.code}`}>
+                                {workTypesByCostCode[code.code] && workTypesByCostCode[code.code].length > 0 ? (
+                                  <div className="flex flex-wrap gap-1">
+                                    {workTypesByCostCode[code.code].map((wt) => (
+                                      <Tooltip key={wt.id}>
+                                        <TooltipTrigger asChild>
+                                          <Badge variant="outline" className="text-[10px] cursor-help" data-testid={`badge-linked-wt-${wt.id}`}>
+                                            <Wrench className="w-2.5 h-2.5 mr-0.5" />
+                                            {wt.name}
+                                          </Badge>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <p className="font-medium">{wt.name}</p>
+                                          <p className="text-xs text-muted-foreground">{wt.categoryName}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </TableCell>
                               <TableCell className="text-center">
                                 <Switch
                                   checked={isActive}

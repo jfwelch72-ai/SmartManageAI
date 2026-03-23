@@ -2371,6 +2371,7 @@ export const organizationSowItems = pgTable("organization_sow_items", {
   unit: text("unit"),
   requiresDimensions: boolean("requires_dimensions").notNull().default(false),
   dimensionLabel: text("dimension_label"),
+  defaultCostCode: varchar("default_cost_code", { length: 20 }),
   displayOrder: integer("display_order").notNull().default(0),
   isFromTemplate: boolean("is_from_template").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),

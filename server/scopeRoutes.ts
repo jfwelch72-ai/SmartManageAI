@@ -78,6 +78,7 @@ router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) =
         unit: item.defaultUomCode,
         requiresDimensions: item.requiresDimensions,
         dimensionLabel: item.dimensionLabel,
+        defaultCostCode: null,
         displayOrder: item.sortOrder,
         isFromTemplate: true,
         isActive: true,
@@ -111,6 +112,7 @@ router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) =
         displayOrder: number;
         isCustom: boolean;
         isActive: boolean;
+        defaultCostCode: string | null;
       }>;
     }>();
 
@@ -139,7 +141,8 @@ router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) =
         dimensionType: item.dimensionLabel ? "length_width_depth" : null,
         displayOrder: item.displayOrder,
         isCustom: !item.isFromTemplate,
-        isActive: item.isActive
+        isActive: item.isActive,
+        defaultCostCode: item.defaultCostCode || null,
       });
     }
 
@@ -268,10 +271,11 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
       defaultUnit: z.string().optional().default("EA"),
       requiresDimensions: z.boolean().optional().default(false),
       dimensionType: z.string().optional().nullable(),
+      defaultCostCode: z.string().optional().nullable(),
       tradeName: z.string().optional(),
-      categoryName: z.string().optional(), // Direct category name from frontend
+      categoryName: z.string().optional(),
       displayOrder: z.number().optional(),
-      categoryId: z.string().optional(), // Legacy support
+      categoryId: z.string().optional(),
     });
 
     const validationResult = inputSchema.safeParse(req.body);
@@ -280,7 +284,7 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
       return;
     }
 
-    const { name, code, defaultUnit, requiresDimensions, dimensionType, tradeName, categoryName: inputCategoryName, displayOrder } = validationResult.data;
+    const { name, code, defaultUnit, requiresDimensions, dimensionType, defaultCostCode, tradeName, categoryName: inputCategoryName, displayOrder } = validationResult.data;
 
     // Sanitize text fields
     const sanitizedName = sanitizeShortText(name);
@@ -309,8 +313,9 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
         unit: sanitizeShortText(defaultUnit) || "EA",
         requiresDimensions: requiresDimensions || false,
         dimensionLabel: dimensionType ? sanitizeShortText(dimensionType) : null,
+        defaultCostCode: defaultCostCode ? sanitizeShortText(defaultCostCode) : null,
         displayOrder: newDisplayOrder,
-        isFromTemplate: false, // Custom items are not from template
+        isFromTemplate: false,
         isActive: true,
       })
       .returning();
@@ -336,7 +341,6 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
     }
     const actualCategoryId = `cat-${catMap.get(categoryName) ?? 0}`;
 
-    // Return response matching the format expected by GET endpoint
     res.status(201).json({
       id: newWorkType.id,
       categoryId: actualCategoryId,
@@ -348,6 +352,7 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
       displayOrder: newWorkType.displayOrder,
       isCustom: true,
       isActive: newWorkType.isActive,
+      defaultCostCode: newWorkType.defaultCostCode || null,
     });
   } catch (error: any) {
     if (error.code === '23505') {
@@ -362,6 +367,42 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
 // Admin: Update work type
 router.put("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
+
+    const [existingSow] = await db
+      .select()
+      .from(organizationSowItems)
+      .where(
+        and(
+          eq(organizationSowItems.id, req.params.id),
+          eq(organizationSowItems.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (existingSow) {
+      const updateData: Record<string, any> = { updatedAt: new Date() };
+      if (req.body.name !== undefined) updateData.name = sanitizeShortText(req.body.name);
+      if (req.body.defaultUnit !== undefined) updateData.unit = sanitizeShortText(req.body.defaultUnit);
+      if (req.body.requiresDimensions !== undefined) updateData.requiresDimensions = req.body.requiresDimensions;
+      if (req.body.dimensionType !== undefined) updateData.dimensionLabel = req.body.dimensionType || null;
+      if (req.body.defaultCostCode !== undefined) updateData.defaultCostCode = req.body.defaultCostCode || null;
+      if (req.body.displayOrder !== undefined) updateData.displayOrder = req.body.displayOrder;
+
+      const [updated] = await db
+        .update(organizationSowItems)
+        .set(updateData)
+        .where(eq(organizationSowItems.id, req.params.id))
+        .returning();
+
+      res.json(updated);
+      return;
+    }
+
     const [existing] = await db
       .select()
       .from(scopeWorkTypes)
@@ -608,9 +649,10 @@ router.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res)
             code: item.code,
             description: item.description,
             unit: item.unit,
-            categoryName: item.categoryName, // Include original categoryName for reference
+            categoryName: item.categoryName,
             requiresDimensions: item.requiresDimensions,
             dimensionLabel: item.dimensionLabel,
+            defaultCostCode: item.defaultCostCode || null,
           })),
         })).sort((a, b) => a.subcategoryName.localeCompare(b.subcategoryName)),
       };
@@ -623,6 +665,53 @@ router.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res)
     });
   } catch (error) {
     console.error("Get hierarchical scope error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/scope/work-types-by-cost-code", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
+
+    const items = await db
+      .select({
+        id: organizationSowItems.id,
+        name: organizationSowItems.name,
+        code: organizationSowItems.code,
+        categoryName: organizationSowItems.categoryName,
+        defaultCostCode: organizationSowItems.defaultCostCode,
+      })
+      .from(organizationSowItems)
+      .where(
+        and(
+          eq(organizationSowItems.organizationId, organizationId),
+          eq(organizationSowItems.isActive, true),
+          sql`${organizationSowItems.defaultCostCode} IS NOT NULL AND ${organizationSowItems.defaultCostCode} != ''`
+        )
+      )
+      .orderBy(organizationSowItems.name);
+
+    const mapping: Record<string, Array<{ id: string; name: string; code: string; categoryName: string }>> = {};
+    for (const item of items) {
+      const costCode = item.defaultCostCode!;
+      if (!mapping[costCode]) {
+        mapping[costCode] = [];
+      }
+      mapping[costCode].push({
+        id: item.id,
+        name: item.name,
+        code: item.code,
+        categoryName: item.categoryName,
+      });
+    }
+
+    res.json(mapping);
+  } catch (error) {
+    console.error("Get work types by cost code error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -50,6 +50,7 @@ import {
   ArrowRight,
   BookOpen,
   Package,
+  DollarSign,
 } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -60,6 +61,7 @@ import {
   type Scope,
   type MaterialFamily,
 } from "@/hooks/use-library-data";
+import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 
 interface WorkTypeCategory {
   id: string;
@@ -80,6 +82,7 @@ interface WorkType {
   displayOrder: number;
   isCustom: boolean;
   isActive: boolean;
+  defaultCostCode: string | null;
 }
 
 interface ModifierCategory {
@@ -334,6 +337,7 @@ export default function ScopeSettings() {
     requiresDimensions: false,
     dimensionType: "",
     displayOrder: 100,
+    defaultCostCode: "",
   });
 
   const [modifierForm, setModifierForm] = useState({
@@ -476,6 +480,7 @@ export default function ScopeSettings() {
       requiresDimensions: false,
       dimensionType: "",
       displayOrder: 100,
+      defaultCostCode: "",
     });
     setSelectedTrade("");
     setSelectedSubCategory("");
@@ -494,6 +499,27 @@ export default function ScopeSettings() {
   const [expandedLibTrades, setExpandedLibTrades] = useState<Set<string>>(new Set());
   const [expandedLibComponents, setExpandedLibComponents] = useState<Set<string>>(new Set());
   const [expandedLibMaterialGroups, setExpandedLibMaterialGroups] = useState<Set<string>>(new Set());
+
+  const costCodeByScope = useMemo(() => {
+    const byCode = new Map<string, string>();
+    const byName = new Map<string, string>();
+    for (const cat of workTypeCategories) {
+      for (const wt of cat.workTypes) {
+        if (wt.defaultCostCode) {
+          byCode.set(wt.code.toLowerCase(), wt.defaultCostCode);
+          if (!byName.has(wt.name.toLowerCase())) {
+            byName.set(wt.name.toLowerCase(), wt.defaultCostCode);
+          }
+        }
+      }
+    }
+    return { byCode, byName };
+  }, [workTypeCategories]);
+
+  const getScopeCostCode = (scope: Scope): string | undefined => {
+    return costCodeByScope.byCode.get(scope.scope_id.toLowerCase())
+      || costCodeByScope.byName.get(scope.scope_name.toLowerCase());
+  };
 
   const libLowerSearch = libraryBrowseSearch.toLowerCase().trim();
 
@@ -847,6 +873,7 @@ export default function ScopeSettings() {
       requiresDimensions: workType.requiresDimensions,
       dimensionType: workType.dimensionType || "",
       displayOrder: workType.displayOrder,
+      defaultCostCode: workType.defaultCostCode || "",
     });
 
     const category = workTypeCategories.find(
@@ -890,6 +917,7 @@ export default function ScopeSettings() {
       updateWorkTypeMutation.mutate({
         id: editingWorkType.id,
         ...workTypeForm,
+        defaultCostCode: workTypeForm.defaultCostCode || null,
       });
     } else {
       const tradeName = selectedTrade;
@@ -904,6 +932,7 @@ export default function ScopeSettings() {
         ...workTypeForm,
         tradeName: tradeName,
         categoryName: categoryName,
+        defaultCostCode: workTypeForm.defaultCostCode || null,
       });
     }
   };
@@ -1168,6 +1197,12 @@ export default function ScopeSettings() {
                                           Dimensions Required
                                         </Badge>
                                       )}
+                                      {workType.defaultCostCode && (
+                                        <Badge variant="secondary" className="text-xs" data-testid={`badge-cost-code-${workType.id}`}>
+                                          <DollarSign className="h-3 w-3 mr-0.5" />
+                                          {workType.defaultCostCode}
+                                        </Badge>
+                                      )}
                                       {workType.isCustom && (
                                         <Badge>Custom</Badge>
                                       )}
@@ -1389,7 +1424,15 @@ export default function ScopeSettings() {
                                   <div className="space-y-3">
                                     {group.scopes.map((scope) => (
                                       <div key={scope.scope_id} className="p-3 rounded-md border space-y-2" data-testid={`row-scope-${scope.scope_id}`}>
-                                        <div className="font-medium">{scope.scope_name}</div>
+                                        <div className="font-medium flex items-center gap-2 flex-wrap">
+                                          {scope.scope_name}
+                                          {getScopeCostCode(scope) && (
+                                            <Badge variant="secondary" className="text-xs" data-testid={`badge-scope-cost-code-${scope.scope_id}`}>
+                                              <DollarSign className="h-3 w-3 mr-0.5" />
+                                              {getScopeCostCode(scope)}
+                                            </Badge>
+                                          )}
+                                        </div>
                                         <div className="flex flex-wrap items-center gap-2">
                                           <Badge variant="outline">{scope.category}</Badge>
                                           <Badge variant="secondary">{scope.uom}</Badge>
@@ -1420,7 +1463,17 @@ export default function ScopeSettings() {
                                       <tbody>
                                         {group.scopes.map((scope) => (
                                           <tr key={scope.scope_id} className="border-b last:border-0" data-testid={`row-scope-${scope.scope_id}`}>
-                                            <td className="py-2 pr-4 font-medium">{scope.scope_name}</td>
+                                            <td className="py-2 pr-4 font-medium">
+                                              <div className="flex items-center gap-2">
+                                                {scope.scope_name}
+                                                {getScopeCostCode(scope) && (
+                                                  <Badge variant="secondary" className="text-xs" data-testid={`badge-scope-cost-code-${scope.scope_id}`}>
+                                                    <DollarSign className="h-3 w-3 mr-0.5" />
+                                                    {getScopeCostCode(scope)}
+                                                  </Badge>
+                                                )}
+                                              </div>
+                                            </td>
                                             <td className="py-2 pr-4"><Badge variant="outline">{scope.category}</Badge></td>
                                             <td className="py-2 pr-4"><Badge variant="secondary">{scope.uom}</Badge></td>
                                             <td className="py-2">
@@ -1783,6 +1836,22 @@ export default function ScopeSettings() {
                 }
                 data-testid="input-work-type-order"
               />
+            </div>
+            <div>
+              <Label className="flex items-center gap-1.5 mb-1.5">
+                <DollarSign className="h-3.5 w-3.5" />
+                Default Cost Code
+              </Label>
+              <CostCodeCombobox
+                value={workTypeForm.defaultCostCode}
+                onChange={(value) =>
+                  setWorkTypeForm({ ...workTypeForm, defaultCostCode: value })
+                }
+                data-testid="input-work-type-cost-code"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Auto-fills cost code when this work type is selected during estimating.
+              </p>
             </div>
           </div>
           <DialogFooter>
