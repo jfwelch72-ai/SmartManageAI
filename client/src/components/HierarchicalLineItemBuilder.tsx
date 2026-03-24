@@ -203,17 +203,36 @@ export default function HierarchicalLineItemBuilder({
       return response.json();
     },
     onSuccess: (data) => {
+      const suggestion = aiSuggestion;
       toast({
-        title: "Scope Item Created",
-        description: `"${aiSuggestion?.name}" has been added to your scope items.`,
+        title: "Scope Item Created & Selected",
+        description: `"${suggestion?.name}" has been added. Fill in costs below and click "Add Line Item".`,
       });
-      // Refresh hierarchical data to include new item
       queryClient.invalidateQueries({ queryKey: ["/api/scope/hierarchical"] });
-      // Close dialog and reset state
       setAiDialogOpen(false);
       setAiInput("");
       setAiSuggestion(null);
       setAiSimilarItems([]);
+
+      if (data?.item && suggestion) {
+        const newItem = data.item;
+        const categoryCode = (suggestion.categoryName || "GENERAL").toUpperCase().replace(/ /g, "_");
+        onSelectionChange({
+          tradeName: suggestion.categoryName || "General",
+          categoryCode,
+          subcategoryName: suggestion.categoryName || "General",
+          workTypeId: newItem.id,
+          workTypeName: suggestion.name,
+          workTypeCode: suggestion.code,
+          unit: suggestion.suggestedUom || "EA",
+          modifierIds: [],
+          modifierNames: [],
+          modifierSelections: [],
+          canonicalName: suggestion.name,
+          organizationSowItemId: newItem.id,
+        });
+        onUnitChange(suggestion.suggestedUom || "EA");
+      }
     },
     onError: (error: any) => {
       toast({
