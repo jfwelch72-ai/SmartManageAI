@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -327,40 +328,37 @@ function SubmittalItemsTab({ submittal, canEdit }: SubmittalItemsTabProps) {
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-items">No items added yet</p>
       ) : (
-        <div className="rounded-md border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-10">#</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Spec Section</TableHead>
-                <TableHead>Manufacturer</TableHead>
-                <TableHead>Model</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Status</TableHead>
-                {canEdit && isDraft && <TableHead className="w-20">Actions</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                editingItem?.id === item.id ? (
-                  <TableRow key={item.id} data-testid={`row-item-editing-${item.id}`}>
-                    <TableCell>{item.itemNumber}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={editingItem.description}
-                        onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
-                        className="h-7 text-xs"
-                        data-testid={`input-edit-description-${item.id}`}
-                      />
-                    </TableCell>
-                    <TableCell>
+        <div className="space-y-3">
+          {items.map((item) => (
+            editingItem?.id === item.id ? (
+              <Card key={item.id} className="p-3" data-testid={`card-item-editing-${item.id}`}>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-muted-foreground">Item #{item.itemNumber}</span>
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={handleUpdateItem} data-testid={`button-save-item-${item.id}`}>
+                        <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingItem(null)} data-testid={`button-cancel-edit-item-${item.id}`}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                  <Input
+                    value={editingItem.description}
+                    onChange={(e) => setEditingItem({ ...editingItem, description: e.target.value })}
+                    className="h-8 text-sm"
+                    placeholder="Description"
+                    data-testid={`input-edit-description-${item.id}`}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Category</Label>
                       <Select
                         value={editingItem.submittalCategory ?? "NONE"}
                         onValueChange={(v) => setEditingItem({ ...editingItem, submittalCategory: v === "NONE" ? null : v as SubmittalCategory })}
                       >
-                        <SelectTrigger className="h-7 text-xs" data-testid={`select-edit-category-${item.id}`}>
+                        <SelectTrigger className="h-8 text-sm" data-testid={`select-edit-category-${item.id}`}>
                           <SelectValue placeholder="Category" />
                         </SelectTrigger>
                         <SelectContent>
@@ -370,84 +368,103 @@ function SubmittalItemsTab({ submittal, canEdit }: SubmittalItemsTabProps) {
                           ))}
                         </SelectContent>
                       </Select>
-                    </TableCell>
-                    <TableCell>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Spec Section</Label>
                       <Input
                         value={editingItem.specSection ?? ""}
                         onChange={(e) => setEditingItem({ ...editingItem, specSection: e.target.value })}
-                        className="h-7 text-xs"
+                        className="h-8 text-sm"
                         placeholder="Spec section"
                         data-testid={`input-edit-spec-${item.id}`}
                       />
-                    </TableCell>
-                    <TableCell>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Manufacturer</Label>
                       <Input
                         value={editingItem.manufacturer ?? ""}
                         onChange={(e) => setEditingItem({ ...editingItem, manufacturer: e.target.value })}
-                        className="h-7 text-xs"
+                        className="h-8 text-sm"
                         placeholder="Manufacturer"
                         data-testid={`input-edit-manufacturer-${item.id}`}
                       />
-                    </TableCell>
-                    <TableCell>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Model #</Label>
                       <Input
                         value={editingItem.modelNumber ?? ""}
                         onChange={(e) => setEditingItem({ ...editingItem, modelNumber: e.target.value })}
-                        className="h-7 text-xs"
+                        className="h-8 text-sm"
                         placeholder="Model #"
                         data-testid={`input-edit-model-${item.id}`}
                       />
-                    </TableCell>
-                    <TableCell>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Quantity</Label>
                       <Input
                         value={editingItem.quantity ?? ""}
                         onChange={(e) => setEditingItem({ ...editingItem, quantity: e.target.value })}
-                        className="h-7 text-xs w-16"
+                        className="h-8 text-sm"
                         placeholder="Qty"
                         data-testid={`input-edit-quantity-${item.id}`}
                       />
-                    </TableCell>
-                    <TableCell>{getItemStatusBadge(item.status)}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleUpdateItem} data-testid={`button-save-item-${item.id}`}>
-                          <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
-                        </Button>
-                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingItem(null)} data-testid={`button-cancel-edit-item-${item.id}`}>
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <TableRow key={item.id} data-testid={`row-item-${item.id}`}>
-                    <TableCell className="text-sm">{item.itemNumber}</TableCell>
-                    <TableCell className="text-sm" data-testid={`text-item-description-${item.id}`}>{item.description}</TableCell>
-                    <TableCell>{getCategoryBadge(item.submittalCategory)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground" data-testid={`text-item-spec-${item.id}`}>{item.specSection || "-"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground" data-testid={`text-item-manufacturer-${item.id}`}>{item.manufacturer || "-"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground" data-testid={`text-item-model-${item.id}`}>{item.modelNumber || "-"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {item.quantity ? `${item.quantity}${item.unit ? ` ${item.unit}` : ""}` : "-"}
-                    </TableCell>
-                    <TableCell>{getItemStatusBadge(item.status)}</TableCell>
-                    {canEdit && isDraft && (
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setEditingItem(item)} data-testid={`button-edit-item-${item.id}`}>
-                            <Edit className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setDeletingItemId(item.id)} data-testid={`button-delete-item-${item.id}`}>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <Card key={item.id} className="p-3" data-testid={`card-item-${item.id}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-xs font-medium text-muted-foreground">#{item.itemNumber}</span>
+                      <span className="text-sm font-medium" data-testid={`text-item-description-${item.id}`}>{item.description}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap mb-2">
+                      {getCategoryBadge(item.submittalCategory)}
+                      {getItemStatusBadge(item.status)}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-xs">
+                      {item.specSection && (
+                        <div>
+                          <span className="text-muted-foreground">Spec: </span>
+                          <span data-testid={`text-item-spec-${item.id}`}>{item.specSection}</span>
                         </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                )
-              ))}
-            </TableBody>
-          </Table>
+                      )}
+                      {item.manufacturer && (
+                        <div>
+                          <span className="text-muted-foreground">Mfr: </span>
+                          <span data-testid={`text-item-manufacturer-${item.id}`}>{item.manufacturer}</span>
+                        </div>
+                      )}
+                      {item.modelNumber && (
+                        <div>
+                          <span className="text-muted-foreground">Model: </span>
+                          <span data-testid={`text-item-model-${item.id}`}>{item.modelNumber}</span>
+                        </div>
+                      )}
+                      {item.quantity && (
+                        <div>
+                          <span className="text-muted-foreground">Qty: </span>
+                          <span>{item.quantity}{item.unit ? ` ${item.unit}` : ""}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {canEdit && isDraft && (
+                    <div className="flex gap-1 shrink-0">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingItem(item)} data-testid={`button-edit-item-${item.id}`}>
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeletingItemId(item.id)} data-testid={`button-delete-item-${item.id}`}>
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )
+          ))}
         </div>
       )}
 
