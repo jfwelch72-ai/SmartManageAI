@@ -1076,22 +1076,6 @@ router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN
 
     const { fileName, fileSize, mimeType, fileUrl, submittalItemId, submittalReviewId, description } = parseResult.data;
 
-    // Validate fileUrl scheme to prevent SSRF — enforce HTTPS only
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(fileUrl);
-    } catch {
-      return res.status(400).json({ error: "Invalid fileUrl" });
-    }
-    if (parsedUrl.protocol !== "https:") {
-      return res.status(400).json({ error: "fileUrl must use https" });
-    }
-    // Block private/internal/link-local/cloud-metadata hostnames to prevent SSRF
-    const blockedHosts = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0|fd[0-9a-f]{2}:|fc[0-9a-f]{2}:)/i;
-    if (blockedHosts.test(parsedUrl.hostname)) {
-      return res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
-    }
-
     // Validate cross-tenant FK references
     if (submittalItemId) {
       const [itemRef] = await db
@@ -1111,28 +1095,43 @@ router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN
       if (!reviewRef) return res.status(400).json({ error: "submittalReviewId does not belong to this submittal" });
     }
 
-    // Generate a unique UUID-based object path to avoid collisions
-    const objectUUID = randomUUID();
-    const objectPath = `${organizationId}/submittals/${id}/${objectUUID}/${fileName}`;
-
-    // Upload via GCS sidecar — fail fast if sidecar is unavailable or returns error
     let storageKey: string;
+    let isObjectPath = false;
     try {
-      const response = await fetch(`http://127.0.0.1:1106/upload`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileUrl, objectPath }),
-      });
-      if (!response.ok) {
-        const errBody = await response.text().catch(() => "");
-        console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
-        return res.status(502).json({ error: "File storage upload failed" });
+      const parsedUrl = new URL(fileUrl);
+      if (parsedUrl.protocol !== "https:") {
+        return res.status(400).json({ error: "fileUrl must use https" });
       }
-      const data = await response.json() as { storageKey?: string };
-      storageKey = data.storageKey || objectPath;
-    } catch (sidecarErr) {
-      console.error("GCS sidecar unreachable:", sidecarErr);
-      return res.status(502).json({ error: "File storage service unavailable" });
+      const blockedHosts = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1|0\.0\.0\.0|fd[0-9a-f]{2}:|fc[0-9a-f]{2}:)/i;
+      if (blockedHosts.test(parsedUrl.hostname)) {
+        return res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
+      }
+    } catch {
+      isObjectPath = true;
+    }
+
+    if (isObjectPath) {
+      storageKey = fileUrl;
+    } else {
+      const objectUUID = randomUUID();
+      const objectPath = `${organizationId}/submittals/${id}/${objectUUID}/${fileName}`;
+      try {
+        const response = await fetch(`http://127.0.0.1:1106/upload`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileUrl, objectPath }),
+        });
+        if (!response.ok) {
+          const errBody = await response.text().catch(() => "");
+          console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+          return res.status(502).json({ error: "File storage upload failed" });
+        }
+        const data = await response.json() as { storageKey?: string };
+        storageKey = data.storageKey || objectPath;
+      } catch (sidecarErr) {
+        console.error("GCS sidecar unreachable:", sidecarErr);
+        return res.status(502).json({ error: "File storage service unavailable" });
+      }
     }
 
     const [dbUser] = await db
