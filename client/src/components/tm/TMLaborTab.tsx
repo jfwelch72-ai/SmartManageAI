@@ -1,8 +1,13 @@
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Trash2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Plus, Trash2, ChevronsUpDown, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface LaborEntry {
   employeeName: string;
@@ -12,6 +17,7 @@ export interface LaborEntry {
   overtimeHours: string;
   rate: string;
   overtimeRate: string;
+  employeeId?: string;
 }
 
 export const emptyLaborEntry = (): LaborEntry => ({
@@ -22,6 +28,7 @@ export const emptyLaborEntry = (): LaborEntry => ({
   overtimeHours: "0",
   rate: "0",
   overtimeRate: "0",
+  employeeId: "",
 });
 
 interface TMLaborTabProps {
@@ -29,9 +36,138 @@ interface TMLaborTabProps {
   onAdd: () => void;
   onRemove: (index: number) => void;
   onUpdate: (index: number, field: keyof LaborEntry, value: string) => void;
+  onSelectEmployee?: (index: number, employee: EmployeeOption) => void;
 }
 
-export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate }: TMLaborTabProps) {
+interface EmployeeOption {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  costRateRegular?: string | null;
+  costRateOvertime?: string | null;
+  tradeSpecialization?: string | null;
+  crewName?: string;
+}
+
+function EmployeeCombobox({
+  value,
+  employees,
+  onSelect,
+  index,
+}: {
+  value: string;
+  employees: EmployeeOption[];
+  onSelect: (emp: EmployeeOption) => void;
+  index: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search) return employees;
+    const lower = search.toLowerCase();
+    return employees.filter(
+      (e) =>
+        `${e.firstName} ${e.lastName}`.toLowerCase().includes(lower) ||
+        e.role?.toLowerCase().includes(lower) ||
+        e.tradeSpecialization?.toLowerCase().includes(lower)
+    );
+  }, [employees, search]);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal h-9 text-sm"
+          data-testid={`combobox-labor-employee-${index}`}
+        >
+          <span className="truncate">{value || "Select employee..."}</span>
+          <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search employees..."
+            value={search}
+            onValueChange={setSearch}
+            data-testid={`input-search-employee-${index}`}
+          />
+          <CommandList>
+            <CommandEmpty>No employee found.</CommandEmpty>
+            <CommandGroup>
+              {filtered.map((emp) => {
+                const fullName = `${emp.firstName} ${emp.lastName}`;
+                const isSelected = value === fullName;
+                return (
+                  <CommandItem
+                    key={emp.id}
+                    value={emp.id}
+                    onSelect={() => {
+                      onSelect(emp);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    data-testid={`option-employee-${emp.id}`}
+                  >
+                    <Check className={cn("mr-2 h-4 w-4", isSelected ? "opacity-100" : "opacity-0")} />
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{fullName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatRole(emp.role)}
+                        {emp.tradeSpecialization ? ` · ${formatTrade(emp.tradeSpecialization)}` : ""}
+                        {emp.costRateRegular && parseFloat(emp.costRateRegular) > 0 ? ` · $${emp.costRateRegular}/hr` : ""}
+                      </span>
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function formatRole(role: string): string {
+  return role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function formatTrade(trade: string): string {
+  return trade.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate, onSelectEmployee }: TMLaborTabProps) {
+  const { data: usersData } = useQuery<EmployeeOption[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const employees = useMemo(() => {
+    if (!usersData) return [];
+    return usersData.map((u) => ({ ...u, crewName: "" }));
+  }, [usersData]);
+
+  const handleSelectEmployee = (index: number, emp: EmployeeOption) => {
+    const fullName = `${emp.firstName} ${emp.lastName}`;
+    onUpdate(index, "employeeName", fullName);
+    onUpdate(index, "position", formatRole(emp.role));
+    onUpdate(index, "crewName", emp.crewName || "");
+    if (emp.costRateRegular && parseFloat(emp.costRateRegular) > 0) {
+      onUpdate(index, "rate", emp.costRateRegular);
+    }
+    if (emp.costRateOvertime && parseFloat(emp.costRateOvertime) > 0) {
+      onUpdate(index, "overtimeRate", emp.costRateOvertime);
+    }
+    if (onSelectEmployee) {
+      onSelectEmployee(index, emp);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {entries.map((entry, index) => (
@@ -39,11 +175,11 @@ export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate }: TMLab
           <div className="grid grid-cols-4 gap-2 mb-2">
             <div className="col-span-2">
               <Label className="text-xs">Employee Name</Label>
-              <Input
+              <EmployeeCombobox
                 value={entry.employeeName}
-                onChange={(e) => onUpdate(index, "employeeName", e.target.value)}
-                placeholder="Name"
-                data-testid={`input-labor-name-${index}`}
+                employees={employees}
+                onSelect={(emp) => handleSelectEmployee(index, emp)}
+                index={index}
               />
             </div>
             <div>
@@ -51,7 +187,7 @@ export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate }: TMLab
               <Input
                 value={entry.position}
                 onChange={(e) => onUpdate(index, "position", e.target.value)}
-                placeholder="Position"
+                placeholder="Auto-filled on select"
                 data-testid={`input-labor-position-${index}`}
               />
             </div>
@@ -60,7 +196,7 @@ export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate }: TMLab
               <Input
                 value={entry.crewName}
                 onChange={(e) => onUpdate(index, "crewName", e.target.value)}
-                placeholder="Crew"
+                placeholder="Enter crew name"
                 data-testid={`input-labor-crew-${index}`}
               />
             </div>
