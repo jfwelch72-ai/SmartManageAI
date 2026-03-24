@@ -461,6 +461,13 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                         <SidebarMenuSubItem>
+                          <SidebarMenuSubButton asChild isActive={isActive("/talent-pool")}>
+                            <Link href="/talent-pool" data-testid="nav-talent-pool">
+                              Talent Pool
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                        <SidebarMenuSubItem>
                           <SidebarMenuSubButton data-testid="nav-crew-marketplace" className="text-muted-foreground cursor-default">
                             <span>Crew Marketplace</span>
                             <Badge variant="secondary" className="ml-auto text-xs px-1 py-0">Soon</Badge>
