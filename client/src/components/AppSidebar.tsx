@@ -468,15 +468,17 @@ export function AppSidebar() {
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                         <SidebarMenuSubItem>
-                          <SidebarMenuSubButton data-testid="nav-crew-marketplace" className="text-muted-foreground cursor-default">
-                            <span>Crew Marketplace</span>
-                            <Badge variant="secondary" className="ml-auto text-xs px-1 py-0">Soon</Badge>
+                          <SidebarMenuSubButton asChild isActive={isActive("/crew-marketplace")}>
+                            <Link href="/crew-marketplace" data-testid="nav-crew-marketplace">
+                              Crew Marketplace
+                            </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                         <SidebarMenuSubItem>
-                          <SidebarMenuSubButton data-testid="nav-equipment-rentals" className="text-muted-foreground cursor-default">
-                            <span>Equipment Rentals</span>
-                            <Badge variant="secondary" className="ml-auto text-xs px-1 py-0">Soon</Badge>
+                          <SidebarMenuSubButton asChild isActive={isActive("/equipment-rental-marketplace")}>
+                            <Link href="/equipment-rental-marketplace" data-testid="nav-equipment-rentals">
+                              Equipment Rentals
+                            </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       </SidebarMenuSub>
