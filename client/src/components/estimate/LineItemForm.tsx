@@ -588,8 +588,21 @@ export function LineItemFormDialog({
               "CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB",
               "EXCAVATION", "GRADING", "SITE_WORK", "UTILITY", "TRENCH", "EARTHWORK"
             ];
-            const showMaterialCalc = (unit === "SF" || unit === "LF") && 
-              materialCategories.includes(category || "");
+            const materialKeywords = /concrete|flatwork|foundation|patio|driveway|sidewalk|curb|excavat|grading|site.?work|trench|earthwork|stone|slab|footing/i;
+
+            const hasExistingCalcData = !!(
+              materialCalcData.concreteDepthInches ||
+              materialCalcData.requiresStoneBase ||
+              materialCalcData.requiresExcavation ||
+              materialCalcData.requiresWireMesh ||
+              materialCalcData.requiresRebar
+            );
+
+            const unitMatch = unit === "SF" || unit === "LF" || unit === "SY" || unit === "CY";
+            const categoryMatch = materialCategories.includes(category);
+            const descriptionMatch = materialKeywords.test(description);
+
+            const showMaterialCalc = unitMatch && (categoryMatch || descriptionMatch || hasExistingCalcData);
             
             return showMaterialCalc ? (
               <MaterialCalculator
