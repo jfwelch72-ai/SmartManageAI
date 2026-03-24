@@ -1,6 +1,15 @@
 import { z } from "zod";
 import type { MaterialCalculatorData } from "@/components/MaterialCalculator";
 
+export const subcontractorAssignmentSchema = z.object({
+  subcontractorQuoteId: z.string(),
+  allocatedCost: z.coerce.number().min(0).default(0),
+  isSelected: z.boolean().default(true),
+  notes: z.string().optional(),
+});
+
+export type SubcontractorAssignment = z.infer<typeof subcontractorAssignmentSchema>;
+
 export const lineItemSchema = z.object({
   description: z.string().min(1, "Description is required"),
   category: z.string().min(1, "Category is required"),
@@ -19,6 +28,7 @@ export const lineItemSchema = z.object({
   consumablesCost: z.coerce.number().min(0).default(0),
   subcontractCost: z.coerce.number().min(0).default(0),
   subcontractorQuoteId: z.string().optional(),
+  subcontractorAssignments: z.array(subcontractorAssignmentSchema).optional(),
   overheadAllocation: z.coerce.number().min(0).default(0),
   profitAllocation: z.coerce.number().min(0).default(0),
   notes: z.string().optional(),
@@ -173,6 +183,7 @@ export const LINE_ITEM_DEFAULT_VALUES: LineItemFormValues = {
   equipmentRateUsed: undefined,
   consumablesCost: 0,
   subcontractCost: 0,
+  subcontractorAssignments: [],
   overheadAllocation: 0,
   profitAllocation: 0,
   notes: "",

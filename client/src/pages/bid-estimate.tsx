@@ -78,6 +78,7 @@ export default function BidEstimate() {
     useState<string>("");
   const [useHierarchicalBuilder, setUseHierarchicalBuilder] =
     useState<boolean>(true);
+  const [editHadAssignments, setEditHadAssignments] = useState(false);
   const [catalogPricedMaterials, setCatalogPricedMaterials] = useState<
     Set<string>
   >(new Set());
@@ -458,6 +459,9 @@ export default function BidEstimate() {
           consumablesCost: values.consumablesCost || 0,
           subcontractCost: values.subcontractCost || 0,
           subcontractorQuoteId: values.subcontractorQuoteId || undefined,
+          ...((values.subcontractorAssignments && values.subcontractorAssignments.length > 0) || editHadAssignments
+            ? { subcontractorAssignments: values.subcontractorAssignments || [] }
+            : {}),
           overheadAllocation: values.overheadAllocation,
           profitAllocation: values.profitAllocation,
           notes: values.notes || undefined,
@@ -483,6 +487,9 @@ export default function BidEstimate() {
         consumablesCost: String(values.consumablesCost || 0),
         subcontractCost: String(values.subcontractCost || 0),
         subcontractorQuoteId: values.subcontractorQuoteId || undefined,
+        ...(values.subcontractorAssignments && values.subcontractorAssignments.length > 0
+          ? { subcontractorAssignments: values.subcontractorAssignments }
+          : {}),
         overheadAllocation: String(values.overheadAllocation),
         profitAllocation: String(values.profitAllocation),
         source: "MANUAL",
@@ -499,9 +506,28 @@ export default function BidEstimate() {
     }
   };
 
-  const handleEditLineItem = (item: EstimateLineItem) => {
+  const handleEditLineItem = async (item: EstimateLineItem) => {
     setEditingLineItem(item);
     const lineItemAny = item as any;
+
+    let subAssignments: Array<{ subcontractorQuoteId: string; allocatedCost: number; isSelected: boolean; notes?: string }> = [];
+    if (estimateData?.estimate) {
+      try {
+        const res = await fetch(`/api/estimates/${estimateData.estimate.id}/line-items/${item.id}/subcontractors`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          subAssignments = (data || []).map((a: any) => ({
+            subcontractorQuoteId: a.subcontractorQuoteId,
+            allocatedCost: Number(a.allocatedCost || 0),
+            isSelected: a.isSelected !== false,
+            notes: a.notes || undefined,
+          }));
+        }
+      } catch { /* use empty assignments */ }
+    }
+
+    setEditHadAssignments(subAssignments.length > 0);
+
     form.reset({
       description: item.description,
       category: item.category,
@@ -520,6 +546,7 @@ export default function BidEstimate() {
       consumablesCost: Number(item.consumablesCost || 0),
       subcontractCost: Number(item.subcontractCost || 0),
       subcontractorQuoteId: lineItemAny.subcontractorQuoteId || undefined,
+      subcontractorAssignments: subAssignments,
       overheadAllocation: 0,
       profitAllocation: 0,
       notes: lineItemAny.metadata || "",

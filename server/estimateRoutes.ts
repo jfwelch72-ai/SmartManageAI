@@ -3,6 +3,7 @@ import { db } from "./db";
 import { 
   estimates, 
   estimateLineItems, 
+  estimateLineItemSubcontractors,
   estimateVersions,
   projects,
   bids,
@@ -15,7 +16,9 @@ import {
   procurementItems,
   scopeItems,
   jobClassifications,
+  bidSubcontractorQuotes,
   type EstimateLineItem,
+  type EstimateLineItemSubcontractor,
 } from "@shared/schema";
 import { eq, and, desc, sql, or, isNull, inArray } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -130,12 +133,13 @@ function normalizeCategory(value: string | undefined | null): string {
 
 // Transform line item data to match database schema
 function normalizeLineItemData(data: any): any {
+  const { subcontractorAssignments, ...rest } = data;
   return {
-    ...data,
-    category: normalizeCategory(data.category),
-    wireMeshType: normalizeWireMeshType(data.wireMeshType),
-    sealerType: normalizeSealerType(data.sealerType),
-    sealerCoats: data.sealerCoats !== undefined ? Number(data.sealerCoats) : undefined,
+    ...rest,
+    category: normalizeCategory(rest.category),
+    wireMeshType: normalizeWireMeshType(rest.wireMeshType),
+    sealerType: normalizeSealerType(rest.sealerType),
+    sealerCoats: rest.sealerCoats !== undefined ? Number(rest.sealerCoats) : undefined,
   };
 }
 
@@ -1164,6 +1168,42 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();
 
+      if (lineItem.subcontractorAssignments && Array.isArray(lineItem.subcontractorAssignments) && lineItem.subcontractorAssignments.length > 0) {
+        const assignmentValues = lineItem.subcontractorAssignments.map((a: any) => ({
+          lineItemId: newLineItem.id,
+          subcontractorQuoteId: a.subcontractorQuoteId,
+          allocatedCost: String(a.allocatedCost || 0),
+          isSelected: a.isSelected !== false,
+          notes: a.notes || null,
+        }));
+        await db.insert(estimateLineItemSubcontractors).values(assignmentValues);
+
+        const totalAllocated = lineItem.subcontractorAssignments
+          .filter((a: any) => a.isSelected !== false)
+          .reduce((sum: number, a: any) => sum + Number(a.allocatedCost || 0), 0);
+
+        const refreshedTotalCost = (
+          Number(newLineItem.materialCost || 0) +
+          Number(newLineItem.laborCost || 0) +
+          Number(newLineItem.equipmentCost || 0) +
+          Number(newLineItem.consumablesCost || 0) +
+          totalAllocated +
+          Number(newLineItem.overheadAllocation || 0) +
+          Number(newLineItem.profitAllocation || 0)
+        );
+
+        await db.update(estimateLineItems)
+          .set({
+            subcontractCost: totalAllocated.toFixed(2),
+            totalCost: refreshedTotalCost.toFixed(2),
+            updatedAt: new Date(),
+          })
+          .where(eq(estimateLineItems.id, newLineItem.id));
+
+        newLineItem.subcontractCost = totalAllocated.toFixed(2);
+        newLineItem.totalCost = refreshedTotalCost.toFixed(2);
+      }
+
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
@@ -1247,7 +1287,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const normalizedUpdates = normalizeLineItemData(updates);
 
       // Update line item with recalculated total and material quantities
-      const [updatedLineItem] = await db.update(estimateLineItems)
+      let [updatedLineItem] = await db.update(estimateLineItems)
         .set({ 
           ...normalizedUpdates, 
           totalCost, 
@@ -1273,6 +1313,66 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       if (!updatedLineItem) {
         return res.status(404).json({ error: "Line item not found" });
+      }
+
+      if (updates.subcontractorAssignments && Array.isArray(updates.subcontractorAssignments)) {
+        await db.delete(estimateLineItemSubcontractors)
+          .where(eq(estimateLineItemSubcontractors.lineItemId, lineItemId));
+
+        if (updates.subcontractorAssignments.length > 0) {
+          const assignmentValues = updates.subcontractorAssignments.map((a: any) => ({
+            lineItemId,
+            subcontractorQuoteId: a.subcontractorQuoteId,
+            allocatedCost: String(a.allocatedCost || 0),
+            isSelected: a.isSelected !== false,
+            notes: a.notes || null,
+          }));
+          await db.insert(estimateLineItemSubcontractors).values(assignmentValues);
+
+          const totalAllocated = updates.subcontractorAssignments
+            .filter((a: any) => a.isSelected !== false)
+            .reduce((sum: number, a: any) => sum + Number(a.allocatedCost || 0), 0);
+
+          const refreshedTotalCost = (
+            Number(updates.materialCost || updatedLineItem.materialCost || 0) +
+            Number(updates.laborCost || updatedLineItem.laborCost || 0) +
+            Number(updates.equipmentCost || updatedLineItem.equipmentCost || 0) +
+            Number(updates.consumablesCost || updatedLineItem.consumablesCost || 0) +
+            totalAllocated +
+            Number(updates.overheadAllocation || updatedLineItem.overheadAllocation || 0) +
+            Number(updates.profitAllocation || updatedLineItem.profitAllocation || 0)
+          );
+
+          await db.update(estimateLineItems)
+            .set({
+              subcontractCost: totalAllocated.toFixed(2),
+              totalCost: refreshedTotalCost.toFixed(2),
+              updatedAt: new Date(),
+            })
+            .where(eq(estimateLineItems.id, lineItemId));
+
+          updatedLineItem = { ...updatedLineItem, subcontractCost: totalAllocated.toFixed(2), totalCost: refreshedTotalCost.toFixed(2) };
+        } else {
+          const refreshedTotalCost = (
+            Number(updates.materialCost || updatedLineItem.materialCost || 0) +
+            Number(updates.laborCost || updatedLineItem.laborCost || 0) +
+            Number(updates.equipmentCost || updatedLineItem.equipmentCost || 0) +
+            Number(updates.consumablesCost || updatedLineItem.consumablesCost || 0) +
+            0 +
+            Number(updates.overheadAllocation || updatedLineItem.overheadAllocation || 0) +
+            Number(updates.profitAllocation || updatedLineItem.profitAllocation || 0)
+          );
+
+          await db.update(estimateLineItems)
+            .set({
+              subcontractCost: "0",
+              totalCost: refreshedTotalCost.toFixed(2),
+              updatedAt: new Date(),
+            })
+            .where(eq(estimateLineItems.id, lineItemId));
+
+          updatedLineItem = { ...updatedLineItem, subcontractCost: "0", totalCost: refreshedTotalCost.toFixed(2) };
+        }
       }
 
       try {
@@ -1322,6 +1422,252 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     } catch (error) {
       console.error("Error deleting line item:", error);
       res.status(500).json({ error: "Failed to delete line item" });
+    }
+  });
+
+  // Get subcontractor assignments for a line item
+  router.get("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { estimateId, lineItemId } = req.params;
+      const { shouldFilter, orgId } = getOrgIdForFilter(req);
+
+      if (!hasEstimateAccess(req.user!.role) && !hasManagementAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const estimate = await db.query.estimates.findFirst({
+        where: eq(estimates.id, estimateId),
+      });
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      if (shouldFilter && orgId) {
+        if (estimate.bidId) {
+          const bid = await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) });
+          if (bid && bid.gcOrganizationId !== orgId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        } else if (estimate.projectId) {
+          const project = await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) });
+          if (project && project.gcOrganizationId !== orgId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        }
+      }
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimateLineItems.estimateId, estimateId)
+        ),
+      });
+
+      if (!lineItem) {
+        return res.status(404).json({ error: "Line item not found" });
+      }
+
+      const assignments = await db
+        .select({
+          id: estimateLineItemSubcontractors.id,
+          lineItemId: estimateLineItemSubcontractors.lineItemId,
+          subcontractorQuoteId: estimateLineItemSubcontractors.subcontractorQuoteId,
+          allocatedCost: estimateLineItemSubcontractors.allocatedCost,
+          isSelected: estimateLineItemSubcontractors.isSelected,
+          notes: estimateLineItemSubcontractors.notes,
+          createdAt: estimateLineItemSubcontractors.createdAt,
+          updatedAt: estimateLineItemSubcontractors.updatedAt,
+          subcontractorName: bidSubcontractorQuotes.subcontractorName,
+          scopeOfWork: bidSubcontractorQuotes.scopeOfWork,
+          quoteAmount: bidSubcontractorQuotes.quoteAmount,
+          leadTime: bidSubcontractorQuotes.leadTime,
+        })
+        .from(estimateLineItemSubcontractors)
+        .leftJoin(bidSubcontractorQuotes, eq(estimateLineItemSubcontractors.subcontractorQuoteId, bidSubcontractorQuotes.id))
+        .where(eq(estimateLineItemSubcontractors.lineItemId, lineItemId));
+
+      res.json(assignments);
+    } catch (error) {
+      console.error("Error fetching subcontractor assignments:", error);
+      res.status(500).json({ error: "Failed to fetch subcontractor assignments" });
+    }
+  });
+
+  // Set subcontractor assignments for a line item (replaces all existing)
+  router.post("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { estimateId, lineItemId } = req.params;
+      const { shouldFilter, orgId } = getOrgIdForFilter(req);
+      const { assignments } = req.body as {
+        assignments: Array<{
+          subcontractorQuoteId: string;
+          allocatedCost: string | number;
+          isSelected?: boolean;
+          notes?: string;
+        }>;
+      };
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const estimate = await db.query.estimates.findFirst({
+        where: eq(estimates.id, estimateId),
+      });
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      if (shouldFilter && orgId) {
+        if (estimate.bidId) {
+          const bid = await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) });
+          if (bid && bid.gcOrganizationId !== orgId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        } else if (estimate.projectId) {
+          const project = await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) });
+          if (project && project.gcOrganizationId !== orgId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        }
+      }
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimateLineItems.estimateId, estimateId)
+        ),
+      });
+
+      if (!lineItem) {
+        return res.status(404).json({ error: "Line item not found" });
+      }
+
+      await db.delete(estimateLineItemSubcontractors)
+        .where(eq(estimateLineItemSubcontractors.lineItemId, lineItemId));
+
+      let newAssignments: EstimateLineItemSubcontractor[] = [];
+      let totalAllocated = 0;
+
+      if (assignments && assignments.length > 0) {
+        const values = assignments.map(a => ({
+          lineItemId,
+          subcontractorQuoteId: a.subcontractorQuoteId,
+          allocatedCost: String(a.allocatedCost),
+          isSelected: a.isSelected !== false,
+          notes: a.notes || null,
+        }));
+
+        newAssignments = await db.insert(estimateLineItemSubcontractors).values(values).returning();
+
+        totalAllocated = assignments
+          .filter(a => a.isSelected !== false)
+          .reduce((sum, a) => sum + Number(a.allocatedCost || 0), 0);
+      }
+
+      const currentTotal = Number(lineItem.totalCost || 0);
+      const oldSubCost = Number(lineItem.subcontractCost || 0);
+      const newTotal = currentTotal - oldSubCost + totalAllocated;
+
+      await db.update(estimateLineItems)
+        .set({
+          subcontractCost: totalAllocated.toFixed(2),
+          totalCost: newTotal.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(estimateLineItems.id, lineItemId));
+
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        console.error("[Snapshot] Failed after subcontractor assignment:", snapshotErr);
+      }
+
+      res.json(newAssignments);
+    } catch (error) {
+      console.error("Error setting subcontractor assignments:", error);
+      res.status(500).json({ error: "Failed to set subcontractor assignments" });
+    }
+  });
+
+  // Delete a single subcontractor assignment
+  router.delete("/api/estimates/:estimateId/line-items/:lineItemId/subcontractors/:assignmentId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { estimateId, lineItemId, assignmentId } = req.params;
+      const { shouldFilter, orgId } = getOrgIdForFilter(req);
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const estimate = await db.query.estimates.findFirst({
+        where: eq(estimates.id, estimateId),
+      });
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      if (shouldFilter && orgId) {
+        if (estimate.bidId) {
+          const bid = await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) });
+          if (bid && bid.gcOrganizationId !== orgId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        } else if (estimate.projectId) {
+          const project = await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) });
+          if (project && project.gcOrganizationId !== orgId) {
+            return res.status(403).json({ error: "Access denied" });
+          }
+        }
+      }
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(
+          eq(estimateLineItems.id, lineItemId),
+          eq(estimateLineItems.estimateId, estimateId)
+        ),
+      });
+
+      if (!lineItem) {
+        return res.status(404).json({ error: "Line item not found" });
+      }
+
+      await db.delete(estimateLineItemSubcontractors)
+        .where(and(
+          eq(estimateLineItemSubcontractors.id, assignmentId),
+          eq(estimateLineItemSubcontractors.lineItemId, lineItemId)
+        ));
+
+      const remaining = await db.select()
+        .from(estimateLineItemSubcontractors)
+        .where(eq(estimateLineItemSubcontractors.lineItemId, lineItemId));
+
+      const totalAllocated = remaining
+        .filter(a => a.isSelected)
+        .reduce((sum, a) => sum + Number(a.allocatedCost || 0), 0);
+
+      const currentTotal = Number(lineItem.totalCost || 0);
+      const oldSubCost = Number(lineItem.subcontractCost || 0);
+      const newTotal = currentTotal - oldSubCost + totalAllocated;
+
+      await db.update(estimateLineItems)
+        .set({
+          subcontractCost: totalAllocated.toFixed(2),
+          totalCost: newTotal.toFixed(2),
+          updatedAt: new Date(),
+        })
+        .where(eq(estimateLineItems.id, lineItemId));
+
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        console.error("[Snapshot] Failed after subcontractor removal:", snapshotErr);
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting subcontractor assignment:", error);
+      res.status(500).json({ error: "Failed to delete subcontractor assignment" });
     }
   });
 

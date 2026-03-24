@@ -1353,6 +1353,21 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   organizationSowItemIdx: index("estimate_line_items_org_sow_item_idx").on(table.organizationSowItemId),
 }));
 
+export const estimateLineItemSubcontractors = pgTable("estimate_line_item_subcontractors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  lineItemId: varchar("line_item_id").notNull().references(() => estimateLineItems.id, { onDelete: "cascade" }),
+  subcontractorQuoteId: varchar("subcontractor_quote_id").notNull().references(() => bidSubcontractorQuotes.id, { onDelete: "cascade" }),
+  allocatedCost: decimal("allocated_cost", { precision: 12, scale: 2 }).notNull().default('0'),
+  isSelected: boolean("is_selected").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  lineItemIdx: index("eli_sub_line_item_idx").on(table.lineItemId),
+  quoteIdx: index("eli_sub_quote_idx").on(table.subcontractorQuoteId),
+  uniqueAssignment: unique("eli_sub_unique_assignment").on(table.lineItemId, table.subcontractorQuoteId),
+}));
+
 // Estimate Versions table (snapshots of estimates)
 export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -1991,6 +2006,10 @@ export type TimeClockEvent = typeof timeClockEvents.$inferSelect;
 export const insertEstimateLineItemSchema = createInsertSchema(estimateLineItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertEstimateLineItem = z.infer<typeof insertEstimateLineItemSchema>;
 export type EstimateLineItem = typeof estimateLineItems.$inferSelect;
+
+export const insertEstimateLineItemSubcontractorSchema = createInsertSchema(estimateLineItemSubcontractors).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEstimateLineItemSubcontractor = z.infer<typeof insertEstimateLineItemSubcontractorSchema>;
+export type EstimateLineItemSubcontractor = typeof estimateLineItemSubcontractors.$inferSelect;
 
 export const purchaseRequests = pgTable("purchase_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

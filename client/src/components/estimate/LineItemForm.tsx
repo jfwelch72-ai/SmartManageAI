@@ -31,8 +31,154 @@ import MaterialCalculator, { type MaterialCalculatorData } from "@/components/Ma
 import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
 import { EquipmentRateSelector } from "@/components/EquipmentRateSelector";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { BidSubcontractorQuote } from "@shared/schema";
-import type { LineItemFormValues, CatalogPriceItem, WorkCategory } from "@/lib/estimate-utils";
+import type { LineItemFormValues, CatalogPriceItem, WorkCategory, SubcontractorAssignment } from "@/lib/estimate-utils";
+
+function SubcontractorAssignmentPanel({
+  quotes,
+  assignments,
+  onAssignmentsChange,
+  testPrefix = "",
+}: {
+  quotes: BidSubcontractorQuote[];
+  assignments: SubcontractorAssignment[];
+  onAssignmentsChange: (assignments: SubcontractorAssignment[]) => void;
+  testPrefix?: string;
+}) {
+  const [compareMode, setCompareMode] = useState(false);
+
+  const toggleQuote = (quoteId: string, checked: boolean) => {
+    if (checked) {
+      const quote = quotes.find(q => q.id === quoteId);
+      onAssignmentsChange([
+        ...assignments,
+        {
+          subcontractorQuoteId: quoteId,
+          allocatedCost: Number(quote?.quoteAmount || 0),
+          isSelected: true,
+        },
+      ]);
+    } else {
+      onAssignmentsChange(assignments.filter(a => a.subcontractorQuoteId !== quoteId));
+    }
+  };
+
+  const updateAllocatedCost = (quoteId: string, cost: number) => {
+    onAssignmentsChange(
+      assignments.map(a =>
+        a.subcontractorQuoteId === quoteId ? { ...a, allocatedCost: cost } : a
+      )
+    );
+  };
+
+  const totalAllocated = assignments
+    .filter(a => a.isSelected)
+    .reduce((sum, a) => sum + Number(a.allocatedCost || 0), 0);
+
+  return (
+    <div className="col-span-2 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium">Subcontractor Quotes</h4>
+        <Button
+          type="button"
+          variant={compareMode ? "default" : "outline"}
+          size="sm"
+          onClick={() => setCompareMode(!compareMode)}
+          data-testid={`button-${testPrefix}compare-quotes`}
+        >
+          {compareMode ? "Hide Comparison" : "Compare Quotes"}
+        </Button>
+      </div>
+
+      {compareMode && (
+        <Card className="border-blue-200 dark:border-blue-800">
+          <CardContent className="p-3">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Subcontractor</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead className="text-right">Quote Amount</TableHead>
+                  <TableHead>Lead Time</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {quotes.map((quote) => (
+                  <TableRow key={quote.id} data-testid={`row-compare-quote-${quote.id}`}>
+                    <TableCell className="font-medium">{quote.subcontractorName}</TableCell>
+                    <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">{quote.scopeOfWork}</TableCell>
+                    <TableCell className="text-right font-medium">${Number(quote.quoteAmount).toLocaleString()}</TableCell>
+                    <TableCell className="text-sm">{quote.leadTime || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="space-y-2">
+        {quotes.map((quote) => {
+          const assignment = assignments.find(a => a.subcontractorQuoteId === quote.id);
+          const isChecked = !!assignment;
+
+          return (
+            <div
+              key={quote.id}
+              className={`flex items-center gap-3 p-3 rounded-lg border ${isChecked ? "border-primary bg-primary/5" : "border-border"}`}
+              data-testid={`sub-assignment-${quote.id}`}
+            >
+              <Checkbox
+                checked={isChecked}
+                onCheckedChange={(checked) => toggleQuote(quote.id, !!checked)}
+                data-testid={`checkbox-${testPrefix}sub-${quote.id}`}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">{quote.subcontractorName}</span>
+                  <Badge variant="secondary" className="text-xs">
+                    ${Number(quote.quoteAmount).toLocaleString()}
+                  </Badge>
+                  {quote.leadTime && (
+                    <span className="text-xs text-muted-foreground">{quote.leadTime}</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">{quote.scopeOfWork}</p>
+              </div>
+              {isChecked && (
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-muted-foreground whitespace-nowrap">Allocated $</label>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    className="w-28 h-8 text-sm"
+                    value={assignment?.allocatedCost ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "" || /^\d*\.?\d*$/.test(val)) {
+                        updateAllocatedCost(quote.id, parseFloat(val) || 0);
+                      }
+                    }}
+                    data-testid={`input-${testPrefix}sub-allocated-${quote.id}`}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {assignments.length > 0 && (
+        <div className="flex items-center justify-between px-3 py-2 bg-muted/50 rounded-lg" data-testid={`text-${testPrefix}sub-total`}>
+          <span className="text-sm font-medium">Total Allocated</span>
+          <span className="font-semibold">${totalAllocated.toLocaleString()}</span>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface LineItemFormDialogProps {
   mode: "add" | "edit";
@@ -100,6 +246,8 @@ export function LineItemFormDialog({
   const isAdd = mode === "add";
   const isEdit = mode === "edit";
   const testPrefix = isEdit ? "edit-" : "";
+  const currentAssignments = form.watch("subcontractorAssignments") || [];
+  const hasMultiSubAssignments = currentAssignments.length > 0;
 
   const dialogContent = (
     <DialogContent className={`${isAdd ? "max-w-4xl" : "max-w-3xl"} max-h-[90vh] overflow-y-auto`}>
@@ -522,22 +670,41 @@ export function LineItemFormDialog({
                           field.onChange(parseFloat(val) || 0);
                         }
                       }}
-                      placeholder="0.00" 
+                      placeholder="0.00"
+                      disabled={hasMultiSubAssignments}
                       data-testid={`input-${testPrefix}subcontract-cost`} 
                     />
                   </FormControl>
+                  {hasMultiSubAssignments && (
+                    <p className="text-xs text-muted-foreground">Auto-calculated from subcontractor allocations below</p>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            {form.watch("subcontractCost") > 0 && subcontractorQuotes.length > 0 && (
+            {subcontractorQuotes.length > 0 && (
+              <SubcontractorAssignmentPanel
+                quotes={subcontractorQuotes}
+                assignments={form.watch("subcontractorAssignments") || []}
+                onAssignmentsChange={(assignments) => {
+                  form.setValue("subcontractorAssignments", assignments);
+                  const totalAllocated = assignments
+                    .filter(a => a.isSelected)
+                    .reduce((sum, a) => sum + Number(a.allocatedCost || 0), 0);
+                  form.setValue("subcontractCost", assignments.length > 0 ? totalAllocated : 0);
+                }}
+                testPrefix={testPrefix}
+              />
+            )}
+
+            {!hasMultiSubAssignments && form.watch("subcontractCost") > 0 && subcontractorQuotes.length > 0 && (
               <FormField
                 control={form.control}
                 name="subcontractorQuoteId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Assign to Subcontractor</FormLabel>
+                    <FormLabel>Assign to Subcontractor (Legacy)</FormLabel>
                     <Select
                       onValueChange={(val) => field.onChange(val === "none" ? "" : val)}
                       value={field.value || ""}
