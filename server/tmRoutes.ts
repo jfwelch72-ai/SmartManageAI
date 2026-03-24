@@ -6,6 +6,9 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 import { 
   tmTickets, 
+  tmTicketLaborEntries,
+  tmTicketEquipmentEntries,
+  tmTicketMaterialEntries,
   tmInvoices,
   projects,
   users,
