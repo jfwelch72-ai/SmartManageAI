@@ -1373,6 +1373,39 @@ async function computeThreeWayMatch(invoice: any, po: any, orgId: string) {
   };
 }
 
+router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const [invoice] = await db.select().from(vendorInvoices)
+      .where(and(eq(vendorInvoices.id, req.params.id), eq(vendorInvoices.orgId, orgId))).limit(1);
+    if (!invoice) { res.status(404).json({ error: "Invoice not found" }); return; }
+    if (!invoice.fileUrl) { res.status(404).json({ error: "No file attached to this invoice" }); return; }
+
+    try {
+      const parsed = new URL(invoice.fileUrl);
+      if (parsed.protocol === "https:") {
+        res.json({ url: invoice.fileUrl });
+        return;
+      }
+    } catch {}
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    const objectFile = await objectStorageService.getObjectEntityFile(invoice.fileUrl);
+    const [signedUrl] = await objectFile.getSignedUrl({
+      version: 'v4',
+      action: 'read',
+      expires: Date.now() + 60 * 60 * 1000,
+    });
+    res.json({ url: signedUrl });
+  } catch (error) {
+    console.error("Get invoice file URL error:", error);
+    res.status(500).json({ error: "Failed to generate download URL" });
+  }
+});
+
 router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
   try {
     const orgId = getOrgId(req, res);

@@ -1498,7 +1498,7 @@ function InvoicesTab() {
                           <span className="font-mono text-xs">{inv.invoiceNumber}</span>
                           <Badge variant={INVOICE_STATUS_VARIANT[inv.status] || "outline"}>{inv.status}</Badge>
                           {inv.match && <Badge variant={MATCH_STATUS_VARIANT[inv.match.matchStatus] || "outline"} className="text-xs">{inv.match.matchStatus}</Badge>}
-                          {inv.fileUrl && <a href={inv.fileUrl} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-blue-500 hover:text-blue-700" data-testid={`link-invoice-file-${inv.id}`}><FileText className="h-3.5 w-3.5" /></a>}
+                          {inv.fileUrl && <button type="button" onClick={async (e) => { e.stopPropagation(); try { const r = await apiRequest("GET", `/api/procurement-module/invoices/${inv.id}/file-url`); const data = await r.json() as { url: string }; window.open(data.url, "_blank"); } catch { toast({ title: "Failed to open file", variant: "destructive" }); } }} className="text-blue-500 hover:text-blue-700 inline-flex items-center gap-1 text-xs" data-testid={`link-invoice-file-${inv.id}`}><FileText className="h-3.5 w-3.5" /> File</button>}
                         </div>
                         <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
                           {inv.po && <span>PO: {inv.po.poNumber}</span>}
@@ -1686,9 +1686,9 @@ function InvoiceDetailDialog({ invoice, onClose }: { invoice: InvoiceRow | null;
 
           {invoice.fileUrl && (
             <div>
-              <a href={invoice.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline flex items-center gap-1">
+              <button type="button" onClick={async () => { try { const r = await apiRequest("GET", `/api/procurement-module/invoices/${invoice.id}/file-url`); const data = await r.json() as { url: string }; window.open(data.url, "_blank"); } catch { toast({ title: "Failed to open file", variant: "destructive" }); } }} className="text-sm text-blue-500 hover:underline flex items-center gap-1" data-testid="button-view-invoice-file">
                 <FileText className="h-3.5 w-3.5" /> View Invoice File
-              </a>
+              </button>
             </div>
           )}
 
