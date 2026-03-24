@@ -764,7 +764,7 @@ export default function RfiDetailDialog({
               <SelectContent>
                 {changeOrders.map((co) => (
                   <SelectItem key={co.id} value={co.id}>
-                    {co.coNumber} - {co.title}
+                    {co.changeOrderNumber} - {co.description}
                   </SelectItem>
                 ))}
               </SelectContent>

@@ -72,8 +72,8 @@ export interface ActivityEntry {
 
 export interface ChangeOrder {
   id: string;
-  coNumber: string;
-  title: string;
+  changeOrderNumber: string;
+  description: string;
   status: string;
 }
 
