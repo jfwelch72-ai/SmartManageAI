@@ -102,7 +102,7 @@ export default function BidScopeStep({
     mutationFn: async () => {
       const createRes = await apiRequest("POST", `/api/bids/${bidId}/estimate`, {});
       const newEstimate = await createRes.json();
-      const categoryIds = categories.map((c) => c.id);
+      const categoryIds = unimportedCategories.map((c) => c.id);
       const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
         estimateId: newEstimate.id,
         categoryIds,
@@ -125,7 +125,7 @@ export default function BidScopeStep({
   const importOnlyMutation = useMutation({
     mutationFn: async () => {
       if (!estimate) throw new Error("No estimate to import into");
-      const categoryIds = categories.map((c) => c.id);
+      const categoryIds = unimportedCategories.map((c) => c.id);
       const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
         estimateId: estimate.id,
         categoryIds,
@@ -145,7 +145,13 @@ export default function BidScopeStep({
     },
   });
 
-  const hasTakeoffData = !categoriesLoading && categories.length > 0;
+  const alreadyImportedCategoryIds = new Set(
+    (estimate?.lineItems ?? [])
+      .filter(li => li.source === "TAKEOFF" && li.sourceTakeoffCategoryId)
+      .map(li => li.sourceTakeoffCategoryId)
+  );
+  const unimportedCategories = categories.filter(c => !alreadyImportedCategoryIds.has(c.id));
+  const hasTakeoffData = !categoriesLoading && unimportedCategories.length > 0;
 
   const renderLaborClassificationSelector = () => {
     if (!canEdit || activeClassifications.length === 0) return null;
@@ -209,7 +215,7 @@ export default function BidScopeStep({
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">
-              {categories.length} takeoff {categories.length === 1 ? "category" : "categories"} ready to import
+              {unimportedCategories.length} takeoff {unimportedCategories.length === 1 ? "category" : "categories"} ready to import
             </p>
             <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-0.5">
               {canEdit
@@ -217,14 +223,14 @@ export default function BidScopeStep({
                 : "Step 1 takeoff measurements are available for this bid."}
             </p>
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {categories.slice(0, 5).map((cat) => (
+              {unimportedCategories.slice(0, 5).map((cat) => (
                 <Badge key={cat.id} variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
                   {cat.name}
                 </Badge>
               ))}
-              {categories.length > 5 && (
+              {unimportedCategories.length > 5 && (
                 <Badge variant="secondary" className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-0">
-                  +{categories.length - 5} more
+                  +{unimportedCategories.length - 5} more
                 </Badge>
               )}
             </div>
@@ -347,7 +353,7 @@ export default function BidScopeStep({
                     <div className="flex items-center gap-2 flex-1 min-w-0">
                       <ArrowDownToLine className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
                       <p className="text-xs text-blue-700 dark:text-blue-300">
-                        <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
+                        <span className="font-semibold">{unimportedCategories.length} takeoff {unimportedCategories.length === 1 ? "category" : "categories"}</span> from Step 1 can be added as line items.
                       </p>
                     </div>
                     <Button
@@ -397,7 +403,7 @@ export default function BidScopeStep({
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800 p-3 flex items-center gap-2" data-testid="callout-takeoff-info">
                   <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                   <p className="text-xs text-emerald-700 dark:text-emerald-300">
-                    <span className="font-semibold">{categories.length} takeoff {categories.length === 1 ? "category" : "categories"}</span> from Step 1 are associated with this bid.
+                    <span className="font-semibold">{unimportedCategories.length} takeoff {unimportedCategories.length === 1 ? "category" : "categories"}</span> from Step 1 are associated with this bid.
                   </p>
                 </div>
               )

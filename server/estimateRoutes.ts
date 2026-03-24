@@ -431,9 +431,21 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           })
         : [];
 
+      const existingImportedCategoryIds = new Set(
+        (await db.select({ catId: estimateLineItems.sourceTakeoffCategoryId })
+          .from(estimateLineItems)
+          .where(and(
+            eq(estimateLineItems.estimateId, estimateId),
+            eq(estimateLineItems.source, "TAKEOFF"),
+          ))
+        ).map(r => r.catId).filter(Boolean)
+      );
+
+      const filteredCategories = categories.filter(c => !existingImportedCategoryIds.has(c.id));
+
       const lineItemsToCreate = [];
 
-      for (const category of categories) {
+      for (const category of filteredCategories) {
         // Get measurements for this category
         const measurements = await db.query.takeoffMeasurements.findMany({
           where: eq(takeoffMeasurements.categoryId, category.id),
@@ -720,6 +732,18 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           })
         : [];
 
+      const existingImportedCategoryIds = new Set(
+        (await db.select({ catId: estimateLineItems.sourceTakeoffCategoryId })
+          .from(estimateLineItems)
+          .where(and(
+            eq(estimateLineItems.estimateId, estimateId),
+            eq(estimateLineItems.source, "TAKEOFF"),
+          ))
+        ).map(r => r.catId).filter(Boolean)
+      );
+
+      const filteredCategories = categories.filter(c => !existingImportedCategoryIds.has(c.id));
+
       // Resolve labor classification rate if provided — scoped to org for tenant isolation
       let classificationRate: number | null = null;
       let classificationName: string | null = null;
@@ -765,7 +789,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         laborRateUsed?: string;
       }> = [];
 
-      for (const category of categories) {
+      for (const category of filteredCategories) {
         const measurements = await db.query.takeoffMeasurements.findMany({
           where: eq(takeoffMeasurements.categoryId, category.id),
         });
@@ -880,11 +904,20 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
       }
 
-      // Also import uncategorized measurements from this bid's sheets
+      const hasExistingUncategorizedImport = (await db.select({ id: estimateLineItems.id })
+        .from(estimateLineItems)
+        .where(and(
+          eq(estimateLineItems.estimateId, estimateId),
+          eq(estimateLineItems.source, "TAKEOFF"),
+          isNull(estimateLineItems.sourceTakeoffCategoryId)
+        ))
+        .limit(1)
+      ).length > 0;
+
       const bidSheets = await db.query.takeoffSheets.findMany({
         where: eq(takeoffSheets.bidId, bidId),
       });
-      if (bidSheets.length > 0) {
+      if (bidSheets.length > 0 && !hasExistingUncategorizedImport) {
         const sheetIds = bidSheets.map(s => s.id);
         const uncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
           where: and(
