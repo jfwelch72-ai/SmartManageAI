@@ -147,6 +147,26 @@ router.get("/api/bids/:bidId/takeoff/categories", requireAuth, async (req: AuthR
   }
 });
 
+router.get("/api/projects/:projectId/takeoff/categories", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const categories = await db.select().from(quantityCategories)
+      .where(eq(quantityCategories.projectId, projectId))
+      .orderBy(quantityCategories.displayOrder);
+    res.json(categories);
+  } catch (error) {
+    console.error("Get project quantity categories error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const bid = await getBidWithAccess(req, res);
@@ -290,6 +310,112 @@ router.delete("/api/bids/:bidId/bim/storey-associations/:id", requireAuth, requi
     res.json({ success: true });
   } catch (error) {
     console.error("Delete storey association error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/projects/:projectId/bim/storey-associations", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const associations = await db.select().from(bimStoreyAssociations)
+      .where(eq(bimStoreyAssociations.projectId, projectId));
+
+    res.json(associations);
+  } catch (error) {
+    console.error("Get project storey associations error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/projects/:projectId/bim/storey-associations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const { sheetId, bimDocumentId, storeyExpressId, storeyName } = req.body;
+    if (!sheetId || !bimDocumentId || storeyExpressId === undefined || !storeyName) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    const parsedStoreyId = Number(storeyExpressId);
+    if (!Number.isInteger(parsedStoreyId)) {
+      return res.status(400).json({ error: "storeyExpressId must be an integer" });
+    }
+
+    const [sheet] = await db.select().from(takeoffSheets)
+      .where(and(eq(takeoffSheets.id, sheetId), eq(takeoffSheets.projectId, projectId)));
+    if (!sheet) {
+      return res.status(400).json({ error: "Sheet does not belong to this project" });
+    }
+
+    const { planDocuments } = await import("@shared/schema");
+    const [bimDoc] = await db.select({ id: planDocuments.id }).from(planDocuments)
+      .where(and(eq(planDocuments.id, bimDocumentId), eq(planDocuments.projectId, projectId)))
+      .limit(1);
+    if (!bimDoc) {
+      return res.status(400).json({ error: "BIM document not found or does not belong to this project" });
+    }
+
+    const existing = await db.select().from(bimStoreyAssociations)
+      .where(and(
+        eq(bimStoreyAssociations.projectId, projectId),
+        eq(bimStoreyAssociations.sheetId, sheetId)
+      ));
+
+    if (existing.length > 0) {
+      const [updated] = await db.update(bimStoreyAssociations)
+        .set({ bimDocumentId, storeyExpressId: parsedStoreyId, storeyName })
+        .where(eq(bimStoreyAssociations.id, existing[0].id))
+        .returning();
+      return res.json(updated);
+    }
+
+    const [association] = await db.insert(bimStoreyAssociations).values({
+      projectId,
+      sheetId,
+      bimDocumentId,
+      storeyExpressId: parsedStoreyId,
+      storeyName,
+    }).returning();
+
+    res.status(201).json(association);
+  } catch (error) {
+    console.error("Create project storey association error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/projects/:projectId/bim/storey-associations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    await db.delete(bimStoreyAssociations)
+      .where(and(
+        eq(bimStoreyAssociations.id, req.params.id),
+        eq(bimStoreyAssociations.projectId, projectId)
+      ));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete project storey association error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

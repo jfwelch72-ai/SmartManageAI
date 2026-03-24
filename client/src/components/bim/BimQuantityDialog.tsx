@@ -22,7 +22,8 @@ import BimDiffDialog from "./BimDiffDialog";
 interface BimQuantityDialogProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  bidId: string;
+  bidId?: string;
+  projectId?: string;
   extractionResult: BimExtractionResult | null;
   isExtracting: boolean;
   extractionProgress: number;
@@ -38,6 +39,7 @@ export default function BimQuantityDialog({
   open,
   onOpenChange,
   bidId,
+  projectId,
   extractionResult,
   isExtracting,
   extractionProgress,
@@ -49,9 +51,13 @@ export default function BimQuantityDialog({
   const [showDiff, setShowDiff] = useState(false);
   const [step, setStep] = useState<"review" | "map" | "confirm">("review");
 
+  const entityId = bidId || projectId;
+  const entityType = bidId ? "bids" : "projects";
+  const apiBase = `/${entityType}/${entityId}`;
+
   const { data: previousExtractions = [] } = useQuery<any[]>({
-    queryKey: ["/api/bids", bidId, "bim-extractions"],
-    enabled: open && !!bidId,
+    queryKey: [`/api/${entityType}`, entityId, "bim-extractions"],
+    enabled: open && !!entityId,
   });
 
   const latestPreviousExtraction = useMemo(() => {
@@ -99,19 +105,19 @@ export default function BimQuantityDialog({
 
   const saveExtractionMutation = useMutation({
     mutationFn: async (data: { extractedData: string; documentName?: string; documentId?: string }) => {
-      const res = await apiRequest("POST", `/api/bids/${bidId}/bim-extractions`, data);
+      const res = await apiRequest("POST", `/api${apiBase}/bim-extractions`, data);
       return res.json();
     },
   });
 
   const importMutation = useMutation({
     mutationFn: async (data: { groups: any[]; extractionId: string; sheetName: string }) => {
-      const res = await apiRequest("POST", `/api/bids/${bidId}/bim-extractions/import`, data);
+      const res = await apiRequest("POST", `/api${apiBase}/bim-extractions/import`, data);
       return res.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "takeoff", "sheets"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "bim-extractions"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/${entityType}`, entityId, "takeoff", "sheets"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/${entityType}`, entityId, "bim-extractions"] });
       toast({
         title: "BIM quantities imported",
         description: `Created ${data.count} takeoff measurement(s) on "${sheetName}"`,

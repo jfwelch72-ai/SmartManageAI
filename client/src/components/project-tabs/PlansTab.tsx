@@ -5,12 +5,18 @@ import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import BidLibrarySection from "@/components/bid/BidLibrarySection";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
-  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box
+  ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
+  Building2
 } from "lucide-react";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
+import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
+import type { BimExtractionResult } from "@/utils/ifc-quantity-parser";
+import type { QuantityCategory } from "@shared/schema";
+import type { BimElementSummary, BimSelectedElement } from "@/components/bid/BimViewer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
@@ -94,6 +100,65 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [draggedDocId, setDraggedDocId] = useState<string | null>(null);
   const [dragOverTarget, setDragOverTarget] = useState<string | null>(null);
   const [subFolderDocs, setSubFolderDocs] = useState<Record<string, string[]>>({});
+  const [bimDialogOpen, setBimDialogOpen] = useState(false);
+  const [bimExtractionResult, setBimExtractionResult] = useState<BimExtractionResult | null>(null);
+  const [bimIsExtracting, setBimIsExtracting] = useState(false);
+  const [bimExtractionProgress, setBimExtractionProgress] = useState(0);
+  const [libraryExpanded, setLibraryExpanded] = useState(false);
+  const [splitViewMode, setSplitViewMode] = useState(false);
+  const [splitBimDocId, setSplitBimDocId] = useState<string | null>(null);
+  const [bimSelectedElements, setBimSelectedElements] = useState<BimSelectedElement[]>([]);
+  const [highlightStoreyId, setHighlightStoreyId] = useState<number | null>(null);
+  const [storeyAssocDialogOpen, setStoreyAssocDialogOpen] = useState(false);
+  const [storeyAssocSheetId, setStoreyAssocSheetId] = useState<string | null>(null);
+  const [storeyAssocStoreyId, setStoreyAssocStoreyId] = useState<string>("");
+  const [storeyAssocStoreyName, setStoreyAssocStoreyName] = useState<string>("");
+
+  const { data: categories = [] } = useQuery<QuantityCategory[]>({
+    queryKey: ["/api/projects", project?.id, "takeoff", "categories"],
+    enabled: !!project?.id,
+  });
+
+  const isIfcFile = (fileName: string) => {
+    return fileName?.toLowerCase().endsWith(".ifc");
+  };
+
+  const handleExtractBimQuantities = async (doc: any) => {
+    setBimDialogOpen(true);
+    setBimIsExtracting(true);
+    setBimExtractionProgress(0);
+    setBimExtractionResult(null);
+
+    try {
+      const previewRes = await fetch(`/api/projects/${projectCode}/documents/${doc.id}/preview-url`, { credentials: "include" });
+      let fileUrl = doc.fileUrl;
+      if (previewRes.ok) {
+        const data = await previewRes.json();
+        fileUrl = data.url;
+      }
+
+      const response = await fetch(fileUrl);
+      if (!response.ok) throw new Error("Failed to fetch IFC file");
+      const arrayBuffer = await response.arrayBuffer();
+
+      const { parseIfcFile } = await import("@/utils/ifc-quantity-parser");
+      const result = await parseIfcFile(arrayBuffer, doc.fileName, (pct: number) => {
+        setBimExtractionProgress(pct);
+      });
+
+      setBimExtractionResult(result);
+    } catch (error: any) {
+      console.error("BIM extraction error:", error);
+      toast({
+        title: "Extraction failed",
+        description: error?.message || "Failed to parse IFC file",
+        variant: "destructive",
+      });
+      setBimDialogOpen(false);
+    } finally {
+      setBimIsExtracting(false);
+    }
+  };
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -136,7 +201,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     staleTime: 50 * 60 * 1000,
   });
 
-  const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents"];
+  const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents", "BIM"];
 
   const moveSheetMutation = useMutation({
     mutationFn: async ({ sheetId, folderGroup }: { sheetId: string; folderGroup: string }) => {
@@ -452,6 +517,120 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       toast({ title: "Error", description: error?.message || "Failed to import plan", variant: "destructive" });
     }
   };
+
+  const importToEstimateMutation = useMutation({
+    mutationFn: async () => {
+      const estRes = await apiRequest("GET", `/api/projects/${project!.id}/estimate`);
+      if (!estRes.ok) throw new Error("No estimate found. Create an estimate first.");
+      const estData = await estRes.json();
+      const estimateId = estData?.estimate?.id;
+      if (!estimateId) throw new Error("No estimate found. Create an estimate first.");
+
+      const catRes = await fetch(`/api/projects/${project!.id}/takeoff/categories`, { credentials: "include" });
+      const cats: { id: string; name: string }[] = catRes.ok ? await catRes.json() : [];
+      const categoryIds = cats.map((c) => c.id);
+
+      const res = await apiRequest("POST", `/api/projects/${project!.id}/estimate/import-takeoff`, { estimateId, categoryIds });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Import failed");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project!.id, "estimate"] });
+      toast({ title: "Import complete", description: `${data.count} line item(s) added to your estimate` });
+    },
+    onError: (error: any) => {
+      toast({ title: "Import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const { data: storeyAssociations = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects", project?.id, "bim", "storey-associations"],
+    enabled: !!project?.id,
+  });
+
+  const saveStoreyAssocMutation = useMutation({
+    mutationFn: async (data: { sheetId: string; bimDocumentId: string; storeyExpressId: number; storeyName: string }) => {
+      const res = await apiRequest("POST", `/api/projects/${project!.id}/bim/storey-associations`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project!.id, "bim", "storey-associations"] });
+      setStoreyAssocDialogOpen(false);
+      toast({ title: "Sheet linked to storey" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to link sheet to storey", variant: "destructive" });
+    },
+  });
+
+  const bimDocuments = useMemo(() =>
+    documents.filter((d: any) => d.type === "BIM" || d.fileName?.toLowerCase().endsWith(".ifc")),
+    [documents]
+  );
+
+  const splitBimDoc = splitBimDocId ? documents.find((d: any) => d.id === splitBimDocId) : bimDocuments[0] || null;
+
+  const { data: splitBimUrl } = useQuery<{ url: string }>({
+    queryKey: ["/api/projects", projectCode, "documents", splitBimDoc?.id, "preview-url"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectCode}/documents/${(splitBimDoc as any)!.id}/preview-url`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to get preview URL");
+      return res.json();
+    },
+    enabled: !!splitBimDoc && splitViewMode,
+    staleTime: 50 * 60 * 1000,
+  });
+
+  const handleBimElementSelect = useCallback((elements: BimSelectedElement[]) => {
+    setBimSelectedElements(elements);
+    if (elements.length > 0 && elements[0].storeyExpressId) {
+      const assoc = storeyAssociations.find(
+        (a: any) => a.storeyExpressId === elements[0].storeyExpressId
+      );
+      if (assoc) {
+        setHighlightStoreyId(elements[0].storeyExpressId);
+      }
+    }
+  }, [storeyAssociations]);
+
+  const handleBimAddToTakeoff = useCallback(async (elements: BimElementSummary[]) => {
+    if (!project?.id || elements.length === 0) return;
+    const targetSheet = sheets[0];
+    if (!targetSheet) {
+      toast({ title: "No takeoff sheet", description: "Create a takeoff sheet before adding BIM elements.", variant: "destructive" });
+      return;
+    }
+    let added = 0;
+    for (const el of elements) {
+      const label = `${el.type}: ${el.name}`;
+      const dims = el.dimensions || {};
+      try {
+        const body: any = {
+          type: "COUNT",
+          label,
+          points: [{ x: 0, y: 0 }],
+          sheetId: targetSheet.id,
+          metadata: JSON.stringify({
+            bimExpressId: el.expressID,
+            bimType: el.type,
+            bimMaterial: el.material,
+            bimDimensions: dims,
+          }),
+        };
+        await apiRequest("POST", "/api/takeoff/measurements", body);
+        added++;
+      } catch {
+        toast({ title: "Error", description: `Failed to add ${el.name} to takeoff`, variant: "destructive" });
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
+    if (added > 0) {
+      toast({ title: "Added to takeoff", description: `${added} element(s) added as measurements` });
+    }
+  }, [project?.id, sheets, toast]);
 
   return (
       <div className="flex flex-col h-[calc(100vh-200px)] mb-[50px]">
@@ -798,6 +977,15 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                           Import to Takeoff
                                         </DropdownMenuItem>
                                       )}
+                                      {isIfcFile(doc.fileName) && (
+                                        <DropdownMenuItem
+                                          onClick={() => handleExtractBimQuantities(doc)}
+                                          data-testid={`button-extract-bim-${doc.id}`}
+                                        >
+                                          <Box className="w-4 h-4 mr-2" />
+                                          Extract Quantities
+                                        </DropdownMenuItem>
+                                      )}
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem
                                         onClick={() => setDeleteDocId(doc.id)}
@@ -996,6 +1184,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                       ) : (
                                         <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
                                       )}
+                                      {(sheet as any).folderGroup === "BIM" && (
+                                        <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-sheet-${sheet.id}`}>BIM</Badge>
+                                      )}
                                       {sheet.scalePxPerFoot && renameSheetId !== sheet.id && (
                                         <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
                                           Cal
@@ -1072,6 +1263,28 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       })}
                     </>
                   )}
+
+                  <Separator className="my-2" />
+                  <div className="px-2 py-1.5">
+                    <button
+                      className="flex items-center gap-1.5 w-full text-sm hover:bg-accent/50 transition-colors rounded px-1 py-0.5"
+                      onClick={() => setLibraryExpanded(!libraryExpanded)}
+                      data-testid="section-libraries-toggle"
+                    >
+                      {libraryExpanded ? (
+                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      )}
+                      <BookOpen className="w-4 h-4 text-purple-500 shrink-0" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                        Libraries
+                      </span>
+                    </button>
+                  </div>
+                  {libraryExpanded && (
+                    <BidLibrarySection bidId={project.id} />
+                  )}
                 </div>
               </ScrollArea>
 
@@ -1095,6 +1308,26 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 </div>
               )}
 
+              <div className="border-t p-2 shrink-0 space-y-1.5">
+                {sheets.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => importToEstimateMutation.mutate()}
+                    disabled={importToEstimateMutation.isPending}
+                    data-testid="button-import-to-estimate"
+                  >
+                    {importToEstimateMutation.isPending ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-3 h-3 mr-1" />
+                    )}
+                    Import Measurements to Estimate
+                  </Button>
+                )}
+              </div>
+
               <div
                 className="absolute top-0 right-0 h-full w-1 cursor-col-resize hidden md:flex items-center justify-center group z-30 hover:bg-primary/20 active:bg-primary/30 transition-colors"
                 onMouseDown={handleResizeMouseDown}
@@ -1105,8 +1338,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             </div>
           )}
 
-          <div className="flex-1 min-w-0 relative flex flex-col">
-            {leftPanelCollapsed && !previewDocId && (
+          <div className={cn("flex-1 min-w-0 relative flex", splitViewMode ? "flex-row" : "flex-col")}>
+            {!splitViewMode && leftPanelCollapsed && !previewDocId && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -1117,18 +1350,103 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 <ChevronRight className="w-4 h-4" />
               </Button>
             )}
-            {!leftPanelCollapsed && !previewDocId && (
+            {!splitViewMode && !leftPanelCollapsed && !previewDocId && (
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-2 left-2 z-10 h-7 w-7 hidden md:flex"
+                className="absolute top-2 left-2 z-10 h-7 w-7 hidden md:flex mt-[11px] mb-[11px]"
                 onClick={() => setLeftPanelCollapsed(true)}
                 data-testid="button-collapse-panel"
               >
                 <ChevronDown className="w-4 h-4 rotate-90" />
               </Button>
             )}
-            {previewDocId ? (
+
+            {splitViewMode ? (
+              <>
+                <div className="w-1/2 flex flex-col border-r min-w-0" data-testid="split-view-takeoff">
+                  <div className="flex items-center gap-2 px-2 py-1 border-b bg-muted/30 shrink-0">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">2D Takeoff</span>
+                    <div className="flex-1" />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[10px] gap-1"
+                      onClick={() => setSplitViewMode(false)}
+                      data-testid="button-exit-split-view"
+                    >
+                      <X className="w-3 h-3" />
+                      Exit Split
+                    </Button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    <TakeoffWorkspace projectId={project.id} projectCode={project.code} />
+                  </div>
+                </div>
+                <div className="w-1/2 flex flex-col min-w-0" data-testid="split-view-bim">
+                  <div className="flex items-center gap-2 px-2 py-1 border-b bg-muted/30 shrink-0">
+                    <span className="text-xs font-semibold uppercase text-muted-foreground">3D BIM</span>
+                    {bimDocuments.length > 1 && (
+                      <Select value={splitBimDocId || bimDocuments[0]?.id || ""} onValueChange={setSplitBimDocId}>
+                        <SelectTrigger className="h-6 w-40 text-[10px]" data-testid="select-split-bim-doc">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {bimDocuments.map((d: any) => (
+                            <SelectItem key={d.id} value={d.id}>{d.title || d.fileName}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    {bimSelectedElements.length > 0 && bimSelectedElements[0].storeyName && (
+                      <Badge variant="outline" className="text-[9px] px-1">
+                        <Building2 className="w-2.5 h-2.5 mr-0.5" />
+                        {bimSelectedElements[0].storeyName}
+                      </Badge>
+                    )}
+                    <div className="flex-1" />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-[10px] gap-1"
+                      onClick={() => {
+                        setStoreyAssocDialogOpen(true);
+                      }}
+                      data-testid="button-link-storey"
+                    >
+                      <Link2 className="w-3 h-3" />
+                      Link Sheet
+                    </Button>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-hidden">
+                    {splitBimDoc && splitBimUrl?.url ? (
+                      <Suspense fallback={
+                        <div className="flex items-center justify-center h-full">
+                          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                        </div>
+                      }>
+                        <BimViewer
+                          fileUrl={splitBimUrl.url}
+                          fileName={(splitBimDoc as any).title || (splitBimDoc as any).fileName}
+                          onAddToTakeoff={handleBimAddToTakeoff}
+                          onElementSelect={handleBimElementSelect}
+                          highlightStoreyId={highlightStoreyId}
+                        />
+                      </Suspense>
+                    ) : splitBimDoc ? (
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                        <Box className="w-12 h-12 text-muted-foreground/30 mb-3" />
+                        <p className="text-sm text-muted-foreground">No BIM model available. Upload an IFC file to use split view.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : previewDocId ? (
               (() => {
                 const doc = documents.find((d: any) => d.id === previewDocId);
                 if (!doc) return <TakeoffWorkspace projectId={project.id} projectCode={project.code} />;
@@ -1268,7 +1586,25 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 );
               })()
             ) : (
-              <TakeoffWorkspace projectId={project.id} projectCode={project.code} />
+              <div className="flex flex-col h-full">
+                {bimDocuments.length > 0 && (
+                  <div className="flex items-center justify-end px-2 py-1 border-b bg-muted/20 shrink-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[10px] gap-1"
+                      onClick={() => setSplitViewMode(true)}
+                      data-testid="button-split-view"
+                    >
+                      <Columns2 className="w-3 h-3" />
+                      Split View (3D + 2D)
+                    </Button>
+                  </div>
+                )}
+                <div className="flex-1 min-h-0">
+                  <TakeoffWorkspace projectId={project.id} projectCode={project.code} />
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -1357,6 +1693,93 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {project?.id && (
+        <BimQuantityDialog
+          open={bimDialogOpen}
+          onOpenChange={setBimDialogOpen}
+          projectId={project.id}
+          extractionResult={bimExtractionResult}
+          isExtracting={bimIsExtracting}
+          extractionProgress={bimExtractionProgress}
+          categories={categories}
+        />
+      )}
+
+      <Dialog open={storeyAssocDialogOpen} onOpenChange={(open) => { setStoreyAssocDialogOpen(open); if (!open) { setStoreyAssocSheetId(null); setStoreyAssocStoreyId(""); setStoreyAssocStoreyName(""); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Link Sheet to BIM Storey</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-sm mb-1 block">Takeoff Sheet</Label>
+              <Select value={storeyAssocSheetId || ""} onValueChange={setStoreyAssocSheetId}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-storey-sheet">
+                  <SelectValue placeholder="Select a sheet" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sheets.map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.sheetName || `Sheet ${s.sheetIndex + 1}`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-sm mb-1 block">BIM Storey Name</Label>
+              <Input
+                value={storeyAssocStoreyName}
+                onChange={(e) => setStoreyAssocStoreyName(e.target.value)}
+                placeholder="e.g. Level 1, Ground Floor"
+                className="h-8 text-xs"
+                data-testid="input-storey-name"
+              />
+            </div>
+            <div>
+              <Label className="text-sm mb-1 block">Storey Express ID</Label>
+              <Input
+                value={storeyAssocStoreyId}
+                onChange={(e) => setStoreyAssocStoreyId(e.target.value)}
+                placeholder="Express ID from BIM model"
+                className="h-8 text-xs"
+                data-testid="input-storey-express-id"
+              />
+            </div>
+            {storeyAssociations.length > 0 && (
+              <div>
+                <Label className="text-[10px] text-muted-foreground mb-1 block">Existing Associations</Label>
+                <div className="space-y-1 max-h-24 overflow-auto">
+                  {storeyAssociations.map((a: any) => (
+                    <div key={a.id} className="flex items-center justify-between text-[10px] bg-muted/50 rounded px-2 py-1">
+                      <span className="truncate">{sheets.find(s => s.id === a.sheetId)?.sheetName || "Sheet"} → {a.storeyName}</span>
+                      <Badge variant="outline" className="text-[8px] px-1 shrink-0 ml-1">#{a.storeyExpressId}</Badge>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStoreyAssocDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!storeyAssocSheetId || !storeyAssocStoreyName || !storeyAssocStoreyId) return;
+                const bimDoc = splitBimDoc || bimDocuments[0];
+                if (!bimDoc) return;
+                saveStoreyAssocMutation.mutate({
+                  sheetId: storeyAssocSheetId,
+                  bimDocumentId: (bimDoc as any).id,
+                  storeyExpressId: parseInt(storeyAssocStoreyId, 10),
+                  storeyName: storeyAssocStoreyName,
+                });
+              }}
+              disabled={!storeyAssocSheetId || !storeyAssocStoreyName || !storeyAssocStoreyId || saveStoreyAssocMutation.isPending}
+              data-testid="button-save-storey-association"
+            >
+              {saveStoreyAssocMutation.isPending ? "Saving..." : "Link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
