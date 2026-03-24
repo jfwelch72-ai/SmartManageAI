@@ -30,17 +30,12 @@ import type { RFI, ActivityEntry, ChangeOrder, RFIEditForm } from "@/hooks/useRf
 import { getStatusBadge, getPriorityBadge, DEFAULT_EDIT_FORM } from "@/hooks/useRfiMutations";
 
 const RFI_CATEGORIES = [
-  { value: "ARCHITECTURAL", label: "Architectural" },
-  { value: "STRUCTURAL", label: "Structural" },
-  { value: "MECHANICAL", label: "Mechanical" },
-  { value: "ELECTRICAL", label: "Electrical" },
-  { value: "PLUMBING", label: "Plumbing" },
-  { value: "CIVIL", label: "Civil" },
-  { value: "GEOTECHNICAL", label: "Geotechnical" },
-  { value: "FIRE_PROTECTION", label: "Fire Protection" },
-  { value: "SPEC_CLARIFICATION", label: "Spec Clarification" },
-  { value: "DRAWING_CONFLICT", label: "Drawing Conflict" },
-  { value: "SUBSTITUTION", label: "Substitution Request" },
+  { value: "DESIGN_CLARIFICATION", label: "Design Clarification" },
+  { value: "FIELD_CONDITION", label: "Field Condition" },
+  { value: "SUBSTITUTION_REQUEST", label: "Substitution Request" },
+  { value: "SPECIFICATION_INTERPRETATION", label: "Specification Interpretation" },
+  { value: "SCHEDULE", label: "Schedule" },
+  { value: "ADMINISTRATIVE", label: "Administrative" },
   { value: "OTHER", label: "Other" },
 ];
 
