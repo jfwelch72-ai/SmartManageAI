@@ -1,10 +1,20 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useBid } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest, bidEstimateKey } from "@/lib/queryClient";
 import {
@@ -561,11 +571,19 @@ export default function BidEstimate() {
     setEditLineItemOpen(true);
   };
 
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const deleteConfirmItem = estimate?.lineItems?.find(li => li.id === deleteConfirmId);
+
   const handleDeleteLineItem = (lineItemId: string) => {
-    if (confirm("Delete this line item?") && estimate) {
-      deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId });
-    }
+    setDeleteConfirmId(lineItemId);
   };
+
+  const confirmDeleteLineItem = useCallback(() => {
+    if (deleteConfirmId && estimate) {
+      deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId: deleteConfirmId });
+      setDeleteConfirmId(null);
+    }
+  }, [deleteConfirmId, estimate, deleteLineItemMutation]);
 
   const getStatusBadge = (status: string) => {
     const variants: Record<
@@ -743,6 +761,37 @@ export default function BidEstimate() {
           isDeleting={deleteLineItemMutation.isPending}
         />
       </main>
+
+      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Delete Line Item
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirmItem ? (
+                <>
+                  Are you sure you want to delete <span className="font-medium text-foreground">"{deleteConfirmItem.description}"</span>?
+                  This action cannot be undone.
+                </>
+              ) : (
+                "Are you sure you want to delete this line item? This action cannot be undone."
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-line-item">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDeleteLineItem}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-line-item"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
