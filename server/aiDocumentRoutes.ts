@@ -3428,7 +3428,7 @@ interface SimilarItem {
  * AI SOW Assistant - Analyzes user input and suggests properly formatted SOW item
  * POST /api/ai-assistant/sow/suggest
  */
-router.post("/sow/suggest", async (req: AuthRequest, res) => {
+router.post("/ai-assistant/sow/suggest", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3561,7 +3561,7 @@ Analyze and suggest the properly formatted SOW item.`;
  * Add new SOW item to organization
  * POST /api/ai-assistant/sow/add
  */
-router.post("/sow/add", async (req: AuthRequest, res) => {
+router.post("/ai-assistant/sow/add", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3644,7 +3644,7 @@ router.post("/sow/add", async (req: AuthRequest, res) => {
  * AI UOM Assistant - Analyzes user input and suggests properly formatted UOM
  * POST /api/ai-assistant/uom/suggest
  */
-router.post("/uom/suggest", async (req: AuthRequest, res) => {
+router.post("/ai-assistant/uom/suggest", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3754,7 +3754,7 @@ Analyze and suggest the properly formatted UOM, or explain if a similar one alre
  * Add new UOM (Admin only)
  * POST /api/ai-assistant/uom/add
  */
-router.post("/uom/add", async (req: AuthRequest, res) => {
+router.post("/ai-assistant/uom/add", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3820,7 +3820,7 @@ router.post("/uom/add", async (req: AuthRequest, res) => {
  * Search existing SOW items
  * GET /api/ai-assistant/sow/search
  */
-router.get("/sow/search", async (req: AuthRequest, res) => {
+router.get("/ai-assistant/sow/search", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
@@ -3887,7 +3887,7 @@ router.get("/sow/search", async (req: AuthRequest, res) => {
  * Get available UOMs
  * GET /api/ai-assistant/uom/list
  */
-router.get("/uom/list", async (req: AuthRequest, res) => {
+router.get("/ai-assistant/uom/list", async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       return res.status(401).json({ error: "Unauthorized" });
