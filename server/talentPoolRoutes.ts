@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { eq, and, desc, sql, ilike, or, inArray } from "drizzle-orm";
 import { db } from "./db";
 import { requireAuth, requireRole } from "./auth";
@@ -20,6 +21,11 @@ import {
 import { logError } from "./utils/logger";
 
 const router = Router();
+
+const talentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 function orgId(req: AuthRequest): string {
   return req.user!.organizationId!;
@@ -733,6 +739,84 @@ router.delete("/my-certifications/:id", requireAuth, async (req: AuthRequest, re
   } catch (err) {
     logError("DELETE /api/talent-pool/my-certifications/:id", { error: String(err) });
     res.status(500).json({ error: "Failed to remove certification" });
+  }
+});
+
+router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, talentUpload.array("photos", 10), async (req: AuthRequest, res) => {
+  try {
+    const uid = userId(req);
+    const files = req.files as Express.Multer.File[];
+    if (!files || files.length === 0) {
+      res.status(400).json({ error: "No files uploaded" });
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    for (const file of files) {
+      if (!allowedTypes.includes(file.mimetype)) {
+        res.status(400).json({ error: `Invalid file type: ${file.originalname}. Only JPEG, PNG, GIF, and WebP are allowed.` });
+        return;
+      }
+    }
+
+    const { objectStorageClient } = await import("./objectStorage");
+    const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+    const uploadedUrls: string[] = [];
+
+    for (const file of files) {
+      const objectId = `talent-portfolio/${uid}/${Date.now()}-${file.originalname}`;
+      const fullPath = `${privateDir}/${objectId}`;
+      const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+      const bucketName = parts[0];
+      const objectName = parts.slice(1).join("/");
+
+      const bucket = objectStorageClient.bucket(bucketName);
+      const objectFile = bucket.file(objectName);
+      await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
+
+      uploadedUrls.push(`/api/talent-pool/portfolio-files/${objectId}`);
+    }
+
+    res.status(201).json({ urls: uploadedUrls });
+  } catch (err) {
+    logError("POST /api/talent-pool/upload-portfolio-photos", { error: String(err) });
+    res.status(500).json({ error: "Failed to upload photos" });
+  }
+});
+
+router.get("/api/talent-pool/portfolio-files/*", async (req, res) => {
+  try {
+    const objectId = req.params[0];
+    if (!objectId) {
+      res.status(400).json({ error: "Missing file path" });
+      return;
+    }
+
+    const { objectStorageClient } = await import("./objectStorage");
+    const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
+    const fullPath = `${privateDir}/${objectId}`;
+    const parts = fullPath.startsWith("/") ? fullPath.slice(1).split("/") : fullPath.split("/");
+    const bucketName = parts[0];
+    const objectName = parts.slice(1).join("/");
+
+    const bucket = objectStorageClient.bucket(bucketName);
+    const objectFile = bucket.file(objectName);
+    const [exists] = await objectFile.exists();
+    if (!exists) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const [metadata] = await objectFile.getMetadata();
+    const contentType = (metadata as Record<string, unknown>)?.contentType as string || "application/octet-stream";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=86400");
+
+    const [buffer] = await objectFile.download();
+    res.send(buffer);
+  } catch (err) {
+    logError("GET /api/talent-pool/portfolio-files/*", { error: String(err) });
+    res.status(500).json({ error: "Failed to serve file" });
   }
 });
 

@@ -24,7 +24,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Search, MapPin, Briefcase, Clock, Star, UserPlus, ArrowLeft,
   Building2, Edit, Eye, EyeOff, Award, Percent, ChevronLeft,
-  ChevronRight, Users, Filter, Plus, X, SortAsc,
+  ChevronRight, Users, Filter, Plus, X, SortAsc, Upload, Loader2,
 } from "lucide-react";
 
 const TRADE_OPTIONS = [
@@ -981,48 +981,12 @@ function MyTalentProfilePage() {
               data-testid="input-talent-resume-url"
             />
           </div>
-          <div className="space-y-2">
-            <Label>Portfolio / Work Photos</Label>
-            {portfolioPhotos.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {portfolioPhotos.map((url, i) => (
-                  <div key={i} className="relative group rounded-md overflow-hidden border">
-                    <img src={url} alt={`Portfolio ${i + 1}`} className="w-full h-32 object-cover" />
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition"
-                      onClick={() => setPortfolioPhotos((prev) => prev.filter((_, j) => j !== i))}
-                      data-testid={`button-remove-portfolio-${i}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Input
-                placeholder="Paste image URL..."
-                value={newPhotoUrl}
-                onChange={(e) => setNewPhotoUrl(e.target.value)}
-                data-testid="input-talent-portfolio-url"
-              />
-              <Button
-                variant="outline"
-                disabled={!newPhotoUrl.trim()}
-                onClick={() => {
-                  if (newPhotoUrl.trim()) {
-                    setPortfolioPhotos((prev) => [...prev, newPhotoUrl.trim()]);
-                    setNewPhotoUrl("");
-                  }
-                }}
-                data-testid="button-add-portfolio-photo"
-              >
-                Add
-              </Button>
-            </div>
-          </div>
+          <PortfolioPhotoUploader
+            photos={portfolioPhotos}
+            onPhotosChange={setPortfolioPhotos}
+            newPhotoUrl={newPhotoUrl}
+            onNewPhotoUrlChange={setNewPhotoUrl}
+          />
         </CardContent>
       </Card>
 
@@ -1035,6 +999,114 @@ function MyTalentProfilePage() {
           {saveMutation.isPending ? "Saving..." : "Save Profile"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+function PortfolioPhotoUploader({
+  photos,
+  onPhotosChange,
+  newPhotoUrl,
+  onNewPhotoUrlChange,
+}: {
+  photos: string[];
+  onPhotosChange: (photos: string[]) => void;
+  newPhotoUrl: string;
+  onNewPhotoUrlChange: (url: string) => void;
+}) {
+  const { toast } = useToast();
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("photos", files[i]);
+    }
+
+    setIsUploading(true);
+    try {
+      const res = await fetch("/api/talent-pool/upload-portfolio-photos", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      onPhotosChange([...photos, ...data.urls]);
+      toast({ title: "Photos uploaded", description: `${data.urls.length} photo(s) added to portfolio` });
+    } catch (err) {
+      toast({ title: "Upload failed", description: err instanceof Error ? err.message : "Could not upload photos", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>Portfolio / Work Photos</Label>
+      {photos.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {photos.map((url, i) => (
+            <div key={i} className="relative group rounded-md overflow-hidden border">
+              <img src={url} alt={`Portfolio ${i + 1}`} className="w-full h-32 object-cover" />
+              <Button
+                variant="destructive"
+                size="icon"
+                className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition"
+                onClick={() => onPhotosChange(photos.filter((_, j) => j !== i))}
+                data-testid={`button-remove-portfolio-${i}`}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2 items-center">
+        <label className="cursor-pointer" data-testid="button-upload-portfolio-photos">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            multiple
+            className="hidden"
+            onChange={handleFileUpload}
+            disabled={isUploading}
+          />
+          <div className="flex items-center gap-2 px-4 py-2 border rounded-md bg-background hover:bg-accent transition text-sm font-medium">
+            {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {isUploading ? "Uploading..." : "Upload Photos"}
+          </div>
+        </label>
+        <span className="text-muted-foreground text-xs">or</span>
+        <Input
+          placeholder="Paste image URL..."
+          value={newPhotoUrl}
+          onChange={(e) => onNewPhotoUrlChange(e.target.value)}
+          className="flex-1"
+          data-testid="input-talent-portfolio-url"
+        />
+        <Button
+          variant="outline"
+          disabled={!newPhotoUrl.trim()}
+          onClick={() => {
+            if (newPhotoUrl.trim()) {
+              onPhotosChange([...photos, newPhotoUrl.trim()]);
+              onNewPhotoUrlChange("");
+            }
+          }}
+          data-testid="button-add-portfolio-photo"
+        >
+          Add
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">Supports JPEG, PNG, GIF, WebP. Max 10MB per file.</p>
     </div>
   );
 }
