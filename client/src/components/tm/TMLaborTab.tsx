@@ -36,7 +36,7 @@ interface TMLaborTabProps {
   onAdd: () => void;
   onRemove: (index: number) => void;
   onUpdate: (index: number, field: keyof LaborEntry, value: string) => void;
-  onSelectEmployee?: (index: number, employee: EmployeeOption) => void;
+  onBulkUpdate?: (index: number, updates: Partial<LaborEntry>) => void;
 }
 
 interface EmployeeOption {
@@ -142,7 +142,7 @@ function formatTrade(trade: string): string {
   return trade.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate, onSelectEmployee }: TMLaborTabProps) {
+export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate, onBulkUpdate }: TMLaborTabProps) {
   const { data: usersData } = useQuery<EmployeeOption[]>({
     queryKey: ["/api/users"],
   });
@@ -154,17 +154,24 @@ export default function TMLaborTab({ entries, onAdd, onRemove, onUpdate, onSelec
 
   const handleSelectEmployee = (index: number, emp: EmployeeOption) => {
     const fullName = `${emp.firstName} ${emp.lastName}`;
-    onUpdate(index, "employeeName", fullName);
-    onUpdate(index, "position", formatRole(emp.role));
-    onUpdate(index, "crewName", emp.crewName || "");
+    const updates: Partial<LaborEntry> = {
+      employeeName: fullName,
+      employeeId: emp.id,
+      position: formatRole(emp.role),
+      crewName: emp.crewName || "",
+    };
     if (emp.costRateRegular && parseFloat(emp.costRateRegular) > 0) {
-      onUpdate(index, "rate", emp.costRateRegular);
+      updates.rate = emp.costRateRegular;
     }
     if (emp.costRateOvertime && parseFloat(emp.costRateOvertime) > 0) {
-      onUpdate(index, "overtimeRate", emp.costRateOvertime);
+      updates.overtimeRate = emp.costRateOvertime;
     }
-    if (onSelectEmployee) {
-      onSelectEmployee(index, emp);
+    if (onBulkUpdate) {
+      onBulkUpdate(index, updates);
+    } else {
+      Object.entries(updates).forEach(([field, value]) => {
+        onUpdate(index, field as keyof LaborEntry, value);
+      });
     }
   };
 

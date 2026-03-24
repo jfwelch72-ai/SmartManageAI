@@ -132,6 +132,12 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
     setLaborEntries(updated);
   };
 
+  const bulkUpdateLaborEntry = (index: number, updates: Partial<LaborEntry>) => {
+    const updated = [...laborEntries];
+    updated[index] = { ...updated[index], ...updates };
+    setLaborEntries(updated);
+  };
+
   const updateEquipmentEntry = (index: number, field: keyof EquipmentEntry, value: string) => {
     const updated = [...equipmentEntries];
     updated[index] = { ...updated[index], [field]: value };
@@ -314,6 +320,7 @@ export default function TMTicketDialog({ projectId, open, onOpenChange }: TMTick
                 onAdd={() => setLaborEntries([...laborEntries, emptyLaborEntry()])}
                 onRemove={(index) => setLaborEntries(laborEntries.filter((_, i) => i !== index))}
                 onUpdate={updateLaborEntry}
+                onBulkUpdate={bulkUpdateLaborEntry}
               />
             </TabsContent>
 
