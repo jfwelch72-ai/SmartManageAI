@@ -36,6 +36,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Building2,
   Star,
@@ -331,6 +332,51 @@ function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void
 // ============================================
 // CONTRACTOR PROFILE PAGE
 // ============================================
+function TeamMembersSection({ orgId }: { orgId: string }) {
+  const { data: members = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/marketplace/contractors", orgId, "team-members"],
+    queryFn: async () => {
+      const res = await fetch(`/api/marketplace/contractors/${orgId}/team-members`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (members.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          <Users className="w-4 h-4" />
+          Team Members
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {members.map((m: any) => (
+          <Link key={m.user.id} href={`/talent-pool/${m.profile.id}`}>
+            <div className="flex items-center gap-2 py-1 hover:bg-muted/50 rounded px-1 cursor-pointer" data-testid={`team-member-${m.user.id}`}>
+              <Avatar className="w-7 h-7 shrink-0">
+                <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                  {(m.user.firstName?.[0] || "")}{(m.user.lastName?.[0] || "")}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium line-clamp-1">{m.user.firstName} {m.user.lastName}</p>
+                {m.profile.tradeSpecialization && (
+                  <p className="text-xs text-muted-foreground">{formatTrade(m.profile.tradeSpecialization)}</p>
+                )}
+              </div>
+              <Badge variant="secondary" className="text-xs shrink-0">View Profile</Badge>
+            </div>
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ContractorProfilePage() {
   const { orgId } = useParams<{ orgId: string }>();
   const { user } = useAuth();
@@ -562,6 +608,8 @@ export function ContractorProfilePage() {
                 </CardContent>
               </Card>
             )}
+
+            <TeamMembersSection orgId={orgId} />
           </div>
         </div>
       </div>

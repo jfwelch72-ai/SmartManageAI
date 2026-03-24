@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -14,23 +14,13 @@ import { Star } from "lucide-react";
 import { useHiringCandidates, useHiringJobs } from "@/lib/hiring-api";
 import { format } from "date-fns";
 
-const STAGES = [
-  { key: "APPLIED", label: "Applied", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
-  { key: "SCREENING", label: "Screening", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300" },
-  { key: "PHONE_INTERVIEW", label: "Phone Interview", color: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300" },
-  { key: "IN_PERSON_INTERVIEW", label: "In-Person", color: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300" },
-  { key: "SKILLS_ASSESSMENT", label: "Skills Test", color: "bg-pink-100 text-pink-800 dark:bg-pink-900/30 dark:text-pink-300" },
-  { key: "BACKGROUND_CHECK", label: "Background", color: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300" },
-  { key: "REFERENCE_CHECK", label: "References", color: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300" },
-  { key: "OFFER_EXTENDED", label: "Offer Extended", color: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300" },
-  { key: "HIRED", label: "Hired", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
-  { key: "REJECTED", label: "Rejected", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" },
-  { key: "ARCHIVED", label: "Archived", color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
-];
-
-const STAGE_LABELS: Record<string, string> = Object.fromEntries(STAGES.map((s) => [s.key, s.label]));
-
-const DESTRUCTIVE_STAGES = new Set(["REJECTED", "ARCHIVED"]);
+interface PipelineStage {
+  key: string;
+  name: string;
+  color: string;
+  isTerminal: boolean;
+  displayOrder: number;
+}
 
 function initials(name: string) {
   return name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
@@ -38,18 +28,24 @@ function initials(name: string) {
 
 const SOURCE_SHORT: Record<string, string> = {
   INDEED: "Indeed", LINKEDIN: "LI", REFERRAL: "Ref", DIRECT: "Direct",
-  CRAIGSLIST: "CL", COMPANY_WEBSITE: "Web", ATS_SYNC: "ATS", OTHER: "Other",
+  CRAIGSLIST: "CL", COMPANY_WEBSITE: "Web", ATS_SYNC: "ATS", TALENT_POOL: "Pool", OTHER: "Other",
 };
 
 export default function HiringPipelinePage() {
   const { toast } = useToast();
   const dragCandidateId = useRef<string | null>(null);
-  const [confirmMove, setConfirmMove] = useState<{ candidateId: string; toStage: string } | null>(null);
+  const [confirmMove, setConfirmMove] = useState<{ candidateId: string; toStage: string; stageName: string } | null>(null);
   const [dragOverStage, setDragOverStage] = useState<string | null>(null);
 
-  const { data: candidates = [], isLoading } = useHiringCandidates();
+  const { data: candidates = [], isLoading: candidatesLoading } = useHiringCandidates();
   const { data: jobs = [] } = useHiringJobs();
   const jobsById = Object.fromEntries(jobs.map((j) => [j.id, j]));
+
+  const { data: pipelineStages = [], isLoading: stagesLoading } = useQuery<PipelineStage[]>({
+    queryKey: ["/api/hiring/pipeline-stages"],
+  });
+
+  const isLoading = candidatesLoading || stagesLoading;
 
   const stageMutation = useMutation({
     mutationFn: async ({ id, stage }: { id: string; stage: string }) => {
@@ -84,8 +80,9 @@ export default function HiringPipelinePage() {
     if (!cId) return;
     const candidate = candidates.find((c) => c.id === cId);
     if (!candidate || candidate.currentStage === toStage) return;
-    if (DESTRUCTIVE_STAGES.has(toStage)) {
-      setConfirmMove({ candidateId: cId, toStage });
+    const stageInfo = pipelineStages.find((s) => s.key === toStage);
+    if (stageInfo?.isTerminal) {
+      setConfirmMove({ candidateId: cId, toStage, stageName: stageInfo.name });
     } else {
       stageMutation.mutate({ id: cId, stage: toStage });
     }
@@ -98,8 +95,8 @@ export default function HiringPipelinePage() {
     return (
       <div className="p-6">
         <div className="flex gap-4 overflow-x-auto pb-4">
-          {STAGES.map((s) => (
-            <div key={s.key} className="w-56 shrink-0 space-y-2">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="w-56 shrink-0 space-y-2">
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-28 w-full" />
               <Skeleton className="h-28 w-full" />
@@ -118,7 +115,7 @@ export default function HiringPipelinePage() {
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
-        {STAGES.map((stage) => {
+        {pipelineStages.map((stage) => {
           const cols = byStage(stage.key);
           const isOver = dragOverStage === stage.key;
           return (
@@ -131,7 +128,12 @@ export default function HiringPipelinePage() {
               data-testid={`column-${stage.key}`}
             >
               <div className="flex items-center justify-between px-1">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${stage.color}`}>{stage.label}</span>
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  style={{ backgroundColor: `${stage.color}20`, color: stage.color }}
+                >
+                  {stage.name}
+                </span>
                 <span className="text-xs text-muted-foreground">{cols.length}</span>
               </div>
 
@@ -194,7 +196,7 @@ export default function HiringPipelinePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Move</AlertDialogTitle>
             <AlertDialogDescription>
-              Moving a candidate to <strong>{confirmMove?.toStage ? STAGE_LABELS[confirmMove.toStage] : ""}</strong> is a significant action and may be difficult to undo. Continue?
+              Moving a candidate to <strong>{confirmMove?.stageName || ""}</strong> is a significant action and may be difficult to undo. Continue?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

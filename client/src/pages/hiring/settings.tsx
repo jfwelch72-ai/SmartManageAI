@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +16,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Link2, RefreshCw, TestTube2, ShieldOff, AlertCircle, CheckCircle2, Clock, GripVertical } from "lucide-react";
+import { Link2, RefreshCw, TestTube2, ShieldOff, AlertCircle, CheckCircle2, Clock, GripVertical, Plus, Trash2, Save } from "lucide-react";
 import {
   useHiringIntegrations, useHiringSyncLogs, useConnectIntegration,
   useDisconnectIntegration, useTestIntegration, useSyncIntegration,
@@ -29,20 +31,49 @@ const SYNC_STATUS_CONFIG: Record<string, { label: string; icon: React.ComponentT
   FAILED: { label: "Failed", icon: AlertCircle },
 };
 
-const DEFAULT_PIPELINE_STAGES = [
-  "APPLIED", "SCREENING", "PHONE_INTERVIEW", "IN_PERSON_INTERVIEW",
-  "SKILLS_ASSESSMENT", "BACKGROUND_CHECK", "REFERENCE_CHECK",
-  "OFFER_EXTENDED", "HIRED", "REJECTED", "ARCHIVED",
-];
-
-function stageName(stage: string) {
-  return stage.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+interface PipelineStage {
+  id?: string;
+  key: string;
+  name: string;
+  color: string;
+  displayOrder: number;
+  isDefault: boolean;
+  isTerminal: boolean;
 }
 
 function PipelineStageOrderCard() {
-  const [stages, setStages] = useState<string[]>(DEFAULT_PIPELINE_STAGES);
+  const { toast } = useToast();
+  const [stages, setStages] = useState<PipelineStage[]>([]);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
+  const [newStageName, setNewStageName] = useState("");
+  const [hasChanges, setHasChanges] = useState(false);
+
+  const { data: fetchedStages, isLoading } = useQuery<PipelineStage[]>({
+    queryKey: ["/api/hiring/pipeline-stages"],
+  });
+
+  useEffect(() => {
+    if (fetchedStages && fetchedStages.length > 0 && stages.length === 0) {
+      setStages(fetchedStages);
+    }
+  }, [fetchedStages]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", "/api/hiring/pipeline-stages", { stages });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setStages(data);
+      setHasChanges(false);
+      toast({ title: "Pipeline stages saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/hiring/pipeline-stages"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
   function handleDragStart(idx: number) { setDragIdx(idx); }
   function handleDragOver(e: React.DragEvent, idx: number) {
@@ -55,23 +86,90 @@ function PipelineStageOrderCard() {
     const next = [...stages];
     const [moved] = next.splice(dragIdx, 1);
     next.splice(idx, 0, moved);
-    setStages(next);
+    setStages(next.map((s, i) => ({ ...s, displayOrder: i })));
     setDragIdx(null);
     setOverIdx(null);
+    setHasChanges(true);
   }
   function handleDragEnd() { setDragIdx(null); setOverIdx(null); }
+
+  function addStage() {
+    if (!newStageName.trim()) return;
+    const key = newStageName.trim().toUpperCase().replace(/\s+/g, "_");
+    setStages((prev) => [
+      ...prev,
+      {
+        key,
+        name: newStageName.trim(),
+        color: "#6b7280",
+        displayOrder: prev.length,
+        isDefault: false,
+        isTerminal: false,
+      },
+    ]);
+    setNewStageName("");
+    setHasChanges(true);
+  }
+
+  function removeStage(idx: number) {
+    setStages((prev) => prev.filter((_, i) => i !== idx).map((s, i) => ({ ...s, displayOrder: i })));
+    setHasChanges(true);
+  }
+
+  function updateStageName(idx: number, name: string) {
+    setStages((prev) => prev.map((s, i) => i === idx ? { ...s, name } : s));
+    setHasChanges(true);
+  }
+
+  function updateStageColor(idx: number, color: string) {
+    setStages((prev) => prev.map((s, i) => i === idx ? { ...s, color } : s));
+    setHasChanges(true);
+  }
+
+  function toggleTerminal(idx: number) {
+    setStages((prev) => prev.map((s, i) => i === idx ? { ...s, isTerminal: !s.isTerminal } : s));
+    setHasChanges(true);
+  }
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Pipeline Stages</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-64 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Default Pipeline Stage Order</CardTitle>
-        <CardDescription>Drag to reorder stages in your hiring pipeline. Changes are saved per-organization in a future release.</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base">Pipeline Stages</CardTitle>
+            <CardDescription>Customize your hiring pipeline stages. Drag to reorder, add or remove stages.</CardDescription>
+          </div>
+          {hasChanges && (
+            <Button
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              data-testid="button-save-pipeline-stages"
+            >
+              <Save className="w-4 h-4 mr-1" />
+              {saveMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          )}
+        </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <ul className="space-y-1.5" data-testid="pipeline-stage-order">
           {stages.map((stage, idx) => (
             <li
-              key={stage}
+              key={`${stage.key}-${idx}`}
               draggable
               onDragStart={() => handleDragStart(idx)}
               onDragOver={(e) => handleDragOver(e, idx)}
@@ -82,16 +180,66 @@ function PipelineStageOrderCard() {
                   ? "border-primary bg-primary/5"
                   : "bg-muted/30 border-border"
               } ${dragIdx === idx ? "opacity-40" : ""}`}
-              data-testid={`stage-order-${stage}`}
+              data-testid={`stage-order-${stage.key}`}
             >
               <GripVertical className="w-4 h-4 text-muted-foreground shrink-0" />
               <span className="text-xs text-muted-foreground w-5 text-right">{idx + 1}</span>
-              <span className="text-sm font-medium flex-1">{stageName(stage)}</span>
-              <Badge variant="outline" className="text-xs">Default</Badge>
+              <input
+                type="color"
+                value={stage.color}
+                onChange={(e) => updateStageColor(idx, e.target.value)}
+                className="w-6 h-6 rounded cursor-pointer border-0 p-0"
+                data-testid={`input-stage-color-${idx}`}
+              />
+              <Input
+                value={stage.name}
+                onChange={(e) => updateStageName(idx, e.target.value)}
+                className="flex-1 h-7 text-sm"
+                data-testid={`input-stage-name-${idx}`}
+              />
+              <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={stage.isTerminal}
+                  onChange={() => toggleTerminal(idx)}
+                  className="w-3 h-3"
+                />
+                Terminal
+              </label>
+              {!stage.isDefault && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-destructive hover:text-destructive"
+                  onClick={() => removeStage(idx)}
+                  data-testid={`button-remove-stage-${idx}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              )}
             </li>
           ))}
         </ul>
-        <p className="text-xs text-muted-foreground mt-3">Changes to stage order here apply to your local view; per-org persistence is coming in a future update.</p>
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="New stage name..."
+            value={newStageName}
+            onChange={(e) => setNewStageName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addStage()}
+            className="flex-1"
+            data-testid="input-new-stage-name"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={addStage}
+            disabled={!newStageName.trim()}
+            data-testid="button-add-stage"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Stage
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -133,7 +281,7 @@ export default function HiringSettingsPage() {
     <div className="p-6 space-y-6 max-w-3xl">
       <div>
         <h1 className="text-2xl font-bold" data-testid="heading-hiring-settings">Hiring Settings</h1>
-        <p className="text-muted-foreground">Configure ATS integrations, AI features, and pipeline defaults</p>
+        <p className="text-muted-foreground">Configure ATS integrations, AI features, and pipeline stages</p>
       </div>
 
       <Card>

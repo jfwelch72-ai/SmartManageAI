@@ -25,6 +25,7 @@ import {
   hiringSyncLogs,
   hiringAiReviews,
   hiringPipelineConfigs,
+  hiringPipelineStages,
   hiringActivityLogs,
   organizations,
   tasks,
@@ -2097,6 +2098,125 @@ router.get("/analytics", requireAuth, requireRole(...HIRING_ADVANCED), async (re
   } catch (err) {
     logError("GET /api/hiring/analytics", { error: String(err) });
     res.status(500).json({ error: "Failed to fetch analytics" });
+  }
+});
+
+// ============================================
+// PIPELINE STAGES (Custom per-organization)
+// ============================================
+
+const DEFAULT_PIPELINE_STAGES = [
+  { key: "APPLIED", name: "Applied", color: "#3b82f6", displayOrder: 0, isDefault: true, isTerminal: false },
+  { key: "SCREENED", name: "Screened", color: "#eab308", displayOrder: 1, isDefault: true, isTerminal: false },
+  { key: "REVIEW", name: "Review", color: "#f97316", displayOrder: 2, isDefault: true, isTerminal: false },
+  { key: "PHONE_SCREEN", name: "Phone Screen", color: "#a855f7", displayOrder: 3, isDefault: true, isTerminal: false },
+  { key: "INTERVIEW", name: "Interview", color: "#ec4899", displayOrder: 4, isDefault: true, isTerminal: false },
+  { key: "FINAL_REVIEW", name: "Final Review", color: "#6366f1", displayOrder: 5, isDefault: true, isTerminal: false },
+  { key: "OFFER", name: "Offer", color: "#10b981", displayOrder: 6, isDefault: true, isTerminal: false },
+  { key: "HIRED", name: "Hired", color: "#22c55e", displayOrder: 7, isDefault: true, isTerminal: true },
+  { key: "REJECTED", name: "Rejected", color: "#ef4444", displayOrder: 8, isDefault: true, isTerminal: true },
+  { key: "ARCHIVED", name: "Archived", color: "#6b7280", displayOrder: 9, isDefault: true, isTerminal: true },
+];
+
+router.get("/pipeline-stages", requireAuth, requireRole(...HIRING_REVIEW), async (req: AuthRequest, res) => {
+  try {
+    const org = orgId(req);
+    const stages = await db
+      .select()
+      .from(hiringPipelineStages)
+      .where(eq(hiringPipelineStages.organizationId, org))
+      .orderBy(hiringPipelineStages.displayOrder);
+
+    if (stages.length === 0) {
+      const values = DEFAULT_PIPELINE_STAGES.map((s) => ({
+        organizationId: org,
+        ...s,
+      }));
+      const seeded = await db.insert(hiringPipelineStages).values(values).returning();
+      return res.json(seeded);
+    }
+
+    res.json(stages);
+  } catch (err) {
+    logError("GET /api/hiring/pipeline-stages", { error: String(err) });
+    res.status(500).json({ error: "Failed to fetch pipeline stages" });
+  }
+});
+
+router.put("/pipeline-stages", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res) => {
+  try {
+    const org = orgId(req);
+    const { stages } = req.body;
+
+    if (!Array.isArray(stages) || stages.length === 0) {
+      return res.status(400).json({ error: "stages array is required" });
+    }
+
+    const newKeys = new Set(stages.map((s: any) => s.key || s.name.toUpperCase().replace(/\s+/g, "_")));
+    const candidateStageCounts = await db
+      .select({ stage: hiringCandidates.currentStage, count: sql<number>`count(*)` })
+      .from(hiringCandidates)
+      .where(eq(hiringCandidates.organizationId, org))
+      .groupBy(hiringCandidates.currentStage);
+
+    const orphanedStages = candidateStageCounts
+      .filter((r) => !newKeys.has(r.stage))
+      .map((r) => r.stage);
+
+    if (orphanedStages.length > 0) {
+      return res.status(400).json({
+        error: `Cannot remove stages that have active candidates: ${orphanedStages.join(", ")}. Move candidates first.`,
+        orphanedStages,
+      });
+    }
+
+    await db.delete(hiringPipelineStages).where(eq(hiringPipelineStages.organizationId, org));
+
+    const values = stages.map((s: any, i: number) => ({
+      organizationId: org,
+      name: s.name,
+      key: s.key || s.name.toUpperCase().replace(/\s+/g, "_"),
+      color: s.color || "#6b7280",
+      displayOrder: i,
+      isDefault: s.isDefault ?? false,
+      isTerminal: s.isTerminal ?? false,
+    }));
+
+    const inserted = await db.insert(hiringPipelineStages).values(values).returning();
+
+    void logActivity(org, userId(req), userName(req), "JOB_CREATED", "pipeline_stages", org, "Pipeline stages updated");
+
+    res.json(inserted);
+  } catch (err) {
+    logError("PUT /api/hiring/pipeline-stages", { error: String(err) });
+    res.status(500).json({ error: "Failed to update pipeline stages" });
+  }
+});
+
+router.post("/pipeline-stages/seed-defaults", requireAuth, requireRole(...HIRING_FULL), async (req: AuthRequest, res) => {
+  try {
+    const org = orgId(req);
+
+    const existing = await db
+      .select({ id: hiringPipelineStages.id })
+      .from(hiringPipelineStages)
+      .where(eq(hiringPipelineStages.organizationId, org))
+      .limit(1);
+
+    if (existing.length > 0) {
+      return res.json({ message: "Stages already exist", seeded: false });
+    }
+
+    const values = DEFAULT_PIPELINE_STAGES.map((s) => ({
+      organizationId: org,
+      ...s,
+    }));
+
+    const inserted = await db.insert(hiringPipelineStages).values(values).returning();
+    res.json({ message: "Default stages seeded", seeded: true, stages: inserted });
+  } catch (err) {
+    logError("POST /api/hiring/pipeline-stages/seed-defaults", { error: String(err) });
+    res.status(500).json({ error: "Failed to seed default stages" });
   }
 });
 

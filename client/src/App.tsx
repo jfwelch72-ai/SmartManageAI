@@ -140,6 +140,7 @@ const HiringAnalyticsPage = lazy(() => import("@/pages/hiring/analytics"));
 const HiringTasksPage = lazy(() => import("@/pages/hiring/tasks"));
 const HiringSettingsPage = lazy(() => import("@/pages/hiring/settings"));
 const OverheadCostsPage = lazy(() => import("@/pages/overhead-costs"));
+const TalentPoolPage = lazy(() => import("@/pages/talent-pool"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -329,6 +330,8 @@ function Router() {
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
 
       {/* Hiring Module routes */}
+      <Route path="/talent-pool/:id" component={() => <ProtectedRoute component={TalentPoolPage} />} />
+      <Route path="/talent-pool" component={() => <ProtectedRoute component={TalentPoolPage} />} />
       <Route path="/hiring/jobs/:id" component={() => <ProtectedRoute component={HiringJobDetailPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/jobs" component={() => <ProtectedRoute component={HiringJobsPage} permission={RoutePermissions.HIRING_REVIEW} />} />
       <Route path="/hiring/candidates/:id" component={() => <ProtectedRoute component={HiringCandidateDetailPage} permission={RoutePermissions.HIRING_REVIEW} />} />

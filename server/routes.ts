@@ -154,6 +154,7 @@ import safetyTrainingRoutes from "./safetyTrainingRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
 import hiringRoutes from "./hiringRoutes";
+import talentPoolRoutes from "./talentPoolRoutes";
 import overheadRoutes from "./overheadRoutes";
 import modifierRoutes from "./modifierRoutes";
 
@@ -296,6 +297,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Hiring Module routes
   app.use("/api/hiring", hiringRoutes);
+
+  // Register Talent Pool routes
+  app.use("/api/talent-pool", talentPoolRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

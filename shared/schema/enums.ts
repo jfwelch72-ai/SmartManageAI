@@ -576,6 +576,12 @@ export const atsProviderEnum = pgEnum("ats_provider", ["WORKABLE", "GREENHOUSE",
 export const hiringActivityTypeEnum = pgEnum("hiring_activity_type", ["JOB_CREATED", "JOB_PUBLISHED", "JOB_ARCHIVED", "CANDIDATE_APPLIED", "CANDIDATE_STAGE_CHANGED", "CANDIDATE_HIRED", "CANDIDATE_REJECTED", "NOTE_ADDED", "INTERVIEW_SCHEDULED", "INTEGRATION_CONNECTED", "AI_REVIEW_GENERATED"]);
 
 // ============================================
+// TALENT POOL ENUMS
+// ============================================
+export const talentAvailabilityEnum = pgEnum("talent_availability", ["AVAILABLE", "OPEN_TO_OFFERS", "NOT_AVAILABLE"]);
+export const talentProfileVisibilityEnum = pgEnum("talent_profile_visibility", ["PUBLIC", "PRIVATE", "CONNECTIONS_ONLY"]);
+
+// ============================================
 // OVERHEAD COST ENUMS
 // ============================================
 export const overheadCostCategoryEnum = pgEnum("overhead_cost_category", [

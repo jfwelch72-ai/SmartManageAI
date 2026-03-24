@@ -55,7 +55,8 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Approval Workflow Notifications**: In-app notifications across 6 approval workflows.
 *   **Submittal Items & Attachments**: Normalized tables for managing submittal items and attachments with status tracking.
 *   **Vendor & Sub RFQ Flow**: Enables sending RFQ emails to subcontractors and material suppliers directly from bid steps, with tracking of RFQ status and in-app notifications.
-*   **Hiring Module (ATS)**: Full Applicant Tracking System with job posting lifecycle, candidate pipeline, interview scheduling, hiring task management, ATS provider abstraction, AI candidate scoring, and analytics dashboard.
+*   **Hiring Module (ATS)**: Full Applicant Tracking System with job posting lifecycle, candidate pipeline, interview scheduling, hiring task management, ATS provider abstraction, AI candidate scoring, analytics dashboard, and customizable per-organization pipeline stages with drag-to-reorder settings UI.
+*   **Talent Pool & Connected Hiring-Marketplace**: Self-service talent profiles with bio, trade, availability, pay range, and location. Searchable talent directory at `/talent-pool` with filters. AI-powered skill match scoring against job postings. Recruit-to-hiring cross-link to add talent pool members as hiring candidates. Marketplace↔talent cross-links with team members section on contractor profiles and org links on talent profiles.
 *   **Punch List Module**: Dedicated project tab for tracking deficiency items during project closeout, supporting CRUD operations, attachments, and PDF export.
 *   **Warranty / Post-Construction Module**: Project tab for tracking defects, warranty claims, callbacks, and recalls, with task management, cost tracking, and audit trail.
 *   **Company Overhead & Fixed Costs Manager**: Administration module for tracking fixed overhead costs, with CRUD functionality, summary cards, and suggested overhead percentages.

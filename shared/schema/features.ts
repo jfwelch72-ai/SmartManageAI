@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tmTickets } from "./operations";
 
@@ -6303,7 +6303,7 @@ export const hiringCandidates = pgTable("hiring_candidates", {
   city: text("city"),
   state: text("state"),
   source: text("source"),
-  currentStage: hiringCandidateStageEnum("current_stage").notNull().default("APPLIED"),
+  currentStage: text("current_stage").notNull().default("APPLIED"),
   appliedAt: timestamp("applied_at").notNull().defaultNow(),
   reviewerUserId: varchar("reviewer_user_id").references(() => users.id, { onDelete: "set null" }),
   aiScore: integer("ai_score"),
@@ -6368,8 +6368,8 @@ export const hiringCandidateStageHistory = pgTable("hiring_candidate_stage_histo
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   candidateId: varchar("candidate_id").notNull().references(() => hiringCandidates.id, { onDelete: "cascade" }),
-  fromStage: hiringCandidateStageEnum("from_stage"),
-  toStage: hiringCandidateStageEnum("to_stage").notNull(),
+  fromStage: text("from_stage"),
+  toStage: text("to_stage").notNull(),
   changedByUserId: varchar("changed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   changedByName: text("changed_by_name"),
   reason: text("reason"),
@@ -6718,4 +6718,65 @@ export const insertBidModifierSelectionSchema = createInsertSchema(bidModifierSe
 });
 export type InsertBidModifierSelection = z.infer<typeof insertBidModifierSelectionSchema>;
 export type BidModifierSelection = typeof bidModifierSelections.$inferSelect;
+
+// ==================================================
+// TALENT POOL TABLES
+// ==================================================
+
+export const talentProfiles = pgTable("talent_profiles", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  bio: text("bio"),
+  tradeSpecialization: text("trade_specialization"),
+  yearsOfExperience: integer("years_of_experience"),
+  availability: talentAvailabilityEnum("availability").notNull().default("AVAILABLE"),
+  visibility: talentProfileVisibilityEnum("visibility").notNull().default("PUBLIC"),
+  desiredPayMin: decimal("desired_pay_min", { precision: 10, scale: 2 }),
+  desiredPayMax: decimal("desired_pay_max", { precision: 10, scale: 2 }),
+  payType: text("pay_type"),
+  preferredLocation: text("preferred_location"),
+  workRadiusMiles: integer("work_radius_miles"),
+  portfolioPhotos: text("portfolio_photos").array().default(sql`'{}'::text[]`),
+  resumeUrl: text("resume_url"),
+  headline: text("headline"),
+  rating: decimal("rating", { precision: 3, scale: 2 }),
+  isPublished: boolean("is_published").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("talent_profiles_user_idx").on(table.userId),
+  orgIdx: index("talent_profiles_org_idx").on(table.organizationId),
+  tradeIdx: index("talent_profiles_trade_idx").on(table.tradeSpecialization),
+  availabilityIdx: index("talent_profiles_availability_idx").on(table.availability),
+  publishedIdx: index("talent_profiles_published_idx").on(table.isPublished),
+}));
+
+export const insertTalentProfileSchema = createInsertSchema(talentProfiles).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTalentProfile = z.infer<typeof insertTalentProfileSchema>;
+export type TalentProfile = typeof talentProfiles.$inferSelect;
+
+// ==================================================
+// HIRING PIPELINE STAGES TABLE
+// ==================================================
+
+export const hiringPipelineStages = pgTable("hiring_pipeline_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  key: text("key").notNull(),
+  color: text("color").notNull().default("#6b7280"),
+  displayOrder: integer("display_order").notNull().default(0),
+  isDefault: boolean("is_default").notNull().default(false),
+  isTerminal: boolean("is_terminal").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("hiring_pipeline_stages_org_idx").on(table.organizationId),
+  orderIdx: index("hiring_pipeline_stages_order_idx").on(table.organizationId, table.displayOrder),
+}));
+
+export const insertHiringPipelineStageSchema = createInsertSchema(hiringPipelineStages).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertHiringPipelineStage = z.infer<typeof insertHiringPipelineStageSchema>;
+export type HiringPipelineStage = typeof hiringPipelineStages.$inferSelect;
 

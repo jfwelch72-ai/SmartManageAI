@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { vendorScores, insertVendorScoreSchema, materialPriceIndex, insertMaterialPriceIndexSchema, crewMarketplace, insertCrewMarketplaceSchema, crmOrganisations, projects, users, crews, organizationNetworkSettings, marketplaceReviews, organizations, equipmentListings, equipmentRentalRequests, insertEquipmentListingSchema, insertEquipmentRentalRequestSchema } from "@shared/schema";
+import { vendorScores, insertVendorScoreSchema, materialPriceIndex, insertMaterialPriceIndexSchema, crewMarketplace, insertCrewMarketplaceSchema, crmOrganisations, projects, users, crews, organizationNetworkSettings, marketplaceReviews, organizations, equipmentListings, equipmentRentalRequests, insertEquipmentListingSchema, insertEquipmentRentalRequestSchema, talentProfiles } from "@shared/schema";
 import { eq, and, desc, asc, gte, lte, or, isNull, sql, ne, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, AuthRequest } from "./auth";
@@ -1582,6 +1582,48 @@ router.patch("/equipment/:id/requests/:reqId", requireAuth, async (req: Authenti
   } catch (error) {
     console.error("Error responding to rental request:", error);
     res.status(500).json({ error: "Failed to respond to rental request" });
+  }
+});
+
+// ==========================================
+// TEAM MEMBERS (Talent Pool cross-link)
+// ==========================================
+
+router.get("/contractors/:orgId/team-members", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const targetOrgId = req.params.orgId;
+
+    const members = await db
+      .select({
+        profile: {
+          id: talentProfiles.id,
+          headline: talentProfiles.headline,
+          tradeSpecialization: talentProfiles.tradeSpecialization,
+          availability: talentProfiles.availability,
+          yearsOfExperience: talentProfiles.yearsOfExperience,
+        },
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          avatarUrl: users.avatarUrl,
+        },
+      })
+      .from(talentProfiles)
+      .innerJoin(users, eq(talentProfiles.userId, users.id))
+      .where(
+        and(
+          eq(talentProfiles.organizationId, targetOrgId),
+          eq(talentProfiles.isPublished, true),
+          eq(talentProfiles.visibility, "PUBLIC"),
+        )
+      )
+      .orderBy(users.firstName);
+
+    res.json(members);
+  } catch (error) {
+    console.error("Error fetching team members:", error);
+    res.status(500).json({ error: "Failed to fetch team members" });
   }
 });
 
