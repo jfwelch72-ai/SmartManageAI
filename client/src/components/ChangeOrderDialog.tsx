@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
-import { FileText, Calendar, User, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, Users, Wrench, Package, Search, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle } from "lucide-react";
+import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChangeOrderFiles } from "./ChangeOrderFiles";
@@ -18,64 +17,6 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { hasManagementAccess } from "@/lib/rbac";
-
-// Vendor pricing catalog types
-interface VendorPricingCatalog {
-  id: string;
-  organizationId: string;
-  organizationName?: string;
-  itemName: string;
-  itemCode?: string;
-  category: string;
-  unit: string;
-  unitPrice: string;
-  effectiveQuarter: string;
-}
-
-// Material categories matching bid estimates
-const MATERIAL_CATEGORIES = [
-  { value: "CONCRETE", label: "Concrete" },
-  { value: "STONE", label: "Stone/Aggregate" },
-  { value: "REBAR", label: "Rebar/Steel" },
-  { value: "WIRE_MESH", label: "Wire Mesh" },
-  { value: "FORMS", label: "Forms" },
-  { value: "SEALERS", label: "Sealers/Cure" },
-  { value: "JOINTS", label: "Joints/Caulk" },
-  { value: "OTHER", label: "Other Materials" },
-];
-
-interface LaborEntry {
-  id?: string;
-  employeeName: string;
-  position: string;
-  hoursWorked: string;
-  hourlyRate: string;
-}
-
-interface EquipmentEntry {
-  id?: string;
-  equipmentType: string;
-  description: string;
-  quantity: number;
-  hoursUsed: string;
-  hourlyRate: string;
-}
-
-interface MaterialEntry {
-  id?: string;
-  materialDescription: string;
-  category: string;
-  quantity: string;
-  unit: string;
-  unitCost: string;
-  vendorPricingId?: string;
-}
-
-interface LineItemsData {
-  laborEntries: LaborEntry[];
-  equipmentEntries: EquipmentEntry[];
-  materialEntries: MaterialEntry[];
-}
 
 interface ChangeOrder {
   id: string;
@@ -89,7 +30,6 @@ interface ChangeOrder {
   rejectionReason?: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
-  // Standardized scope fields
   workTypeId?: string | null;
   workTypeCode?: string | null;
   workTypeName?: string | null;
@@ -99,13 +39,10 @@ interface ChangeOrder {
   canonicalName?: string | null;
   scopeUnit?: string | null;
   scopeQuantity?: string | null;
-  // Void fields
   voidedAt?: string | Date | null;
   voidedById?: string | null;
   voidReason?: string | null;
-  // Client response due date
   clientResponseDueDate?: string | Date | null;
-  // Linked items (Task #70)
   linkedTmTicketId?: string | null;
   linkedRfiId?: string | null;
   projectId?: string;
@@ -116,8 +53,77 @@ interface ChangeOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectCode: string;
+  projectName?: string;
+  projectId?: string;
+  subcontractorName?: string;
   userRole: string;
 }
+
+interface SectionRow {
+  description: string;
+  total: string;
+  [key: string]: string;
+}
+
+interface LaborRow {
+  trade: string;
+  stdHours: string;
+  stdRate: string;
+  premHours: string;
+  premRate: string;
+  isOT: boolean;
+  total: string;
+}
+
+interface FringeRow {
+  trade: string;
+  stdAmount: string;
+  premAmount: string;
+  total: string;
+}
+
+interface ItemRow {
+  description: string;
+  quantity: string;
+  unit: string;
+  rate: string;
+  total: string;
+}
+
+interface CostBreakdown {
+  sectionA: { rows: LaborRow[] };
+  sectionA1?: { rows: LaborRow[] };
+  sectionB: { rows: FringeRow[] };
+  sectionB1?: { rows: FringeRow[] };
+  sectionC: { rows: ItemRow[] };
+  sectionD: { rows: ItemRow[] };
+  sectionE: { rows: ItemRow[] };
+  sectionG: { rows: ItemRow[] };
+  sectionI: { rows: SectionRow[] };
+  sectionK: { bondInsurance: string; permits: string; lodging: string; rows: SectionRow[] };
+  totals?: Record<string, number>;
+}
+
+const EMPTY_LABOR_ROW: LaborRow = { trade: "", stdHours: "", stdRate: "", premHours: "", premRate: "", isOT: false, total: "0" };
+const EMPTY_FRINGE_ROW: FringeRow = { trade: "", stdAmount: "", premAmount: "", total: "0" };
+const EMPTY_ITEM_ROW: ItemRow = { description: "", quantity: "", unit: "", rate: "", total: "0" };
+const EMPTY_SECTION_ROW: SectionRow = { description: "", total: "0" };
+
+function emptyBreakdown(): CostBreakdown {
+  return {
+    sectionA: { rows: [{ ...EMPTY_LABOR_ROW }] },
+    sectionB: { rows: [{ ...EMPTY_FRINGE_ROW }] },
+    sectionC: { rows: [{ ...EMPTY_ITEM_ROW }] },
+    sectionD: { rows: [{ ...EMPTY_ITEM_ROW }] },
+    sectionE: { rows: [{ ...EMPTY_ITEM_ROW }] },
+    sectionG: { rows: [{ ...EMPTY_ITEM_ROW }] },
+    sectionI: { rows: [{ ...EMPTY_SECTION_ROW }] },
+    sectionK: { bondInsurance: "0", permits: "0", lodging: "0", rows: [] },
+  };
+}
+
+const p = (v: string) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+const fmt = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const APPROVAL_ROLES = [
   { value: "MANAGER", label: "Manager" },
@@ -130,6 +136,9 @@ export function ChangeOrderDialog({
   open,
   onOpenChange,
   projectCode,
+  projectName,
+  projectId: propProjectId,
+  subcontractorName,
   userRole,
 }: ChangeOrderDialogProps) {
   const { toast } = useToast();
@@ -138,108 +147,53 @@ export function ChangeOrderDialog({
   const [editedDescription, setEditedDescription] = useState("");
   const [editedAmount, setEditedAmount] = useState("");
   const [lineItemsOpen, setLineItemsOpen] = useState(true);
-  const [activeLineTab, setActiveLineTab] = useState("labor");
-  // Void dialog state (from HEAD)
   const [showVoidDialog, setShowVoidDialog] = useState(false);
   const [voidReason, setVoidReason] = useState("");
-  // Approval chain config state (from Task #70)
   const [approvalChainOpen, setApprovalChainOpen] = useState(false);
   const [newApprovalSteps, setNewApprovalSteps] = useState<Array<{ approverRole: string }>>([{ approverRole: "MANAGER" }]);
-  // T&M / RFI picker state (from Task #70)
   const [showTmPicker, setShowTmPicker] = useState(false);
   const [showRfiPicker, setShowRfiPicker] = useState(false);
-  
-  // Line items state
-  const [laborEntries, setLaborEntries] = useState<LaborEntry[]>([]);
-  const [equipmentEntries, setEquipmentEntries] = useState<EquipmentEntry[]>([]);
-  const [materialEntries, setMaterialEntries] = useState<MaterialEntry[]>([]);
-  // Per-row catalog state: which row has catalog open and what category to query
-  const [catalogState, setCatalogState] = useState<{ index: number; category: string } | null>(null);
+
+  const [breakdown, setBreakdown] = useState<CostBreakdown>(emptyBreakdown());
+  const [overheadPct, setOverheadPct] = useState("10");
+  const [profitPct, setProfitPct] = useState("5");
+  const [subMarkupPct, setSubMarkupPct] = useState("5");
+  const [useStructuredForm, setUseStructuredForm] = useState(true);
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
   const canReview = ["ADMIN", "MANAGER", "PROJECT_ENGINEER"].includes(userRole);
   const isAdmin = userRole === "ADMIN";
-  // ADMIN/MANAGER can edit in DRAFT or PCO states
   const canEdit = canManage && (changeOrder?.status === "DRAFT" || changeOrder?.status === "PCO");
   const nonTerminalStatuses = ["DRAFT", "PCO", "PENDING_APPROVAL", "SUBMITTED"];
   const canLinkItems = canManage && nonTerminalStatuses.includes(changeOrder?.status || "");
-  
-  // Fetch line items for change order
-  const { data: lineItemsData } = useQuery<LineItemsData>({
+
+  const { data: lineItemsData } = useQuery<any>({
     queryKey: ["/api/change-orders", changeOrder?.id, "line-items"],
     enabled: !!changeOrder?.id && open,
   });
 
-  // Fetch vendor pricing catalog for the currently open catalog row
-  const { data: vendorCatalog } = useQuery<VendorPricingCatalog[]>({
-    queryKey: ["/api/vendor-pricing/search", { category: catalogState?.category }],
-    enabled: !!catalogState?.category,
-  });
-
-  // Fetch revision history
   const { data: revisions } = useQuery<Array<{
-    revision: {
-      id: string;
-      revisionNumber: number;
-      previousStatus: string;
-      newStatus: string;
-      amount: string | null;
-      description: string | null;
-      changedFields: string | null;
-      createdAt: string;
-    };
-    revisedBy: {
-      id: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-    } | null;
+    revision: { id: string; revisionNumber: number; previousStatus: string; newStatus: string; amount: string | null; description: string | null; changedFields: string | null; createdAt: string; };
+    revisedBy: { id: string; firstName: string; lastName: string; email: string; } | null;
   }>>({
     queryKey: ["/api/change-orders", changeOrder?.id, "revisions"],
     enabled: !!changeOrder?.id && open,
   });
 
-  // Fetch approval chain
   const { data: approvals } = useQuery<Array<{
-    approval: {
-      id: string;
-      approverRole: string;
-      status: string;
-      stepOrder: number;
-      comments: string | null;
-      decidedAt: string | null;
-      createdAt: string;
-    };
-    approver: {
-      id: string;
-      firstName: string;
-      lastName: string;
-      email: string;
-    } | null;
+    approval: { id: string; approverRole: string; status: string; stepOrder: number; comments: string | null; decidedAt: string | null; createdAt: string; };
+    approver: { id: string; firstName: string; lastName: string; email: string; } | null;
   }>>({
     queryKey: ["/api/change-orders", changeOrder?.id, "approvals"],
     enabled: !!changeOrder?.id && open,
   });
 
-  // Fetch T&M tickets for the project (for the picker)
-  const { data: tmTickets = [] } = useQuery<Array<{
-    id: string;
-    ticketNumber: string;
-    description: string;
-    status: string;
-    totalBillableAmount?: string;
-  }>>({
+  const { data: tmTickets = [] } = useQuery<Array<{ id: string; ticketNumber: string; description: string; status: string; totalBillableAmount?: string; }>>({
     queryKey: ["/api/projects", changeOrder?.projectId, "tm-tickets"],
     enabled: showTmPicker && !!changeOrder?.projectId,
   });
 
-  // Fetch RFIs for the project (for the picker) - API returns flat array
-  const { data: projectRfis = [] } = useQuery<Array<{
-    id: string;
-    rfiNumber: string;
-    subject: string;
-    status: string;
-  }>>({
+  const { data: projectRfis = [] } = useQuery<Array<{ id: string; rfiNumber: string; subject: string; status: string; }>>({
     queryKey: ["/api/rfi", { projectId: changeOrder?.projectId }],
     queryFn: async () => {
       const res = await fetch(`/api/rfi?projectId=${encodeURIComponent(changeOrder?.projectId || "")}`, { credentials: "include" });
@@ -258,108 +212,84 @@ export function ChangeOrderDialog({
       setNewApprovalSteps([{ approverRole: "MANAGER" }]);
     }
   }, [changeOrder]);
-  
-  // Populate line items when data loads
+
   useEffect(() => {
     if (lineItemsData) {
-      setLaborEntries(lineItemsData.laborEntries || []);
-      setEquipmentEntries(lineItemsData.equipmentEntries || []);
-      setMaterialEntries(lineItemsData.materialEntries || []);
+      if (lineItemsData.costBreakdown) {
+        setBreakdown(lineItemsData.costBreakdown);
+        setOverheadPct(lineItemsData.overheadPercent || "10");
+        setProfitPct(lineItemsData.profitPercent || "5");
+        setSubMarkupPct(lineItemsData.subcontractorMarkupPercent || "5");
+        setUseStructuredForm(true);
+      } else {
+        const hasLegacyData = (lineItemsData.laborEntries?.length > 0 || lineItemsData.equipmentEntries?.length > 0 || lineItemsData.materialEntries?.length > 0);
+        if (hasLegacyData) {
+          setUseStructuredForm(false);
+        } else {
+          setUseStructuredForm(true);
+          setBreakdown(emptyBreakdown());
+        }
+        setOverheadPct(lineItemsData.overheadPercent || "10");
+        setProfitPct(lineItemsData.profitPercent || "5");
+        setSubMarkupPct(lineItemsData.subcontractorMarkupPercent || "5");
+      }
     }
   }, [lineItemsData]);
-  
-  // Save line items mutation
+
+  const totals = useMemo(() => {
+    const laborRows = breakdown.sectionA.rows;
+    const A = laborRows.reduce((s, r) => s + p(r.stdHours) * p(r.stdRate), 0);
+    const A1 = laborRows.reduce((s, r) => s + p(r.premHours) * p(r.premRate), 0);
+    const fringeRows = breakdown.sectionB.rows;
+    const B = fringeRows.reduce((s, r) => s + p(r.stdAmount), 0);
+    const B1 = fringeRows.reduce((s, r) => s + p(r.premAmount), 0);
+    const C = breakdown.sectionC.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
+    const D = breakdown.sectionD.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
+    const E = breakdown.sectionE.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
+    const subtotalForOH = A + A1 + B + B1 + C + D + E;
+    const F = subtotalForOH * (p(overheadPct) / 100);
+    const G = breakdown.sectionG.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
+    const subtotalForProfit = subtotalForOH + F + G;
+    const H = subtotalForProfit * (p(profitPct) / 100);
+    const I = breakdown.sectionI.rows.reduce((s, r) => s + p(r.total), 0);
+    const J = I * (p(subMarkupPct) / 100);
+    const kRows = breakdown.sectionK.rows?.reduce((s: number, r: any) => s + p(r.total), 0) || 0;
+    const K = p(breakdown.sectionK.bondInsurance) + p(breakdown.sectionK.permits) + p(breakdown.sectionK.lodging) + kRows;
+    const grand = subtotalForProfit + H + I + J + K;
+    return { A, A1, B, B1, C, D, E, F, G, H, I, J, K, grand };
+  }, [breakdown, overheadPct, profitPct, subMarkupPct]);
+
+  const updateBreakdownSection = <T extends keyof CostBreakdown>(section: T, updater: (prev: CostBreakdown[T]) => CostBreakdown[T]) => {
+    setBreakdown(prev => ({ ...prev, [section]: updater(prev[section]) }));
+  };
+
   const saveLineItemsMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("PUT", `/api/change-orders/${changeOrder?.id}/line-items`, {
-        laborEntries,
-        equipmentEntries,
-        materialEntries,
+        costBreakdown: breakdown,
+        overheadPercent: overheadPct,
+        profitPercent: profitPct,
+        subcontractorMarkupPercent: subMarkupPct,
       });
     },
-    onSuccess: (data: any) => {
+    onSuccess: async (response: any) => {
+      let data: any;
+      if (response && typeof response.json === 'function') {
+        data = await response.json();
+      } else {
+        data = response;
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/change-orders", changeOrder?.id, "line-items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       if (data?.total !== undefined) {
         setEditedAmount(String(data.total));
       }
-      toast({ title: "Success", description: "Line items saved and total updated" });
+      toast({ title: "Success", description: "Cost breakdown saved and total updated" });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to save line items", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to save cost breakdown", variant: "destructive" });
     },
   });
-  
-  // Calculate totals
-  const laborTotal = laborEntries.reduce((sum, e) => sum + (parseFloat(e.hoursWorked || "0") * parseFloat(e.hourlyRate || "0")), 0);
-  const equipmentTotal = equipmentEntries.reduce((sum, e) => sum + ((e.quantity || 1) * parseFloat(e.hoursUsed || "0") * parseFloat(e.hourlyRate || "0")), 0);
-  const materialTotal = materialEntries.reduce((sum, e) => sum + (parseFloat(e.quantity || "0") * parseFloat(e.unitCost || "0")), 0);
-  const lineItemsTotal = laborTotal + equipmentTotal + materialTotal;
-  
-  // Add entry functions
-  const addLaborEntry = () => {
-    setLaborEntries([...laborEntries, { employeeName: "", position: "", hoursWorked: "", hourlyRate: "" }]);
-  };
-  
-  const addEquipmentEntry = () => {
-    setEquipmentEntries([...equipmentEntries, { equipmentType: "", description: "", quantity: 1, hoursUsed: "", hourlyRate: "" }]);
-  };
-  
-  const addMaterialEntry = () => {
-    setMaterialEntries([...materialEntries, { materialDescription: "", category: "", quantity: "", unit: "", unitCost: "" }]);
-  };
-  
-  // Remove entry functions
-  const removeLaborEntry = (index: number) => {
-    setLaborEntries(laborEntries.filter((_, i) => i !== index));
-  };
-  
-  const removeEquipmentEntry = (index: number) => {
-    setEquipmentEntries(equipmentEntries.filter((_, i) => i !== index));
-  };
-  
-  const removeMaterialEntry = (index: number) => {
-    setMaterialEntries(materialEntries.filter((_, i) => i !== index));
-    if (catalogState?.index === index) setCatalogState(null);
-  };
-  
-  // Update entry functions
-  const updateLaborEntry = (index: number, field: keyof LaborEntry, value: string) => {
-    const updated = [...laborEntries];
-    (updated[index] as any)[field] = value;
-    setLaborEntries(updated);
-  };
-  
-  const updateEquipmentEntry = (index: number, field: keyof EquipmentEntry, value: string | number) => {
-    const updated = [...equipmentEntries];
-    (updated[index] as any)[field] = value;
-    setEquipmentEntries(updated);
-  };
-  
-  const updateMaterialEntry = (index: number, field: keyof MaterialEntry, value: string) => {
-    const updated = [...materialEntries];
-    (updated[index] as any)[field] = value;
-    setMaterialEntries(updated);
-    // Show catalog when category is selected (auto-open per-row)
-    if (field === "category" && value) {
-      setCatalogState({ index, category: value });
-    }
-  };
-  
-  // Apply vendor pricing to material entry
-  const applyVendorPricing = (index: number, pricing: VendorPricingCatalog) => {
-    const updated = [...materialEntries];
-    updated[index] = {
-      ...updated[index],
-      materialDescription: pricing.itemName,
-      unit: pricing.unit,
-      unitCost: pricing.unitPrice,
-      vendorPricingId: pricing.id,
-    };
-    setMaterialEntries(updated);
-    setCatalogState(null);
-    toast({ title: "Applied", description: `${pricing.itemName} from catalog applied` });
-  };
 
   const updateMutation = useMutation({
     mutationFn: async (data: { changeOrderNumber: string; description: string; amount: string }) => {
@@ -376,46 +306,34 @@ export function ChangeOrderDialog({
   });
 
   const requestApprovalMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/request-approval`, {});
-    },
+    mutationFn: async () => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/request-approval`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order sent for approval" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to request approval", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to request approval", variant: "destructive" }); },
   });
 
   const submitMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/submit`, {});
-    },
+    mutationFn: async () => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/submit`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/change-orders", changeOrder?.id, "approvals"] });
       toast({ title: "Success", description: "Change order submitted to client" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to submit", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to submit", variant: "destructive" }); },
   });
 
   const approveMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/approve`, {});
-    },
+    mutationFn: async () => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/approve`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order approved" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to approve", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to approve", variant: "destructive" }); },
   });
 
   const rejectMutation = useMutation({
@@ -439,67 +357,48 @@ export function ChangeOrderDialog({
   const returnToDraftMutation = useMutation({
     mutationFn: async () => {
       const reason = prompt("Reason for returning to draft (optional):");
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/return-to-draft`, {
-        reason: reason || undefined,
-      });
+      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/return-to-draft`, { reason: reason || undefined });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order returned to draft" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to return to draft", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to return to draft", variant: "destructive" }); },
   });
 
-  // PCO workflow mutations (from HEAD)
   const promoteToReviewMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/promote-to-review`, {});
-    },
+    mutationFn: async () => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/promote-to-review`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order promoted to pricing review" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to promote to pricing review", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to promote to pricing review", variant: "destructive" }); },
   });
 
   const approvePricingMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/approve-pricing`, {});
-    },
+    mutationFn: async () => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/approve-pricing`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Pricing approved, change order submitted to client" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to approve pricing", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to approve pricing", variant: "destructive" }); },
   });
 
   const returnToPcoMutation = useMutation({
-    mutationFn: async (reason?: string) => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/return-to-pco`, { reason });
-    },
+    mutationFn: async (reason?: string) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/return-to-pco`, { reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order returned to PCO" });
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to return to PCO", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to return to PCO", variant: "destructive" }); },
   });
 
   const voidMutation = useMutation({
-    mutationFn: async (reason: string) => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/void`, { voidReason: reason });
-    },
+    mutationFn: async (reason: string) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/void`, { voidReason: reason }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "Change order voided" });
@@ -507,9 +406,7 @@ export function ChangeOrderDialog({
       setVoidReason("");
       onOpenChange(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to void change order", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to void change order", variant: "destructive" }); },
   });
 
   const handleReturnToPco = async () => {
@@ -525,66 +422,42 @@ export function ChangeOrderDialog({
     voidMutation.mutate(voidReason);
   };
 
-  // Setup approval chain mutation (from Task #70)
   const setupApprovalChainMutation = useMutation({
-    mutationFn: async (steps: Array<{ approverRole: string }>) => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/setup-approval-chain`, { steps });
-    },
+    mutationFn: async (steps: Array<{ approverRole: string }>) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/setup-approval-chain`, { steps }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/change-orders", changeOrder?.id, "approvals"] });
       toast({ title: "Success", description: "Approval chain configured" });
       setApprovalChainOpen(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to configure approval chain", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to configure approval chain", variant: "destructive" }); },
   });
 
-  // Link T&M mutation (from Task #70)
   const linkTmMutation = useMutation({
-    mutationFn: async (tmTicketId: string) => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-tm`, { tmTicketId });
-    },
+    mutationFn: async (tmTicketId: string) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-tm`, { tmTicketId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "T&M ticket linked" });
       setShowTmPicker(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to link T&M ticket", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to link T&M ticket", variant: "destructive" }); },
   });
 
-  // Link RFI mutation (from Task #70)
   const linkRfiMutation = useMutation({
-    mutationFn: async (rfiId: string) => {
-      return apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-rfi`, { rfiId });
-    },
+    mutationFn: async (rfiId: string) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-rfi`, { rfiId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       toast({ title: "Success", description: "RFI linked" });
       setShowRfiPicker(false);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to link RFI", variant: "destructive" });
-    },
+    onError: () => { toast({ title: "Error", description: "Failed to link RFI", variant: "destructive" }); },
   });
 
   const handleSave = () => {
     if (!editedNumber || !editedDescription || !editedAmount) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields",
-        variant: "destructive",
-      });
+      toast({ title: "Validation Error", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-
-    updateMutation.mutate({
-      changeOrderNumber: editedNumber,
-      description: editedDescription,
-      amount: editedAmount,
-    });
+    updateMutation.mutate({ changeOrderNumber: editedNumber, description: editedDescription, amount: editedAmount });
   };
 
   if (!changeOrder) return null;
@@ -592,70 +465,399 @@ export function ChangeOrderDialog({
   const isResponseOverdue = changeOrder.clientResponseDueDate && changeOrder.status === "SUBMITTED"
     && isPast(new Date(changeOrder.clientResponseDueDate));
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "APPROVED":
-        return "default";
-      case "REJECTED":
-        return "destructive";
-      case "PENDING_APPROVAL":
-        return "destructive";
-      case "SUBMITTED":
-        return "secondary";
-      case "PCO":
-        return "outline";
-      case "PRICING_REVIEW":
-        return "secondary";
-      case "VOIDED":
-        return "outline";
-      default:
-        return "secondary";
-    }
-  };
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "PCO":
-        return (
-          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300" data-testid="status-badge-pco">
-            <Flag className="w-3 h-3 mr-1" />
-            PCO
-          </Badge>
-        );
+        return <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300" data-testid="status-badge-pco"><Flag className="w-3 h-3 mr-1" />PCO</Badge>;
       case "PRICING_REVIEW":
-        return (
-          <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950 dark:text-purple-300" data-testid="status-badge-pricing-review">
-            <ClipboardCheck className="w-3 h-3 mr-1" />
-            Pricing Review
-          </Badge>
-        );
+        return <Badge variant="secondary" className="bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-950 dark:text-purple-300" data-testid="status-badge-pricing-review"><ClipboardCheck className="w-3 h-3 mr-1" />Pricing Review</Badge>;
       case "VOIDED":
-        return (
-          <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-900 dark:text-gray-400" data-testid="status-badge-voided">
-            <Ban className="w-3 h-3 mr-1" />
-            Voided
-          </Badge>
-        );
+        return <Badge variant="outline" className="bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-900 dark:text-gray-400" data-testid="status-badge-voided"><Ban className="w-3 h-3 mr-1" />Voided</Badge>;
+      case "APPROVED":
+        return <Badge variant="default">{status}</Badge>;
+      case "REJECTED":
+        return <Badge variant="destructive">{status}</Badge>;
       default:
-        return <Badge variant={getStatusColor(status) as any}>{status.replace(/_/g, " ")}</Badge>;
+        return <Badge variant="secondary">{status.replace(/_/g, " ")}</Badge>;
     }
   };
+
+  const SectionHeader = ({ label, sectionKey, total }: { label: string; sectionKey: string; total: number }) => (
+    <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md" data-testid={`section-header-${sectionKey}`}>
+      <span className="text-sm font-semibold">{label}</span>
+      <span className="font-mono text-sm font-bold">${fmt(total)}</span>
+    </div>
+  );
+
+  const renderCombinedLaborSection = () => {
+    const rows = breakdown.sectionA.rows;
+    return (
+      <div className="space-y-2" data-testid="section-labor">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-semibold">Sections A / A1 — Labor Summary</h4>
+          <div className="flex gap-4 text-xs font-mono">
+            <span>Std (A): ${fmt(totals.A)}</span>
+            <span>Prem (A1): ${fmt(totals.A1)}</span>
+          </div>
+        </div>
+        <div className="space-y-1">
+          {rows.length > 0 && (
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px_40px] gap-1 px-2 text-xs text-muted-foreground font-medium">
+              <div>Trade Classification</div>
+              <div>STD Hours</div>
+              <div>STD Rate</div>
+              <div>Prem Hours</div>
+              <div>Prem Rate</div>
+              <div>OT/DT</div>
+              <div></div>
+            </div>
+          )}
+          {rows.map((row, idx) => {
+            const stdTotal = p(row.stdHours) * p(row.stdRate);
+            const premTotal = p(row.premHours) * p(row.premRate);
+            return (
+              <div key={idx} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px_40px] gap-1 px-2 items-center" data-testid={`row-labor-${idx}`}>
+                <div>
+                  <Input placeholder="Trade" value={row.trade} onChange={(e) => {
+                    updateBreakdownSection("sectionA", (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], trade: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-labor-trade-${idx}`} />
+                </div>
+                <div>
+                  <Input type="number" step="0.5" placeholder="0" value={row.stdHours} onChange={(e) => {
+                    updateBreakdownSection("sectionA", (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], stdHours: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-labor-stdHours-${idx}`} />
+                </div>
+                <div>
+                  <Input type="number" step="0.01" placeholder="0.00" value={row.stdRate} onChange={(e) => {
+                    updateBreakdownSection("sectionA", (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], stdRate: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-labor-stdRate-${idx}`} />
+                </div>
+                <div>
+                  <Input type="number" step="0.5" placeholder="0" value={row.premHours} onChange={(e) => {
+                    updateBreakdownSection("sectionA", (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], premHours: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-labor-premHours-${idx}`} />
+                </div>
+                <div>
+                  <Input type="number" step="0.01" placeholder="0.00" value={row.premRate} onChange={(e) => {
+                    updateBreakdownSection("sectionA", (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], premRate: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-labor-premRate-${idx}`} />
+                </div>
+                <div>
+                  <label className="flex items-center gap-1 text-xs cursor-pointer">
+                    <input type="checkbox" checked={row.isOT} onChange={(e) => {
+                      updateBreakdownSection("sectionA", (s: any) => {
+                        const r = [...s.rows]; r[idx] = { ...r[idx], isOT: e.target.checked }; return { ...s, rows: r };
+                      });
+                    }} disabled={!canEdit} className="h-3 w-3" data-testid={`checkbox-labor-ot-${idx}`} />
+                    OT/DT
+                  </label>
+                </div>
+                <div>
+                  {canEdit && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                      updateBreakdownSection("sectionA", (s: any) => ({ ...s, rows: s.rows.filter((_: any, i: number) => i !== idx) }));
+                    }} data-testid={`button-remove-labor-${idx}`}>
+                      <Trash2 className="w-3 h-3 text-destructive" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {rows.length > 0 && (
+            <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_80px_40px] gap-1 px-2 text-xs font-mono border-t pt-1">
+              <div className="text-right font-semibold">Row Totals:</div>
+              <div className="col-span-2 text-right">Std: ${fmt(totals.A)}</div>
+              <div className="col-span-2 text-right">Prem: ${fmt(totals.A1)}</div>
+              <div></div>
+              <div></div>
+            </div>
+          )}
+        </div>
+        {canEdit && (
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+            updateBreakdownSection("sectionA", (s: any) => ({ ...s, rows: [...s.rows, { ...EMPTY_LABOR_ROW }] }));
+          }} data-testid="button-add-labor">
+            <Plus className="w-3 h-3 mr-1" /> Add Trade Row
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  const renderCombinedFringeSection = () => {
+    const rows = breakdown.sectionB.rows;
+    return (
+      <div className="space-y-2" data-testid="section-fringe">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-semibold">Sections B / B1 — Fringes &amp; Benefits</h4>
+          <div className="flex gap-4 text-xs font-mono">
+            <span>Std (B): ${fmt(totals.B)}</span>
+            <span>Prem (B1): ${fmt(totals.B1)}</span>
+          </div>
+        </div>
+        <div className="space-y-1">
+          {rows.length > 0 && (
+            <div className="grid grid-cols-[3fr_2fr_2fr_1fr] gap-1 px-2 text-xs text-muted-foreground font-medium">
+              <div>Trade Classification</div>
+              <div>Std Fringe Amount</div>
+              <div>Prem Fringe Amount</div>
+              <div></div>
+            </div>
+          )}
+          {rows.map((row, idx) => (
+            <div key={idx} className="grid grid-cols-[3fr_2fr_2fr_1fr] gap-1 px-2 items-center" data-testid={`row-fringe-${idx}`}>
+              <div>
+                <Input placeholder="Trade" value={row.trade} onChange={(e) => {
+                  updateBreakdownSection("sectionB", (s: any) => {
+                    const r = [...s.rows]; r[idx] = { ...r[idx], trade: e.target.value }; return { ...s, rows: r };
+                  });
+                }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-fringe-trade-${idx}`} />
+              </div>
+              <div>
+                <Input type="number" step="0.01" placeholder="0.00" value={row.stdAmount} onChange={(e) => {
+                  updateBreakdownSection("sectionB", (s: any) => {
+                    const r = [...s.rows]; r[idx] = { ...r[idx], stdAmount: e.target.value }; return { ...s, rows: r };
+                  });
+                }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-fringe-stdAmount-${idx}`} />
+              </div>
+              <div>
+                <Input type="number" step="0.01" placeholder="0.00" value={row.premAmount} onChange={(e) => {
+                  updateBreakdownSection("sectionB", (s: any) => {
+                    const r = [...s.rows]; r[idx] = { ...r[idx], premAmount: e.target.value }; return { ...s, rows: r };
+                  });
+                }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-fringe-premAmount-${idx}`} />
+              </div>
+              <div>
+                {canEdit && (
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                    updateBreakdownSection("sectionB", (s: any) => ({ ...s, rows: s.rows.filter((_: any, i: number) => i !== idx) }));
+                  }} data-testid={`button-remove-fringe-${idx}`}>
+                    <Trash2 className="w-3 h-3 text-destructive" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+          {rows.length > 0 && (
+            <div className="grid grid-cols-[3fr_2fr_2fr_1fr] gap-1 px-2 text-xs font-mono border-t pt-1">
+              <div className="text-right font-semibold">Totals:</div>
+              <div>${fmt(totals.B)}</div>
+              <div>${fmt(totals.B1)}</div>
+              <div></div>
+            </div>
+          )}
+        </div>
+        {canEdit && (
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+            updateBreakdownSection("sectionB", (s: any) => ({ ...s, rows: [...s.rows, { ...EMPTY_FRINGE_ROW }] }));
+          }} data-testid="button-add-fringe">
+            <Plus className="w-3 h-3 mr-1" /> Add Trade Row
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  const renderItemSection = (sectionKey: "sectionC" | "sectionD" | "sectionE" | "sectionG", label: string, total: number) => {
+    const rows = breakdown[sectionKey]?.rows || [];
+    return (
+      <div className="space-y-2" data-testid={`section-${sectionKey}`}>
+        <SectionHeader label={label} sectionKey={sectionKey} total={total} />
+        <div className="space-y-1">
+          {rows.length > 0 && (
+            <div className="grid grid-cols-12 gap-1 px-2 text-xs text-muted-foreground font-medium">
+              <div className="col-span-4">Description</div>
+              <div className="col-span-2">Qty</div>
+              <div className="col-span-1">Unit</div>
+              <div className="col-span-2">Rate</div>
+              <div className="col-span-2">Total</div>
+              <div className="col-span-1"></div>
+            </div>
+          )}
+          {rows.map((row, idx) => {
+            const rowTotal = p(row.quantity) * p(row.rate);
+            return (
+              <div key={idx} className="grid grid-cols-12 gap-1 px-2 items-center" data-testid={`row-${sectionKey}-${idx}`}>
+                <div className="col-span-4">
+                  <Input placeholder="Description" value={row.description} onChange={(e) => {
+                    updateBreakdownSection(sectionKey, (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], description: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-${sectionKey}-desc-${idx}`} />
+                </div>
+                <div className="col-span-2">
+                  <Input type="number" step="0.01" placeholder="0" value={row.quantity} onChange={(e) => {
+                    updateBreakdownSection(sectionKey, (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], quantity: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-${sectionKey}-qty-${idx}`} />
+                </div>
+                <div className="col-span-1">
+                  <Input placeholder="EA" value={row.unit} onChange={(e) => {
+                    updateBreakdownSection(sectionKey, (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], unit: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-${sectionKey}-unit-${idx}`} />
+                </div>
+                <div className="col-span-2">
+                  <Input type="number" step="0.01" placeholder="0.00" value={row.rate} onChange={(e) => {
+                    updateBreakdownSection(sectionKey, (s: any) => {
+                      const r = [...s.rows]; r[idx] = { ...r[idx], rate: e.target.value }; return { ...s, rows: r };
+                    });
+                  }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-${sectionKey}-rate-${idx}`} />
+                </div>
+                <div className="col-span-2 font-mono text-xs flex items-center h-8">${fmt(rowTotal)}</div>
+                <div className="col-span-1">
+                  {canEdit && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                      updateBreakdownSection(sectionKey, (s: any) => ({ ...s, rows: s.rows.filter((_: any, i: number) => i !== idx) }));
+                    }} data-testid={`button-remove-${sectionKey}-${idx}`}>
+                      <Trash2 className="w-3 h-3 text-destructive" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {canEdit && (
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+            updateBreakdownSection(sectionKey, (s: any) => ({ ...s, rows: [...s.rows, { ...EMPTY_ITEM_ROW }] }));
+          }} data-testid={`button-add-${sectionKey}`}>
+            <Plus className="w-3 h-3 mr-1" /> Add Row
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  const renderSubcontractorSection = () => {
+    const rows = breakdown.sectionI?.rows || [];
+    return (
+      <div className="space-y-2" data-testid="section-sectionI">
+        <SectionHeader label="Section I — Subcontractor" sectionKey="sectionI" total={totals.I} />
+        <div className="space-y-1">
+          {rows.length > 0 && (
+            <div className="grid grid-cols-12 gap-1 px-2 text-xs text-muted-foreground font-medium">
+              <div className="col-span-8">Description</div>
+              <div className="col-span-3">Amount</div>
+              <div className="col-span-1"></div>
+            </div>
+          )}
+          {rows.map((row, idx) => (
+            <div key={idx} className="grid grid-cols-12 gap-1 px-2 items-center" data-testid={`row-sectionI-${idx}`}>
+              <div className="col-span-8">
+                <Input placeholder="Subcontractor description" value={row.description} onChange={(e) => {
+                  updateBreakdownSection("sectionI", (s: any) => {
+                    const r = [...s.rows]; r[idx] = { ...r[idx], description: e.target.value }; return { ...s, rows: r };
+                  });
+                }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-sectionI-desc-${idx}`} />
+              </div>
+              <div className="col-span-3">
+                <Input type="number" step="0.01" placeholder="0.00" value={row.total} onChange={(e) => {
+                  updateBreakdownSection("sectionI", (s: any) => {
+                    const r = [...s.rows]; r[idx] = { ...r[idx], total: e.target.value }; return { ...s, rows: r };
+                  });
+                }} disabled={!canEdit} className="h-8 text-xs" data-testid={`input-sectionI-total-${idx}`} />
+              </div>
+              <div className="col-span-1">
+                {canEdit && (
+                  <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                    updateBreakdownSection("sectionI", (s: any) => ({ ...s, rows: s.rows.filter((_: any, i: number) => i !== idx) }));
+                  }} data-testid={`button-remove-sectionI-${idx}`}>
+                    <Trash2 className="w-3 h-3 text-destructive" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {canEdit && (
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+            updateBreakdownSection("sectionI", (s: any) => ({ ...s, rows: [...s.rows, { ...EMPTY_SECTION_ROW }] }));
+          }} data-testid="button-add-sectionI">
+            <Plus className="w-3 h-3 mr-1" /> Add Row
+          </Button>
+        )}
+      </div>
+    );
+  };
+
+  const renderMiscSection = () => (
+    <div className="space-y-2" data-testid="section-sectionK">
+      <SectionHeader label="Section K — Miscellaneous" sectionKey="sectionK" total={totals.K} />
+      <div className="space-y-2 px-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <Label className="text-xs">Bond / Insurance</Label>
+            <Input type="number" step="0.01" placeholder="0.00" value={breakdown.sectionK.bondInsurance} onChange={(e) => {
+              setBreakdown(prev => ({ ...prev, sectionK: { ...prev.sectionK, bondInsurance: e.target.value } }));
+            }} disabled={!canEdit} className="h-8 text-xs" data-testid="input-sectionK-bond" />
+          </div>
+          <div>
+            <Label className="text-xs">Permits / Licenses / Inspection Fees</Label>
+            <Input type="number" step="0.01" placeholder="0.00" value={breakdown.sectionK.permits} onChange={(e) => {
+              setBreakdown(prev => ({ ...prev, sectionK: { ...prev.sectionK, permits: e.target.value } }));
+            }} disabled={!canEdit} className="h-8 text-xs" data-testid="input-sectionK-permits" />
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs">Overnight Lodging / Travel</Label>
+          <Input type="number" step="0.01" placeholder="0.00" value={breakdown.sectionK.lodging} onChange={(e) => {
+            setBreakdown(prev => ({ ...prev, sectionK: { ...prev.sectionK, lodging: e.target.value } }));
+          }} disabled={!canEdit} className="h-8 text-xs" data-testid="input-sectionK-lodging" />
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderCalculatedSection = (label: string, sectionKey: string, total: number, pctLabel: string, pctValue: string, onPctChange: (v: string) => void, formula: string) => (
+    <div className="space-y-2" data-testid={`section-${sectionKey}`}>
+      <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold">{label}</span>
+          <span className="text-xs text-muted-foreground">({formula})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {canEdit ? (
+            <div className="flex items-center gap-1">
+              <Input type="number" step="0.1" value={pctValue} onChange={(e) => onPctChange(e.target.value)} className="h-7 w-16 text-xs text-right" data-testid={`input-${sectionKey}-pct`} />
+              <Percent className="w-3 h-3 text-muted-foreground" />
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">{pctValue}%</span>
+          )}
+          <span className="font-mono text-sm font-bold">${fmt(total)}</span>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="dialog-view-change-order">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" data-testid="dialog-view-change-order">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Change Order Details
+              Change Order Detail Form
             </DialogTitle>
             <div className="flex items-center gap-2">
               {isResponseOverdue && (
                 <Badge variant="destructive" className="flex items-center gap-1" data-testid="badge-response-overdue">
-                  <AlertTriangle className="w-3 h-3" />
-                  Response Overdue
+                  <AlertTriangle className="w-3 h-3" />Response Overdue
                 </Badge>
               )}
               {getStatusBadge(changeOrder.status)}
@@ -663,8 +865,7 @@ export function ChangeOrderDialog({
           </div>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* Void Panel - shown when voidReason is set (may also be VOIDED status) */}
+        <div className="space-y-4">
           {changeOrder.voidReason && (
             <div className="p-4 bg-muted border rounded-md space-y-2" data-testid="panel-voided">
               <div className="flex items-center gap-2">
@@ -672,27 +873,15 @@ export function ChangeOrderDialog({
                 <span className="text-sm font-medium text-destructive">Voided</span>
               </div>
               <p className="text-sm"><span className="text-muted-foreground">Reason:</span> {changeOrder.voidReason}</p>
-              {changeOrder.voidedAt && (
-                <p className="text-sm text-muted-foreground">
-                  {format(new Date(changeOrder.voidedAt), "MMM d, yyyy 'at' h:mm a")}
-                </p>
-              )}
-              {/* Voided-by from revision history */}
+              {changeOrder.voidedAt && <p className="text-sm text-muted-foreground">{format(new Date(changeOrder.voidedAt), "MMM d, yyyy 'at' h:mm a")}</p>}
               {revisions && (() => {
                 const voidRevision = revisions.find(r => r.revision.newStatus === "VOIDED");
-                if (voidRevision?.revisedBy) {
-                  return (
-                    <p className="text-sm text-muted-foreground" data-testid="text-voided-by">
-                      by {voidRevision.revisedBy.firstName} {voidRevision.revisedBy.lastName}
-                    </p>
-                  );
-                }
+                if (voidRevision?.revisedBy) return <p className="text-sm text-muted-foreground" data-testid="text-voided-by">by {voidRevision.revisedBy.firstName} {voidRevision.revisedBy.lastName}</p>;
                 return null;
               })()}
             </div>
           )}
 
-          {/* Submitted state info panel with client response deadline */}
           {changeOrder.status === "SUBMITTED" && changeOrder.clientResponseDueDate && (
             <div className={`p-3 rounded-md border ${isResponseOverdue ? "bg-destructive/10 border-destructive/30" : "bg-muted/40"}`} data-testid="panel-submitted-info">
               <div className="flex items-center gap-2">
@@ -702,185 +891,96 @@ export function ChangeOrderDialog({
               </div>
               <p className="text-sm mt-1">
                 {format(new Date(changeOrder.clientResponseDueDate), "MMMM d, yyyy")}
-                {" "}
-                <span className="text-muted-foreground">
-                  ({formatDistanceToNow(new Date(changeOrder.clientResponseDueDate), { addSuffix: true })})
-                </span>
+                {" "}<span className="text-muted-foreground">({formatDistanceToNow(new Date(changeOrder.clientResponseDueDate), { addSuffix: true })})</span>
               </p>
             </div>
           )}
 
-          {/* Basic Information */}
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="view-co-number">Change Order Number</Label>
-              {isEditing ? (
-                <Input
-                  id="view-co-number"
-                  value={editedNumber}
-                  onChange={(e) => setEditedNumber(e.target.value)}
-                  data-testid="input-edit-co-number"
-                />
-              ) : (
-                <div className="mt-1">
-                  <Badge variant="outline" className="font-mono text-base px-3 py-1">
-                    {changeOrder.changeOrderNumber}
-                  </Badge>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="view-co-description">Description</Label>
-              {isEditing ? (
-                <Textarea
-                  id="view-co-description"
-                  value={editedDescription}
-                  onChange={(e) => setEditedDescription(e.target.value)}
-                  rows={4}
-                  data-testid="input-edit-co-description"
-                />
-              ) : (
-                <p className="mt-1 text-sm">{changeOrder.description}</p>
-              )}
-            </div>
-
-            {hasManagementAccess(userRole) && (
+          <Card className="p-4 bg-muted/20 border" data-testid="card-header-info">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
               <div>
-                <Label htmlFor="view-co-amount">Amount</Label>
+                <Label className="text-xs text-muted-foreground">Project Name</Label>
+                <p className="font-medium" data-testid="text-project-name">{projectName || "—"}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Contract No.</Label>
+                <p className="font-mono" data-testid="text-contract-no">{projectCode}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Bulletin / CO No.</Label>
                 {isEditing ? (
-                  <>
-                    <Input
-                      id="view-co-amount"
-                      type="number"
-                      step="0.01"
-                      value={editedAmount}
-                      onChange={(e) => setEditedAmount(e.target.value)}
-                      data-testid="input-edit-co-amount"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Enter positive for additions or negative for deductions
-                    </p>
-                  </>
+                  <Input value={editedNumber} onChange={(e) => setEditedNumber(e.target.value)} className="h-7 text-xs" data-testid="input-edit-co-number" />
                 ) : (
-                  <div className="mt-1">
-                    <p className={`text-2xl font-bold font-mono ${parseFloat(changeOrder.amount) < 0 ? 'text-destructive' : 'text-primary'}`}>
-                      {parseFloat(changeOrder.amount) >= 0 ? '+' : ''}${parseFloat(changeOrder.amount).toLocaleString()}
-                    </p>
-                    <Badge variant={parseFloat(changeOrder.amount) >= 0 ? "default" : "destructive"} className="mt-1">
-                      {parseFloat(changeOrder.amount) >= 0 ? 'Addition' : 'Deduction'}
-                    </Badge>
-                  </div>
+                  <p className="font-mono" data-testid="text-co-number">{changeOrder.changeOrderNumber}</p>
                 )}
               </div>
-            )}
-
-            {/* Standardized Scope of Work display */}
-            {changeOrder.canonicalName && (
-              <div className="p-3 bg-muted/30 rounded-md">
-                <div className="flex items-center gap-2 mb-2">
-                  <Ruler className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Scope of Work</span>
-                </div>
-                <div className="space-y-1 text-sm">
-                  <p><span className="text-muted-foreground">Work Type:</span> {changeOrder.canonicalName}</p>
-                  {changeOrder.categoryName && (
-                    <p><span className="text-muted-foreground">Category:</span> {changeOrder.categoryName}</p>
-                  )}
-                  {changeOrder.scopeQuantity && changeOrder.scopeUnit && (
-                    <p><span className="text-muted-foreground">Quantity:</span> {changeOrder.scopeQuantity} {changeOrder.scopeUnit}</p>
-                  )}
-                  {changeOrder.scopeModifierNames && (() => {
-                    try {
-                      const modifiers = JSON.parse(changeOrder.scopeModifierNames!);
-                      if (Array.isArray(modifiers) && modifiers.length > 0) {
-                        return (
-                          <p><span className="text-muted-foreground">Modifiers:</span> {modifiers.join(", ")}</p>
-                        );
-                      }
-                    } catch (e) {}
-                    return null;
-                  })()}
-                  {changeOrder.workTypeCode && (
-                    <p className="text-xs text-muted-foreground">Code: {changeOrder.workTypeCode}</p>
-                  )}
-                </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Date</Label>
+                <p data-testid="text-co-date">{format(new Date(changeOrder.createdAt), "MMM d, yyyy")}</p>
               </div>
-            )}
-
-            {/* Linked T&M Ticket */}
-            {changeOrder.linkedTmTicketId && (
-              <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-tm">
-                <div className="flex items-center gap-2">
-                  <Link className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Linked T&M Ticket</span>
-                </div>
-                <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedTmTicketId}</p>
+              <div>
+                <Label className="text-xs text-muted-foreground">Subcontractor</Label>
+                <p data-testid="text-subcontractor">{subcontractorName || "—"}</p>
               </div>
-            )}
-
-            {/* Linked RFI */}
-            {changeOrder.linkedRfiId && (
-              <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-rfi">
-                <div className="flex items-center gap-2">
-                  <Link className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm font-medium">Linked RFI</span>
-                </div>
-                <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedRfiId}</p>
+              <div>
+                <Label className="text-xs text-muted-foreground">Contractor Tracking #</Label>
+                <p className="font-mono" data-testid="text-tracking-number">{changeOrder.id.slice(0, 8).toUpperCase()}</p>
               </div>
-            )}
-
-            {/* Link T&M / Link RFI buttons */}
-            {canLinkItems && (
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowTmPicker(true)}
-                  data-testid="button-link-tm"
-                >
-                  <Link className="w-4 h-4 mr-2" />
-                  {changeOrder.linkedTmTicketId ? "Change T&M Ticket" : "Link T&M Ticket"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowRfiPicker(true)}
-                  data-testid="button-link-rfi"
-                >
-                  <Link className="w-4 h-4 mr-2" />
-                  {changeOrder.linkedRfiId ? "Change RFI" : "Link RFI"}
-                </Button>
+              <div>
+                <Label className="text-xs text-muted-foreground">Status</Label>
+                <div>{getStatusBadge(changeOrder.status)}</div>
               </div>
-            )}
-          </div>
-
-          <Separator />
-
-          {/* Metadata */}
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Calendar className="w-4 h-4" />
-              <span>Created: {format(new Date(changeOrder.createdAt), "MMM d, yyyy 'at' h:mm a")}</span>
             </div>
-            {changeOrder.approvedAt && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <CheckCircle className="w-4 h-4" />
-                <span>Approved: {format(new Date(changeOrder.approvedAt), "MMM d, yyyy 'at' h:mm a")}</span>
-              </div>
-            )}
-          </div>
+            <div className="mt-3">
+              <Label className="text-xs text-muted-foreground">Description</Label>
+              {isEditing ? (
+                <Textarea value={editedDescription} onChange={(e) => setEditedDescription(e.target.value)} rows={2} className="text-xs mt-1" data-testid="input-edit-co-description" />
+              ) : (
+                <p className="text-sm mt-1" data-testid="text-co-description">{changeOrder.description}</p>
+              )}
+            </div>
+          </Card>
 
-          {changeOrder.rejectionReason && changeOrder.status !== "VOIDED" && (
-            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
-              <p className="text-sm font-medium text-destructive mb-1">Rejection Reason:</p>
-              <p className="text-sm text-destructive/90">{changeOrder.rejectionReason}</p>
+          {changeOrder.canonicalName && (
+            <div className="p-3 bg-muted/30 rounded-md">
+              <div className="flex items-center gap-2 mb-2">
+                <Ruler className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Scope of Work</span>
+              </div>
+              <div className="space-y-1 text-sm">
+                <p><span className="text-muted-foreground">Work Type:</span> {changeOrder.canonicalName}</p>
+                {changeOrder.categoryName && <p><span className="text-muted-foreground">Category:</span> {changeOrder.categoryName}</p>}
+                {changeOrder.scopeQuantity && changeOrder.scopeUnit && <p><span className="text-muted-foreground">Quantity:</span> {changeOrder.scopeQuantity} {changeOrder.scopeUnit}</p>}
+              </div>
+            </div>
+          )}
+
+          {changeOrder.linkedTmTicketId && (
+            <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-tm">
+              <div className="flex items-center gap-2"><Link className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Linked T&M Ticket</span></div>
+              <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedTmTicketId}</p>
+            </div>
+          )}
+          {changeOrder.linkedRfiId && (
+            <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-rfi">
+              <div className="flex items-center gap-2"><Link className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Linked RFI</span></div>
+              <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedRfiId}</p>
+            </div>
+          )}
+
+          {canLinkItems && (
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => setShowTmPicker(true)} data-testid="button-link-tm">
+                <Link className="w-4 h-4 mr-2" />{changeOrder.linkedTmTicketId ? "Change T&M Ticket" : "Link T&M Ticket"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowRfiPicker(true)} data-testid="button-link-rfi">
+                <Link className="w-4 h-4 mr-2" />{changeOrder.linkedRfiId ? "Change RFI" : "Link RFI"}
+              </Button>
             </div>
           )}
 
           <Separator />
 
-          {/* Configure Approval Chain (ADMIN only, non-terminal editable statuses) */}
           {isAdmin && ["DRAFT", "PCO", "PENDING_APPROVAL"].includes(changeOrder.status) && (
             <>
               <Collapsible open={approvalChainOpen} onOpenChange={setApprovalChainOpen}>
@@ -890,9 +990,7 @@ export function ChangeOrderDialog({
                       {approvalChainOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       <Shield className="w-4 h-4" />
                       <h3 className="text-sm font-medium">Configure Approval Chain</h3>
-                      {approvals && approvals.length > 0 && (
-                        <Badge variant="outline" className="ml-2 text-xs">{approvals.length} step{approvals.length !== 1 ? "s" : ""}</Badge>
-                      )}
+                      {approvals && approvals.length > 0 && <Badge variant="outline" className="ml-2 text-xs">{approvals.length} step{approvals.length !== 1 ? "s" : ""}</Badge>}
                     </Button>
                   </CollapsibleTrigger>
                 </div>
@@ -900,30 +998,12 @@ export function ChangeOrderDialog({
                   {newApprovalSteps.map((step, idx) => (
                     <div key={idx} className="flex items-center gap-2" data-testid={`approval-step-config-${idx}`}>
                       <span className="text-sm text-muted-foreground w-6 shrink-0">#{idx + 1}</span>
-                      <Select
-                        value={step.approverRole}
-                        onValueChange={(v) => {
-                          const updated = [...newApprovalSteps];
-                          updated[idx] = { approverRole: v };
-                          setNewApprovalSteps(updated);
-                        }}
-                      >
-                        <SelectTrigger className="flex-1" data-testid={`select-approver-role-${idx}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {APPROVAL_ROLES.map((role) => (
-                            <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>
-                          ))}
-                        </SelectContent>
+                      <Select value={step.approverRole} onValueChange={(v) => { const updated = [...newApprovalSteps]; updated[idx] = { approverRole: v }; setNewApprovalSteps(updated); }}>
+                        <SelectTrigger className="flex-1" data-testid={`select-approver-role-${idx}`}><SelectValue /></SelectTrigger>
+                        <SelectContent>{APPROVAL_ROLES.map((role) => <SelectItem key={role.value} value={role.value}>{role.label}</SelectItem>)}</SelectContent>
                       </Select>
                       {newApprovalSteps.length > 1 && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => setNewApprovalSteps(newApprovalSteps.filter((_, i) => i !== idx))}
-                          data-testid={`button-remove-step-${idx}`}
-                        >
+                        <Button size="icon" variant="ghost" onClick={() => setNewApprovalSteps(newApprovalSteps.filter((_, i) => i !== idx))} data-testid={`button-remove-step-${idx}`}>
                           <Trash2 className="w-4 h-4 text-destructive" />
                         </Button>
                       )}
@@ -931,21 +1011,11 @@ export function ChangeOrderDialog({
                   ))}
                   <div className="flex gap-2">
                     {newApprovalSteps.length < 3 && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setNewApprovalSteps([...newApprovalSteps, { approverRole: "MANAGER" }])}
-                        data-testid="button-add-approval-step"
-                      >
+                      <Button variant="outline" size="sm" onClick={() => setNewApprovalSteps([...newApprovalSteps, { approverRole: "MANAGER" }])} data-testid="button-add-approval-step">
                         <Plus className="w-4 h-4 mr-1" /> Add Step
                       </Button>
                     )}
-                    <Button
-                      size="sm"
-                      onClick={() => setupApprovalChainMutation.mutate(newApprovalSteps)}
-                      disabled={setupApprovalChainMutation.isPending}
-                      data-testid="button-save-approval-chain"
-                    >
+                    <Button size="sm" onClick={() => setupApprovalChainMutation.mutate(newApprovalSteps)} disabled={setupApprovalChainMutation.isPending} data-testid="button-save-approval-chain">
                       {setupApprovalChainMutation.isPending ? "Saving..." : "Save Chain"}
                     </Button>
                   </div>
@@ -955,379 +1025,141 @@ export function ChangeOrderDialog({
             </>
           )}
 
-          {/* Line Items Breakdown - Only visible to managers */}
-          {hasManagementAccess(userRole) && (
+          {hasManagementAccess(userRole) && useStructuredForm && (
             <Collapsible open={lineItemsOpen} onOpenChange={setLineItemsOpen}>
               <div className="flex items-center justify-between">
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" className="flex items-center gap-2 p-0 hover:bg-transparent">
                     {lineItemsOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                    <h3 className="text-sm font-medium">Cost Breakdown</h3>
-                    <Badge variant="outline" className="ml-2">
-                      ${lineItemsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </Badge>
+                    <Calculator className="w-4 h-4" />
+                    <h3 className="text-sm font-medium">Cost Breakdown (Sections A–K)</h3>
+                    <Badge variant="outline" className="ml-2 font-mono">${fmt(totals.grand)}</Badge>
                   </Button>
                 </CollapsibleTrigger>
                 {canEdit && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => saveLineItemsMutation.mutate()}
-                    disabled={saveLineItemsMutation.isPending}
-                    data-testid="button-save-line-items"
-                  >
+                  <Button size="sm" variant="outline" onClick={() => saveLineItemsMutation.mutate()} disabled={saveLineItemsMutation.isPending} data-testid="button-save-line-items">
+                    <DollarSign className="w-3 h-3 mr-1" />
                     {saveLineItemsMutation.isPending ? "Saving..." : "Save & Calculate"}
                   </Button>
                 )}
               </div>
-              
+
               <CollapsibleContent className="mt-4 space-y-4">
-                <Tabs value={activeLineTab} onValueChange={setActiveLineTab}>
-                  <TabsList className="grid grid-cols-3 w-full">
-                    <TabsTrigger value="labor" className="flex items-center gap-1" data-testid="tab-labor">
-                      <Users className="w-3 h-3" />
-                      Labor
-                      <Badge variant="secondary" className="ml-1 text-xs">${laborTotal.toFixed(0)}</Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="equipment" className="flex items-center gap-1" data-testid="tab-equipment">
-                      <Wrench className="w-3 h-3" />
-                      Equipment
-                      <Badge variant="secondary" className="ml-1 text-xs">${equipmentTotal.toFixed(0)}</Badge>
-                    </TabsTrigger>
-                    <TabsTrigger value="materials" className="flex items-center gap-1" data-testid="tab-materials">
-                      <Package className="w-3 h-3" />
-                      Materials
-                      <Badge variant="secondary" className="ml-1 text-xs">${materialTotal.toFixed(0)}</Badge>
-                    </TabsTrigger>
-                  </TabsList>
+                {renderCombinedLaborSection()}
+                <Separator />
+                {renderCombinedFringeSection()}
+                <Separator />
+                {renderItemSection("sectionC", "Section C — Equipment Rental", totals.C)}
+                {renderItemSection("sectionD", "Section D — Owned Equipment", totals.D)}
+                {renderItemSection("sectionE", "Section E — Trucking", totals.E)}
+                <Separator />
+                {renderCalculatedSection("Section F — Overhead", "sectionF", totals.F, "Overhead %", overheadPct, setOverheadPct, `(A+A1+B+B1+C+D+E) × ${overheadPct}%`)}
+                <Separator />
+                {renderItemSection("sectionG", "Section G — Material", totals.G)}
+                <Separator />
+                {renderCalculatedSection("Section H — Profit", "sectionH", totals.H, "Profit %", profitPct, setProfitPct, `(A+A1+B+B1+C+D+E+F+G) × ${profitPct}%`)}
+                <Separator />
+                {renderSubcontractorSection()}
+                {renderCalculatedSection("Section J — Contractor Markup on Subcontractor", "sectionJ", totals.J, "Markup %", subMarkupPct, setSubMarkupPct, `I × ${subMarkupPct}%`)}
+                <Separator />
+                {renderMiscSection()}
 
-                  {/* Labor Tab */}
-                  <TabsContent value="labor" className="space-y-3 mt-3">
-                    {laborEntries.map((entry, index) => (
-                      <Card key={index} className="p-3">
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-3">
-                            <Label className="text-xs">Employee</Label>
-                            <Input
-                              placeholder="Name"
-                              value={entry.employeeName}
-                              onChange={(e) => updateLaborEntry(index, "employeeName", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-labor-name-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Position</Label>
-                            <Input
-                              placeholder="Role"
-                              value={entry.position}
-                              onChange={(e) => updateLaborEntry(index, "position", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-labor-position-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Hours</Label>
-                            <Input
-                              type="number"
-                              step="0.5"
-                              placeholder="0"
-                              value={entry.hoursWorked}
-                              onChange={(e) => updateLaborEntry(index, "hoursWorked", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-labor-hours-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Rate/Hr</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              value={entry.hourlyRate}
-                              onChange={(e) => updateLaborEntry(index, "hourlyRate", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-labor-rate-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Total</Label>
-                            <div className="h-9 flex items-center font-mono text-sm">
-                              ${(parseFloat(entry.hoursWorked || "0") * parseFloat(entry.hourlyRate || "0")).toFixed(2)}
-                            </div>
-                          </div>
-                          <div className="col-span-1">
-                            {canEdit && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => removeLaborEntry(index)}
-                                data-testid={`button-remove-labor-${index}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                    {canEdit && (
-                      <Button variant="outline" size="sm" onClick={addLaborEntry} data-testid="button-add-labor">
-                        <Plus className="w-4 h-4 mr-1" /> Add Labor
-                      </Button>
-                    )}
-                    {laborEntries.length === 0 && !canEdit && (
-                      <p className="text-sm text-muted-foreground text-center py-4">No labor entries</p>
-                    )}
-                  </TabsContent>
-
-                  {/* Equipment Tab */}
-                  <TabsContent value="equipment" className="space-y-3 mt-3">
-                    {equipmentEntries.map((entry, index) => (
-                      <Card key={index} className="p-3">
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-3">
-                            <Label className="text-xs">Equipment Type</Label>
-                            <Input
-                              placeholder="Type"
-                              value={entry.equipmentType}
-                              onChange={(e) => updateEquipmentEntry(index, "equipmentType", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-equip-type-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-3">
-                            <Label className="text-xs">Description</Label>
-                            <Input
-                              placeholder="Description"
-                              value={entry.description}
-                              onChange={(e) => updateEquipmentEntry(index, "description", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-equip-desc-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-1">
-                            <Label className="text-xs">Qty</Label>
-                            <Input
-                              type="number"
-                              min="1"
-                              value={entry.quantity}
-                              onChange={(e) => updateEquipmentEntry(index, "quantity", parseInt(e.target.value) || 1)}
-                              disabled={!canEdit}
-                              data-testid={`input-equip-qty-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Hours</Label>
-                            <Input
-                              type="number"
-                              step="0.5"
-                              placeholder="0"
-                              value={entry.hoursUsed}
-                              onChange={(e) => updateEquipmentEntry(index, "hoursUsed", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-equip-hours-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Rate/Hr</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              value={entry.hourlyRate}
-                              onChange={(e) => updateEquipmentEntry(index, "hourlyRate", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-equip-rate-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-1">
-                            {canEdit && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => removeEquipmentEntry(index)}
-                                data-testid={`button-remove-equip-${index}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                    {canEdit && (
-                      <Button variant="outline" size="sm" onClick={addEquipmentEntry} data-testid="button-add-equipment">
-                        <Plus className="w-4 h-4 mr-1" /> Add Equipment
-                      </Button>
-                    )}
-                    {equipmentEntries.length === 0 && !canEdit && (
-                      <p className="text-sm text-muted-foreground text-center py-4">No equipment entries</p>
-                    )}
-                  </TabsContent>
-
-                  {/* Materials Tab */}
-                  <TabsContent value="materials" className="space-y-3 mt-3">
-                    {materialEntries.map((entry, index) => (
-                      <Card key={index} className="p-3">
-                        <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-2">
-                            <Label className="text-xs">Category</Label>
-                            <Select
-                              value={entry.category}
-                              onValueChange={(v) => updateMaterialEntry(index, "category", v)}
-                              disabled={!canEdit}
-                            >
-                              <SelectTrigger data-testid={`select-material-category-${index}`}>
-                                <SelectValue placeholder="Select" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {MATERIAL_CATEGORIES.map((cat) => (
-                                  <SelectItem key={cat.value} value={cat.value}>
-                                    {cat.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="col-span-3">
-                            <Label className="text-xs">Description</Label>
-                            <Input
-                              placeholder="Material name"
-                              value={entry.materialDescription}
-                              onChange={(e) => updateMaterialEntry(index, "materialDescription", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-material-desc-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Quantity</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="0"
-                              value={entry.quantity}
-                              onChange={(e) => updateMaterialEntry(index, "quantity", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-material-qty-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-1">
-                            <Label className="text-xs">Unit</Label>
-                            <Input
-                              placeholder="CY"
-                              value={entry.unit}
-                              onChange={(e) => updateMaterialEntry(index, "unit", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-material-unit-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Label className="text-xs">Unit Cost</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              placeholder="0.00"
-                              value={entry.unitCost}
-                              onChange={(e) => updateMaterialEntry(index, "unitCost", e.target.value)}
-                              disabled={!canEdit}
-                              data-testid={`input-material-cost-${index}`}
-                            />
-                          </div>
-                          <div className="col-span-1">
-                            <Label className="text-xs">Total</Label>
-                            <div className="h-9 flex items-center font-mono text-sm">
-                              ${(parseFloat(entry.quantity || "0") * parseFloat(entry.unitCost || "0")).toFixed(2)}
-                            </div>
-                          </div>
-                          <div className="col-span-1 flex items-end gap-1">
-                            {canEdit && entry.category && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => {
-                                  if (catalogState?.index === index) {
-                                    setCatalogState(null);
-                                  } else {
-                                    setCatalogState({ index, category: entry.category });
-                                  }
-                                }}
-                                data-testid={`button-catalog-${index}`}
-                                title="Search vendor catalog"
-                              >
-                                <Search className="w-4 h-4" />
-                              </Button>
-                            )}
-                            {canEdit && (
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => removeMaterialEntry(index)}
-                                data-testid={`button-remove-material-${index}`}
-                              >
-                                <Trash2 className="w-4 h-4 text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                        
-                        {/* Vendor Catalog Results - Per-row lookup */}
-                        {catalogState?.index === index && vendorCatalog && vendorCatalog.length > 0 && (
-                          <div className="mt-2 p-2 bg-muted/50 rounded-md">
-                            <p className="text-xs font-medium mb-2">Vendor Catalog Items:</p>
-                            <div className="space-y-1 max-h-32 overflow-y-auto">
-                              {vendorCatalog.map((item) => (
-                                <Button
-                                  key={item.id}
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full justify-between text-xs h-8"
-                                  onClick={() => applyVendorPricing(index, item)}
-                                  data-testid={`button-apply-catalog-${item.id}`}
-                                >
-                                  <span>{item.itemName}</span>
-                                  <span className="text-muted-foreground">
-                                    ${parseFloat(item.unitPrice).toFixed(2)}/{item.unit}
-                                  </span>
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {catalogState?.index === index && vendorCatalog && vendorCatalog.length === 0 && (
-                          <div className="mt-2 p-2 bg-muted/50 rounded-md">
-                            <p className="text-xs text-muted-foreground">No vendor pricing found for this category</p>
-                          </div>
-                        )}
-                      </Card>
-                    ))}
-                    {canEdit && (
-                      <Button variant="outline" size="sm" onClick={addMaterialEntry} data-testid="button-add-material">
-                        <Plus className="w-4 h-4 mr-1" /> Add Material
-                      </Button>
-                    )}
-                    {materialEntries.length === 0 && !canEdit && (
-                      <p className="text-sm text-muted-foreground text-center py-4">No material entries</p>
-                    )}
-                  </TabsContent>
-                </Tabs>
-
-                {/* Totals Summary */}
-                <Card className="p-3 bg-muted/30">
+                <Card className="p-4 bg-primary/5 border-primary/20">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium">Line Items Total</span>
-                    <span className="text-lg font-bold font-mono">
-                      ${lineItemsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
+                    <div>
+                      <span className="text-sm font-bold">GRAND TOTAL</span>
+                      <p className="text-xs text-muted-foreground mt-0.5">A + A1 + B + B1 + C + D + E + F + G + H + I + J + K</p>
+                    </div>
+                    <span className="text-2xl font-bold font-mono" data-testid="text-grand-total">${fmt(totals.grand)}</span>
+                  </div>
+                  <Separator className="my-3" />
+                  <div className="grid grid-cols-4 gap-2 text-xs">
+                    <div className="flex justify-between"><span className="text-muted-foreground">A (Std Labor):</span><span className="font-mono">${fmt(totals.A)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">A1 (Prem Labor):</span><span className="font-mono">${fmt(totals.A1)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">B (Std Fringe):</span><span className="font-mono">${fmt(totals.B)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">B1 (Prem Fringe):</span><span className="font-mono">${fmt(totals.B1)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">C (Equip Rental):</span><span className="font-mono">${fmt(totals.C)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">D (Owned Equip):</span><span className="font-mono">${fmt(totals.D)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">E (Trucking):</span><span className="font-mono">${fmt(totals.E)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">F (Overhead):</span><span className="font-mono">${fmt(totals.F)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">G (Material):</span><span className="font-mono">${fmt(totals.G)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">H (Profit):</span><span className="font-mono">${fmt(totals.H)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">I (Subcontractor):</span><span className="font-mono">${fmt(totals.I)}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">J (Sub Markup):</span><span className="font-mono">${fmt(totals.J)}</span></div>
+                    <div className="flex justify-between col-span-2"><span className="text-muted-foreground">K (Misc):</span><span className="font-mono">${fmt(totals.K)}</span></div>
                   </div>
                 </Card>
               </CollapsibleContent>
             </Collapsible>
           )}
 
+          {hasManagementAccess(userRole) && !useStructuredForm && (
+            <div className="p-4 bg-muted/30 rounded-md space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Legacy Cost Breakdown</p>
+                  <p className="text-xs text-muted-foreground">This change order uses the previous format (Labor/Equipment/Materials).</p>
+                </div>
+                {canEdit && (
+                  <Button variant="outline" size="sm" onClick={() => { setUseStructuredForm(true); setBreakdown(emptyBreakdown()); }} data-testid="button-upgrade-format">
+                    Upgrade to Industry Format
+                  </Button>
+                )}
+              </div>
+              <div className="mt-3">
+                <p className={`text-2xl font-bold font-mono ${parseFloat(changeOrder.amount) < 0 ? 'text-destructive' : 'text-primary'}`}>
+                  {parseFloat(changeOrder.amount) >= 0 ? '+' : ''}${parseFloat(changeOrder.amount).toLocaleString()}
+                </p>
+                <Badge variant={parseFloat(changeOrder.amount) >= 0 ? "default" : "destructive"} className="mt-1">
+                  {parseFloat(changeOrder.amount) >= 0 ? 'Addition' : 'Deduction'}
+                </Badge>
+              </div>
+              {lineItemsData?.laborEntries?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Labor ({lineItemsData.laborEntries.length} entries)</p>
+                  {lineItemsData.laborEntries.map((e: any, i: number) => (
+                    <div key={i} className="flex justify-between text-xs py-0.5 border-b border-border/50">
+                      <span>{e.employeeName} {e.position ? `(${e.position})` : ""}</span>
+                      <span className="font-mono">{e.hoursWorked}h × ${p(e.hourlyRate).toFixed(2)} = ${p(e.totalCost).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {lineItemsData?.equipmentEntries?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Equipment ({lineItemsData.equipmentEntries.length} entries)</p>
+                  {lineItemsData.equipmentEntries.map((e: any, i: number) => (
+                    <div key={i} className="flex justify-between text-xs py-0.5 border-b border-border/50">
+                      <span>{e.equipmentType} {e.description ? `— ${e.description}` : ""}</span>
+                      <span className="font-mono">${p(e.totalCost).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {lineItemsData?.materialEntries?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Materials ({lineItemsData.materialEntries.length} entries)</p>
+                  {lineItemsData.materialEntries.map((e: any, i: number) => (
+                    <div key={i} className="flex justify-between text-xs py-0.5 border-b border-border/50">
+                      <span>{e.materialDescription} {e.unit ? `(${e.unit})` : ""}</span>
+                      <span className="font-mono">{e.quantity} × ${p(e.unitCost).toFixed(2)} = ${p(e.totalCost).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {hasManagementAccess(userRole) && isEditing && (
+            <div>
+              <Label htmlFor="view-co-amount">Amount (Manual Override)</Label>
+              <Input id="view-co-amount" type="number" step="0.01" value={editedAmount} onChange={(e) => setEditedAmount(e.target.value)} data-testid="input-edit-co-amount" />
+              <p className="text-xs text-muted-foreground mt-1">This overrides the calculated total. Use Save & Calculate to auto-compute from sections.</p>
+            </div>
+          )}
+
           <Separator />
 
-          {/* File Attachments */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-medium">Attachments</h3>
@@ -1336,15 +1168,11 @@ export function ChangeOrderDialog({
             <ChangeOrderFiles changeOrderId={changeOrder.id} alwaysExpanded />
           </div>
 
-          {/* Approval Chain Progress */}
           {approvals && approvals.length > 0 && (
             <>
               <Separator />
               <div className="space-y-3">
-                <h3 className="text-sm font-medium flex items-center gap-2">
-                  <Shield className="w-4 h-4" />
-                  Approval Chain
-                </h3>
+                <h3 className="text-sm font-medium flex items-center gap-2"><Shield className="w-4 h-4" />Approval Chain</h3>
                 <div className="space-y-2">
                   {approvals.map((item, idx) => (
                     <div key={item.approval.id} className="flex items-center gap-3" data-testid={`approval-step-${item.approval.stepOrder}`}>
@@ -1364,15 +1192,9 @@ export function ChangeOrderDialog({
                            item.approver ? `${item.approver.firstName} ${item.approver.lastName}` : "—"}
                           {item.approval.decidedAt && ` · ${formatDistanceToNow(new Date(item.approval.decidedAt), { addSuffix: true })}`}
                         </p>
-                        {item.approval.comments && (
-                          <p className="text-xs text-muted-foreground mt-0.5 italic">"{item.approval.comments}"</p>
-                        )}
+                        {item.approval.comments && <p className="text-xs text-muted-foreground mt-0.5 italic">"{item.approval.comments}"</p>}
                       </div>
-                      <Badge variant={
-                        item.approval.status === "APPROVED" ? "default" :
-                        item.approval.status === "REJECTED" ? "destructive" :
-                        "secondary"
-                      }>
+                      <Badge variant={item.approval.status === "APPROVED" ? "default" : item.approval.status === "REJECTED" ? "destructive" : "secondary"}>
                         {item.approval.status}
                       </Badge>
                       {idx < approvals.length - 1 && <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0 hidden sm:block" />}
@@ -1383,14 +1205,12 @@ export function ChangeOrderDialog({
             </>
           )}
 
-          {/* Revision History Timeline */}
           {revisions && revisions.length > 0 && (
             <>
               <Separator />
               <Collapsible>
                 <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium w-full" data-testid="toggle-revision-history">
-                  <History className="w-4 h-4" />
-                  Revision History ({revisions.length})
+                  <History className="w-4 h-4" />Revision History ({revisions.length})
                   <ChevronRight className="w-4 h-4 ml-auto transition-transform data-[state=open]:rotate-90" />
                 </CollapsibleTrigger>
                 <CollapsibleContent className="mt-3">
@@ -1405,19 +1225,11 @@ export function ChangeOrderDialog({
                           <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant="outline" className="text-xs">{item.revision.previousStatus}</Badge>
                             <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                            <Badge variant={
-                              item.revision.newStatus === "APPROVED" ? "default" :
-                              item.revision.newStatus === "REJECTED" ? "destructive" :
-                              "secondary"
-                            } className="text-xs">{item.revision.newStatus}</Badge>
+                            <Badge variant={item.revision.newStatus === "APPROVED" ? "default" : item.revision.newStatus === "REJECTED" ? "destructive" : "secondary"} className="text-xs">{item.revision.newStatus}</Badge>
                           </div>
-                          {item.revision.description && (
-                            <p className="text-xs text-muted-foreground mt-1">{item.revision.description}</p>
-                          )}
+                          {item.revision.description && <p className="text-xs text-muted-foreground mt-1">{item.revision.description}</p>}
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {item.revisedBy ? `${item.revisedBy.firstName} ${item.revisedBy.lastName}` : "System"}
-                            {" · "}
-                            {formatDistanceToNow(new Date(item.revision.createdAt), { addSuffix: true })}
+                            {item.revisedBy ? `${item.revisedBy.firstName} ${item.revisedBy.lastName}` : "System"}{" · "}{formatDistanceToNow(new Date(item.revision.createdAt), { addSuffix: true })}
                           </p>
                         </div>
                       </div>
@@ -1432,260 +1244,128 @@ export function ChangeOrderDialog({
         <DialogFooter className="flex-wrap gap-2">
           {isEditing ? (
             <>
-              <Button variant="outline" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">
-                Cancel
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={updateMutation.isPending}
-                data-testid="button-save-changes"
-              >
+              <Button variant="outline" onClick={() => setIsEditing(false)} data-testid="button-cancel-edit">Cancel</Button>
+              <Button onClick={handleSave} disabled={updateMutation.isPending} data-testid="button-save-changes">
                 {updateMutation.isPending ? "Saving..." : "Save Changes"}
               </Button>
             </>
           ) : (
             <>
               {canEdit && (
-                <Button
-                  variant="outline"
-                  onClick={() => setIsEditing(true)}
-                  data-testid="button-edit-change-order"
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit
+                <Button variant="outline" onClick={() => setIsEditing(true)} data-testid="button-edit-change-order">
+                  <Edit className="w-4 h-4 mr-2" />Edit
                 </Button>
               )}
-
-              {/* PCO: promote to pricing review */}
               {canReview && changeOrder.status === "PCO" && (
-                <Button
-                  onClick={() => promoteToReviewMutation.mutate()}
-                  disabled={promoteToReviewMutation.isPending}
-                  data-testid="button-promote-to-review"
-                >
-                  <ClipboardCheck className="w-4 h-4 mr-2" />
-                  {promoteToReviewMutation.isPending ? "Promoting..." : "Promote to Pricing Review"}
+                <Button onClick={() => promoteToReviewMutation.mutate()} disabled={promoteToReviewMutation.isPending} data-testid="button-promote-to-review">
+                  <ClipboardCheck className="w-4 h-4 mr-2" />{promoteToReviewMutation.isPending ? "Promoting..." : "Promote to Pricing Review"}
                 </Button>
               )}
-
-              {/* PRICING_REVIEW: approve pricing or return to PCO */}
               {canManage && changeOrder.status === "PRICING_REVIEW" && (
                 <>
-                  <Button
-                    onClick={() => approvePricingMutation.mutate()}
-                    disabled={approvePricingMutation.isPending}
-                    data-testid="button-approve-pricing"
-                  >
-                    <Send className="w-4 h-4 mr-2" />
-                    {approvePricingMutation.isPending ? "Submitting..." : "Approve Pricing → Submit to Client"}
+                  <Button onClick={() => approvePricingMutation.mutate()} disabled={approvePricingMutation.isPending} data-testid="button-approve-pricing">
+                    <Send className="w-4 h-4 mr-2" />{approvePricingMutation.isPending ? "Submitting..." : "Approve Pricing → Submit to Client"}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleReturnToPco}
-                    disabled={returnToPcoMutation.isPending}
-                    data-testid="button-return-to-pco"
-                  >
-                    <Flag className="w-4 h-4 mr-2" />
-                    {returnToPcoMutation.isPending ? "Returning..." : "Return to PCO"}
+                  <Button variant="outline" onClick={handleReturnToPco} disabled={returnToPcoMutation.isPending} data-testid="button-return-to-pco">
+                    <Flag className="w-4 h-4 mr-2" />{returnToPcoMutation.isPending ? "Returning..." : "Return to PCO"}
                   </Button>
                 </>
               )}
-
-              {/* DRAFT: request approval */}
               {changeOrder.status === "DRAFT" && (
-                <Button
-                  onClick={() => requestApprovalMutation.mutate()}
-                  disabled={requestApprovalMutation.isPending}
-                  data-testid="button-request-approval-dialog"
-                >
-                  <Clock className="w-4 h-4 mr-2" />
-                  {requestApprovalMutation.isPending ? "Requesting..." : "Request Approval"}
+                <Button onClick={() => requestApprovalMutation.mutate()} disabled={requestApprovalMutation.isPending} data-testid="button-request-approval-dialog">
+                  <Clock className="w-4 h-4 mr-2" />{requestApprovalMutation.isPending ? "Requesting..." : "Request Approval"}
                 </Button>
               )}
-
-              {/* PENDING_APPROVAL */}
               {canManage && changeOrder.status === "PENDING_APPROVAL" && (
                 <>
-                  <Button
-                    onClick={() => submitMutation.mutate()}
-                    disabled={submitMutation.isPending}
-                    data-testid="button-submit-dialog"
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    {submitMutation.isPending ? "Submitting..." : "Submit to Client"}
+                  <Button onClick={() => submitMutation.mutate()} disabled={submitMutation.isPending} data-testid="button-submit-dialog">
+                    <CheckCircle className="w-4 h-4 mr-2" />{submitMutation.isPending ? "Submitting..." : "Submit to Client"}
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => returnToDraftMutation.mutate()}
-                    disabled={returnToDraftMutation.isPending}
-                    data-testid="button-return-draft-dialog"
-                  >
-                    <Edit className="w-4 h-4 mr-2" />
-                    {returnToDraftMutation.isPending ? "Returning..." : "Return to Draft"}
+                  <Button variant="outline" onClick={() => returnToDraftMutation.mutate()} disabled={returnToDraftMutation.isPending} data-testid="button-return-draft-dialog">
+                    <Edit className="w-4 h-4 mr-2" />{returnToDraftMutation.isPending ? "Returning..." : "Return to Draft"}
                   </Button>
                 </>
               )}
-
-              {/* SUBMITTED: approve or reject */}
               {canManage && changeOrder.status === "SUBMITTED" && (
                 <>
-                  <Button
-                    onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isPending}
-                    data-testid="button-approve-dialog"
-                  >
-                    <CheckCircle className="w-4 h-4 mr-2" />
-                    {approveMutation.isPending ? "Approving..." : "Approve"}
+                  <Button onClick={() => approveMutation.mutate()} disabled={approveMutation.isPending} data-testid="button-approve-dialog">
+                    <CheckCircle className="w-4 h-4 mr-2" />{approveMutation.isPending ? "Approving..." : "Approve"}
                   </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => rejectMutation.mutate()}
-                    disabled={rejectMutation.isPending}
-                    data-testid="button-reject-dialog"
-                  >
-                    <XCircle className="w-4 h-4 mr-2" />
-                    {rejectMutation.isPending ? "Rejecting..." : "Reject"}
+                  <Button variant="destructive" onClick={() => rejectMutation.mutate()} disabled={rejectMutation.isPending} data-testid="button-reject-dialog">
+                    <XCircle className="w-4 h-4 mr-2" />{rejectMutation.isPending ? "Rejecting..." : "Reject"}
                   </Button>
                 </>
               )}
-
-              {/* REJECTED: return to PCO for re-pricing */}
               {canManage && changeOrder.status === "REJECTED" && (
-                <Button
-                  variant="outline"
-                  onClick={handleReturnToPco}
-                  disabled={returnToPcoMutation.isPending}
-                  data-testid="button-return-to-pco-from-rejected"
-                >
-                  <Flag className="w-4 h-4 mr-2" />
-                  {returnToPcoMutation.isPending ? "Returning..." : "Return to PCO"}
+                <Button variant="outline" onClick={handleReturnToPco} disabled={returnToPcoMutation.isPending} data-testid="button-return-to-pco-from-rejected">
+                  <Flag className="w-4 h-4 mr-2" />{returnToPcoMutation.isPending ? "Returning..." : "Return to PCO"}
                 </Button>
               )}
-
-              {/* APPROVED: void (ADMIN only) */}
               {userRole === "ADMIN" && changeOrder.status === "APPROVED" && (
-                <Button
-                  variant="outline"
-                  onClick={() => setShowVoidDialog(true)}
-                  data-testid="button-void-change-order"
-                >
-                  <Ban className="w-4 h-4 mr-2" />
-                  Void CO
+                <Button variant="outline" onClick={() => setShowVoidDialog(true)} data-testid="button-void-change-order">
+                  <Ban className="w-4 h-4 mr-2" />Void CO
                 </Button>
               )}
-
-              <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-close-dialog">
-                Close
-              </Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-close-dialog">Close</Button>
             </>
           )}
         </DialogFooter>
       </DialogContent>
 
-      {/* T&M Ticket Picker Dialog */}
       <Dialog open={showTmPicker} onOpenChange={setShowTmPicker}>
         <DialogContent className="max-w-lg" data-testid="dialog-tm-picker">
-          <DialogHeader>
-            <DialogTitle>Link T&M Ticket</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Link T&M Ticket</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {tmTickets.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No T&M tickets found for this project</p>
-            ) : (
-              tmTickets.map((ticket) => (
-                <Card
-                  key={ticket.id}
-                  className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => linkTmMutation.mutate(ticket.id)}
-                  data-testid={`button-select-tm-${ticket.id}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm font-mono">{ticket.ticketNumber}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{ticket.description}</p>
-                    </div>
-                    <Badge variant="outline" className="text-xs shrink-0">{ticket.status}</Badge>
-                  </div>
-                </Card>
-              ))
-            )}
+            ) : tmTickets.map((ticket) => (
+              <Card key={ticket.id} className="p-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => linkTmMutation.mutate(ticket.id)} data-testid={`button-select-tm-${ticket.id}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="font-medium text-sm font-mono">{ticket.ticketNumber}</p><p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{ticket.description}</p></div>
+                  <Badge variant="outline" className="text-xs shrink-0">{ticket.status}</Badge>
+                </div>
+              </Card>
+            ))}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowTmPicker(false)}>Cancel</Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setShowTmPicker(false)}>Cancel</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* RFI Picker Dialog */}
       <Dialog open={showRfiPicker} onOpenChange={setShowRfiPicker}>
         <DialogContent className="max-w-lg" data-testid="dialog-rfi-picker">
-          <DialogHeader>
-            <DialogTitle>Link RFI</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Link RFI</DialogTitle></DialogHeader>
           <div className="space-y-2 max-h-80 overflow-y-auto">
             {projectRfis.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">No RFIs found for this project</p>
-            ) : (
-              projectRfis.map((rfi) => (
-                <Card
-                  key={rfi.id}
-                  className="p-3 cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => linkRfiMutation.mutate(rfi.id)}
-                  data-testid={`button-select-rfi-${rfi.id}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm font-mono">{rfi.rfiNumber}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{rfi.subject}</p>
-                    </div>
-                    <Badge variant="outline" className="text-xs shrink-0">{rfi.status}</Badge>
-                  </div>
-                </Card>
-              ))
-            )}
+            ) : projectRfis.map((rfi) => (
+              <Card key={rfi.id} className="p-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => linkRfiMutation.mutate(rfi.id)} data-testid={`button-select-rfi-${rfi.id}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="font-medium text-sm font-mono">{rfi.rfiNumber}</p><p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{rfi.subject}</p></div>
+                  <Badge variant="outline" className="text-xs shrink-0">{rfi.status}</Badge>
+                </div>
+              </Card>
+            ))}
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRfiPicker(false)}>Cancel</Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setShowRfiPicker(false)}>Cancel</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </Dialog>
 
-    {/* Void Confirmation Dialog */}
     <Dialog open={showVoidDialog} onOpenChange={setShowVoidDialog}>
       <DialogContent className="max-w-md" data-testid="dialog-void-change-order">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Ban className="w-5 h-5 text-destructive" />
-            Void Change Order
-          </DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><Ban className="w-5 h-5 text-destructive" />Void Change Order</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <p className="text-sm text-muted-foreground">
-            Voiding a change order is permanent. Please provide a reason for voiding this change order.
-          </p>
+          <p className="text-sm text-muted-foreground">Voiding a change order is permanent. Please provide a reason for voiding this change order.</p>
           <div>
             <Label htmlFor="void-reason">Void Reason</Label>
-            <Textarea
-              id="void-reason"
-              value={voidReason}
-              onChange={(e) => setVoidReason(e.target.value)}
-              placeholder="Enter reason for voiding..."
-              rows={3}
-              data-testid="input-void-reason"
-            />
+            <Textarea id="void-reason" value={voidReason} onChange={(e) => setVoidReason(e.target.value)} placeholder="Enter reason for voiding..." rows={3} data-testid="input-void-reason" />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => { setShowVoidDialog(false); setVoidReason(""); }}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={handleVoid}
-            disabled={voidMutation.isPending || !voidReason.trim()}
-            data-testid="button-confirm-void"
-          >
+          <Button variant="outline" onClick={() => { setShowVoidDialog(false); setVoidReason(""); }}>Cancel</Button>
+          <Button variant="destructive" onClick={handleVoid} disabled={voidMutation.isPending || !voidReason.trim()} data-testid="button-confirm-void">
             {voidMutation.isPending ? "Voiding..." : "Void Change Order"}
           </Button>
         </DialogFooter>

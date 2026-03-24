@@ -789,6 +789,10 @@ export const changeOrders = pgTable("change_orders", {
   canonicalName: text("canonical_name"),
   scopeUnit: text("scope_unit"),
   scopeQuantity: text("scope_quantity"),
+  costBreakdownJson: text("cost_breakdown_json"),
+  overheadPercent: decimal("overhead_percent", { precision: 5, scale: 2 }).default("10"),
+  profitPercent: decimal("profit_percent", { precision: 5, scale: 2 }).default("5"),
+  subcontractorMarkupPercent: decimal("subcontractor_markup_percent", { precision: 5, scale: 2 }).default("5"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

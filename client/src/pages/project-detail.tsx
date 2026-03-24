@@ -647,6 +647,7 @@ export default function ProjectDetailPage() {
               projectCode={projectCode}
               projectId={project.id}
               projectName={project.name}
+              clientName={project.clientName}
               isLoading={changeOrdersLoading}
               userRole={user?.role || ""}
             />

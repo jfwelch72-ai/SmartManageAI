@@ -1195,13 +1195,27 @@ router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthReq
   try {
     const { id } = req.params;
     
-    const [laborEntries, equipmentEntries, materialEntries] = await Promise.all([
+    const [[order], laborEntries, equipmentEntries, materialEntries] = await Promise.all([
+      db.select().from(changeOrders).where(eq(changeOrders.id, id)).limit(1),
       db.select().from(changeOrderLaborEntries).where(eq(changeOrderLaborEntries.changeOrderId, id)),
       db.select().from(changeOrderEquipmentEntries).where(eq(changeOrderEquipmentEntries.changeOrderId, id)),
       db.select().from(changeOrderMaterialEntries).where(eq(changeOrderMaterialEntries.changeOrderId, id)),
     ]);
+
+    let costBreakdown = null;
+    if (order?.costBreakdownJson) {
+      try { costBreakdown = JSON.parse(order.costBreakdownJson); } catch (_e) {}
+    }
     
-    res.json({ laborEntries, equipmentEntries, materialEntries });
+    res.json({
+      laborEntries,
+      equipmentEntries,
+      materialEntries,
+      costBreakdown,
+      overheadPercent: order?.overheadPercent ?? "10",
+      profitPercent: order?.profitPercent ?? "5",
+      subcontractorMarkupPercent: order?.subcontractorMarkupPercent ?? "5",
+    });
   } catch (error) {
     console.error("Get change order line items error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1211,15 +1225,79 @@ router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthReq
 router.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { laborEntries, equipmentEntries, materialEntries } = req.body;
+    const { laborEntries, equipmentEntries, materialEntries, costBreakdown, overheadPercent, profitPercent, subcontractorMarkupPercent } = req.body;
     
     const [existingOrder] = await db.select().from(changeOrders).where(eq(changeOrders.id, id));
     if (!existingOrder) {
       res.status(404).json({ error: "Change order not found" });
       return;
     }
-    if (existingOrder.status !== "DRAFT") {
-      res.status(400).json({ error: "Can only update line items for draft change orders" });
+    if (existingOrder.status !== "DRAFT" && existingOrder.status !== "PCO") {
+      res.status(400).json({ error: "Can only update line items for draft or PCO change orders" });
+      return;
+    }
+
+    const safeParseFloat = (val: any): number => {
+      const parsed = parseFloat(val);
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
+    if (costBreakdown) {
+      const ohPct = safeParseFloat(overheadPercent) / 100;
+      const prPct = safeParseFloat(profitPercent) / 100;
+      const smPct = safeParseFloat(subcontractorMarkupPercent) / 100;
+
+      const sumLaborStd = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.stdHours) * safeParseFloat(r.stdRate), 0) || 0;
+      const sumLaborPrem = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.premHours) * safeParseFloat(r.premRate), 0) || 0;
+      const sumFringeStd = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.stdAmount), 0) || 0;
+      const sumFringePrem = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.premAmount), 0) || 0;
+      const sumItemRows = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.quantity) * safeParseFloat(r.rate), 0) || 0;
+      const sumTotalField = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.total), 0) || 0;
+
+      const laborRows = costBreakdown.sectionA?.rows || [];
+      const totalA = sumLaborStd(laborRows);
+      const totalA1 = sumLaborPrem(costBreakdown.sectionA1?.rows || laborRows);
+      const fringeRows = costBreakdown.sectionB?.rows || [];
+      const totalB = sumFringeStd(fringeRows);
+      const totalB1 = sumFringePrem(costBreakdown.sectionB1?.rows || fringeRows);
+      const totalC = sumItemRows(costBreakdown.sectionC?.rows);
+      const totalD = sumItemRows(costBreakdown.sectionD?.rows);
+      const totalE = sumItemRows(costBreakdown.sectionE?.rows);
+      const subtotalForOverhead = totalA + totalA1 + totalB + totalB1 + totalC + totalD + totalE;
+      const totalF = subtotalForOverhead * ohPct;
+      const totalG = sumItemRows(costBreakdown.sectionG?.rows);
+      const subtotalForProfit = subtotalForOverhead + totalF + totalG;
+      const totalH = subtotalForProfit * prPct;
+      const totalI = sumTotalField(costBreakdown.sectionI?.rows);
+      const totalJ = totalI * smPct;
+      const kBond = safeParseFloat(costBreakdown.sectionK?.bondInsurance);
+      const kPermits = safeParseFloat(costBreakdown.sectionK?.permits);
+      const kLodging = safeParseFloat(costBreakdown.sectionK?.lodging);
+      const kRows = sumTotalField(costBreakdown.sectionK?.rows);
+      const totalK = kBond + kPermits + kLodging + kRows;
+      const grandTotal = subtotalForProfit + totalH + totalI + totalJ + totalK;
+
+      const computedBreakdown = {
+        ...costBreakdown,
+        totals: { A: totalA, A1: totalA1, B: totalB, B1: totalB1, C: totalC, D: totalD, E: totalE, F: totalF, G: totalG, H: totalH, I: totalI, J: totalJ, K: totalK, grand: grandTotal },
+      };
+
+      await db.update(changeOrders).set({
+        amount: String(Math.round(grandTotal * 100) / 100),
+        costBreakdownJson: JSON.stringify(computedBreakdown),
+        overheadPercent: String(safeParseFloat(overheadPercent)),
+        profitPercent: String(safeParseFloat(profitPercent)),
+        subcontractorMarkupPercent: String(safeParseFloat(subcontractorMarkupPercent)),
+        updatedAt: new Date(),
+      }).where(eq(changeOrders.id, id));
+
+      res.json({
+        costBreakdown: computedBreakdown,
+        overheadPercent: String(safeParseFloat(overheadPercent)),
+        profitPercent: String(safeParseFloat(profitPercent)),
+        subcontractorMarkupPercent: String(safeParseFloat(subcontractorMarkupPercent)),
+        total: Math.round(grandTotal * 100) / 100,
+      });
       return;
     }
 
@@ -1228,11 +1306,6 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN"
       db.delete(changeOrderEquipmentEntries).where(eq(changeOrderEquipmentEntries.changeOrderId, id)),
       db.delete(changeOrderMaterialEntries).where(eq(changeOrderMaterialEntries.changeOrderId, id)),
     ]);
-
-    const safeParseFloat = (val: any): number => {
-      const parsed = parseFloat(val);
-      return isNaN(parsed) ? 0 : parsed;
-    };
 
     if (laborEntries && laborEntries.length > 0) {
       const validLaborEntries = laborEntries.filter((entry: any) => 

@@ -25,11 +25,12 @@ interface ChangeOrdersTabProps {
   projectCode: string;
   projectId: string;
   projectName: string;
+  clientName?: string;
   isLoading: boolean;
   userRole: string;
 }
 
-export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, projectName, isLoading, userRole }: ChangeOrdersTabProps) {
+export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, projectName, clientName, isLoading, userRole }: ChangeOrdersTabProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedChangeOrder, setSelectedChangeOrder] = useState<ChangeOrder | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
@@ -503,6 +504,9 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
           if (!open) setSelectedChangeOrder(null);
         }}
         projectCode={projectCode}
+        projectName={projectName}
+        projectId={projectId}
+        subcontractorName={clientName}
         userRole={userRole}
       />
 
