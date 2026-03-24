@@ -117,15 +117,25 @@ export default function RfiDetailDialog({
     enabled: !!rfi?.id && open,
   });
 
-  const { data: changeOrders = [] } = useQuery<ChangeOrder[]>({
-    queryKey: ["/api/change-orders" + (rfi?.projectId ? `?projectId=${rfi.projectId}` : "")],
-    enabled: !!rfi?.projectId && showLinkCODialog,
+  const activeRfi = selectedRFIDetail || rfi;
+
+  const { data: linkedCOList = [] } = useQuery<ChangeOrder[]>({
+    queryKey: ["/api/change-orders" + (activeRfi?.projectId ? `?projectId=${activeRfi.projectId}` : "")],
+    enabled: !!activeRfi?.projectId && (!!activeRfi?.linkedChangeOrderId || showLinkCODialog),
   });
 
-  const { data: tmTickets = [] } = useQuery<TMTicket[]>({
-    queryKey: ["/api/projects", rfi?.projectId, "tm-tickets"],
-    enabled: !!rfi?.projectId && showLinkTMDialog,
+  const changeOrders = linkedCOList;
+
+  const linkedCO = linkedCOList.find((co) => co.id === activeRfi?.linkedChangeOrderId);
+
+  const { data: linkedTMList = [] } = useQuery<TMTicket[]>({
+    queryKey: ["/api/projects", activeRfi?.projectId, "tm-tickets"],
+    enabled: !!activeRfi?.projectId && (!!activeRfi?.linkedTmTicketId || showLinkTMDialog),
   });
+
+  const tmTickets = linkedTMList;
+
+  const linkedTM = linkedTMList.find((t) => t.id === activeRfi?.linkedTmTicketId);
 
   const { data: submittals = [] } = useQuery<Submittal[]>({
     queryKey: ["/api/submittals", { projectId: rfi?.projectId }],
@@ -446,7 +456,9 @@ export default function RfiDetailDialog({
                         <Label className="text-muted-foreground text-xs">Linked Change Order</Label>
                         <div className="mt-1 flex items-center gap-2">
                           <Link2 className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm" data-testid={`${p}text-linked-co-id`}>{rfi.linkedChangeOrderId}</span>
+                          <span className="text-sm" data-testid={`${p}text-linked-co-id`}>
+                            {linkedCO ? `${linkedCO.changeOrderNumber} - ${linkedCO.description}` : rfi.linkedChangeOrderId}
+                          </span>
                         </div>
                       </div>
                     )}
@@ -456,7 +468,9 @@ export default function RfiDetailDialog({
                         <Label className="text-muted-foreground text-xs">Linked T&amp;M Ticket</Label>
                         <div className="mt-1 flex items-center gap-2">
                           <Link2 className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm" data-testid={`${p}text-linked-tm-id`}>{rfi.linkedTmTicketId}</span>
+                          <span className="text-sm" data-testid={`${p}text-linked-tm-id`}>
+                            {linkedTM ? `${linkedTM.ticketNumber}${linkedTM.description ? ` - ${linkedTM.description}` : ""}` : rfi.linkedTmTicketId}
+                          </span>
                         </div>
                       </div>
                     )}
