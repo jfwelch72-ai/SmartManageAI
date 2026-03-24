@@ -209,9 +209,18 @@ export default function BidSummaryStep({
                   <FileText className="w-4 h-4 mr-2" />
                   Customer Quote (PDF)
                 </Button>
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={() => window.open(`/api/bids/${bidCode}/pdf/warranty-contract`, '_blank')}
+                  data-testid="button-download-warranty-pdf"
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Warranty Contract (PDF)
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                Internal summary includes all vendor quotes and detailed costs. Customer quote shows only scope of work and final pricing.
+                Internal summary includes all vendor quotes and detailed costs. Customer quote shows only scope of work and final pricing. Warranty contract outlines warranty terms, exclusions, and claim procedures.
               </p>
             </div>
           )}

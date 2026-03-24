@@ -14,7 +14,8 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
-import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
+import { generateInternalBidSummaryPDF, generateCustomerQuotePDF, generateWarrantyContractPDF } from "./pdf-service";
+import { getOrganizationBranding } from "./organizationBranding";
 import { sendEmail } from "./email";
 
 const router = Router();
@@ -2044,6 +2045,98 @@ router.get("/api/bids/:code/pdf/customer-quote", requireAuth, requireRole("ADMIN
     pdfStream.pipe(res);
   } catch (error) {
     console.error("Generate customer quote PDF error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/bids/:code/pdf/warranty-contract", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const [estimate] = await db
+      .select()
+      .from(estimates)
+      .where(eq(estimates.bidId, bid.id))
+      .limit(1);
+
+    let lineItems: any[] = [];
+    if (estimate) {
+      lineItems = await db
+        .select()
+        .from(estimateLineItems)
+        .where(eq(estimateLineItems.estimateId, estimate.id));
+    }
+
+    const scopeItemsList = lineItems.map(item => ({
+      description: item.description,
+      category: item.category,
+      quantity: parseFloat(item.quantity) || 0,
+      unit: item.unit,
+      totalCost: parseFloat(item.totalCost) || 0,
+      laborCost: parseFloat(item.laborCost) || 0,
+      materialCost: parseFloat(item.materialCost) || 0,
+      equipmentCost: parseFloat(item.equipmentCost) || 0,
+      subcontractCost: parseFloat(item.subcontractCost) || 0,
+    }));
+
+    const totalDirectCost = scopeItemsList.reduce((sum, item) => sum + item.totalCost, 0);
+    const overheadPercent = 15;
+    const profitPercent = 10;
+    const overheadAmount = totalDirectCost * (overheadPercent / 100);
+    const profitAmount = totalDirectCost * (profitPercent / 100);
+    const finalBidAmount = parseFloat(bid.bidAmount as any) || (totalDirectCost + overheadAmount + profitAmount);
+
+    const orgBranding = await getOrganizationBranding(bid.gcOrganizationId);
+
+    const pdfData = {
+      bid: {
+        id: bid.id,
+        name: bid.name,
+        code: bid.code,
+        clientName: bid.clientName,
+        clientContactName: bid.clientContactName,
+        clientContactEmail: bid.clientContactEmail,
+        clientContactPhone: bid.clientContactPhone,
+        locationAddress: bid.locationAddress,
+        city: bid.city,
+        state: bid.state,
+        description: bid.description,
+        bidAmount: parseFloat(bid.bidAmount as any) || null,
+        dueDate: bid.dueDate,
+      },
+      scopeItems: scopeItemsList,
+      subQuotes: [],
+      materialQuotes: [],
+      equipmentSelections: [],
+      summary: {
+        totalDirectCost,
+        overheadPercent,
+        overheadAmount,
+        profitPercent,
+        profitAmount,
+        finalBidAmount,
+      },
+      branding: {
+        organizationName: orgBranding.organizationName,
+        primaryColor: orgBranding.primaryColor,
+        accentColor: orgBranding.accentColor,
+      },
+    };
+
+    const pdfStream = generateWarrantyContractPDF(pdfData);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${orgBranding.organizationName.replace(/[^a-zA-Z0-9]/g, '-')}-Warranty-Contract-${bid.code}.pdf"`);
+
+    pdfStream.pipe(res);
+  } catch (error) {
+    console.error("Generate warranty contract PDF error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

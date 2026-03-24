@@ -732,6 +732,273 @@ export function generateCustomerQuotePDF(data: BidData): PassThrough {
   return stream;
 }
 
+export function generateWarrantyContractPDF(data: BidData): PassThrough {
+  const doc = new PDFDocument({ margin: 50, size: 'LETTER' });
+  const stream = new PassThrough();
+  doc.pipe(stream);
+
+  const primaryColor = data.branding?.primaryColor || '#1a365d';
+  const companyName = data.branding?.organizationName || 'SmartManageAI';
+
+  doc.fontSize(28).fillColor(primaryColor).text(companyName, { align: 'center' });
+  doc.fontSize(10).fillColor('#6b7280').text('Construction Management', { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fontSize(9).text(`Powered by ${companyName}`, { align: 'center' });
+  doc.moveDown();
+
+  doc.strokeColor(primaryColor).lineWidth(2)
+    .moveTo(50, doc.y)
+    .lineTo(562, doc.y)
+    .stroke();
+  doc.moveDown();
+
+  doc.fontSize(20).fillColor(primaryColor).text('WARRANTY CONTRACT', { align: 'center' });
+  doc.moveDown();
+
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(`Contract #: ${data.bid.code}-WC`, { align: 'right' });
+  doc.text(`Date: ${new Date().toLocaleDateString()}`, { align: 'right' });
+  doc.moveDown();
+
+  doc.fontSize(12).fillColor(primaryColor).text('PARTIES TO THIS AGREEMENT');
+  doc.moveDown(0.3);
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+  doc.moveDown(0.5);
+
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(`Contractor: `, { continued: true });
+  doc.fillColor('#111827').text(companyName);
+  doc.moveDown(0.5);
+
+  doc.fillColor('#374151').text(`Client: `, { continued: true });
+  doc.fillColor('#111827').text(data.bid.clientName);
+  if (data.bid.clientContactName) {
+    doc.fillColor('#374151').text(`  Attn: ${data.bid.clientContactName}`);
+  }
+  if (data.bid.locationAddress) {
+    const address = [data.bid.locationAddress, data.bid.city, data.bid.state].filter(Boolean).join(', ');
+    doc.fillColor('#374151').text(`  Address: ${address}`);
+  }
+  if (data.bid.clientContactPhone) {
+    doc.fillColor('#374151').text(`  Phone: ${data.bid.clientContactPhone}`);
+  }
+  if (data.bid.clientContactEmail) {
+    doc.fillColor('#374151').text(`  Email: ${data.bid.clientContactEmail}`);
+  }
+  doc.moveDown();
+
+  doc.fontSize(12).fillColor(primaryColor).text('PROJECT INFORMATION');
+  doc.moveDown(0.3);
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+  doc.moveDown(0.5);
+
+  doc.fontSize(11).fillColor('#374151');
+  doc.text(`Project Name: ${data.bid.name}`);
+  doc.text(`Project Code: ${data.bid.code}`);
+  if (data.bid.description) {
+    doc.moveDown(0.3);
+    doc.text(data.bid.description);
+  }
+  doc.moveDown();
+
+  doc.fontSize(12).fillColor(primaryColor).text('SCOPE OF WORK COVERED BY WARRANTY');
+  doc.moveDown(0.3);
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+  doc.moveDown(0.5);
+
+  doc.fontSize(10).fillColor('#374151');
+  doc.text('This warranty covers the following scope of work as detailed in the project estimate:');
+  doc.moveDown(0.5);
+
+  if (data.scopeItems.length > 0) {
+    data.scopeItems.forEach((item, index) => {
+      if (doc.y > 680) doc.addPage();
+      const y = doc.y;
+      if (index % 2 === 0) {
+        doc.rect(50, y - 3, 512, 18).fill('#fafafa');
+      }
+      doc.fillColor('#374151');
+      const desc = `${index + 1}. ${item.description}${item.quantity > 1 ? ` (${item.quantity} ${item.unit})` : ''}`;
+      doc.text(desc.substring(0, 90), 55, y, { width: 460 });
+      doc.moveDown(0.7);
+    });
+  } else {
+    doc.text('As described in the project scope and estimate documents.');
+  }
+  doc.moveDown();
+
+  if (doc.y > 500) doc.addPage();
+
+  doc.fontSize(12).fillColor(primaryColor).text('WARRANTY TERMS');
+  doc.moveDown(0.3);
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+  doc.moveDown(0.5);
+
+  const warrantyTerms = [
+    {
+      title: '1. WORKMANSHIP WARRANTY',
+      content: 'The Contractor warrants that all work performed under this contract shall be free from defects in workmanship for a period of one (1) year from the date of substantial completion. During this warranty period, the Contractor shall, at no additional cost to the Client, repair or replace any work that is found to be defective in workmanship.'
+    },
+    {
+      title: '2. MATERIAL WARRANTIES',
+      content: 'All materials used in the performance of this work are covered by the respective manufacturer warranties. The Contractor shall pass through and assign to the Client all manufacturer warranties applicable to materials installed as part of this project. Manufacturer warranty terms and durations vary by product and are governed by the individual manufacturer warranty documentation.'
+    },
+    {
+      title: '3. WARRANTY PERIOD',
+      content: 'The warranty period shall commence on the date of substantial completion of the project or the date of beneficial occupancy by the Client, whichever occurs first. The Contractor shall provide written notice of the warranty start date to the Client within ten (10) business days of the commencement date.'
+    },
+    {
+      title: '4. WARRANTY RESPONSE TIME',
+      content: 'Upon receipt of a warranty claim, the Contractor shall acknowledge the claim within two (2) business days and commence warranty repairs within seven (7) business days of acknowledgment. Emergency warranty items affecting life safety or building integrity shall be addressed within twenty-four (24) hours.'
+    }
+  ];
+
+  doc.fontSize(10);
+  warrantyTerms.forEach(term => {
+    if (doc.y > 650) doc.addPage();
+    doc.fillColor(primaryColor).text(term.title, { continued: false });
+    doc.moveDown(0.2);
+    doc.fillColor('#374151').text(term.content);
+    doc.moveDown(0.7);
+  });
+
+  if (doc.y > 400) doc.addPage();
+
+  doc.fontSize(12).fillColor(primaryColor).text('EXCLUSIONS AND LIMITATIONS');
+  doc.moveDown(0.3);
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+  doc.moveDown(0.5);
+
+  const exclusions = [
+    'Damage caused by the Client, third parties, or events beyond the Contractor\'s control, including but not limited to natural disasters, fire, flood, or acts of God.',
+    'Normal wear and tear, including cosmetic deterioration that does not affect the functionality or structural integrity of the work.',
+    'Damage resulting from improper use, lack of maintenance, unauthorized modifications, or alterations made by parties other than the Contractor.',
+    'Defects or failures in materials or equipment supplied by the Client or third parties not under contract with the Contractor.',
+    'Consequential, incidental, or indirect damages of any kind, including but not limited to loss of use, loss of revenue, or loss of profit.',
+    'Work performed by subcontractors not engaged by the Contractor, unless such work is specifically included in the project scope.'
+  ];
+
+  doc.fontSize(10).fillColor('#374151');
+  exclusions.forEach((exclusion, index) => {
+    if (doc.y > 680) doc.addPage();
+    doc.text(`${String.fromCharCode(97 + index)}. ${exclusion}`);
+    doc.moveDown(0.4);
+  });
+  doc.moveDown();
+
+  if (doc.y > 400) doc.addPage();
+
+  doc.fontSize(12).fillColor(primaryColor).text('CLAIM AND CALLBACK PROCEDURES');
+  doc.moveDown(0.3);
+  doc.strokeColor('#e5e7eb').lineWidth(1)
+    .moveTo(50, doc.y).lineTo(562, doc.y).stroke();
+  doc.moveDown(0.5);
+
+  const procedures = [
+    {
+      title: 'Step 1: Submit Warranty Claim',
+      content: 'The Client shall submit all warranty claims in writing to the Contractor, including a detailed description of the defect or issue, the location of the defect, photographs if applicable, and the date the defect was discovered.'
+    },
+    {
+      title: 'Step 2: Inspection and Acknowledgment',
+      content: 'The Contractor shall acknowledge receipt of the warranty claim within two (2) business days and schedule an inspection of the reported defect within five (5) business days of acknowledgment.'
+    },
+    {
+      title: 'Step 3: Determination and Repair',
+      content: 'Following inspection, the Contractor shall provide a written determination of whether the claim is covered under this warranty within three (3) business days. If covered, repairs shall be scheduled and completed in a timely manner, typically within fourteen (14) business days of determination.'
+    },
+    {
+      title: 'Step 4: Completion and Sign-Off',
+      content: 'Upon completion of warranty repairs, the Client shall inspect the work and provide written acceptance or identify any remaining deficiencies. The Contractor shall address any remaining items promptly.'
+    }
+  ];
+
+  doc.fontSize(10);
+  procedures.forEach(proc => {
+    if (doc.y > 650) doc.addPage();
+    doc.fillColor(primaryColor).text(proc.title);
+    doc.moveDown(0.2);
+    doc.fillColor('#374151').text(proc.content);
+    doc.moveDown(0.7);
+  });
+
+  doc.addPage();
+
+  doc.fontSize(14).fillColor(primaryColor).text('SIGNATURES', { align: 'center' });
+  doc.moveDown();
+
+  doc.fontSize(10).fillColor('#374151')
+    .text('By signing below, both parties acknowledge and agree to the warranty terms, exclusions, and claim procedures outlined in this Warranty Contract. This agreement is binding upon execution by authorized representatives of both parties.');
+  doc.moveDown(2);
+
+  doc.fontSize(11).fillColor(primaryColor).text('CONTRACTOR');
+  doc.moveDown(2);
+
+  let sigY = doc.y;
+  doc.fontSize(10).fillColor('#374151').text('Signature:', 50, sigY);
+  doc.strokeColor('#374151').lineWidth(0.5)
+    .moveTo(120, sigY + 12).lineTo(350, sigY + 12).stroke();
+  doc.text('Date:', 370, sigY);
+  doc.strokeColor('#374151')
+    .moveTo(400, sigY + 12).lineTo(550, sigY + 12).stroke();
+
+  doc.moveDown(2);
+  const printY = doc.y;
+  doc.text('Print Name:', 50, printY);
+  doc.strokeColor('#374151')
+    .moveTo(120, printY + 12).lineTo(350, printY + 12).stroke();
+  doc.text('Title:', 370, printY);
+  doc.strokeColor('#374151')
+    .moveTo(400, printY + 12).lineTo(550, printY + 12).stroke();
+
+  doc.moveDown(2);
+  const companyY = doc.y;
+  doc.text('Company:', 50, companyY);
+  doc.strokeColor('#374151')
+    .moveTo(120, companyY + 12).lineTo(350, companyY + 12).stroke();
+
+  doc.moveDown(3);
+
+  doc.fontSize(11).fillColor(primaryColor).text('CLIENT');
+  doc.moveDown(2);
+
+  sigY = doc.y;
+  doc.fontSize(10).fillColor('#374151').text('Signature:', 50, sigY);
+  doc.strokeColor('#374151').lineWidth(0.5)
+    .moveTo(120, sigY + 12).lineTo(350, sigY + 12).stroke();
+  doc.text('Date:', 370, sigY);
+  doc.strokeColor('#374151')
+    .moveTo(400, sigY + 12).lineTo(550, sigY + 12).stroke();
+
+  doc.moveDown(2);
+  const clientPrintY = doc.y;
+  doc.text('Print Name:', 50, clientPrintY);
+  doc.strokeColor('#374151')
+    .moveTo(120, clientPrintY + 12).lineTo(350, clientPrintY + 12).stroke();
+  doc.text('Title:', 370, clientPrintY);
+  doc.strokeColor('#374151')
+    .moveTo(400, clientPrintY + 12).lineTo(550, clientPrintY + 12).stroke();
+
+  doc.moveDown(2);
+  const clientCompanyY = doc.y;
+  doc.text('Company:', 50, clientCompanyY);
+  doc.strokeColor('#374151')
+    .moveTo(120, clientCompanyY + 12).lineTo(350, clientCompanyY + 12).stroke();
+
+  doc.moveDown(3);
+  doc.fontSize(8).fillColor('#9ca3af')
+    .text(`${companyName} | Construction Management Platform`, { align: 'center' })
+    .text(`Warranty Contract #${data.bid.code}-WC | Generated ${new Date().toLocaleDateString()}`, { align: 'center' });
+
+  doc.end();
+  return stream;
+}
+
 // Inspection Request PDF Data Interface
 interface InspectionRequestData {
   inspection: {
