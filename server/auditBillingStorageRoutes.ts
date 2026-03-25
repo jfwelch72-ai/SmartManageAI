@@ -499,10 +499,9 @@ router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res)
     const { ObjectPermission } = await objectAclPromise;
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(req.path);
-    const objectKey = objectFile.name;
 
     const { resolveObjectKeyToFile } = await import("./fileAccessHelpers");
-    const resolvedFile = await resolveObjectKeyToFile(objectKey);
+    const resolvedFile = await resolveObjectKeyToFile(req.path);
 
     if (!resolvedFile) {
       res.status(404).json({ error: "File not found in system" });

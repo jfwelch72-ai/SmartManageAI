@@ -63,8 +63,8 @@ export async function canUserAccessFile(
   fileId: string,
   fileType: FileType
 ): Promise<boolean> {
-  // Admin and Manager have full access
-  if (userRole === "ADMIN" || userRole === "MANAGER") {
+  // Admin, Manager, and Super Admin have full access
+  if (userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPER_ADMIN") {
     return true;
   }
 
@@ -126,8 +126,8 @@ export async function filterFilesByPermissions<T extends { id: string; uploadedB
   userRole: string,
   fileType: FileType
 ): Promise<T[]> {
-  // Admin and Manager see all files
-  if (userRole === "ADMIN" || userRole === "MANAGER") {
+  // Admin, Manager, and Super Admin see all files
+  if (userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPER_ADMIN") {
     return files;
   }
 
