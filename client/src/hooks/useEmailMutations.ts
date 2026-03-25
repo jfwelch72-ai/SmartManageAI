@@ -224,7 +224,22 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
       if (context?.previousAccounts) {
         queryClient.setQueryData(["/api/email/accounts"], context.previousAccounts);
       }
-      const message = err instanceof Error ? err.message : "Could not remove account";
+      let message = "Could not remove account";
+      if (err instanceof Error) {
+        const raw = err.message;
+        const jsonStart = raw.indexOf("{");
+        if (jsonStart !== -1) {
+          try {
+            const parsed = JSON.parse(raw.slice(jsonStart));
+            message = parsed.error || raw;
+          } catch {
+            message = raw;
+          }
+        } else {
+          message = raw;
+        }
+      }
+      console.error("Delete account error:", err);
       toast({ title: "Delete failed", description: message, variant: "destructive" });
     },
     onSettled: () => {

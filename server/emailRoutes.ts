@@ -396,20 +396,48 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       }
     }
 
-    // Hard delete (cascades to emailThreads and emailMessages)
+    // Explicitly delete dependent rows in a transaction (don't rely on DB cascades which may not exist)
     let deleted;
     try {
-      const [result] = await db
-        .delete(emailAccounts)
-        .where(eq(emailAccounts.id, req.params.id))
-        .returning();
+      deleted = await db.transaction(async (tx) => {
+        if (threadIds.length > 0) {
+          const messageIds = await tx
+            .select({ id: emailMessages.id })
+            .from(emailMessages)
+            .where(inArray(emailMessages.threadId, threadIds));
+          const msgIds = messageIds.map((m) => m.id);
 
-      if (!result) {
-        return res.status(500).json({ error: "Failed to delete email account: no rows deleted" });
-      }
-      deleted = result;
+          if (msgIds.length > 0) {
+            await tx
+              .delete(emailAttachments)
+              .where(inArray(emailAttachments.emailMessageId, msgIds));
+          }
+
+          await tx
+            .delete(emailMessages)
+            .where(inArray(emailMessages.threadId, threadIds));
+        }
+
+        await tx
+          .delete(emailMessages)
+          .where(eq(emailMessages.emailAccountId, existing.id));
+
+        await tx
+          .delete(emailThreads)
+          .where(eq(emailThreads.emailAccountId, existing.id));
+
+        const [result] = await tx
+          .delete(emailAccounts)
+          .where(eq(emailAccounts.id, req.params.id))
+          .returning();
+
+        if (!result) {
+          throw new Error("No rows deleted");
+        }
+        return result;
+      });
     } catch (deleteError) {
-      console.error("Error during account cascade delete:", deleteError);
+      console.error("Error during account delete:", deleteError);
       const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
       return res.status(500).json({ error: `Failed to delete email account: ${message}` });
     }
