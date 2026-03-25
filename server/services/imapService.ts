@@ -34,6 +34,11 @@ function buildImapConfig(account: EmailAccount) {
       user: account.imapUsername || account.emailAddress,
       pass: account.imapPassword!,
     },
+    tls: {
+      rejectUnauthorized: true,
+      servername: account.imapHost!,
+      minVersion: "TLSv1.2" as const,
+    },
     logger: isProduction ? (false as const) : console,
     connectTimeout: 30000,
     greetingTimeout: 30000,
@@ -42,13 +47,19 @@ function buildImapConfig(account: EmailAccount) {
 }
 
 function buildSmtpConfig(account: EmailAccount) {
+  const secure = account.smtpSecure ?? false;
   return {
     host: account.smtpHost!,
     port: account.smtpPort ?? 587,
-    secure: account.smtpSecure ?? false,
+    secure,
+    ...(!secure && { requireTLS: true }),
     auth: {
       user: account.imapUsername || account.emailAddress,
       pass: account.imapPassword!,
+    },
+    tls: {
+      minVersion: "TLSv1.2" as const,
+      ciphers: "HIGH",
     },
   };
 }
@@ -305,6 +316,9 @@ function parseConnectionError(err: any, protocol: string, account?: EmailAccount
     return `${protocol} authentication failed. Please check your username and password. If your provider uses 2-factor authentication, you may need an App Password.`;
   }
   if (msg.includes("certificate") || msg.includes("SSL") || msg.includes("TLS")) {
+    if (provider === "Outlook") {
+      return `${protocol} SSL/TLS error. Outlook may block basic IMAP access — try using the Outlook OAuth connection method instead for a more reliable connection.`;
+    }
     return `${protocol} SSL/TLS error. Try toggling the secure connection setting.`;
   }
 
