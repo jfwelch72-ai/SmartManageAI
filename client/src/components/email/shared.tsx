@@ -56,6 +56,7 @@ export interface EmailAccount {
   displayName: string | null;
   isActive: boolean;
   lastSyncedAt: string | null;
+  lastSyncError: string | null;
 }
 
 export const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; icon: ReactNode }> = {

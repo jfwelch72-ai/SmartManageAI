@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { formatDistanceToNow } from "date-fns";
 import {
   Mail,
@@ -11,6 +11,8 @@ import {
   EyeOff,
   Trash2,
   Wifi,
+  AlertTriangle,
+  Info,
 } from "lucide-react";
 import { SiGmail } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -39,9 +41,90 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount } from "@/hooks/useEmailMutations";
 import { useToast } from "@/hooks/use-toast";
 import type { EmailAccount } from "./shared";
+
+const PROVIDER_PRESETS: Record<string, { label: string; imapHost: string; imapPort: string; imapSecure: boolean; smtpHost: string; smtpPort: string; smtpSecure: boolean; appPasswordNote: string }> = {
+  yahoo: {
+    label: "Yahoo",
+    imapHost: "imap.mail.yahoo.com",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "smtp.mail.yahoo.com",
+    smtpPort: "465",
+    smtpSecure: true,
+    appPasswordNote: "Yahoo requires an App Password. Go to Yahoo Account Security → Generate app password.",
+  },
+  aol: {
+    label: "AOL",
+    imapHost: "imap.aol.com",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "smtp.aol.com",
+    smtpPort: "465",
+    smtpSecure: true,
+    appPasswordNote: "AOL requires an App Password. Go to AOL Account Security → Generate app password.",
+  },
+  outlook: {
+    label: "Outlook",
+    imapHost: "outlook.office365.com",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "smtp.office365.com",
+    smtpPort: "587",
+    smtpSecure: false,
+    appPasswordNote: "If you have 2-factor authentication enabled, you'll need an App Password from your Microsoft account security settings.",
+  },
+  hotmail: {
+    label: "Hotmail",
+    imapHost: "outlook.office365.com",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "smtp.office365.com",
+    smtpPort: "587",
+    smtpSecure: false,
+    appPasswordNote: "If you have 2-factor authentication enabled, you'll need an App Password from your Microsoft account security settings.",
+  },
+  live: {
+    label: "Live",
+    imapHost: "outlook.office365.com",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "smtp.office365.com",
+    smtpPort: "587",
+    smtpSecure: false,
+    appPasswordNote: "If you have 2-factor authentication enabled, you'll need an App Password from your Microsoft account security settings.",
+  },
+  icloud: {
+    label: "iCloud",
+    imapHost: "imap.mail.me.com",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "smtp.mail.me.com",
+    smtpPort: "587",
+    smtpSecure: false,
+    appPasswordNote: "iCloud requires an App-Specific Password. Generate one at appleid.apple.com → Sign-In and Security → App-Specific Passwords.",
+  },
+};
+
+function detectEmailProvider(email: string): string | null {
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain) return null;
+  if (domain.includes("yahoo.")) return "yahoo";
+  if (domain.includes("aol.")) return "aol";
+  if (domain.startsWith("outlook.")) return "outlook";
+  if (domain.startsWith("hotmail.")) return "hotmail";
+  if (domain.startsWith("live.")) return "live";
+  if (domain.includes("icloud.") || domain.includes("me.com") || domain.includes("mac.com")) return "icloud";
+  return null;
+}
 
 interface EmailAccountsDialogProps {
   accounts: EmailAccount[] | undefined;
@@ -72,6 +155,27 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
 
   const [imapFormErrors, setImapFormErrors] = useState<Record<string, string>>({});
 
+  const [lastAppliedPreset, setLastAppliedPreset] = useState<string | null>(null);
+  const detectedProvider = useMemo(() => detectEmailProvider(imapFormData.emailAddress), [imapFormData.emailAddress]);
+  const providerPreset = detectedProvider ? PROVIDER_PRESETS[detectedProvider] : null;
+
+  useEffect(() => {
+    if (detectedProvider && detectedProvider !== lastAppliedPreset && providerPreset) {
+      setImapFormData(prev => ({
+        ...prev,
+        imapHost: providerPreset.imapHost,
+        imapPort: providerPreset.imapPort,
+        imapSecure: providerPreset.imapSecure,
+        smtpHost: providerPreset.smtpHost,
+        smtpPort: providerPreset.smtpPort,
+        smtpSecure: providerPreset.smtpSecure,
+      }));
+      setLastAppliedPreset(detectedProvider);
+    } else if (!detectedProvider && lastAppliedPreset) {
+      setLastAppliedPreset(null);
+    }
+  }, [detectedProvider]);
+
   const resetImapForm = () => {
     setImapFormData({
       emailAddress: "",
@@ -87,6 +191,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
     });
     setImapFormErrors({});
     setShowPassword(false);
+    setLastAppliedPreset(null);
   };
 
   const createAccountMutation = useCreateAccount({
@@ -222,11 +327,28 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                           <Server className="w-5 h-5 text-muted-foreground" />
                         )}
                         <div>
-                          <div className="font-medium text-sm">{account.emailAddress}</div>
+                          <div className="font-medium text-sm flex items-center gap-1.5">
+                            {account.emailAddress}
+                            {account.lastSyncError && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" data-testid={`icon-sync-error-${account.id}`} />
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs">
+                                    <p className="text-xs">{account.lastSyncError}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
                           <div className="text-xs text-muted-foreground">
                             {account.provider}
                             {account.lastSyncedAt && (
-                              <span> - Synced {formatDistanceToNow(new Date(account.lastSyncedAt))} ago</span>
+                              <span> · Synced {formatDistanceToNow(new Date(account.lastSyncedAt))} ago</span>
+                            )}
+                            {account.lastSyncError && !account.lastSyncedAt && (
+                              <span className="text-amber-600 dark:text-amber-400"> · Sync error</span>
                             )}
                           </div>
                         </div>
@@ -345,6 +467,14 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                     />
                     {imapFormErrors.emailAddress && (
                       <p className="text-xs text-destructive" data-testid="error-email-address">{imapFormErrors.emailAddress}</p>
+                    )}
+                    {providerPreset && (
+                      <div className="flex items-start gap-2 p-2 rounded-md bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800" data-testid="provider-auto-detect-note">
+                        <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+                        <div className="text-xs text-blue-700 dark:text-blue-300">
+                          <span className="font-medium">{providerPreset.label} detected</span> — server settings auto-filled. {providerPreset.appPasswordNote}
+                        </div>
+                      </div>
                     )}
                   </div>
                   <div className="space-y-2">

@@ -57,7 +57,7 @@ export async function testImapConnection(account: EmailAccount): Promise<ImapTes
     await client.logout();
     return { success: true, message: "IMAP connection successful" };
   } catch (err: any) {
-    const errorMsg = parseConnectionError(err, "IMAP");
+    const errorMsg = parseConnectionError(err, "IMAP", account);
     return { success: false, message: "IMAP connection failed", error: errorMsg };
   }
 }
@@ -75,7 +75,7 @@ export async function testSmtpConnection(account: EmailAccount): Promise<ImapTes
     return { success: true, message: "SMTP connection successful" };
   } catch (err: any) {
     transporter.close();
-    const errorMsg = parseConnectionError(err, "SMTP");
+    const errorMsg = parseConnectionError(err, "SMTP", account);
     return { success: false, message: "SMTP connection failed", error: errorMsg };
   }
 }
@@ -223,8 +223,20 @@ export async function sendSmtpEmail(
   }
 }
 
-function parseConnectionError(err: any, protocol: string): string {
+function detectProvider(account: EmailAccount): string | null {
+  const email = account.emailAddress?.toLowerCase() || "";
+  const host = (account.imapHost || "").toLowerCase();
+  if (email.includes("@yahoo.") || host.includes("yahoo")) return "Yahoo";
+  if (email.includes("@aol.") || host.includes("aol")) return "AOL";
+  if (email.includes("@outlook.") || email.includes("@hotmail.") || email.includes("@live.") || host.includes("outlook")) return "Outlook";
+  if (email.includes("@gmail.") || host.includes("gmail") || host.includes("imap.google")) return "Gmail";
+  if (email.includes("@icloud.") || host.includes("icloud")) return "iCloud";
+  return null;
+}
+
+function parseConnectionError(err: any, protocol: string, account?: EmailAccount): string {
   const msg = err.message || String(err);
+  const provider = account ? detectProvider(account) : null;
 
   if (msg.includes("ENOTFOUND") || msg.includes("getaddrinfo")) {
     return `${protocol} server not found. Please check the hostname.`;
@@ -236,7 +248,22 @@ function parseConnectionError(err: any, protocol: string): string {
     return `${protocol} connection timed out. Check the host, port, and SSL/TLS settings.`;
   }
   if (msg.includes("Invalid credentials") || msg.includes("AUTHENTICATIONFAILED") || msg.includes("LOGIN") || msg.includes("auth") || msg.includes("Authentication")) {
-    return `${protocol} authentication failed. Please check your username and password.`;
+    if (provider === "Yahoo") {
+      return `${protocol} authentication failed. Yahoo requires an App Password — go to Yahoo Account Security to generate one.`;
+    }
+    if (provider === "AOL") {
+      return `${protocol} authentication failed. AOL requires an App Password — go to AOL Account Security to generate one.`;
+    }
+    if (provider === "Outlook") {
+      return `${protocol} authentication failed. If you have 2FA enabled, you need an App Password from your Microsoft account security settings.`;
+    }
+    if (provider === "iCloud") {
+      return `${protocol} authentication failed. iCloud requires an App-Specific Password — generate one at appleid.apple.com.`;
+    }
+    if (provider === "Gmail") {
+      return `${protocol} authentication failed. Gmail requires an App Password if 2FA is enabled, or use the Gmail OAuth option instead.`;
+    }
+    return `${protocol} authentication failed. Please check your username and password. If your provider uses 2-factor authentication, you may need an App Password.`;
   }
   if (msg.includes("certificate") || msg.includes("SSL") || msg.includes("TLS")) {
     return `${protocol} SSL/TLS error. Try toggling the secure connection setting.`;

@@ -213,6 +213,24 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res) => {
       req
     );
 
+    if (newAccount.provider === "IMAP" && newAccount.imapHost) {
+      testFullConnection(newAccount).then(async (testResult) => {
+        if (testResult.success) {
+          const syncResult = await syncImapAccount(newAccount, req.user.id);
+          console.log(`Initial IMAP sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+        } else {
+          const errorMsg = testResult.imap.error || testResult.smtp.error || "Connection test failed";
+          console.log(`Skipping initial sync for ${newAccount.emailAddress}: ${errorMsg}`);
+          await db
+            .update(emailAccounts)
+            .set({ lastSyncError: errorMsg.substring(0, 500), updatedAt: new Date() })
+            .where(eq(emailAccounts.id, newAccount.id));
+        }
+      }).catch((err) => {
+        console.error(`Initial IMAP sync failed for ${newAccount.emailAddress}:`, err);
+      });
+    }
+
     return res.status(201).json(sanitizeAccountForResponse(newAccount));
   } catch (error) {
     console.error("Error creating email account:", error);
@@ -1522,11 +1540,22 @@ async function syncGmailAccount(
   return result;
 }
 
-async function syncImapAccount(
+export async function syncImapAccount(
   account: typeof emailAccounts.$inferSelect,
   userId: string,
 ): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
   const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
+
+  if (!account.imapHost || !account.imapPort || !account.imapPassword) {
+    result.errors.push("IMAP configuration incomplete: missing host, port, or password");
+    try {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncError: "IMAP configuration incomplete: missing host, port, or password", updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+    } catch (_) {}
+    return result;
+  }
 
   try {
     const since = account.lastSyncedAt || undefined;
@@ -1703,14 +1732,31 @@ async function syncImapAccount(
       }
     }
 
-    if (result.errors.length === 0 || result.messagesImported > 0) {
+    if (result.errors.length === 0) {
       await db
         .update(emailAccounts)
-        .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+        .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+    } else if (result.messagesImported > 0) {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncedAt: new Date(), lastSyncError: result.errors[0].substring(0, 500), updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+    } else {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncError: result.errors[0].substring(0, 500), updatedAt: new Date() })
         .where(eq(emailAccounts.id, account.id));
     }
   } catch (err) {
-    result.errors.push(`IMAP sync failed: ${String(err)}`);
+    const errorMsg = `IMAP sync failed: ${String(err)}`;
+    result.errors.push(errorMsg);
+    try {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncError: errorMsg.substring(0, 500), updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+    } catch (_) {}
   }
 
   return result;

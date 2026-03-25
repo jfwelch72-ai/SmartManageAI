@@ -8,6 +8,13 @@
       "when": 1774400753868,
       "tag": "0000_add_passkey_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774443627677,
+      "tag": "0001_marvelous_anita_blake",
+      "breakpoints": true
     }
   ]
 }

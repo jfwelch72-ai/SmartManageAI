@@ -3703,6 +3703,7 @@ export const emailAccounts = pgTable("email_accounts", {
   
   isActive: boolean("is_active").notNull().default(true),
   lastSyncedAt: timestamp("last_synced_at"),
+  lastSyncError: text("last_sync_error"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

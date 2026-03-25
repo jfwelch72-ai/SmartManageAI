@@ -14,6 +14,8 @@ import { socialAccounts } from "@shared/schema";
 import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
 import { bids } from "@shared/schema";
 import { eventBus } from "../events";
+import { emailAccounts } from "@shared/schema";
+import { syncImapAccount } from "../emailRoutes";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -25,6 +27,7 @@ let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
 let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
 let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
 let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
+let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -109,7 +112,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, and bid due date schedulers)");
+  imapSyncTask = cron.schedule("*/15 * * * *", async () => {
+    try {
+      await processImapEmailSync();
+    } catch (err) {
+      logError("IMAP email sync failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, and IMAP email sync schedulers)");
 }
 
 export function stopJobRunner() {
@@ -152,6 +163,10 @@ export function stopJobRunner() {
   if (orphanUploadTask) {
     orphanUploadTask.stop();
     orphanUploadTask = null;
+  }
+  if (imapSyncTask) {
+    imapSyncTask.stop();
+    imapSyncTask = null;
   }
   logInfo("Background job runner stopped");
 }
@@ -1067,4 +1082,57 @@ function parseBucketObjectPath(fullPath: string): { bucketName: string; objectNa
     bucketName: parts[1],
     objectName: parts.slice(2).join("/"),
   };
+}
+
+let imapSyncRunning = false;
+
+async function processImapEmailSync() {
+  if (imapSyncRunning) {
+    logInfo("IMAP sync already in progress, skipping");
+    return;
+  }
+  imapSyncRunning = true;
+
+  try {
+    const imapAccounts = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.isActive, true),
+          eq(emailAccounts.provider, "IMAP"),
+          isNotNull(emailAccounts.imapHost)
+        )
+      );
+
+    if (imapAccounts.length === 0) return;
+
+    logInfo("Processing IMAP email sync", { count: imapAccounts.length });
+
+    for (const account of imapAccounts) {
+      try {
+        const result = await syncImapAccount(account, account.userId);
+        if (result.messagesImported > 0) {
+          logInfo("IMAP sync completed", {
+            account: account.emailAddress,
+            messagesImported: result.messagesImported,
+            threadsCreated: result.threadsCreated,
+          });
+        }
+        if (result.errors.length > 0) {
+          logError("IMAP sync had errors", {
+            account: account.emailAddress,
+            errors: result.errors.slice(0, 3),
+          });
+        }
+      } catch (err) {
+        logError("IMAP sync failed for account", {
+          account: account.emailAddress,
+          error: String(err),
+        });
+      }
+    }
+  } finally {
+    imapSyncRunning = false;
+  }
 }
