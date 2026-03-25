@@ -94,9 +94,9 @@ export default function HiringPipelinePage() {
   if (isLoading) {
     return (
       <div className="p-6">
-        <div className="flex gap-4 overflow-x-auto pb-4">
+        <div className="flex flex-col sm:flex-row gap-4 sm:overflow-x-auto pb-4">
           {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="w-56 shrink-0 space-y-2">
+            <div key={i} className="w-full sm:w-56 sm:shrink-0 space-y-2">
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-28 w-full" />
               <Skeleton className="h-28 w-full" />
@@ -108,20 +108,20 @@ export default function HiringPipelinePage() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 sm:p-6 space-y-4">
       <div>
-        <h1 className="text-2xl font-bold" data-testid="heading-pipeline">Pipeline Board</h1>
-        <p className="text-muted-foreground">Drag candidates between stages to update their status</p>
+        <h1 className="text-xl sm:text-2xl font-bold" data-testid="heading-pipeline">Pipeline Board</h1>
+        <p className="text-sm sm:text-base text-muted-foreground">Drag candidates between stages to update their status</p>
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
+      <div className="flex flex-col sm:flex-row gap-3 sm:overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
         {pipelineStages.map((stage) => {
           const cols = byStage(stage.key);
           const isOver = dragOverStage === stage.key;
           return (
             <div
               key={stage.key}
-              className={`w-60 shrink-0 flex flex-col gap-2 rounded-lg p-2 border-2 transition-colors ${isOver ? "border-primary bg-primary/5" : "border-transparent bg-muted/30"}`}
+              className={`w-full sm:w-60 sm:shrink-0 flex flex-col gap-2 rounded-lg p-2 border-2 transition-colors ${isOver ? "border-primary bg-primary/5" : "border-transparent bg-muted/30"}`}
               onDragOver={(e) => handleDragOver(e, stage.key)}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, stage.key)}
@@ -145,10 +145,10 @@ export default function HiringPipelinePage() {
                       key={c.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, c.id)}
-                      className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+                      className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow touch-manipulation"
                       data-testid={`card-candidate-${c.id}`}
                     >
-                      <CardContent className="p-3 space-y-1.5">
+                      <CardContent className="p-3 space-y-1.5 min-h-[44px]">
                         <div className="flex items-center gap-2">
                           <Avatar className="w-7 h-7 shrink-0">
                             <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
@@ -192,7 +192,7 @@ export default function HiringPipelinePage() {
       </div>
 
       <AlertDialog open={!!confirmMove} onOpenChange={(open) => { if (!open) setConfirmMove(null); }}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Confirm Move</AlertDialogTitle>
             <AlertDialogDescription>

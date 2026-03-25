@@ -474,7 +474,7 @@ export default function CrmPipelineView() {
           data-testid={`input-${isEdit ? "edit-" : ""}opp-name`}
         />
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label>Stage</Label>
           <Select
@@ -501,7 +501,7 @@ export default function CrmPipelineView() {
           />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label>Deal Value ($)</Label>
           <Input
@@ -572,7 +572,7 @@ export default function CrmPipelineView() {
           </SelectContent>
         </Select>
       </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <Label>Project Type</Label>
           <Input
@@ -627,55 +627,55 @@ export default function CrmPipelineView() {
   return (
     <div className="flex flex-col gap-6" data-testid="crm-pipeline-view">
       {/* Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
         <Card data-testid="stat-total-pipeline">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-md bg-blue-100 dark:bg-blue-900">
-                <DollarSign className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 rounded-md bg-blue-100 dark:bg-blue-900">
+                <DollarSign className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <div>
-                <p className="text-xl font-bold">{stats ? formatCurrency(stats.totalValue) : <Skeleton className="h-6 w-16" />}</p>
-                <p className="text-xs text-muted-foreground">Total Pipeline</p>
+              <div className="min-w-0">
+                <p className="text-base sm:text-xl font-bold truncate">{stats ? formatCurrency(stats.totalValue) : <Skeleton className="h-6 w-16" />}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground">Total Pipeline</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card data-testid="stat-weighted-value">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-md bg-violet-100 dark:bg-violet-900">
-                <TrendingUp className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 rounded-md bg-violet-100 dark:bg-violet-900">
+                <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-violet-600 dark:text-violet-400" />
               </div>
-              <div>
-                <p className="text-xl font-bold">{stats ? formatCurrency(stats.weightedValue) : <Skeleton className="h-6 w-16" />}</p>
-                <p className="text-xs text-muted-foreground">Weighted Value</p>
+              <div className="min-w-0">
+                <p className="text-base sm:text-xl font-bold truncate">{stats ? formatCurrency(stats.weightedValue) : <Skeleton className="h-6 w-16" />}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground">Weighted Value</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card data-testid="stat-win-rate">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-md bg-green-100 dark:bg-green-900">
-                <Trophy className="w-5 h-5 text-green-600 dark:text-green-400" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 rounded-md bg-green-100 dark:bg-green-900">
+                <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-green-600 dark:text-green-400" />
               </div>
-              <div>
-                <p className="text-xl font-bold">{stats ? `${stats.winRate}%` : <Skeleton className="h-6 w-12" />}</p>
-                <p className="text-xs text-muted-foreground">Win Rate</p>
+              <div className="min-w-0">
+                <p className="text-base sm:text-xl font-bold truncate">{stats ? `${stats.winRate}%` : <Skeleton className="h-6 w-12" />}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground">Win Rate</p>
               </div>
             </div>
           </CardContent>
         </Card>
         <Card data-testid="stat-open-deals">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-md bg-orange-100 dark:bg-orange-900">
-                <Target className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 rounded-md bg-orange-100 dark:bg-orange-900">
+                <Target className="w-4 h-4 sm:w-5 sm:h-5 text-orange-600 dark:text-orange-400" />
               </div>
-              <div>
-                <p className="text-xl font-bold">{stats ? stats.openDeals : <Skeleton className="h-6 w-8" />}</p>
-                <p className="text-xs text-muted-foreground">Open Deals</p>
+              <div className="min-w-0">
+                <p className="text-base sm:text-xl font-bold truncate">{stats ? stats.openDeals : <Skeleton className="h-6 w-8" />}</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground">Open Deals</p>
               </div>
             </div>
           </CardContent>
@@ -683,9 +683,9 @@ export default function CrmPipelineView() {
       </div>
 
       {/* Controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2 flex-1 flex-wrap">
-          <div className="relative flex-1 min-w-[180px] max-w-xs">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+          <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               placeholder="Search opportunities..."
@@ -695,30 +695,33 @@ export default function CrmPipelineView() {
               data-testid="input-pipeline-search"
             />
           </div>
-          <Select value={stageFilter} onValueChange={setStageFilter}>
-            <SelectTrigger className="w-[150px]" data-testid="select-stage-filter">
-              <SelectValue placeholder="All Stages" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Stages</SelectItem>
-              {STAGES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={assignedFilter} onValueChange={setAssignedFilter}>
-            <SelectTrigger className="w-[160px]" data-testid="select-assigned-filter">
-              <SelectValue placeholder="All Assignees" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Assignees</SelectItem>
-              {orgUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>)}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+            <Select value={stageFilter} onValueChange={setStageFilter}>
+              <SelectTrigger className="flex-1 min-w-[120px] sm:flex-none sm:w-[150px] min-h-[44px] sm:min-h-0" data-testid="select-stage-filter">
+                <SelectValue placeholder="All Stages" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Stages</SelectItem>
+                {STAGES.map(s => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={assignedFilter} onValueChange={setAssignedFilter}>
+              <SelectTrigger className="flex-1 min-w-[120px] sm:flex-none sm:w-[160px] min-h-[44px] sm:min-h-0" data-testid="select-assigned-filter">
+                <SelectValue placeholder="All Assignees" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Assignees</SelectItem>
+                {orgUsers.map(u => <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant={viewMode === "kanban" ? "default" : "outline"}
             size="sm"
             onClick={() => setViewMode("kanban")}
+            className="min-h-[44px] sm:min-h-0"
             data-testid="button-view-kanban"
           >
             <Kanban className="w-4 h-4 mr-1.5" />
@@ -728,15 +731,17 @@ export default function CrmPipelineView() {
             variant={viewMode === "list" ? "default" : "outline"}
             size="sm"
             onClick={() => setViewMode("list")}
+            className="min-h-[44px] sm:min-h-0"
             data-testid="button-view-list"
           >
             <LayoutList className="w-4 h-4 mr-1.5" />
             List
           </Button>
           {canEdit && (
-            <Button onClick={() => setAddOpen(true)} data-testid="button-add-opportunity">
+            <Button onClick={() => setAddOpen(true)} className="min-h-[44px] sm:min-h-0 ml-auto" data-testid="button-add-opportunity">
               <Plus className="w-4 h-4 mr-1.5" />
-              Add Opportunity
+              <span className="hidden sm:inline">Add Opportunity</span>
+              <span className="sm:hidden">Add</span>
             </Button>
           )}
         </div>
@@ -744,14 +749,14 @@ export default function CrmPipelineView() {
 
       {/* Kanban Board */}
       {viewMode === "kanban" && (
-        <div className="flex gap-3 overflow-x-auto pb-4">
+        <div className="flex flex-col sm:flex-row gap-3 sm:overflow-x-auto pb-4">
           {STAGES.map(stage => {
             const stageOpps = oppsByStage(stage.key);
             const total = stageTotal(stage.key);
             return (
               <div
                 key={stage.key}
-                className="flex-shrink-0 w-[220px] flex flex-col gap-2"
+                className="w-full sm:flex-shrink-0 sm:w-[220px] flex flex-col gap-2"
                 data-testid={`kanban-col-${stage.key}`}
               >
                 <div className={`rounded-lg px-3 py-2 ${stage.bgColor}`}>
@@ -839,7 +844,7 @@ export default function CrmPipelineView() {
               </div>
             ) : (
               <div className="divide-y">
-                <div className="grid grid-cols-12 gap-2 px-4 py-2">
+                <div className="hidden sm:grid grid-cols-12 gap-2 px-4 py-2">
                   <div className="col-span-4">
                     <SortableHeader label="Opportunity" field="name" currentField={sortField} currentDir={sortDir} onSort={handleSort} />
                   </div>
@@ -861,7 +866,7 @@ export default function CrmPipelineView() {
                   return (
                     <div
                       key={opp.id}
-                      className="grid grid-cols-12 gap-2 px-4 py-3 hover:bg-muted/30 cursor-pointer items-center"
+                      className="hidden sm:grid grid-cols-12 gap-2 px-4 py-3 hover:bg-muted/30 cursor-pointer items-center"
                       onClick={() => openDetail(opp)}
                       data-testid={`row-opp-${opp.id}`}
                     >
@@ -876,6 +881,34 @@ export default function CrmPipelineView() {
                       <div className="col-span-2 text-sm">{opp.probability ?? 10}%</div>
                       <div className="col-span-2 text-xs text-muted-foreground">
                         {opp.expectedCloseDate ? format(new Date(opp.expectedCloseDate), "MMM d, yyyy") : "—"}
+                      </div>
+                    </div>
+                  );
+                })}
+                {sortedOpps.map(opp => {
+                  const si = getStageInfo(opp.stage);
+                  return (
+                    <div
+                      key={opp.id}
+                      className="sm:hidden p-4 hover:bg-muted/30 cursor-pointer active:bg-muted/50 min-h-[44px]"
+                      onClick={() => openDetail(opp)}
+                      data-testid={`row-opp-mobile-${opp.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-1.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-sm">{opp.name}</p>
+                          {opp.crmOrgName && <p className="text-xs text-muted-foreground">{opp.crmOrgName}</p>}
+                        </div>
+                        <Badge className={`${si.bgColor} ${si.color} border-0 text-xs shrink-0`}>{si.label}</Badge>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="font-medium">{formatCurrency(opp.dealValue)}</span>
+                        <span className="text-muted-foreground">{opp.probability ?? 10}%</span>
+                        {opp.expectedCloseDate && (
+                          <span className="text-xs text-muted-foreground ml-auto">
+                            {format(new Date(opp.expectedCloseDate), "MMM d, yyyy")}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );
@@ -960,7 +993,7 @@ export default function CrmPipelineView() {
                 data-testid="input-convert-client-name"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <Label>Start Date</Label>
                 <Input type="date" value={convertForm.startDate} onChange={e => setConvertForm(f => ({ ...f, startDate: e.target.value }))} data-testid="input-convert-start" />
@@ -1023,7 +1056,7 @@ export default function CrmPipelineView() {
               </div>
 
               {/* Key fields */}
-              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-muted-foreground uppercase tracking-wide">Deal Value</p>
                   <p className="font-semibold text-primary">{formatCurrency(selectedOpp.dealValue)}</p>
