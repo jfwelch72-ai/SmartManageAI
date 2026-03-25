@@ -283,7 +283,7 @@ router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
-// DELETE /api/email/accounts/:id - Unlink/delete an email account
+// DELETE /api/email/accounts/:id - Remove an email account
 router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -312,13 +312,9 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Email account not found" });
     }
 
-    // Soft delete by deactivating (keeps history)
+    // Hard delete (cascades to emailThreads and emailMessages)
     const [deleted] = await db
-      .update(emailAccounts)
-      .set({
-        isActive: false,
-        updatedAt: new Date(),
-      })
+      .delete(emailAccounts)
       .where(eq(emailAccounts.id, req.params.id))
       .returning();
 
@@ -331,7 +327,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       req
     );
 
-    return res.json({ success: true, message: "Email account unlinked" });
+    return res.json({ success: true, message: "Email account removed" });
   } catch (error) {
     console.error("Error deleting email account:", error);
     return res.status(500).json({ error: "Failed to delete email account" });

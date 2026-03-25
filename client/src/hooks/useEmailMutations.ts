@@ -208,7 +208,7 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Account removed", description: "Email account unlinked" });
+      toast({ title: "Account removed", description: "Email account removed" });
       queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
       callbacks.onSuccess();
     },

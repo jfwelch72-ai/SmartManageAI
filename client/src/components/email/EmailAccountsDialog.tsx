@@ -516,7 +516,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
           <AlertDialogHeader>
             <AlertDialogTitle>Remove Email Account?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will unlink this email account from SmartManageAI. Your emails will no longer sync, but existing data will be preserved.
+              This will permanently remove this email account from SmartManageAI, along with all synced threads and messages.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
