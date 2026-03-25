@@ -6,6 +6,7 @@ import helmet from "helmet";
 import { execSync } from "child_process";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { logOAuthRedirectUris } from "./utils/routeHelpers";
 import { initializeAIScheduler } from "./ai/scheduler";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { initializeEventBus } from "./events";
@@ -182,6 +183,7 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    logOAuthRedirectUris();
     
     // AI Schedulers only run in production mode
     const isProduction = process.env.NODE_ENV === 'production';

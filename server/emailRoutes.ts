@@ -7,6 +7,7 @@ import { logCreate, logUpdate, logDelete, logAudit } from "./auditLogger";
 import { sanitizeEmail, sanitizeText, sanitizeShortText } from "./sanitization";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
+import { getCanonicalBaseUrl, isRedirectUriValid } from "./utils/routeHelpers";
 import {
   analyzeEmail,
   summarizeThread,
@@ -381,12 +382,6 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
 // OAuth Routes for Gmail and Outlook
 // ============================================================================
 
-function getBaseUrl(req: import("express").Request): string {
-  const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
-  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
-  return `${proto}://${host}`;
-}
-
 const GMAIL_CONFIG = {
   clientId: process.env.GOOGLE_CLIENT_ID || "",
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -410,11 +405,11 @@ const OUTLOOK_CONFIG = {
 };
 
 function getGmailRedirectUri(req: import("express").Request): string {
-  return process.env.GOOGLE_REDIRECT_URI || `${getBaseUrl(req)}/api/email/oauth/gmail/callback`;
+  return process.env.GOOGLE_REDIRECT_URI || `${getCanonicalBaseUrl(req)}/api/email/oauth/gmail/callback`;
 }
 
 function getOutlookRedirectUri(req: import("express").Request): string {
-  return process.env.MICROSOFT_REDIRECT_URI || `${getBaseUrl(req)}/api/email/oauth/outlook/callback`;
+  return process.env.MICROSOFT_REDIRECT_URI || `${getCanonicalBaseUrl(req)}/api/email/oauth/outlook/callback`;
 }
 
 // GET /api/email/oauth/gmail/initiate - Start Gmail OAuth flow
@@ -439,6 +434,15 @@ router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) =
     })).toString("base64url");
 
     const gmailRedirectUri = getGmailRedirectUri(req);
+
+    if (!isRedirectUriValid(gmailRedirectUri)) {
+      console.error("[OAuth] Gmail redirect URI is invalid:", gmailRedirectUri);
+      return res.status(400).json({
+        error: "OAuth redirect URI misconfigured",
+        message: `The Gmail redirect URI resolved to "${gmailRedirectUri}" which points to localhost or is empty. Set the APP_BASE_URL or GOOGLE_REDIRECT_URI environment variable to your public domain.`,
+      });
+    }
+
     const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
     authUrl.searchParams.set("client_id", GMAIL_CONFIG.clientId);
     authUrl.searchParams.set("redirect_uri", gmailRedirectUri);
@@ -591,6 +595,15 @@ router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res)
     })).toString("base64url");
 
     const outlookRedirectUri = getOutlookRedirectUri(req);
+
+    if (!isRedirectUriValid(outlookRedirectUri)) {
+      console.error("[OAuth] Outlook redirect URI is invalid:", outlookRedirectUri);
+      return res.status(400).json({
+        error: "OAuth redirect URI misconfigured",
+        message: `The Outlook redirect URI resolved to "${outlookRedirectUri}" which points to localhost or is empty. Set the APP_BASE_URL or MICROSOFT_REDIRECT_URI environment variable to your public domain.`,
+      });
+    }
+
     const authUrl = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
     authUrl.searchParams.set("client_id", OUTLOOK_CONFIG.clientId);
     authUrl.searchParams.set("redirect_uri", outlookRedirectUri);

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useToast } from "@/hooks/use-toast";
 import {
   Mail,
   Inbox,
@@ -34,6 +35,7 @@ import { useSyncEmails, useDailySummary, useWeeklySummary } from "@/hooks/useEma
 
 export default function EmailAssistantPage() {
   const isMobile = useIsMobile();
+  const { toast } = useToast();
   const [selectedThread, setSelectedThread] = useState<EmailThread | null>(null);
   const [mobileView, setMobileView] = useState<"list" | "overview">("list");
   const [filterClassification, setFilterClassification] = useState<string>("all");
@@ -44,6 +46,40 @@ export default function EmailAssistantPage() {
   });
   const [showSummarySheet, setShowSummarySheet] = useState(false);
   const [summaryType, setSummaryType] = useState<"daily" | "weekly">("daily");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    const success = params.get("success");
+    if (error) {
+      const errorMessages: Record<string, string> = {
+        oauth_init_failed: "Failed to start email connection. Please try again or contact your administrator.",
+        oauth_denied: "Email account connection was denied. Please try again and grant the required permissions.",
+        missing_params: "Email connection failed due to missing parameters. Please try again.",
+        invalid_state: "Email connection failed due to an invalid session. Please try again.",
+        state_expired: "Email connection session expired. Please try again.",
+        token_exchange_failed: "Failed to complete email connection. Please try again or contact your administrator.",
+        user_info_failed: "Failed to retrieve email account information. Please try again.",
+        callback_failed: "Email connection failed unexpectedly. Please try again or contact your administrator.",
+      };
+      toast({
+        title: "Email Connection Error",
+        description: errorMessages[error] || "Email connection failed. Please try again.",
+        variant: "destructive",
+      });
+      window.history.replaceState({}, "", "/email");
+    } else if (success) {
+      const successMessages: Record<string, string> = {
+        gmail_connected: "Gmail account connected successfully.",
+        outlook_connected: "Outlook account connected successfully.",
+      };
+      toast({
+        title: "Email Connected",
+        description: successMessages[success] || "Email account connected successfully.",
+      });
+      window.history.replaceState({}, "", "/email");
+    }
+  }, [toast]);
 
   const { data: threads, isLoading: threadsLoading, refetch: refetchThreads } = useQuery<EmailThread[]>({
     queryKey: ["/api/email/threads", { status: filterStatus, classification: filterClassification !== "all" ? filterClassification : undefined }],

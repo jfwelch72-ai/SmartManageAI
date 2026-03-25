@@ -1,6 +1,50 @@
 import type { Request, Response } from "express";
 import type { AuthRequest } from "../auth";
 
+export function getCanonicalBaseUrl(req?: Request): string {
+  if (process.env.APP_BASE_URL) {
+    return process.env.APP_BASE_URL.replace(/\/+$/, "");
+  }
+
+  if (process.env.REPLIT_DEPLOYED_URL) {
+    return process.env.REPLIT_DEPLOYED_URL.replace(/\/+$/, "");
+  }
+
+  if (process.env.REPLIT_DEPLOYMENT && process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+
+  if (process.env.REPLIT_DEV_DOMAIN) {
+    return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  }
+
+  if (req) {
+    const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
+    return `${proto}://${host}`;
+  }
+
+  return "https://localhost:5000";
+}
+
+export function isRedirectUriValid(uri: string): boolean {
+  try {
+    const parsed = new URL(uri);
+    return parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "";
+  } catch {
+    return false;
+  }
+}
+
+export function logOAuthRedirectUris(): void {
+  const base = getCanonicalBaseUrl();
+  console.log("[OAuth] Resolved base URL:", base);
+  console.log("[OAuth] Gmail redirect URI:", `${base}/api/email/oauth/gmail/callback`);
+  console.log("[OAuth] Outlook redirect URI:", `${base}/api/email/oauth/outlook/callback`);
+  console.log("[OAuth] Google login redirect URI:", `${base}/api/auth/google/callback`);
+  console.log("[OAuth] Google integration redirect URI:", `${base}/api/integrations/connections/:id/callback`);
+}
+
 export function getOrgId(req: AuthRequest, res: Response): string | null {
   const orgId = req.user?.organizationId;
   if (!orgId) {

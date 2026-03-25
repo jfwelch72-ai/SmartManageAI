@@ -5,16 +5,11 @@ import { users } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { generateToken, setAuthCookie } from "./auth";
 import express from "express";
+import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 
 const router = Router();
 
 router.use(express.urlencoded({ extended: true }));
-
-function getBaseUrl(req: Request): string {
-  const proto = req.headers["x-forwarded-proto"] || req.protocol || "https";
-  const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost:5000";
-  return `${proto}://${host}`;
-}
 
 function generateState(): string {
   return crypto.randomBytes(32).toString("hex");
@@ -134,7 +129,7 @@ router.get("/api/auth/google", (req: Request, res: Response) => {
   const state = generateState();
   setStateCookie(res, state, "google");
 
-  const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`;
+  const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/google/callback`;
   const scope = encodeURIComponent("openid email profile");
   const authUrl =
     `https://accounts.google.com/o/oauth2/v2/auth?` +
@@ -173,7 +168,7 @@ router.get(
         return;
       }
 
-      const redirectUri = `${getBaseUrl(req)}/api/auth/google/callback`;
+      const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/google/callback`;
 
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
@@ -249,7 +244,7 @@ router.get("/api/auth/apple", (req: Request, res: Response) => {
   const state = generateState();
   setStateCookie(res, state, "apple");
 
-  const redirectUri = `${getBaseUrl(req)}/api/auth/apple/callback`;
+  const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
   const scope = encodeURIComponent("name email");
   const authUrl =
     `https://appleid.apple.com/auth/authorize?` +

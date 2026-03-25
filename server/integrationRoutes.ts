@@ -6,6 +6,7 @@ import * as importExportService from "./integrations/importExportService";
 import { logIntegrationAudit, getSecurityAuditLog } from "./integrations/audit";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
+import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import { eq, and, desc } from "drizzle-orm";
 import { integrationConnections, type IntegrationConnection, integrationSyncState, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES } from "@shared/schema";
 import { db } from "./db";
@@ -87,8 +88,8 @@ router.post("/connections/:id/authorize", requireAuth, async (req, res) => {
     if (!connection) return res.status(404).json({ error: "Connection not found" });
     const provider = getProvider(connection.provider);
     if (!provider) return res.status(400).json({ error: "Provider not registered" });
-    const state = Buffer.from(JSON.stringify({ connectionId: connection.id, orgId: user.organizationId })).toString("base64url");
-    const redirectUri = `${req.protocol}://${req.get("host")}/api/integrations/connections/${connection.id}/callback`;
+    const state = Buffer.from(JSON.stringify({ connectionId: connection.id, orgId: user.organizationId, redirectUri: `${getCanonicalBaseUrl(req)}/api/integrations/connections/${connection.id}/callback` })).toString("base64url");
+    const redirectUri = `${getCanonicalBaseUrl(req)}/api/integrations/connections/${connection.id}/callback`;
     const authUrl = provider.getAuthUrl(connection.id, redirectUri, state);
     res.json({ authUrl });
   } catch (err) {
