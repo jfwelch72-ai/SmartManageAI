@@ -363,7 +363,8 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
     }
 
     // Delete ALL dependent rows inside a single transaction so failures roll back cleanly
-    // Order: tasks → emailTasks → summaries → attachments → messages → threads → account
+    // Order: nullify tasks → delete emailTasks → summaries → attachments → messages → threads → account
+    const BATCH_SIZE = 500;
     let deleted;
     try {
       deleted = await db.transaction(async (tx) => {
@@ -373,16 +374,25 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
           .where(eq(emailThreads.emailAccountId, existing.id));
         const threadIds = threads.map((t) => t.id);
 
-        if (threadIds.length > 0) {
-          // 1. Delete unified tasks linked to this account's threads
-          await tx
-            .delete(tasks)
-            .where(inArray(tasks.emailThreadId, threadIds));
+        const messageCount = await tx.select({ count: sql<number>`count(*)` }).from(emailMessages).where(eq(emailMessages.emailAccountId, existing.id));
+        console.log(`[Delete Account ${existing.id}] Found ${threadIds.length} threads, ${messageCount[0]?.count ?? 0} messages to clean up`);
 
-          // 2. Delete deprecated emailTasks linked to this account's threads
-          await tx
-            .delete(emailTasks)
-            .where(inArray(emailTasks.emailThreadId, threadIds));
+        if (threadIds.length > 0) {
+          // Process in batches to avoid exceeding DB parameter limits
+          for (let i = 0; i < threadIds.length; i += BATCH_SIZE) {
+            const batch = threadIds.slice(i, i + BATCH_SIZE);
+
+            // 1. Nullify emailThreadId on unified tasks (no FK constraint, so nullify rather than delete)
+            await tx
+              .update(tasks)
+              .set({ emailThreadId: null, emailMessageId: null })
+              .where(inArray(tasks.emailThreadId, batch));
+
+            // 2. Delete deprecated emailTasks linked to this account's threads
+            await tx
+              .delete(emailTasks)
+              .where(inArray(emailTasks.emailThreadId, batch));
+          }
         }
 
         // 3. Delete email summaries for this user/org
@@ -395,37 +405,33 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
             )
           );
 
-        if (threadIds.length > 0) {
-          // 4. Delete attachments for messages in these threads
-          const messageRows = await tx
-            .select({ id: emailMessages.id })
-            .from(emailMessages)
-            .where(inArray(emailMessages.threadId, threadIds));
-          const msgIds = messageRows.map((m) => m.id);
+        // 4. Delete attachments for all messages by account (batched)
+        const messageRows = await tx
+          .select({ id: emailMessages.id })
+          .from(emailMessages)
+          .where(eq(emailMessages.emailAccountId, existing.id));
+        const msgIds = messageRows.map((m) => m.id);
 
-          if (msgIds.length > 0) {
+        if (msgIds.length > 0) {
+          for (let i = 0; i < msgIds.length; i += BATCH_SIZE) {
+            const batch = msgIds.slice(i, i + BATCH_SIZE);
             await tx
               .delete(emailAttachments)
-              .where(inArray(emailAttachments.emailMessageId, msgIds));
+              .where(inArray(emailAttachments.emailMessageId, batch));
           }
-
-          // 5. Delete messages by thread
-          await tx
-            .delete(emailMessages)
-            .where(inArray(emailMessages.threadId, threadIds));
         }
 
-        // 6. Delete any remaining messages by account (catch-all)
+        // 5. Delete all messages by account (catch-all, no need for thread-based delete)
         await tx
           .delete(emailMessages)
           .where(eq(emailMessages.emailAccountId, existing.id));
 
-        // 7. Delete threads
+        // 6. Delete threads
         await tx
           .delete(emailThreads)
           .where(eq(emailThreads.emailAccountId, existing.id));
 
-        // 8. Delete the account itself
+        // 7. Delete the account itself
         const [result] = await tx
           .delete(emailAccounts)
           .where(eq(emailAccounts.id, existing.id))
@@ -493,6 +499,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /api/email/accounts/:id/test - Test connection to an email account
+// Accepts optional body fields to override saved settings (for testing unsaved edits)
 router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -521,7 +528,19 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
     }
 
     if (account.provider === "IMAP") {
-      const result = await testFullConnection(account);
+      const overrides = req.body || {};
+      const testAccount = {
+        ...account,
+        ...(overrides.imapHost !== undefined && { imapHost: overrides.imapHost }),
+        ...(overrides.imapPort !== undefined && { imapPort: overrides.imapPort }),
+        ...(overrides.imapSecure !== undefined && { imapSecure: overrides.imapSecure }),
+        ...(overrides.smtpHost !== undefined && { smtpHost: overrides.smtpHost }),
+        ...(overrides.smtpPort !== undefined && { smtpPort: overrides.smtpPort }),
+        ...(overrides.smtpSecure !== undefined && { smtpSecure: overrides.smtpSecure }),
+        ...(overrides.imapUsername !== undefined && { imapUsername: overrides.imapUsername }),
+        ...(overrides.imapPassword !== undefined && overrides.imapPassword !== "" && { imapPassword: overrides.imapPassword }),
+      };
+      const result = await testFullConnection(testAccount);
       if (!result.success) {
         const errors: string[] = [];
         if (!result.imap.success) errors.push(result.imap.error || "IMAP connection failed");

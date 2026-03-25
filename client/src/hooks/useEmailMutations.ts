@@ -129,17 +129,17 @@ export function useCreateAccount(callbacks: { onSuccess: () => void }) {
 export function useTestAccount() {
   const { toast } = useToast();
   return useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("POST", `/api/email/accounts/${id}/test`);
+    mutationFn: async ({ id, overrides }: { id: string; overrides?: { imapHost?: string; imapPort?: number; imapSecure?: boolean; smtpHost?: string; smtpPort?: number; smtpSecure?: boolean; imapUsername?: string; imapPassword?: string } }) => {
+      const res = await apiRequest("POST", `/api/email/accounts/${id}/test`, overrides || {});
       return res.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: { message?: string }) => {
       toast({ 
         title: "Connection test passed", 
         description: data.message || "Successfully connected to mail server"
       });
     },
-    onError: (error: any) => {
+    onError: (error: unknown) => {
       toast({ 
         title: "Connection test failed", 
         description: extractErrorMessage(error, "Could not connect to mail server. Check your settings."),
@@ -252,6 +252,25 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
       queryClient.invalidateQueries({ queryKey: ["/api/email/tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/email/summaries"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    },
+  });
+}
+
+export function useUpdateAccount(callbacks: { onSuccess: () => void }) {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; displayName?: string; imapHost?: string; imapPort?: number; imapSecure?: boolean; smtpHost?: string; smtpPort?: number; smtpSecure?: boolean; imapUsername?: string; imapPassword?: string }) => {
+      const res = await apiRequest("PATCH", `/api/email/accounts/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Account updated", description: "Email account settings saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+      callbacks.onSuccess();
+    },
+    onError: (err) => {
+      const message = extractErrorMessage(err, "Could not update account");
+      toast({ title: "Update failed", description: message, variant: "destructive" });
     },
   });
 }

@@ -57,6 +57,13 @@ export interface EmailAccount {
   isActive: boolean;
   lastSyncedAt: string | null;
   lastSyncError: string | null;
+  imapHost: string | null;
+  imapPort: number | null;
+  imapSecure: boolean | null;
+  smtpHost: string | null;
+  smtpPort: number | null;
+  smtpSecure: boolean | null;
+  imapUsername: string | null;
 }
 
 export const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; icon: ReactNode }> = {

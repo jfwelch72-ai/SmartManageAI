@@ -13,6 +13,8 @@ import {
   Wifi,
   AlertTriangle,
   Info,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { SiGmail } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -47,7 +49,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount } from "@/hooks/useEmailMutations";
+import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount, useUpdateAccount } from "@/hooks/useEmailMutations";
 import { useToast } from "@/hooks/use-toast";
 import type { EmailAccount } from "./shared";
 
@@ -137,6 +139,19 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
   const [selectedProvider, setSelectedProvider] = useState<"IMAP" | "GMAIL" | "OUTLOOK" | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [deleteAccountId, setDeleteAccountId] = useState<string | null>(null);
+  const [editingAccount, setEditingAccount] = useState<EmailAccount | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    displayName: "",
+    imapHost: "",
+    imapPort: "993",
+    imapSecure: true,
+    smtpHost: "",
+    smtpPort: "587",
+    smtpSecure: true,
+    imapUsername: "",
+    imapPassword: "",
+  });
+  const [editShowPassword, setEditShowPassword] = useState(false);
 
   const { toast } = useToast();
 
@@ -207,6 +222,41 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
   const deleteAccountMutation = useDeleteAccount({
     onSuccess: () => setDeleteAccountId(null),
   });
+  const updateAccountMutation = useUpdateAccount({
+    onSuccess: () => setEditingAccount(null),
+  });
+
+  const startEditAccount = (account: EmailAccount) => {
+    setEditFormData({
+      displayName: account.displayName || "",
+      imapHost: account.imapHost || "",
+      imapPort: String(account.imapPort || 993),
+      imapSecure: account.imapSecure ?? true,
+      smtpHost: account.smtpHost || "",
+      smtpPort: String(account.smtpPort || 587),
+      smtpSecure: account.smtpSecure ?? true,
+      imapUsername: account.imapUsername || "",
+      imapPassword: "",
+    });
+    setEditShowPassword(false);
+    setEditingAccount(account);
+  };
+
+  const handleEditSubmit = () => {
+    if (!editingAccount) return;
+    updateAccountMutation.mutate({
+      id: editingAccount.id,
+      displayName: editFormData.displayName || undefined,
+      imapHost: editFormData.imapHost || undefined,
+      imapPort: parseInt(editFormData.imapPort) || 993,
+      imapSecure: editFormData.imapSecure,
+      smtpHost: editFormData.smtpHost || undefined,
+      smtpPort: editFormData.smtpPort ? parseInt(editFormData.smtpPort) : undefined,
+      smtpSecure: editFormData.smtpSecure,
+      imapUsername: editFormData.imapUsername || undefined,
+      ...(editFormData.imapPassword ? { imapPassword: editFormData.imapPassword } : {}),
+    });
+  };
 
   const handleImapSubmit = () => {
     const errors: Record<string, string> = {};
@@ -257,6 +307,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
           setShowAddAccountForm(false);
           setSelectedProvider(null);
           resetImapForm();
+          setEditingAccount(null);
         }
       }}>
         <DialogTrigger asChild>
@@ -268,13 +319,15 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
         <DialogContent className="sm:max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {showAddAccountForm && (
+              {(showAddAccountForm || editingAccount) && (
                 <Button 
                   variant="ghost" 
                   size="icon" 
                   className="h-6 w-6 mr-1"
                   onClick={() => {
-                    if (selectedProvider) {
+                    if (editingAccount) {
+                      setEditingAccount(null);
+                    } else if (selectedProvider) {
                       setSelectedProvider(null);
                     } else {
                       setShowAddAccountForm(false);
@@ -285,25 +338,197 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
               )}
-              {showAddAccountForm 
-                ? (selectedProvider === "IMAP" ? "Connect IMAP Account" : selectedProvider ? `Connect ${selectedProvider}` : "Add Email Account")
-                : "Email Accounts"
+              {editingAccount
+                ? "Edit Email Account"
+                : showAddAccountForm 
+                  ? (selectedProvider === "IMAP" ? "Connect IMAP Account" : selectedProvider ? `Connect ${selectedProvider}` : "Add Email Account")
+                  : "Email Accounts"
               }
             </DialogTitle>
             <DialogDescription>
-              {showAddAccountForm 
-                ? (selectedProvider === "IMAP" 
-                    ? "Enter your email server settings" 
-                    : selectedProvider 
-                      ? `Connect your ${selectedProvider} account`
-                      : "Choose how you want to connect your email"
-                  )
-                : "Manage linked email accounts for syncing"
+              {editingAccount
+                ? `Update settings for ${editingAccount.emailAddress}`
+                : showAddAccountForm 
+                  ? (selectedProvider === "IMAP" 
+                      ? "Enter your email server settings" 
+                      : selectedProvider 
+                        ? `Connect your ${selectedProvider} account`
+                        : "Choose how you want to connect your email"
+                    )
+                  : "Manage linked email accounts for syncing"
               }
             </DialogDescription>
           </DialogHeader>
 
-          {!showAddAccountForm ? (
+          {editingAccount ? (
+            <div className="flex flex-col">
+              <ScrollArea className="max-h-[400px] pr-4">
+                <div className="grid gap-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="editDisplayName">Display Name</Label>
+                    <Input
+                      id="editDisplayName"
+                      placeholder="My Work Email"
+                      value={editFormData.displayName}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, displayName: e.target.value }))}
+                      data-testid="input-edit-display-name"
+                    />
+                  </div>
+                  <Separator />
+                  <div className="text-sm font-medium text-muted-foreground">Incoming Mail (IMAP)</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="editImapHost">IMAP Server</Label>
+                      <Input
+                        id="editImapHost"
+                        placeholder="imap.example.com"
+                        value={editFormData.imapHost}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, imapHost: e.target.value }))}
+                        data-testid="input-edit-imap-host"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="editImapPort">Port</Label>
+                      <Input
+                        id="editImapPort"
+                        placeholder="993"
+                        value={editFormData.imapPort}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, imapPort: e.target.value }))}
+                        data-testid="input-edit-imap-port"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="editImapSecure"
+                      checked={editFormData.imapSecure}
+                      onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev, imapSecure: checked }))}
+                      data-testid="switch-edit-imap-secure"
+                    />
+                    <Label htmlFor="editImapSecure" className="text-sm">Use SSL/TLS</Label>
+                  </div>
+                  <Separator />
+                  <div className="text-sm font-medium text-muted-foreground">Outgoing Mail (SMTP)</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="editSmtpHost">SMTP Server</Label>
+                      <Input
+                        id="editSmtpHost"
+                        placeholder="smtp.example.com"
+                        value={editFormData.smtpHost}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, smtpHost: e.target.value }))}
+                        data-testid="input-edit-smtp-host"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="editSmtpPort">Port</Label>
+                      <Input
+                        id="editSmtpPort"
+                        placeholder="587"
+                        value={editFormData.smtpPort}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, smtpPort: e.target.value }))}
+                        data-testid="input-edit-smtp-port"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="editSmtpSecure"
+                      checked={editFormData.smtpSecure}
+                      onCheckedChange={(checked) => setEditFormData(prev => ({ ...prev, smtpSecure: checked }))}
+                      data-testid="switch-edit-smtp-secure"
+                    />
+                    <Label htmlFor="editSmtpSecure" className="text-sm">Use SSL/TLS</Label>
+                  </div>
+                  <Separator />
+                  <div className="text-sm font-medium text-muted-foreground">Credentials</div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editImapUsername">Username</Label>
+                    <Input
+                      id="editImapUsername"
+                      placeholder="Leave blank to use email address"
+                      value={editFormData.imapUsername}
+                      onChange={(e) => setEditFormData(prev => ({ ...prev, imapUsername: e.target.value }))}
+                      data-testid="input-edit-imap-username"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editImapPassword">Password</Label>
+                    <div className="relative">
+                      <Input
+                        id="editImapPassword"
+                        type={editShowPassword ? "text" : "password"}
+                        placeholder="Leave blank to keep current password"
+                        value={editFormData.imapPassword}
+                        onChange={(e) => setEditFormData(prev => ({ ...prev, imapPassword: e.target.value }))}
+                        className="pr-10"
+                        data-testid="input-edit-imap-password"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setEditShowPassword(!editShowPassword)}
+                        data-testid="button-edit-toggle-password"
+                      >
+                        {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Leave blank to keep your current password
+                    </p>
+                  </div>
+                </div>
+              </ScrollArea>
+              <DialogFooter className="gap-2 sm:gap-0 pt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testAccountMutation.mutate({
+                    id: editingAccount.id,
+                    overrides: {
+                      imapHost: editFormData.imapHost || undefined,
+                      imapPort: parseInt(editFormData.imapPort) || 993,
+                      imapSecure: editFormData.imapSecure,
+                      smtpHost: editFormData.smtpHost || undefined,
+                      smtpPort: editFormData.smtpPort ? parseInt(editFormData.smtpPort) : undefined,
+                      smtpSecure: editFormData.smtpSecure,
+                      imapUsername: editFormData.imapUsername || undefined,
+                      imapPassword: editFormData.imapPassword || undefined,
+                    },
+                  })}
+                  disabled={testAccountMutation.isPending}
+                  data-testid="button-edit-test-connection"
+                >
+                  {testAccountMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Wifi className="h-4 w-4 mr-2" />
+                  )}
+                  Test Connection
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setEditingAccount(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleEditSubmit}
+                  disabled={updateAccountMutation.isPending}
+                  data-testid="button-save-edit-account"
+                >
+                  {updateAccountMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="w-4 h-4 mr-2" />
+                  )}
+                  Save Changes
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : !showAddAccountForm ? (
             <>
               <div className="space-y-3 py-4 max-h-[400px] overflow-y-auto">
                 {accountsLoading ? (
@@ -354,11 +579,44 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        {account.provider === "IMAP" ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => startEditAccount(account)}
+                            title="Edit account settings"
+                            data-testid={`button-edit-account-${account.id}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 opacity-50"
+                                    disabled
+                                    data-testid={`button-edit-account-${account.id}`}
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                <p className="text-xs">OAuth accounts require re-authorization to update</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          onClick={() => testAccountMutation.mutate(account.id)}
+                          onClick={() => testAccountMutation.mutate({ id: account.id })}
                           disabled={testAccountMutation.isPending}
                           title="Test connection"
                           data-testid={`button-test-account-${account.id}`}
