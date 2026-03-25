@@ -8,6 +8,7 @@ import { sanitizeEmail, sanitizeText, sanitizeShortText } from "./sanitization";
 import { z } from "zod";
 import { fromZodError } from "zod-validation-error";
 import { getCanonicalBaseUrl, isRedirectUriValid } from "./utils/routeHelpers";
+import { ObjectStorageService } from "./objectStorage";
 import {
   analyzeEmail,
   summarizeThread,
@@ -310,6 +311,50 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 
     if (!existing) {
       return res.status(404).json({ error: "Email account not found" });
+    }
+
+    // Clean up attachment files from object storage before cascade deletes the records
+    try {
+      const threads = await db
+        .select({ id: emailThreads.id })
+        .from(emailThreads)
+        .where(eq(emailThreads.emailAccountId, existing.id));
+
+      if (threads.length > 0) {
+        const threadIds = threads.map((t) => t.id);
+        const attachments = await db
+          .select({ storageKey: emailAttachments.storageKey })
+          .from(emailAttachments)
+          .innerJoin(emailMessages, eq(emailAttachments.emailMessageId, emailMessages.id))
+          .where(inArray(emailMessages.threadId, threadIds));
+
+        if (attachments.length > 0) {
+          const objectStorageService = new ObjectStorageService();
+          const deleteResults = await Promise.allSettled(
+            attachments.map((a) => objectStorageService.deleteObjectByKey(a.storageKey))
+          );
+          const failures = deleteResults.filter((r) => r.status === "rejected");
+          if (failures.length > 0) {
+            console.error(`Failed to delete ${failures.length}/${attachments.length} attachment files for account ${existing.id}`);
+          }
+        }
+      }
+    } catch (storageError) {
+      console.error("Error cleaning up attachment files from object storage:", storageError);
+    }
+
+    // Clean up email summaries for this user/org
+    try {
+      await db
+        .delete(emailSummaries)
+        .where(
+          and(
+            eq(emailSummaries.userId, existing.userId),
+            eq(emailSummaries.organizationId, existing.organizationId)
+          )
+        );
+    } catch (summaryError) {
+      console.error("Error cleaning up email summaries:", summaryError);
     }
 
     // Hard delete (cascades to emailThreads and emailMessages)
