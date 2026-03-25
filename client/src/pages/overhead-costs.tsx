@@ -1268,7 +1268,7 @@ function MonthlyBreakdownSection() {
   );
 }
 
-export default function OverheadCostsPage() {
+export default function OverheadCostsPage({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editItem, setEditItem] = useState<OverheadCostItem | null>(null);
@@ -1389,23 +1389,25 @@ export default function OverheadCostsPage() {
   const categoryTabs = ["ALL", ...CATEGORIES.map((c) => c.value)];
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Building2 className="h-7 w-7 text-primary" />
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold" data-testid="heading-overhead-costs">
-                Overhead & Fixed Costs
-              </h1>
-              {summary && <OverheadHealthBadge summary={summary} />}
+    <div className={embedded ? "space-y-6" : "p-6 space-y-6 max-w-6xl mx-auto"}>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Building2 className="h-7 w-7 text-primary" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold" data-testid="heading-overhead-costs">
+                  Overhead & Fixed Costs
+                </h1>
+                {summary && <OverheadHealthBadge summary={summary} />}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Track recurring company costs to calculate accurate bid overhead percentages
+              </p>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Track recurring company costs to calculate accurate bid overhead percentages
-            </p>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card data-testid="card-monthly-overhead">

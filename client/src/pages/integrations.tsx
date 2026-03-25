@@ -11,7 +11,7 @@ import { AccountMappingPanel, SyncSchedulePanel } from "@/components/integration
 import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel";
 import { Badge } from "@/components/ui/badge";
 
-export default function IntegrationsPage() {
+export default function IntegrationsPage({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
 
   const { data: providers, isLoading: providersLoading } = useQuery<Provider[]>({
@@ -67,13 +67,15 @@ export default function IntegrationsPage() {
   const zapierConnection = activeConnections.find(c => c.provider === "zapier");
 
   return (
-    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-integrations-title">Integrations Hub</h1>
-        <p className="text-muted-foreground" data-testid="text-integrations-description">
-          Connect your favorite tools and services to streamline your workflow
-        </p>
-      </div>
+    <div className={embedded ? "space-y-6" : "px-3 sm:px-6 py-4 sm:py-6 space-y-6"}>
+      {!embedded && (
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-integrations-title">Integrations Hub</h1>
+          <p className="text-muted-foreground" data-testid="text-integrations-description">
+            Connect your favorite tools and services to streamline your workflow
+          </p>
+        </div>
+      )}
 
       <SecurityBanner />
 

@@ -15,7 +15,7 @@ import type {
   PageTab,
 } from "@/components/production-rates/types";
 
-export default function ProductionRatesPage() {
+export default function ProductionRatesPage({ embedded }: { embedded?: boolean } = {}) {
   const [activeTab, setActiveTab] = useState<PageTab>("benchmarks");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedUnit, setSelectedUnit] = useState<string>("all");
@@ -101,6 +101,68 @@ export default function ProductionRatesPage() {
     setSelectedRate(rate);
     setDetailDialogOpen(true);
   };
+
+  if (embedded) {
+    return (
+      <div className="space-y-6">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as PageTab)}
+          className="mb-6"
+        >
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="benchmarks" data-testid="tab-benchmarks">
+              <BarChart3 className="w-4 h-4 mr-2" />
+              Benchmarks
+            </TabsTrigger>
+            <TabsTrigger
+              value="cost-analytics"
+              data-testid="tab-cost-analytics"
+            >
+              <DollarSign className="w-4 h-4 mr-2" />
+              Cost Analytics
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="benchmarks" className="mt-6">
+            <BenchmarksTab
+              data={data}
+              isLoading={isLoading}
+              error={error}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              selectedUnit={selectedUnit}
+              setSelectedUnit={setSelectedUnit}
+              datePreset={datePreset}
+              setDatePreset={setDatePreset}
+              onViewDetails={handleViewDetails}
+            />
+          </TabsContent>
+
+          <TabsContent value="cost-analytics" className="mt-6">
+            <CostAnalyticsTab
+              costData={costData}
+              costLoading={costLoading}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              selectedUnit={selectedUnit}
+              setSelectedUnit={setSelectedUnit}
+              datePreset={datePreset}
+              setDatePreset={setDatePreset}
+            />
+          </TabsContent>
+        </Tabs>
+
+        <ProductionRateDetailDialog
+          open={detailDialogOpen}
+          onOpenChange={setDetailDialogOpen}
+          selectedRate={selectedRate}
+          detailData={detailData}
+          detailLoading={detailLoading}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

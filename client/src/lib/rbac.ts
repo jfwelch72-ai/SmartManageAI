@@ -310,7 +310,7 @@ export const RoutePermissions = {
   COST_RATES: (role?: string) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER",
   CREWS: (role?: string) => isOrganizationAdmin(role),
   SUBCONTRACTOR_PAYABLES: (role?: string) => isOrganizationAdmin(role),
-  COMPANY_SETTINGS: (role?: string) => isOrganizationAdmin(role),
+  COMPANY_SETTINGS: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER" || role === "OFFICE_MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT",
 
   // Management routes (blocked for hourly employees, maintenance managers, and SUPER_ADMIN)
   BIDS: (role?: string) => canAccessBids(role),
@@ -672,12 +672,6 @@ export const NavigationConfig = {
       visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
-      href: "/production-rates",
-      label: "Production Rates",
-      testId: "nav-production-rates",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || perms?.canAccessReports === true,
-    },
-    {
       href: "/email-assistant",
       label: "Email Assistant",
       testId: "nav-email-assistant",
@@ -705,28 +699,10 @@ export const NavigationConfig = {
       visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
     },
     {
-      href: "/cost-codes",
-      label: "Cost Codes",
-      testId: "nav-cost-codes",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
       href: "/scope-settings",
       label: "Scope Settings",
       testId: "nav-scope-settings",
       visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
-    },
-    {
-      href: "/users",
-      label: "Users & Roles",
-      testId: "nav-users",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/website-builder",
-      label: "Website Builder",
-      testId: "nav-website-builder",
-      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || perms?.canManageWebsite === true,
     },
     {
       href: "/manage-workers",
@@ -739,12 +715,6 @@ export const NavigationConfig = {
       label: "Payroll Management",
       testId: "nav-payroll-management",
       visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER" || perms?.canManagePayroll === true,
-    },
-    {
-      href: "/integrations",
-      label: "Integrations Hub",
-      testId: "nav-integrations",
-      visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
       href: "/approvals",
@@ -781,12 +751,6 @@ export const NavigationConfig = {
       label: "Safety Training",
       testId: "nav-safety-training",
       visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
-    },
-    {
-      href: "/overhead-costs",
-      label: "Overhead & Fixed Costs",
-      testId: "nav-overhead-costs",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "OFFICE_MANAGER",
     },
   ],
 

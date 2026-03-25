@@ -64,7 +64,7 @@ interface OrgCostCode {
   updatedAt: string;
 }
 
-export default function CostCodesPage() {
+export default function CostCodesPage({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [showCustomOnly, setShowCustomOnly] = useState(false);
@@ -224,19 +224,29 @@ export default function CostCodesPage() {
   const divisionOptions = Object.entries(CSI_DIVISIONS).map(([, label]) => label);
 
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-6xl">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Cost Codes</h1>
-          <p className="text-muted-foreground text-sm mt-1" data-testid="text-page-subtitle">
-            Manage your organization's cost codes. Standard codes are provided based on your trade; you can add custom codes or deactivate any code.
-          </p>
+    <div className={embedded ? "space-y-6" : "container mx-auto py-6 space-y-6 max-w-6xl"}>
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">Cost Codes</h1>
+            <p className="text-muted-foreground text-sm mt-1" data-testid="text-page-subtitle">
+              Manage your organization's cost codes. Standard codes are provided based on your trade; you can add custom codes or deactivate any code.
+            </p>
+          </div>
+          <Button onClick={openCreate} data-testid="button-add-cost-code">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Custom Code
+          </Button>
         </div>
-        <Button onClick={openCreate} data-testid="button-add-cost-code">
-          <Plus className="w-4 h-4 mr-2" />
-          Add Custom Code
-        </Button>
-      </div>
+      )}
+      {embedded && (
+        <div className="flex justify-end">
+          <Button onClick={openCreate} data-testid="button-add-cost-code">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Custom Code
+          </Button>
+        </div>
+      )}
 
       <Card>
         <CardHeader className="pb-3">

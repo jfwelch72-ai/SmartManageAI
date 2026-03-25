@@ -38,7 +38,6 @@ const ImpersonatePage = lazy(() => import("@/pages/impersonate"));
 const AcceptHustlerInvitePage = lazy(() => import("@/pages/accept-hustler-invite"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const ProfilePage = lazy(() => import("@/pages/profile"));
-const UsersPage = lazy(() => import("@/pages/users"));
 const BidsPage = lazy(() => import("@/pages/bids"));
 const BidDetailPage = lazy(() => import("@/pages/bid-detail"));
 const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
@@ -57,7 +56,6 @@ const CrewsPage = lazy(() => import("@/pages/crews"));
 const CostRatesPage = lazy(() => import("@/pages/cost-rates"));
 const CompanyCommunicationsPage = lazy(() => import("@/pages/company-communications"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
-const ProductionRatesPage = lazy(() => import("@/pages/production-rates"));
 const CRMPage = lazy(() => import("@/pages/crm"));
 const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
 const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
@@ -84,7 +82,6 @@ const SubcontractsPage = lazy(() => import("@/pages/subcontracts"));
 const RFIsPage = lazy(() => import("@/pages/rfis"));
 const TransmittalsPage = lazy(() => import("@/pages/transmittals"));
 const SubmittalsPage = lazy(() => import("@/pages/submittals"));
-const WebsiteBuilderPage = lazy(() => import("@/pages/website-builder"));
 const SocialMediaPage = lazy(() => import("@/pages/social-media"));
 const BidWizardPage = lazy(() => import("@/pages/bid-wizard"));
 const EmailAssistantPage = lazy(() => import("@/pages/email-assistant"));
@@ -120,7 +117,6 @@ const CalculatorPage = lazy(() => import("@/pages/calculator"));
 const ManageWorkersPage = lazy(() => import("@/pages/manage-workers"));
 const WorkerDetailPage = lazy(() => import("@/pages/worker-detail"));
 const PayrollManagementPage = lazy(() => import("@/pages/payroll-management"));
-const IntegrationsPage = lazy(() => import("@/pages/integrations"));
 const ApprovalsPage = lazy(() => import("@/pages/approvals"));
 const AIGovernancePage = lazy(() => import("@/pages/ai-governance"));
 const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
@@ -128,7 +124,6 @@ const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"))
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
 const ProcurementModulePage = lazy(() => import("@/pages/procurement-module"));
-const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
 const HiringDashboardPage = lazy(() => import("@/pages/hiring/index"));
 const HiringJobsPage = lazy(() => import("@/pages/hiring/jobs"));
 const HiringJobDetailPage = lazy(() => import("@/pages/hiring/job-detail"));
@@ -139,7 +134,6 @@ const HiringInterviewsPage = lazy(() => import("@/pages/hiring/interviews"));
 const HiringAnalyticsPage = lazy(() => import("@/pages/hiring/analytics"));
 const HiringTasksPage = lazy(() => import("@/pages/hiring/tasks"));
 const HiringSettingsPage = lazy(() => import("@/pages/hiring/settings"));
-const OverheadCostsPage = lazy(() => import("@/pages/overhead-costs"));
 const TalentPoolPage = lazy(() => import("@/pages/talent-pool"));
 
 function ProtectedRoute({ 
@@ -244,18 +238,18 @@ function Router() {
       <Route path="/portal-chat" component={() => <ProtectedRoute component={UnifiedMessagesPage} />} />
       
       {/* Admin-only routes */}
-      <Route path="/users" component={() => <ProtectedRoute component={UsersPage} permission={RoutePermissions.USERS} />} />
+      <Route path="/users" component={() => <Redirect to="/company-settings?tab=users" />} />
       <Route path="/ai-settings" component={() => <ProtectedRoute component={AISettingsPage} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} featurePerm="canAccessFinancials" />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} />} />
       <Route path="/subcontractor-payables" component={() => <Redirect to="/subcontracts" />} />
       <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
-      <Route path="/integrations" component={() => <ProtectedRoute component={IntegrationsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/integrations" component={() => <Redirect to="/company-settings?tab=integrations" />} />
       <Route path="/approvals" component={() => <ProtectedRoute component={ApprovalsPage} />} />
       <Route path="/ai-governance" component={() => <ProtectedRoute component={AIGovernancePage} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/enterprise-settings" component={() => <ProtectedRoute component={EnterpriseSettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
-      <Route path="/cost-codes" component={() => <ProtectedRoute component={CostCodesPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      <Route path="/cost-codes" component={() => <Redirect to="/company-settings?tab=cost-codes" />} />
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />
@@ -268,7 +262,7 @@ function Router() {
       <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} featurePerm="canManagePayroll" />} />
       <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} permission={RoutePermissions.AI_PM} featurePerm="canUseAiFeatures" />} />
       <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} featurePerm={["canAccessFinancials", "canUseAiFeatures"]} />} />
-      <Route path="/production-rates" component={() => <ProtectedRoute component={ProductionRatesPage} permission={RoutePermissions.PRODUCTION_RATES} />} />
+      <Route path="/production-rates" component={() => <Redirect to="/company-settings?tab=production-rates" />} />
       <Route path="/crm" component={() => <ProtectedRoute component={CRMPage} permission={RoutePermissions.CRM} />} />
       <Route path="/scope-settings" component={() => <ProtectedRoute component={ScopeSettingsPage} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
@@ -323,7 +317,7 @@ function Router() {
       <Route path="/rfis" component={() => <ProtectedRoute component={RFIsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/transmittals" component={() => <ProtectedRoute component={TransmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/submittals" component={() => <ProtectedRoute component={SubmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
-      <Route path="/website-builder" component={() => <ProtectedRoute component={WebsiteBuilderPage} permission={RoutePermissions.WEBSITE_BUILDER} featurePerm="canManageWebsite" />} />
+      <Route path="/website-builder" component={() => <Redirect to="/company-settings?tab=website" />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />
       <Route path="/procurement-module" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.PROCUREMENT} />} />
@@ -344,7 +338,7 @@ function Router() {
       <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING_REVIEW} />} />
 
       {/* Overhead & Fixed Costs Manager */}
-      <Route path="/overhead-costs" component={() => <ProtectedRoute component={OverheadCostsPage} permission={RoutePermissions.OVERHEAD_COSTS} />} />
+      <Route path="/overhead-costs" component={() => <Redirect to="/company-settings?tab=overhead-costs" />} />
       
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />

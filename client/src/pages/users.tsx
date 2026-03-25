@@ -139,7 +139,7 @@ const STATUS_FILTERS = [
   { value: "INACTIVE", label: "Inactive" },
 ];
 
-export default function UsersPage() {
+export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -380,8 +380,7 @@ export default function UsersPage() {
     return null;
   }
 
-  // Only admins can access this page
-  if (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
+  if (!embedded && user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
     return (
       <div className="min-h-screen bg-background">
         <main className="mx-auto max-w-full px-6 py-8">
@@ -398,28 +397,19 @@ export default function UsersPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-full px-6 py-8 space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-          <div>
-            <h1 className="text-3xl font-bold" data-testid="text-page-title">
-              User Management
-            </h1>
-            <p className="text-muted-foreground">
-              Manage user accounts and permissions
-            </p>
-          </div>
-          <Button
-            data-testid="button-invite-user"
-            onClick={() => setShowInviteDialog(true)}
-          >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Invite User
-          </Button>
-        </div>
+  const contentBody = (
+    <>
+      <div className="flex justify-end">
+        <Button
+          data-testid="button-invite-user"
+          onClick={() => setShowInviteDialog(true)}
+        >
+          <UserPlus className="w-4 h-4 mr-2" />
+          Invite User
+        </Button>
+      </div>
 
-        <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Invite New User</DialogTitle>
@@ -1020,6 +1010,27 @@ export default function UsersPage() {
             </Card>
           </TabsContent>
         </Tabs>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="space-y-6">{contentBody}</div>;
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      <main className="mx-auto max-w-full px-6 py-8 space-y-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="text-page-title">
+              User Management
+            </h1>
+            <p className="text-muted-foreground">
+              Manage user accounts and permissions
+            </p>
+          </div>
+        </div>
+        {contentBody}
       </main>
     </div>
   );

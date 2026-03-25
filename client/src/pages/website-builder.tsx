@@ -76,7 +76,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { MediaLibraryTab } from "@/components/media-library";
 
 
-export default function WebsiteBuilderPage() {
+export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
@@ -335,7 +335,7 @@ export default function WebsiteBuilderPage() {
     }
   }, [websiteRef]);
 
-  if (!isAdmin && !canEdit) {
+  if (!embedded && !isAdmin && !canEdit) {
     return (
       <div className="flex items-center justify-center h-full">
         <Card className="w-full max-w-md">
@@ -380,17 +380,19 @@ export default function WebsiteBuilderPage() {
   }
 
   return (
-    <div className="px-3 sm:px-6 py-4 sm:py-6 space-y-6" data-testid="page-website-builder">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
-            <Globe className="h-6 w-6 text-primary" />
-            Website Builder
-          </h1>
-          <p className="text-muted-foreground">
-            Create and manage your organization's professional website
-          </p>
-        </div>
+    <div className={embedded ? "space-y-6" : "px-3 sm:px-6 py-4 sm:py-6 space-y-6"} data-testid="page-website-builder">
+      <div className={embedded ? "flex flex-wrap items-center justify-end gap-2" : "flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2"}>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
+              <Globe className="h-6 w-6 text-primary" />
+              Website Builder
+            </h1>
+            <p className="text-muted-foreground">
+              Create and manage your organization's professional website
+            </p>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {hasWebsite && (
             <>
