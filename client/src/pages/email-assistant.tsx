@@ -67,7 +67,7 @@ export default function EmailAssistantPage() {
         description: errorMessages[error] || "Email connection failed. Please try again.",
         variant: "destructive",
       });
-      window.history.replaceState({}, "", "/email");
+      window.history.replaceState({}, "", "/email-assistant");
     } else if (success) {
       const successMessages: Record<string, string> = {
         gmail_connected: "Gmail account connected successfully.",
@@ -77,7 +77,7 @@ export default function EmailAssistantPage() {
         title: "Email Connected",
         description: successMessages[success] || "Email account connected successfully.",
       });
-      window.history.replaceState({}, "", "/email");
+      window.history.replaceState({}, "", "/email-assistant");
     }
   }, [toast]);
 

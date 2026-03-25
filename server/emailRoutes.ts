@@ -455,7 +455,7 @@ router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) =
     return res.redirect(authUrl.toString());
   } catch (error) {
     console.error("Error initiating Gmail OAuth:", error);
-    return res.redirect("/email?error=oauth_init_failed");
+    return res.redirect("/email-assistant?error=oauth_init_failed");
   }
 });
 
@@ -466,11 +466,11 @@ router.get("/oauth/gmail/callback", async (req, res) => {
 
     if (oauthError) {
       console.error("Gmail OAuth error:", oauthError);
-      return res.redirect("/email?error=oauth_denied");
+      return res.redirect("/email-assistant?error=oauth_denied");
     }
 
     if (!code || !state) {
-      return res.redirect("/email?error=missing_params");
+      return res.redirect("/email-assistant?error=missing_params");
     }
 
     // Decode state to get user info
@@ -478,12 +478,12 @@ router.get("/oauth/gmail/callback", async (req, res) => {
     try {
       userInfo = JSON.parse(Buffer.from(state as string, "base64url").toString());
     } catch {
-      return res.redirect("/email?error=invalid_state");
+      return res.redirect("/email-assistant?error=invalid_state");
     }
 
     // Check timestamp (15 minute expiry)
     if (Date.now() - userInfo.timestamp > 15 * 60 * 1000) {
-      return res.redirect("/email?error=state_expired");
+      return res.redirect("/email-assistant?error=state_expired");
     }
 
     // Exchange code for tokens
@@ -501,7 +501,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
 
     if (!tokenResponse.ok) {
       console.error("Failed to exchange Gmail code:", await tokenResponse.text());
-      return res.redirect("/email?error=token_exchange_failed");
+      return res.redirect("/email-assistant?error=token_exchange_failed");
     }
 
     const tokens = await tokenResponse.json() as {
@@ -517,7 +517,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
     });
 
     if (!userResponse.ok) {
-      return res.redirect("/email?error=user_info_failed");
+      return res.redirect("/email-assistant?error=user_info_failed");
     }
 
     const googleUser = await userResponse.json() as { email: string; name?: string };
@@ -566,10 +566,10 @@ router.get("/oauth/gmail/callback", async (req, res) => {
       });
     }
 
-    return res.redirect("/email?success=gmail_connected");
+    return res.redirect("/email-assistant?success=gmail_connected");
   } catch (error) {
     console.error("Error in Gmail OAuth callback:", error);
-    return res.redirect("/email?error=callback_failed");
+    return res.redirect("/email-assistant?error=callback_failed");
   }
 });
 
@@ -615,7 +615,7 @@ router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res)
     return res.redirect(authUrl.toString());
   } catch (error) {
     console.error("Error initiating Outlook OAuth:", error);
-    return res.redirect("/email?error=oauth_init_failed");
+    return res.redirect("/email-assistant?error=oauth_init_failed");
   }
 });
 
@@ -626,11 +626,11 @@ router.get("/oauth/outlook/callback", async (req, res) => {
 
     if (oauthError) {
       console.error("Outlook OAuth error:", oauthError, error_description);
-      return res.redirect("/email?error=oauth_denied");
+      return res.redirect("/email-assistant?error=oauth_denied");
     }
 
     if (!code || !state) {
-      return res.redirect("/email?error=missing_params");
+      return res.redirect("/email-assistant?error=missing_params");
     }
 
     // Decode state to get user info
@@ -638,12 +638,12 @@ router.get("/oauth/outlook/callback", async (req, res) => {
     try {
       userInfo = JSON.parse(Buffer.from(state as string, "base64url").toString());
     } catch {
-      return res.redirect("/email?error=invalid_state");
+      return res.redirect("/email-assistant?error=invalid_state");
     }
 
     // Check timestamp (15 minute expiry)
     if (Date.now() - userInfo.timestamp > 15 * 60 * 1000) {
-      return res.redirect("/email?error=state_expired");
+      return res.redirect("/email-assistant?error=state_expired");
     }
 
     // Exchange code for tokens
@@ -661,7 +661,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
 
     if (!tokenResponse.ok) {
       console.error("Failed to exchange Outlook code:", await tokenResponse.text());
-      return res.redirect("/email?error=token_exchange_failed");
+      return res.redirect("/email-assistant?error=token_exchange_failed");
     }
 
     const tokens = await tokenResponse.json() as {
@@ -676,7 +676,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
     });
 
     if (!userResponse.ok) {
-      return res.redirect("/email?error=user_info_failed");
+      return res.redirect("/email-assistant?error=user_info_failed");
     }
 
     const msUser = await userResponse.json() as { 
@@ -732,10 +732,10 @@ router.get("/oauth/outlook/callback", async (req, res) => {
       });
     }
 
-    return res.redirect("/email?success=outlook_connected");
+    return res.redirect("/email-assistant?success=outlook_connected");
   } catch (error) {
     console.error("Error in Outlook OAuth callback:", error);
-    return res.redirect("/email?error=callback_failed");
+    return res.redirect("/email-assistant?error=callback_failed");
   }
 });
 
