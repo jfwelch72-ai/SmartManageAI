@@ -379,6 +379,7 @@ function groupTabs(tabs: TabConfig[]): TabGroupEntry[] {
 export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
+  const [activeCategory, setActiveCategory] = useState<TabGroup>("General");
   const [financialSubTab, setFinancialSubTab] = useState("live-financials");
   const [, params] = useRoute("/projects/:code");
   const { user } = useAuth();
@@ -445,12 +446,30 @@ export default function ProjectDetailPage() {
     "receipts": "receipts",
   };
 
+  const findCategoryForTab = (tabValue: string): TabGroup | undefined => {
+    const matchedTab = visibleTabs.find((t) => t.value === tabValue);
+    return matchedTab?.group;
+  };
+
   const handleSetActiveTab = (tab: string) => {
     if (tab in financialSubTabMap) {
       setActiveTab("project-financials");
       setFinancialSubTab(financialSubTabMap[tab]);
+      setActiveCategory("Financial");
     } else {
-      setActiveTab(tab);
+      const category = findCategoryForTab(tab);
+      if (category) {
+        setActiveTab(tab);
+        setActiveCategory(category);
+      }
+    }
+  };
+
+  const handleCategoryClick = (category: TabGroup) => {
+    setActiveCategory(category);
+    const categoryGroup = groupedTabs.find((g) => g.group === category);
+    if (categoryGroup && categoryGroup.tabs.length > 0) {
+      setActiveTab(categoryGroup.tabs[0].value);
     }
   };
 
@@ -656,32 +675,53 @@ export default function ProjectDetailPage() {
             </Select>
           </div>
 
-          <div className="hidden lg:flex flex-col gap-1 w-full rounded-md bg-muted p-1">
-            {groupedTabs.map((entry) => (
-              <TabsList key={entry.group} className="flex flex-wrap gap-1 h-auto w-full justify-start p-0 bg-transparent" data-testid={`tab-group-${entry.group}`}>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 shrink-0 select-none flex items-center">
+          <div className="hidden lg:flex flex-col gap-0 w-full">
+            <div className="flex items-center gap-1 rounded-t-md bg-muted p-1 border-b border-border" data-testid="category-tabs-row">
+              {groupedTabs.map((entry) => (
+                <button
+                  key={entry.group}
+                  type="button"
+                  onClick={() => handleCategoryClick(entry.group)}
+                  className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-sm transition-all select-none ${
+                    activeCategory === entry.group
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                  }`}
+                  data-testid={`category-tab-${entry.group}`}
+                >
                   {entry.group}
-                </span>
-                {entry.tabs.map((tab) => {
-                  const IconComp = tab.icon;
-                  return (
-                    <TabsTrigger
-                      key={tab.value}
-                      value={tab.value}
-                      data-testid={`tab-${tab.value}`}
-                    >
-                      <IconComp className="h-4 w-4 mr-1" />
-                      {tab.label}
-                      {tab.badge !== undefined && (
-                        <Badge className="ml-2" variant="secondary">
-                          {tab.badge}
-                        </Badge>
-                      )}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            ))}
+                </button>
+              ))}
+            </div>
+
+            {groupedTabs
+              .filter((entry) => entry.group === activeCategory)
+              .map((entry) => (
+                <TabsList
+                  key={entry.group}
+                  className="flex flex-wrap gap-1 h-auto w-full justify-start rounded-t-none rounded-b-md bg-muted/50 p-1"
+                  data-testid={`tab-group-${entry.group}`}
+                >
+                  {entry.tabs.map((tab) => {
+                    const IconComp = tab.icon;
+                    return (
+                      <TabsTrigger
+                        key={tab.value}
+                        value={tab.value}
+                        data-testid={`tab-${tab.value}`}
+                      >
+                        <IconComp className="h-4 w-4 mr-1" />
+                        {tab.label}
+                        {tab.badge !== undefined && (
+                          <Badge className="ml-2" variant="secondary">
+                            {tab.badge}
+                          </Badge>
+                        )}
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+              ))}
           </div>
 
           <TabsContent value="overview" className="space-y-6">
