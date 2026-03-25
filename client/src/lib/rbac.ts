@@ -487,12 +487,6 @@ export const NavigationConfig = {
       testId: "nav-bulletins",
       visible: (role?: string) => hasContractorAccess(role),
     },
-    {
-      href: "/procurement-module",
-      label: "Procurement",
-      testId: "nav-procurement",
-      visible: (role?: string) => hasProcurementAccess(role),
-    },
   ],
 
   projectsMenu: [
@@ -509,6 +503,12 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
+      href: "/email-assistant",
+      label: "Email Assistant",
+      testId: "nav-email-assistant",
+      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
+    },
+    {
       href: "/projects",
       label: "Projects",
       testId: "nav-projects",
@@ -522,7 +522,37 @@ export const NavigationConfig = {
     },
   ],
 
-  timeClockMenu: [
+  preconstructionMenu: [
+    {
+      href: "/bids",
+      label: "Bids",
+      testId: "nav-bids",
+      visible: (role?: string) => canAccessBids(role),
+    },
+    {
+      href: "/bid-network",
+      label: "Bid Network",
+      testId: "nav-bid-network",
+      visible: (role?: string) => canAccessBidNetworkAsGC(role),
+    },
+  ],
+
+  operationsMenu: [
+    {
+      href: "/equipment",
+      label: "Equipment",
+      testId: "nav-equipment",
+      visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role) || perms?.canManageEquipment === true,
+    },
+    {
+      href: "/procurement-module",
+      label: "Procurement",
+      testId: "nav-procurement",
+      visible: (role?: string) => hasProcurementAccess(role),
+    },
+  ],
+
+  workforceMenu: [
     {
       href: "/time-clock",
       label: "My Time Clock",
@@ -541,35 +571,29 @@ export const NavigationConfig = {
       testId: "nav-tm-daily",
       visible: (role?: string) => hasManagementAccess(role),
     },
-  ],
-
-  operationsMenu: [
     {
-      href: "/equipment",
-      label: "Equipment",
-      testId: "nav-equipment",
-      visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role) || perms?.canManageEquipment === true,
-    },
-  ],
-
-  preconstructionMenu: [
-    {
-      href: "/bids",
-      label: "Bids",
-      testId: "nav-bids",
-      visible: (role?: string) => canAccessBids(role),
+      href: "/crews",
+      label: "Crews & Skills",
+      testId: "nav-crews",
+      visible: (role?: string) => isOrganizationAdmin(role),
     },
     {
-      href: "/bid-network",
-      label: "Bid Network",
-      testId: "nav-bid-network",
-      visible: (role?: string) => canAccessBidNetworkAsGC(role),
+      href: "/manage-workers",
+      label: "Workforce Management",
+      testId: "nav-manage-workers",
+      visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/bid-inbox",
-      label: "Bid Inbox",
-      testId: "nav-bid-inbox",
-      visible: (role?: string) => canAccessBidNetworkAsSub(role),
+      href: "/payroll-management",
+      label: "Payroll Management",
+      testId: "nav-payroll-management",
+      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER" || perms?.canManagePayroll === true,
+    },
+    {
+      href: "/safety-training",
+      label: "Safety Training",
+      testId: "nav-safety-training",
+      visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
     },
   ],
 
@@ -606,18 +630,30 @@ export const NavigationConfig = {
     },
   ],
 
+  marketplaceMenu: [
+    {
+      href: "/marketplace",
+      label: "Marketplace",
+      testId: "nav-marketplace",
+      visible: (role?: string) => hasManagementAccess(role),
+    },
+  ],
+
+  crmMenu: [
+    {
+      href: "/crm",
+      label: "CRM",
+      testId: "nav-crm",
+      visible: (role?: string) => hasCrmAccess(role),
+    },
+  ],
+
   insightsMenu: [
     {
-      href: "/ai-bid-analysis",
-      label: "AI Bid Analysis",
-      testId: "nav-ai-bid-analysis",
+      href: "/ai-document-analysis",
+      label: "AI Document Analysis",
+      testId: "nav-ai-document-analysis",
       visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || perms?.canUseAiFeatures === true,
-    },
-    {
-      href: "/ai-contract-analysis",
-      label: "AI Contract Analysis",
-      testId: "nav-ai-contract-analysis",
-      visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || perms?.canUseAiFeatures === true,
     },
     {
       href: "/ai-pm",
@@ -626,91 +662,10 @@ export const NavigationConfig = {
       visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
     },
     {
-      href: "/ai-settings",
-      label: "AI Settings",
-      testId: "nav-ai-settings",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/email-assistant",
-      label: "Email Assistant",
-      testId: "nav-email-assistant",
-      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
-    },
-  ],
-
-  administrationMenu: [
-    {
-      href: "/company-settings",
-      label: "Company Settings",
-      testId: "nav-company-settings",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/crews",
-      label: "Crews & Skills",
-      testId: "nav-crews",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/daily-report-locks",
-      label: "Report Locks",
-      testId: "nav-report-locks",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/scope-settings",
-      label: "Scope Settings",
-      testId: "nav-scope-settings",
-      visible: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
-    },
-    {
-      href: "/manage-workers",
-      label: "Workforce Management",
-      testId: "nav-manage-workers",
-      visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
-      href: "/payroll-management",
-      label: "Payroll Management",
-      testId: "nav-payroll-management",
-      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER" || perms?.canManagePayroll === true,
-    },
-    {
-      href: "/approvals",
-      label: "Approvals",
-      testId: "nav-approvals",
-      visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER" || role === "SUPERINTENDENT",
-    },
-    {
-      href: "/ai-governance",
-      label: "AI Governance",
-      testId: "nav-ai-governance",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
       href: "/executive-digest",
       label: "Executive Digest",
       testId: "nav-executive-digest",
       visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER",
-    },
-    {
-      href: "/audit-logs",
-      label: "Audit Logs",
-      testId: "nav-audit-logs",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/enterprise-settings",
-      label: "Enterprise Settings",
-      testId: "nav-enterprise-settings",
-      visible: (role?: string) => isOrganizationAdmin(role),
-    },
-    {
-      href: "/safety-training",
-      label: "Safety Training",
-      testId: "nav-safety-training",
-      visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
     },
   ],
 
@@ -765,18 +720,39 @@ export const NavigationConfig = {
     },
   ],
 
+  administrationMenu: [
+    {
+      href: "/company-settings",
+      label: "Company Settings",
+      testId: "nav-company-settings",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/approvals",
+      label: "Approvals",
+      testId: "nav-approvals",
+      visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER" || role === "SUPERINTENDENT",
+    },
+    {
+      href: "/audit-logs",
+      label: "Audit Logs",
+      testId: "nav-audit-logs",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+    {
+      href: "/enterprise-settings",
+      label: "Enterprise Settings",
+      testId: "nav-enterprise-settings",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
+  ],
+
   toolsMenu: [
     {
       href: "/calculator",
       label: "Calculator",
       testId: "nav-calculator",
       visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
-      href: "/crm",
-      label: "CRM",
-      testId: "nav-crm",
-      visible: (role?: string) => hasCrmAccess(role),
     },
     {
       href: "/mobile-sync",

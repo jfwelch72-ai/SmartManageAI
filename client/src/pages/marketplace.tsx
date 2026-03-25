@@ -60,6 +60,7 @@ import {
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import EquipmentRentalMarketplacePage from "./equipment-rental-marketplace";
+import TalentPoolPage from "./talent-pool";
 import { format, parseISO } from "date-fns";
 
 const TRADE_OPTIONS = [
@@ -1909,7 +1910,10 @@ function CreateOrEditCrewListingDialog({
 // MARKETPLACE HUB (Main page)
 // ============================================
 export default function MarketplacePage() {
-  const [activeTab, setActiveTab] = useState("crews");
+  const params = new URLSearchParams(window.location.search);
+  const initialTab = params.get("tab") || "contractors";
+  const validTabs = ["contractors", "talent", "crews", "equipment"];
+  const [activeTab, setActiveTab] = useState(validTabs.includes(initialTab) ? initialTab : "contractors");
 
   return (
     <div
@@ -1934,7 +1938,15 @@ export default function MarketplacePage() {
             data-testid="tab-contractor-directory"
           >
             <Building2 className="h-4 w-4" />
-            Contractor Directory
+            Contractors
+          </TabsTrigger>
+          <TabsTrigger
+            value="talent"
+            className="flex items-center gap-2"
+            data-testid="tab-talent-pool"
+          >
+            <Users className="h-4 w-4" />
+            Talent Pool
           </TabsTrigger>
           <TabsTrigger
             value="crews"
@@ -1942,7 +1954,7 @@ export default function MarketplacePage() {
             data-testid="tab-crew-marketplace"
           >
             <HardHat className="h-4 w-4" />
-            Crew Marketplace
+            Crews
           </TabsTrigger>
           <TabsTrigger
             value="equipment"
@@ -1956,6 +1968,10 @@ export default function MarketplacePage() {
 
         <TabsContent value="contractors" className="mt-6">
           <ContractorDirectory />
+        </TabsContent>
+
+        <TabsContent value="talent" className="mt-6">
+          <TalentPoolPage />
         </TabsContent>
 
         <TabsContent value="crews" className="mt-6">

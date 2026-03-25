@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2 } from "lucide-react";
+import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers } from "lucide-react";
 import { CompanyTradeConfigTab } from "@/components/settings/CompanyTradeConfigTab";
 import { CompanyProfileTab } from "@/components/settings/CompanyProfileTab";
 import { CompanyNotificationsTab } from "@/components/settings/CompanyNotificationsTab";
@@ -17,6 +17,10 @@ const IntegrationsPage = lazy(() => import("@/pages/integrations"));
 const WebsiteBuilderPage = lazy(() => import("@/pages/website-builder"));
 const OverheadCostsPage = lazy(() => import("@/pages/overhead-costs"));
 const ProductionRatesPage = lazy(() => import("@/pages/production-rates"));
+const DailyReportLocksPage = lazy(() => import("@/pages/daily-report-locks"));
+const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
+const AISettingsPage = lazy(() => import("@/pages/ai-settings"));
+const AIGovernancePage = lazy(() => import("@/pages/ai-governance"));
 
 function TabLoader() {
   return (
@@ -77,6 +81,24 @@ const TAB_GROUPS: TabGroup[] = [
     ],
   },
   {
+    parent: "operations",
+    label: "Operations",
+    icon: Settings,
+    subTabs: [
+      { value: "report-locks", label: "Report Locks", icon: Lock },
+      { value: "scope-settings", label: "Scope Settings", icon: Layers },
+    ],
+  },
+  {
+    parent: "ai-admin",
+    label: "AI Administration",
+    icon: Bot,
+    subTabs: [
+      { value: "ai-settings", label: "AI Settings", icon: Settings },
+      { value: "ai-governance", label: "AI Governance", icon: Bot },
+    ],
+  },
+  {
     parent: "integrations",
     label: "Integrations",
     icon: Link2,
@@ -93,6 +115,7 @@ const TAB_GROUPS: TabGroup[] = [
 const VALID_TABS = [
   "trade", "branding", "insurance", "compliance", "payroll", "hustler",
   "cost-codes", "users", "integrations", "website", "overhead-costs", "production-rates",
+  "report-locks", "scope-settings", "ai-settings", "ai-governance",
 ];
 
 function getParentForTab(tab: string): string {
@@ -153,12 +176,18 @@ export default function CompanySettings() {
   const canViewWebsite = isOrgAdmin || featurePerms?.canManageWebsite === true;
   const canViewOverhead = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "OFFICE_MANAGER";
   const canViewProductionRates = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT" || user.role === "OFFICE_MANAGER" || featurePerms?.canAccessReports === true;
+  const canViewReportLocks = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
+  const canViewScopeSettings = isOrgAdmin || user.role === "MANAGER" || user.role === "ESTIMATOR";
+  const canViewAISettings = isOrgAdmin;
+  const canViewAIGovernance = isOrgAdmin;
 
   const tabPermissions: Record<string, boolean> = {
     trade: canViewCoreTabs, branding: canViewCoreTabs, insurance: canViewCoreTabs,
     compliance: canViewCoreTabs, payroll: canViewCoreTabs, hustler: canViewCoreTabs,
     "cost-codes": canViewCostCodes, users: canViewUsers, integrations: canViewIntegrations,
     website: canViewWebsite, "overhead-costs": canViewOverhead, "production-rates": canViewProductionRates,
+    "report-locks": canViewReportLocks, "scope-settings": canViewScopeSettings,
+    "ai-settings": canViewAISettings, "ai-governance": canViewAIGovernance,
   };
 
   const allowedTabs = VALID_TABS.filter(t => tabPermissions[t]);
@@ -172,7 +201,7 @@ export default function CompanySettings() {
       if (visibleSubs.length === 0) return null;
       return { ...group, subTabs: visibleSubs };
     }).filter((g): g is TabGroup => g !== null);
-  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates]);
+  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance]);
 
   const activeParent = getParentForTab(activeTab);
 
@@ -374,6 +403,38 @@ export default function CompanySettings() {
           <TabsContent value="production-rates" className="mt-6">
             <Suspense fallback={<TabLoader />}>
               <ProductionRatesPage embedded />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewReportLocks && (
+          <TabsContent value="report-locks" className="mt-6">
+            <Suspense fallback={<TabLoader />}>
+              <DailyReportLocksPage />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewScopeSettings && (
+          <TabsContent value="scope-settings" className="mt-6">
+            <Suspense fallback={<TabLoader />}>
+              <ScopeSettingsPage />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewAISettings && (
+          <TabsContent value="ai-settings" className="mt-6">
+            <Suspense fallback={<TabLoader />}>
+              <AISettingsPage />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewAIGovernance && (
+          <TabsContent value="ai-governance" className="mt-6">
+            <Suspense fallback={<TabLoader />}>
+              <AIGovernancePage />
             </Suspense>
           </TabsContent>
         )}

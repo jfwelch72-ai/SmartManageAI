@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
-import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, hasManagementAccess, isSuperAdmin, isVendor, isHustler, canAccessBids, canAccessBidNetworkAsGC, canAccessBidNetworkAsSub, hasEquipmentAccess, hasProcurementAccess, type FeaturePerms } from "@/lib/rbac";
+import { NavigationConfig, PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isHustler, type FeaturePerms } from "@/lib/rbac";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { useTour } from "@/components/TourProvider";
 import {
@@ -51,7 +51,6 @@ import {
   Zap,
   HardHat,
   FileSearch,
-  ShoppingCart,
   Users,
   Crown,
 } from "lucide-react";
@@ -85,14 +84,13 @@ export function AppSidebar() {
   
   const [projectsOpen, setProjectsOpen] = useState(false);
   const [operationsOpen, setOperationsOpen] = useState(false);
-  const [timeClockOpen, setTimeClockOpen] = useState(false);
+  const [workforceOpen, setWorkforceOpen] = useState(false);
   const [preconstructionOpen, setPreconstructionOpen] = useState(false);
   const [financialsOpen, setFinancialsOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [administrationOpen, setAdministrationOpen] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [hiringOpen, setHiringOpen] = useState(false);
-  const [marketplaceOpen, setMarketplaceOpen] = useState(false);
 
   const { data: walkthroughStatus } = useQuery<WalkthroughStatus>({
     queryKey: ["/api/ai/walkthrough/status"],
@@ -124,19 +122,24 @@ export function AppSidebar() {
   const perms: FeaturePerms = featurePerms;
 
   const visibleProjectsItems = NavigationConfig.projectsMenu.filter(item => item.visible(userRole, perms));
-  const visibleTimeClockItems = NavigationConfig.timeClockMenu.filter(item => item.visible(userRole, perms));
   const visibleOperationsItems = NavigationConfig.operationsMenu.filter(item => item.visible(userRole, perms));
+  const visibleWorkforceItems = NavigationConfig.workforceMenu.filter(item => item.visible(userRole, perms));
   const visiblePreconstructionItems = NavigationConfig.preconstructionMenu.filter(item => item.visible(userRole, perms));
   const visibleFinancialsItems = NavigationConfig.financialsMenu.filter(item => item.visible(userRole, perms));
+  const visibleMarketplaceItems = NavigationConfig.marketplaceMenu.filter(item => item.visible(userRole, perms));
+  const visibleCrmItems = NavigationConfig.crmMenu.filter(item => item.visible(userRole, perms));
   const visibleInsightsItems = NavigationConfig.insightsMenu.filter(item => item.visible(userRole, perms));
   const visibleAdministrationItems = NavigationConfig.administrationMenu.filter(item => item.visible(userRole, perms));
   const visibleToolsItems = NavigationConfig.toolsMenu.filter(item => item.visible(userRole, perms));
   const visibleHiringItems = NavigationConfig.hiringMenu.filter(item => item.visible(userRole, perms));
 
   const hasProjectsMenu = visibleProjectsItems.length > 0;
-  const hasOperationsMenu = visibleOperationsItems.length > 0 || visibleTimeClockItems.length > 0;
+  const hasOperationsMenu = visibleOperationsItems.length > 0;
+  const hasWorkforceMenu = visibleWorkforceItems.length > 0;
   const hasPreconstructionMenu = visiblePreconstructionItems.length > 0;
   const hasFinancialsMenu = visibleFinancialsItems.length > 0;
+  const hasMarketplace = visibleMarketplaceItems.length > 0;
+  const hasCrm = visibleCrmItems.length > 0;
   const hasInsightsMenu = visibleInsightsItems.length > 0;
   const hasAdministrationMenu = visibleAdministrationItems.length > 0;
   const hasToolsMenu = visibleToolsItems.length > 0;
@@ -284,16 +287,6 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {hasProcurementAccess(userRole) && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={isActive("/procurement-module")} tooltip="Procurement">
-                    <Link href="/procurement-module" data-testid="nav-procurement">
-                      <ShoppingCart className="w-4 h-4" />
-                      <span>Procurement</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
 
             </SidebarMenu>
           </SidebarGroupContent>
@@ -343,7 +336,7 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
         
-        {/* 3. Operations group (includes nested Time Clock) */}
+        {/* 3. Operations group */}
         {hasOperationsMenu && (
           <SidebarGroup>
             <SidebarGroupContent>
@@ -359,33 +352,41 @@ export function AppSidebar() {
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <SidebarMenuSub>
-                        {visibleTimeClockItems.length > 0 && (
-                          <Collapsible open={timeClockOpen} onOpenChange={setTimeClockOpen} className="group/timeclock">
-                            <SidebarMenuSubItem>
-                              <CollapsibleTrigger asChild>
-                                <SidebarMenuSubButton data-testid="sidebar-time-clock-group" className="cursor-pointer">
-                                  <span>Time Clock</span>
-                                  <ChevronDown className="ml-auto w-3 h-3 transition-transform group-data-[state=open]/timeclock:rotate-180" />
-                                </SidebarMenuSubButton>
-                              </CollapsibleTrigger>
-                              <CollapsibleContent>
-                                <SidebarMenuSub>
-                                  {visibleTimeClockItems.map((item) => (
-                                    <SidebarMenuSubItem key={item.href}>
-                                      <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
-                                        <Link href={item.href} data-testid={item.testId}>
-                                          {item.label}
-                                        </Link>
-                                      </SidebarMenuSubButton>
-                                    </SidebarMenuSubItem>
-                                  ))}
-                                </SidebarMenuSub>
-                              </CollapsibleContent>
-                            </SidebarMenuSubItem>
-                          </Collapsible>
-                        )}
-                        
                         {visibleOperationsItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href} data-testid={item.testId}>
+                                {item.label}
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </SidebarMenuItem>
+                </Collapsible>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* 3b. Workforce & Labor group */}
+        {hasWorkforceMenu && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <Collapsible open={workforceOpen} onOpenChange={setWorkforceOpen} className="group/collapsible">
+                  <SidebarMenuItem>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton tooltip="Workforce & Labor" data-testid="sidebar-workforce-group">
+                        <Clock className="w-4 h-4" />
+                        <span>Workforce & Labor</span>
+                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {visibleWorkforceItems.map((item) => (
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href} data-testid={item.testId}>
@@ -437,54 +438,37 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
         
-        {/* 4b. Marketplace group */}
-        {hasManagementAccess(userRole) && (
+        {/* 4b. Marketplace (single link) */}
+        {hasMarketplace && (
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu>
-                <Collapsible open={marketplaceOpen} onOpenChange={setMarketplaceOpen} className="group/collapsible">
-                  <SidebarMenuItem>
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip="Marketplace" data-testid="sidebar-marketplace-group">
-                        <Store className="w-4 h-4" />
-                        <span>Marketplace</span>
-                        <ChevronDown className="ml-auto w-4 h-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton asChild isActive={isActive("/marketplace") && !isActive("/marketplace/contractors")}>
-                            <Link href="/marketplace" data-testid="nav-contractor-directory">
-                              Contractor Directory
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton asChild isActive={isActive("/talent-pool")}>
-                            <Link href="/talent-pool" data-testid="nav-talent-pool">
-                              Talent Pool
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton asChild isActive={isActive("/crew-marketplace")}>
-                            <Link href="/crew-marketplace" data-testid="nav-crew-marketplace">
-                              Crew Marketplace
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                        <SidebarMenuSubItem>
-                          <SidebarMenuSubButton asChild isActive={isActive("/equipment-rental-marketplace")}>
-                            <Link href="/equipment-rental-marketplace" data-testid="nav-equipment-rentals">
-                              Equipment Rentals
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </SidebarMenuItem>
-                </Collapsible>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/marketplace")} tooltip="Marketplace">
+                    <Link href="/marketplace" data-testid="nav-marketplace">
+                      <Store className="w-4 h-4" />
+                      <span>Marketplace</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* 4c. CRM (top-level) */}
+        {hasCrm && (
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/crm")} tooltip="CRM">
+                    <Link href="/crm" data-testid="nav-crm">
+                      <Users className="w-4 h-4" />
+                      <span>CRM</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>

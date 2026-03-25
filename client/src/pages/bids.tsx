@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import BidCard from "@/components/BidCard";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Search,
   Plus,
@@ -24,6 +25,7 @@ import {
   UserCog,
   ChevronDown,
   FileEdit,
+  Inbox,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -33,7 +35,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { canEditBids, canDeleteBids } from "@/lib/rbac";
+import { canEditBids, canDeleteBids, canAccessBidNetworkAsSub } from "@/lib/rbac";
+
+const BidInboxPage = lazy(() => import("@/pages/bid-inbox"));
 import {
   useBids,
   useConvertBidToProject,
@@ -509,16 +513,22 @@ export default function BidsPage() {
     }
   };
 
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialBidsTab = urlParams.get("tab") === "inbox" ? "inbox" : "board";
+  const [bidsTab, setBidsTab] = useState(initialBidsTab);
+  const userRole = user?.effectiveRole || user?.role;
+  const showInboxTab = canAccessBidNetworkAsSub(userRole);
+
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-full px-3 py-4 sm:px-6 sm:py-8">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
           <div>
             <h1 className="text-2xl font-bold text-foreground mb-1">
-              Bid Board
+              Bids
             </h1>
             <p className="text-sm text-muted-foreground">
-              Track opportunities and bids in progress
+              Track opportunities, bids in progress, and incoming invitations
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -565,6 +575,24 @@ export default function BidsPage() {
           </div>
         </div>
 
+        {showInboxTab && (
+          <Tabs value={bidsTab} onValueChange={setBidsTab} className="mb-6">
+            <TabsList data-testid="tabs-bids">
+              <TabsTrigger value="board" data-testid="tab-bid-board">Bid Board</TabsTrigger>
+              <TabsTrigger value="inbox" data-testid="tab-bid-inbox">
+                <Inbox className="h-4 w-4 mr-2" />
+                Bid Inbox
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+
+        {bidsTab === "inbox" && showInboxTab ? (
+          <Suspense fallback={<div className="flex items-center justify-center py-12"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>}>
+            <BidInboxPage />
+          </Suspense>
+        ) : (
+        <>
         <div className="mb-6 space-y-4">
           <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 sm:gap-3">
             <div className="relative flex-1 min-w-0 sm:min-w-[200px]">
@@ -757,6 +785,8 @@ export default function BidsPage() {
               />
             ))}
           </div>
+        )}
+        </>
         )}
       </main>
 
