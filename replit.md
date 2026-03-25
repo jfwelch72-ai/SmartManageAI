@@ -13,7 +13,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Frontend**: React with TypeScript, Wouter, TanStack Query, Tailwind CSS, and shadcn/ui.
 *   **Backend**: Express.js in TypeScript.
 *   **Database**: PostgreSQL, managed with Drizzle ORM.
-*   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, Role-Based Access Control (RBAC), and OAuth social login (Google, Apple) with CSRF protection.
+*   **Authentication**: JWT-based with httpOnly cookies, bcrypt for password hashing, Role-Based Access Control (RBAC), OAuth social login (Google, Apple) with CSRF protection, and Passkey (WebAuthn) passwordless login.
 
 **Core Architectural Decisions & Features**:
 *   **Multi-Tenancy & Customization**: Supports distinct organizations with AI-driven onboarding and dynamic features tailored to specific trade types.

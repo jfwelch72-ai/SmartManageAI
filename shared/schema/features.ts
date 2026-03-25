@@ -6780,3 +6780,21 @@ export const insertHiringPipelineStageSchema = createInsertSchema(hiringPipeline
 export type InsertHiringPipelineStage = z.infer<typeof insertHiringPipelineStageSchema>;
 export type HiringPipelineStage = typeof hiringPipelineStages.$inferSelect;
 
+export const passkeyCredentials = pgTable("passkey_credentials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  credentialId: text("credential_id").notNull().unique(),
+  publicKey: text("public_key").notNull(),
+  counter: integer("counter").notNull().default(0),
+  transports: text("transports").array(),
+  deviceName: text("device_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("passkey_credentials_user_idx").on(table.userId),
+  credentialIdx: index("passkey_credentials_credential_idx").on(table.credentialId),
+}));
+
+export const insertPasskeyCredentialSchema = createInsertSchema(passkeyCredentials).omit({ id: true, createdAt: true });
+export type InsertPasskeyCredential = z.infer<typeof insertPasskeyCredentialSchema>;
+export type PasskeyCredential = typeof passkeyCredentials.$inferSelect;
+
