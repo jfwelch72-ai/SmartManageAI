@@ -55,12 +55,16 @@ function buildSmtpConfig(account: EmailAccount) {
 
 export async function testImapConnection(account: EmailAccount): Promise<ImapTestResult> {
   const client = new ImapFlow(buildImapConfig(account));
+  client.on("error", (err: Error) => {
+    console.warn(`IMAP client error for ${account.emailAddress}: ${err.message}`);
+  });
 
   try {
     await client.connect();
     await client.logout();
     return { success: true, message: "IMAP connection successful" };
   } catch (err: any) {
+    try { client.close(); } catch (_) {}
     const errorMsg = parseConnectionError(err, "IMAP", account);
     return { success: false, message: "IMAP connection failed", error: errorMsg };
   }
@@ -117,6 +121,9 @@ export async function fetchImapMessages(
     }
 
     const client = new ImapFlow(buildImapConfig(account));
+    client.on("error", (err: Error) => {
+      console.warn(`IMAP client error for ${account.emailAddress}: ${err.message}`);
+    });
     const messages: ImapFetchedMessage[] = [];
 
     try {
@@ -192,7 +199,7 @@ export async function fetchImapMessages(
       return messages;
     } catch (err: any) {
       lastError = err;
-      try { await client.logout(); } catch (_) {}
+      try { client.close(); } catch (_) {}
 
       const errMsg = String(err?.message || err);
       const isTransient = errMsg.includes("ETIMEDOUT") ||
@@ -200,6 +207,7 @@ export async function fetchImapMessages(
         errMsg.includes("ECONNREFUSED") ||
         errMsg.includes("ESOCKET") ||
         errMsg.includes("socket disconnected") ||
+        errMsg.includes("Socket timeout") ||
         errMsg.includes("Connection not available");
 
       if (!isTransient || attempt >= MAX_RETRIES) {
