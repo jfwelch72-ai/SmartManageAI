@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
-import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent } from "lucide-react";
+import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent, Settings } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,6 +91,19 @@ interface ItemRow {
   total: string;
 }
 
+type SectionKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K";
+type SectionVisibility = Record<SectionKey, boolean>;
+
+const DEFAULT_SECTION_VISIBILITY: SectionVisibility = {
+  A: true, B: true, C: true, D: true, E: true, F: true, G: true, H: true, I: true, J: true, K: true,
+};
+
+const SECTION_LABELS: Record<SectionKey, string> = {
+  A: "A/A1 Labor", B: "B/B1 Fringes", C: "C Equip Rental", D: "D Owned Equip",
+  E: "E Trucking", F: "F Overhead", G: "G Material", H: "H Profit",
+  I: "I Subcontractor", J: "J Sub Markup", K: "K Misc",
+};
+
 interface CostBreakdown {
   sectionA: { rows: LaborRow[] };
   sectionA1?: { rows: LaborRow[] };
@@ -102,6 +116,7 @@ interface CostBreakdown {
   sectionI: { rows: SectionRow[] };
   sectionK: { bondInsurance: string; permits: string; lodging: string; rows: SectionRow[] };
   totals?: Record<string, number>;
+  sectionVisibility?: SectionVisibility;
 }
 
 const EMPTY_LABOR_ROW: LaborRow = { trade: "", stdHours: "", stdRate: "", premHours: "", premRate: "", isOT: false, total: "0" };
@@ -159,6 +174,8 @@ export function ChangeOrderDialog({
   const [profitPct, setProfitPct] = useState("5");
   const [subMarkupPct, setSubMarkupPct] = useState("5");
   const [useStructuredForm, setUseStructuredForm] = useState(true);
+  const [sectionVisibility, setSectionVisibility] = useState<SectionVisibility>({ ...DEFAULT_SECTION_VISIBILITY });
+  const [showSectionSettings, setShowSectionSettings] = useState(false);
 
   const canManage = ["ADMIN", "MANAGER"].includes(userRole);
   const canReview = ["ADMIN", "MANAGER", "PROJECT_ENGINEER"].includes(userRole);
@@ -220,6 +237,7 @@ export function ChangeOrderDialog({
         setOverheadPct(lineItemsData.overheadPercent || "10");
         setProfitPct(lineItemsData.profitPercent || "5");
         setSubMarkupPct(lineItemsData.subcontractorMarkupPercent || "5");
+        setSectionVisibility(lineItemsData.costBreakdown.sectionVisibility || { ...DEFAULT_SECTION_VISIBILITY });
         setUseStructuredForm(true);
       } else {
         const hasLegacyData = (lineItemsData.laborEntries?.length > 0 || lineItemsData.equipmentEntries?.length > 0 || lineItemsData.materialEntries?.length > 0);
@@ -236,28 +254,55 @@ export function ChangeOrderDialog({
     }
   }, [lineItemsData]);
 
+  useEffect(() => {
+    setSectionVisibility(prev => {
+      const next = { ...prev };
+      const overheadInputsAllOff = !prev.A && !prev.B && !prev.C && !prev.D && !prev.E;
+      if (overheadInputsAllOff && prev.F) next.F = false;
+      const profitInputsAllOff = overheadInputsAllOff && !prev.G;
+      if (profitInputsAllOff && prev.H) next.H = false;
+      if (!prev.I && prev.J) next.J = false;
+      return next;
+    });
+  }, [sectionVisibility.A, sectionVisibility.B, sectionVisibility.C, sectionVisibility.D, sectionVisibility.E, sectionVisibility.G, sectionVisibility.I]);
+
+  const toggleSection = (key: SectionKey, enabled: boolean) => {
+    setSectionVisibility(prev => ({ ...prev, [key]: enabled }));
+  };
+
+  const isSectionAutoDisabled = (key: SectionKey): boolean => {
+    if (key === "F") return !sectionVisibility.A && !sectionVisibility.B && !sectionVisibility.C && !sectionVisibility.D && !sectionVisibility.E;
+    if (key === "H") {
+      const overheadInputsAllOff = !sectionVisibility.A && !sectionVisibility.B && !sectionVisibility.C && !sectionVisibility.D && !sectionVisibility.E;
+      return overheadInputsAllOff && !sectionVisibility.G;
+    }
+    if (key === "J") return !sectionVisibility.I;
+    return false;
+  };
+
   const totals = useMemo(() => {
+    const sv = sectionVisibility;
     const laborRows = breakdown.sectionA.rows;
-    const A = laborRows.reduce((s, r) => s + p(r.stdHours) * p(r.stdRate), 0);
-    const A1 = laborRows.reduce((s, r) => s + p(r.premHours) * p(r.premRate), 0);
+    const A = sv.A ? laborRows.reduce((s, r) => s + p(r.stdHours) * p(r.stdRate), 0) : 0;
+    const A1 = sv.A ? laborRows.reduce((s, r) => s + p(r.premHours) * p(r.premRate), 0) : 0;
     const fringeRows = breakdown.sectionB.rows;
-    const B = fringeRows.reduce((s, r) => s + p(r.stdAmount), 0);
-    const B1 = fringeRows.reduce((s, r) => s + p(r.premAmount), 0);
-    const C = breakdown.sectionC.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
-    const D = breakdown.sectionD.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
-    const E = breakdown.sectionE.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
+    const B = sv.B ? fringeRows.reduce((s, r) => s + p(r.stdAmount), 0) : 0;
+    const B1 = sv.B ? fringeRows.reduce((s, r) => s + p(r.premAmount), 0) : 0;
+    const C = sv.C ? breakdown.sectionC.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0) : 0;
+    const D = sv.D ? breakdown.sectionD.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0) : 0;
+    const E = sv.E ? breakdown.sectionE.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0) : 0;
     const subtotalForOH = A + A1 + B + B1 + C + D + E;
-    const F = subtotalForOH * (p(overheadPct) / 100);
-    const G = breakdown.sectionG.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0);
+    const F = sv.F ? subtotalForOH * (p(overheadPct) / 100) : 0;
+    const G = sv.G ? breakdown.sectionG.rows.reduce((s, r) => s + p(r.quantity) * p(r.rate), 0) : 0;
     const subtotalForProfit = subtotalForOH + F + G;
-    const H = subtotalForProfit * (p(profitPct) / 100);
-    const I = breakdown.sectionI.rows.reduce((s, r) => s + p(r.total), 0);
-    const J = I * (p(subMarkupPct) / 100);
+    const H = sv.H ? subtotalForProfit * (p(profitPct) / 100) : 0;
+    const I = sv.I ? breakdown.sectionI.rows.reduce((s, r) => s + p(r.total), 0) : 0;
+    const J = sv.J ? I * (p(subMarkupPct) / 100) : 0;
     const kRows = breakdown.sectionK.rows?.reduce((s: number, r: any) => s + p(r.total), 0) || 0;
-    const K = p(breakdown.sectionK.bondInsurance) + p(breakdown.sectionK.permits) + p(breakdown.sectionK.lodging) + kRows;
+    const K = sv.K ? p(breakdown.sectionK.bondInsurance) + p(breakdown.sectionK.permits) + p(breakdown.sectionK.lodging) + kRows : 0;
     const grand = subtotalForProfit + H + I + J + K;
     return { A, A1, B, B1, C, D, E, F, G, H, I, J, K, grand };
-  }, [breakdown, overheadPct, profitPct, subMarkupPct]);
+  }, [breakdown, overheadPct, profitPct, subMarkupPct, sectionVisibility]);
 
   const updateBreakdownSection = <T extends keyof CostBreakdown>(section: T, updater: (prev: CostBreakdown[T]) => CostBreakdown[T]) => {
     setBreakdown(prev => ({ ...prev, [section]: updater(prev[section]) }));
@@ -266,7 +311,7 @@ export function ChangeOrderDialog({
   const saveLineItemsMutation = useMutation({
     mutationFn: async () => {
       return apiRequest("PUT", `/api/change-orders/${changeOrder?.id}/line-items`, {
-        costBreakdown: breakdown,
+        costBreakdown: { ...breakdown, sectionVisibility },
         overheadPercent: overheadPct,
         profitPercent: profitPct,
         subcontractorMarkupPercent: subMarkupPct,
@@ -1045,48 +1090,86 @@ export function ChangeOrderDialog({
               </div>
 
               <CollapsibleContent className="mt-4 space-y-4">
-                {renderCombinedLaborSection()}
-                <Separator />
-                {renderCombinedFringeSection()}
-                <Separator />
-                {renderItemSection("sectionC", "Section C — Equipment Rental", totals.C)}
-                {renderItemSection("sectionD", "Section D — Owned Equipment", totals.D)}
-                {renderItemSection("sectionE", "Section E — Trucking", totals.E)}
-                <Separator />
-                {renderCalculatedSection("Section F — Overhead", "sectionF", totals.F, "Overhead %", overheadPct, setOverheadPct, `(A+A1+B+B1+C+D+E) × ${overheadPct}%`)}
-                <Separator />
-                {renderItemSection("sectionG", "Section G — Material", totals.G)}
-                <Separator />
-                {renderCalculatedSection("Section H — Profit", "sectionH", totals.H, "Profit %", profitPct, setProfitPct, `(A+A1+B+B1+C+D+E+F+G) × ${profitPct}%`)}
-                <Separator />
-                {renderSubcontractorSection()}
-                {renderCalculatedSection("Section J — Contractor Markup on Subcontractor", "sectionJ", totals.J, "Markup %", subMarkupPct, setSubMarkupPct, `I × ${subMarkupPct}%`)}
-                <Separator />
-                {renderMiscSection()}
+                {canEdit && (
+                  <div className="space-y-2" data-testid="section-toggle-settings">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => setShowSectionSettings(v => !v)}
+                      data-testid="button-toggle-section-settings"
+                    >
+                      <Settings className="w-3 h-3" />
+                      {showSectionSettings ? "Hide Section Settings" : "Section Settings"}
+                    </Button>
+                    {showSectionSettings && (
+                      <div className="flex flex-wrap gap-3 p-3 bg-muted/30 rounded-md border" data-testid="section-settings-panel">
+                        {(Object.keys(SECTION_LABELS) as SectionKey[]).map(key => {
+                          const autoDisabled = isSectionAutoDisabled(key);
+                          return (
+                            <label key={key} className="flex items-center gap-1.5 text-xs cursor-pointer" data-testid={`toggle-section-${key}`}>
+                              <Switch
+                                checked={sectionVisibility[key]}
+                                onCheckedChange={(checked: boolean) => toggleSection(key, checked)}
+                                disabled={autoDisabled}
+                                className="h-4 w-8 [&>span]:h-3 [&>span]:w-3 data-[state=checked]:[&>span]:translate-x-4"
+                                data-testid={`switch-section-${key}`}
+                              />
+                              <span className={autoDisabled ? "text-muted-foreground line-through" : ""}>{SECTION_LABELS[key]}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {sectionVisibility.A && renderCombinedLaborSection()}
+                {sectionVisibility.A && sectionVisibility.B && <Separator />}
+                {sectionVisibility.B && renderCombinedFringeSection()}
+                {(sectionVisibility.B || sectionVisibility.A) && (sectionVisibility.C || sectionVisibility.D || sectionVisibility.E) && <Separator />}
+                {sectionVisibility.C && renderItemSection("sectionC", "Section C — Equipment Rental", totals.C)}
+                {sectionVisibility.D && renderItemSection("sectionD", "Section D — Owned Equipment", totals.D)}
+                {sectionVisibility.E && renderItemSection("sectionE", "Section E — Trucking", totals.E)}
+                {sectionVisibility.F && <Separator />}
+                {sectionVisibility.F && renderCalculatedSection("Section F — Overhead", "sectionF", totals.F, "Overhead %", overheadPct, setOverheadPct, `(${["A","A1","B","B1","C","D","E"].filter((k) => sectionVisibility[k.replace("1","") as SectionKey]).join("+")}) × ${overheadPct}%`)}
+                {sectionVisibility.G && <Separator />}
+                {sectionVisibility.G && renderItemSection("sectionG", "Section G — Material", totals.G)}
+                {sectionVisibility.H && <Separator />}
+                {sectionVisibility.H && renderCalculatedSection("Section H — Profit", "sectionH", totals.H, "Profit %", profitPct, setProfitPct, `(${["A","A1","B","B1","C","D","E","F","G"].filter((k) => sectionVisibility[k.replace("1","") as SectionKey]).join("+")}) × ${profitPct}%`)}
+                {sectionVisibility.I && <Separator />}
+                {sectionVisibility.I && renderSubcontractorSection()}
+                {sectionVisibility.J && renderCalculatedSection("Section J — Contractor Markup on Subcontractor", "sectionJ", totals.J, "Markup %", subMarkupPct, setSubMarkupPct, `I × ${subMarkupPct}%`)}
+                {sectionVisibility.K && <Separator />}
+                {sectionVisibility.K && renderMiscSection()}
 
                 <Card className="p-4 bg-primary/5 border-primary/20">
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="text-sm font-bold">GRAND TOTAL</span>
-                      <p className="text-xs text-muted-foreground mt-0.5">A + A1 + B + B1 + C + D + E + F + G + H + I + J + K</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {["A","A1","B","B1","C","D","E","F","G","H","I","J","K"]
+                          .filter(k => sectionVisibility[k.replace("1","") as SectionKey])
+                          .join(" + ") || "No sections enabled"}
+                      </p>
                     </div>
                     <span className="text-2xl font-bold font-mono" data-testid="text-grand-total">${fmt(totals.grand)}</span>
                   </div>
                   <Separator className="my-3" />
                   <div className="grid grid-cols-4 gap-2 text-xs">
-                    <div className="flex justify-between"><span className="text-muted-foreground">A (Std Labor):</span><span className="font-mono">${fmt(totals.A)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">A1 (Prem Labor):</span><span className="font-mono">${fmt(totals.A1)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">B (Std Fringe):</span><span className="font-mono">${fmt(totals.B)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">B1 (Prem Fringe):</span><span className="font-mono">${fmt(totals.B1)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">C (Equip Rental):</span><span className="font-mono">${fmt(totals.C)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">D (Owned Equip):</span><span className="font-mono">${fmt(totals.D)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">E (Trucking):</span><span className="font-mono">${fmt(totals.E)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">F (Overhead):</span><span className="font-mono">${fmt(totals.F)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">G (Material):</span><span className="font-mono">${fmt(totals.G)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">H (Profit):</span><span className="font-mono">${fmt(totals.H)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">I (Subcontractor):</span><span className="font-mono">${fmt(totals.I)}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">J (Sub Markup):</span><span className="font-mono">${fmt(totals.J)}</span></div>
-                    <div className="flex justify-between col-span-2"><span className="text-muted-foreground">K (Misc):</span><span className="font-mono">${fmt(totals.K)}</span></div>
+                    {sectionVisibility.A && <div className="flex justify-between"><span className="text-muted-foreground">A (Std Labor):</span><span className="font-mono">${fmt(totals.A)}</span></div>}
+                    {sectionVisibility.A && <div className="flex justify-between"><span className="text-muted-foreground">A1 (Prem Labor):</span><span className="font-mono">${fmt(totals.A1)}</span></div>}
+                    {sectionVisibility.B && <div className="flex justify-between"><span className="text-muted-foreground">B (Std Fringe):</span><span className="font-mono">${fmt(totals.B)}</span></div>}
+                    {sectionVisibility.B && <div className="flex justify-between"><span className="text-muted-foreground">B1 (Prem Fringe):</span><span className="font-mono">${fmt(totals.B1)}</span></div>}
+                    {sectionVisibility.C && <div className="flex justify-between"><span className="text-muted-foreground">C (Equip Rental):</span><span className="font-mono">${fmt(totals.C)}</span></div>}
+                    {sectionVisibility.D && <div className="flex justify-between"><span className="text-muted-foreground">D (Owned Equip):</span><span className="font-mono">${fmt(totals.D)}</span></div>}
+                    {sectionVisibility.E && <div className="flex justify-between"><span className="text-muted-foreground">E (Trucking):</span><span className="font-mono">${fmt(totals.E)}</span></div>}
+                    {sectionVisibility.F && <div className="flex justify-between"><span className="text-muted-foreground">F (Overhead):</span><span className="font-mono">${fmt(totals.F)}</span></div>}
+                    {sectionVisibility.G && <div className="flex justify-between"><span className="text-muted-foreground">G (Material):</span><span className="font-mono">${fmt(totals.G)}</span></div>}
+                    {sectionVisibility.H && <div className="flex justify-between"><span className="text-muted-foreground">H (Profit):</span><span className="font-mono">${fmt(totals.H)}</span></div>}
+                    {sectionVisibility.I && <div className="flex justify-between"><span className="text-muted-foreground">I (Subcontractor):</span><span className="font-mono">${fmt(totals.I)}</span></div>}
+                    {sectionVisibility.J && <div className="flex justify-between"><span className="text-muted-foreground">J (Sub Markup):</span><span className="font-mono">${fmt(totals.J)}</span></div>}
+                    {sectionVisibility.K && <div className="flex justify-between col-span-2"><span className="text-muted-foreground">K (Misc):</span><span className="font-mono">${fmt(totals.K)}</span></div>}
                   </div>
                 </Card>
               </CollapsibleContent>

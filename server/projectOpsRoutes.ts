@@ -1247,6 +1247,8 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN"
       const prPct = safeParseFloat(profitPercent) / 100;
       const smPct = safeParseFloat(subcontractorMarkupPercent) / 100;
 
+      const sv = costBreakdown.sectionVisibility || { A: true, B: true, C: true, D: true, E: true, F: true, G: true, H: true, I: true, J: true, K: true };
+
       const sumLaborStd = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.stdHours) * safeParseFloat(r.stdRate), 0) || 0;
       const sumLaborPrem = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.premHours) * safeParseFloat(r.premRate), 0) || 0;
       const sumFringeStd = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.stdAmount), 0) || 0;
@@ -1255,26 +1257,26 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN"
       const sumTotalField = (rows: any[]) => rows?.reduce((s: number, r: any) => s + safeParseFloat(r.total), 0) || 0;
 
       const laborRows = costBreakdown.sectionA?.rows || [];
-      const totalA = sumLaborStd(laborRows);
-      const totalA1 = sumLaborPrem(costBreakdown.sectionA1?.rows || laborRows);
+      const totalA = sv.A !== false ? sumLaborStd(laborRows) : 0;
+      const totalA1 = sv.A !== false ? sumLaborPrem(costBreakdown.sectionA1?.rows || laborRows) : 0;
       const fringeRows = costBreakdown.sectionB?.rows || [];
-      const totalB = sumFringeStd(fringeRows);
-      const totalB1 = sumFringePrem(costBreakdown.sectionB1?.rows || fringeRows);
-      const totalC = sumItemRows(costBreakdown.sectionC?.rows);
-      const totalD = sumItemRows(costBreakdown.sectionD?.rows);
-      const totalE = sumItemRows(costBreakdown.sectionE?.rows);
+      const totalB = sv.B !== false ? sumFringeStd(fringeRows) : 0;
+      const totalB1 = sv.B !== false ? sumFringePrem(costBreakdown.sectionB1?.rows || fringeRows) : 0;
+      const totalC = sv.C !== false ? sumItemRows(costBreakdown.sectionC?.rows) : 0;
+      const totalD = sv.D !== false ? sumItemRows(costBreakdown.sectionD?.rows) : 0;
+      const totalE = sv.E !== false ? sumItemRows(costBreakdown.sectionE?.rows) : 0;
       const subtotalForOverhead = totalA + totalA1 + totalB + totalB1 + totalC + totalD + totalE;
-      const totalF = subtotalForOverhead * ohPct;
-      const totalG = sumItemRows(costBreakdown.sectionG?.rows);
+      const totalF = sv.F !== false ? subtotalForOverhead * ohPct : 0;
+      const totalG = sv.G !== false ? sumItemRows(costBreakdown.sectionG?.rows) : 0;
       const subtotalForProfit = subtotalForOverhead + totalF + totalG;
-      const totalH = subtotalForProfit * prPct;
-      const totalI = sumTotalField(costBreakdown.sectionI?.rows);
-      const totalJ = totalI * smPct;
+      const totalH = sv.H !== false ? subtotalForProfit * prPct : 0;
+      const totalI = sv.I !== false ? sumTotalField(costBreakdown.sectionI?.rows) : 0;
+      const totalJ = sv.J !== false ? totalI * smPct : 0;
       const kBond = safeParseFloat(costBreakdown.sectionK?.bondInsurance);
       const kPermits = safeParseFloat(costBreakdown.sectionK?.permits);
       const kLodging = safeParseFloat(costBreakdown.sectionK?.lodging);
       const kRows = sumTotalField(costBreakdown.sectionK?.rows);
-      const totalK = kBond + kPermits + kLodging + kRows;
+      const totalK = sv.K !== false ? kBond + kPermits + kLodging + kRows : 0;
       const grandTotal = subtotalForProfit + totalH + totalI + totalJ + totalK;
 
       const computedBreakdown = {
