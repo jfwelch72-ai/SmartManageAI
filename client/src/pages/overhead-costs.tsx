@@ -1405,10 +1405,6 @@ export default function OverheadCostsPage() {
             </p>
           </div>
         </div>
-        <Button onClick={openAdd} data-testid="button-add-overhead-item">
-          <Plus className="h-4 w-4 mr-2" />
-          Add Cost
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1691,7 +1687,13 @@ export default function OverheadCostsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Cost Items ({filteredItems.length})</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Cost Items ({filteredItems.length})</CardTitle>
+                <Button onClick={openAdd} data-testid="button-add-overhead-item">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Cost
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {itemsLoading ? (
