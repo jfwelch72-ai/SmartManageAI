@@ -153,6 +153,40 @@ export interface HiringIntegrationConnectedEvent extends EventEnvelope {
   };
 }
 
+export interface BidStatusChangedEvent extends EventEnvelope {
+  type: "bid.status_changed";
+  payload: {
+    bidId: string;
+    bidCode: string;
+    title: string;
+    oldStatus: string;
+    newStatus: string;
+  };
+}
+
+export interface BidAssignedEvent extends EventEnvelope {
+  type: "bid.assigned";
+  payload: {
+    bidId: string;
+    bidCode: string;
+    title: string;
+    estimatorId: string;
+    estimatorName: string | null;
+  };
+}
+
+export interface BidDueDateApproachingEvent extends EventEnvelope {
+  type: "bid.due_date_approaching";
+  payload: {
+    bidId: string;
+    bidCode: string;
+    title: string;
+    dueDate: string;
+    hoursRemaining: number;
+    estimatorId: string | null;
+  };
+}
+
 export type DomainEvent =
   | ProjectCreatedEvent
   | ProjectStatusChangedEvent
@@ -168,7 +202,10 @@ export type DomainEvent =
   | HiringCandidateStageChangedEvent
   | HiringCandidateHiredEvent
   | HiringInterviewScheduledEvent
-  | HiringIntegrationConnectedEvent;
+  | HiringIntegrationConnectedEvent
+  | BidStatusChangedEvent
+  | BidAssignedEvent
+  | BidDueDateApproachingEvent;
 
 export type DomainEventType = DomainEvent["type"];
 
@@ -177,6 +214,9 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "project.status_changed",
   "bid.submitted",
   "bid.converted_to_project",
+  "bid.status_changed",
+  "bid.assigned",
+  "bid.due_date_approaching",
   "change_order.approved",
   "change_order.rejected",
   "timeclock.checked_in",

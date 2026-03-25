@@ -6,12 +6,14 @@ import { logInfo, logError } from "../utils/logger";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, type InsertNotification } from "@shared/schema";
-import { eq, and, lt, lte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
+import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 import { publishToPlatform } from "../social/publishService";
 import { socialAccounts } from "@shared/schema";
 import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
+import { bids } from "@shared/schema";
+import { eventBus } from "../events";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -22,6 +24,7 @@ let complianceCheckTask: ReturnType<typeof cron.schedule> | null = null;
 let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
 let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
 let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
+let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -98,7 +101,15 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, and orphan upload schedulers)");
+  bidDueDateTask = cron.schedule("0 * * * *", async () => {
+    try {
+      await processBidDueDateApproaching();
+    } catch (err) {
+      logError("Bid due date check failed", { error: String(err) });
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, and bid due date schedulers)");
 }
 
 export function stopJobRunner() {
@@ -133,6 +144,10 @@ export function stopJobRunner() {
   if (idleOpportunityTask) {
     idleOpportunityTask.stop();
     idleOpportunityTask = null;
+  }
+  if (bidDueDateTask) {
+    bidDueDateTask.stop();
+    bidDueDateTask = null;
   }
   if (orphanUploadTask) {
     orphanUploadTask.stop();
@@ -967,6 +982,79 @@ async function processOrphanUploads() {
   }
 
   logInfo("Orphan upload cleanup complete", { deleted, failed });
+}
+
+async function processBidDueDateApproaching() {
+  const now = new Date();
+  const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+  const { domainEvents } = await import("@shared/schema");
+
+  const upcomingBids = await db
+    .select()
+    .from(bids)
+    .where(
+      and(
+        inArray(bids.status, ["ACTIVE", "SUBMITTED"]),
+        isNotNull(bids.dueDate),
+        gt(bids.dueDate, now),
+        lte(bids.dueDate, in48h)
+      )
+    );
+
+  if (upcomingBids.length === 0) return;
+
+  const recentAlerts = await db
+    .select({ payload: domainEvents.payload })
+    .from(domainEvents)
+    .where(
+      and(
+        eq(domainEvents.type, "bid.due_date_approaching"),
+        gt(domainEvents.createdAt, new Date(now.getTime() - 24 * 60 * 60 * 1000))
+      )
+    );
+
+  const alertedKeys = new Set<string>();
+  for (const row of recentAlerts) {
+    const p = row.payload as Record<string, unknown> | null;
+    if (p && typeof p === "object" && typeof p.bidId === "string") {
+      const hrs = typeof p.hoursRemaining === "number" ? p.hoursRemaining : 99;
+      const threshold = hrs <= 24 ? "24h" : "48h";
+      alertedKeys.add(`${p.bidId}:${threshold}`);
+    }
+  }
+
+  let alerted = 0;
+  for (const bid of upcomingBids) {
+    if (!bid.dueDate) continue;
+    const hoursRemaining = Math.round((bid.dueDate.getTime() - now.getTime()) / (1000 * 60 * 60));
+    const threshold = hoursRemaining <= 24 ? "24h" : "48h";
+    const dedupeKey = `${bid.id}:${threshold}`;
+
+    if (alertedKeys.has(dedupeKey)) continue;
+
+    await eventBus.emit({
+      type: "bid.due_date_approaching",
+      version: 1,
+      orgId: bid.gcOrganizationId || "",
+      actorId: "system",
+      timestamp: now,
+      payload: {
+        bidId: bid.id,
+        bidCode: bid.code,
+        title: bid.name,
+        dueDate: bid.dueDate.toISOString(),
+        hoursRemaining,
+        estimatorId: bid.estimatorId,
+      },
+    });
+
+    alerted++;
+  }
+
+  if (alerted > 0) {
+    logInfo(`Bid due date approaching: alerted for ${alerted} bid(s)`);
+  }
 }
 
 function parseBucketObjectPath(fullPath: string): { bucketName: string; objectName: string } {

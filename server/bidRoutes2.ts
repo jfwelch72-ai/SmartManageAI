@@ -20,6 +20,21 @@ import { sendEmail } from "./email";
 
 const router = Router();
 
+const BID_STATUS_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ["ACTIVE", "SUBMITTED", "CANCELLED"],
+  ACTIVE: ["SUBMITTED", "AWARDED", "LOST", "CANCELLED"],
+  SUBMITTED: ["AWARDED", "LOST", "CANCELLED"],
+  AWARDED: [],
+  LOST: [],
+  CANCELLED: [],
+};
+
+const BID_ADMIN_FORCE_TRANSITIONS: Record<string, string[]> = {
+  AWARDED: ["ACTIVE"],
+  LOST: ["ACTIVE", "DRAFT"],
+  CANCELLED: ["DRAFT"],
+};
+
 function validateMonetaryAmount(amount: string | number | null | undefined, fieldName: string): { valid: boolean; error?: string } {
   if (amount === null || amount === undefined) {
     return { valid: true };
@@ -260,9 +275,12 @@ router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR
           gcOrganizationId: userOrgId || validationResult.data.gcOrganizationId,
         }).returning();
 
-        if (newBid.status === "SUBMITTED") {
+        if (newBid.estimatorId) {
+          let estimatorName: string | null = null;
+          const [est] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, newBid.estimatorId)).limit(1);
+          if (est) estimatorName = `${est.firstName} ${est.lastName}`.trim();
           await eventBus.emit({
-            type: "bid.submitted",
+            type: "bid.assigned",
             version: 1,
             orgId: newBid.gcOrganizationId || userOrgId || "",
             actorId: req.user!.id,
@@ -271,7 +289,8 @@ router.post("/api/bids", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR
               bidId: newBid.id,
               bidCode: newBid.code,
               title: newBid.name,
-              clientName: newBid.clientName || "",
+              estimatorId: newBid.estimatorId,
+              estimatorName,
             },
           });
         }
@@ -332,7 +351,25 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
       }
     }
 
+    const newStatus = validationResult.data.status;
+    if (newStatus && newStatus !== existingBid.status) {
+      const allowed = BID_STATUS_TRANSITIONS[existingBid.status] || [];
+      if (!allowed.includes(newStatus)) {
+        const forceFlag = req.body.force === true;
+        const isAdmin = req.user?.role === "ADMIN" || req.user?.role === "SUPER_ADMIN";
+        const forceAllowed = BID_ADMIN_FORCE_TRANSITIONS[existingBid.status] || [];
+        if (!(forceFlag && isAdmin && forceAllowed.includes(newStatus))) {
+          const hint = forceAllowed.length > 0 ? ` Admins can force: ${forceAllowed.join(", ")}` : "";
+          res.status(422).json({
+            error: `Invalid status transition from ${existingBid.status} to ${newStatus}. Allowed transitions: ${allowed.join(", ") || "none"}.${hint}`,
+          });
+          return;
+        }
+      }
+    }
+
     const updateData: any = { ...validationResult.data, updatedAt: new Date() };
+    delete updateData.force;
     
     const [updatedBid] = await db
       .update(bids)
@@ -346,6 +383,44 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
     }
 
     await logUpdate(req.user!.id, "BID", updatedBid.id, existingBid, updateData, req);
+
+    const userOrgId = req.user?.organizationId || existingBid.gcOrganizationId || "";
+    if (newStatus && newStatus !== existingBid.status) {
+      await eventBus.emit({
+        type: "bid.status_changed",
+        version: 1,
+        orgId: userOrgId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        payload: {
+          bidId: updatedBid.id,
+          bidCode: updatedBid.code,
+          title: updatedBid.name,
+          oldStatus: existingBid.status,
+          newStatus,
+        },
+      });
+    }
+
+    if (validationResult.data.estimatorId && validationResult.data.estimatorId !== existingBid.estimatorId) {
+      let estimatorName: string | null = null;
+      const [est] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, validationResult.data.estimatorId)).limit(1);
+      if (est) estimatorName = `${est.firstName} ${est.lastName}`.trim();
+      await eventBus.emit({
+        type: "bid.assigned",
+        version: 1,
+        orgId: userOrgId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        payload: {
+          bidId: updatedBid.id,
+          bidCode: updatedBid.code,
+          title: updatedBid.name,
+          estimatorId: validationResult.data.estimatorId,
+          estimatorName,
+        },
+      });
+    }
 
     res.json(updatedBid);
   } catch (error: any) {
@@ -585,7 +660,7 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     console.log(`[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`);
 
-    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit, startStatus: bodyStartStatus } = req.body || {};
+    const { superintendentId, projectManagerId, overheadPercent: bodyOverhead, profitPercent: bodyProfit, startStatus: bodyStartStatus, startDate: bodyStartDate, endDate: bodyEndDate, projectEngineerId: bodyProjectEngineerId, foremanId: bodyForemanId } = req.body || {};
     const OVERHEAD_PERCENT = typeof bodyOverhead === "number" && bodyOverhead >= 0 ? bodyOverhead : 10;
     const PROFIT_MARGIN_PERCENT = typeof bodyProfit === "number" && bodyProfit >= 0 ? bodyProfit : 15;
     const projectStartStatus: "ACTIVE" | "PLANNING" = bodyStartStatus === "PLANNING" ? "PLANNING" : "ACTIVE";
@@ -648,6 +723,8 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       contractAmount: contractAmount,
       budget: directCostBudget,
       gcOrganizationId: bid.gcOrganizationId,
+      startDate: bodyStartDate ? new Date(bodyStartDate) : null,
+      endDate: bodyEndDate ? new Date(bodyEndDate) : null,
     }).returning();
 
     for (const estimate of bidEstimates) {
@@ -976,6 +1053,29 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Transferred ${bidEquipSelections.length} equipment selections to project equipment plans`);
     }
 
+    const { planDocuments } = await import("@shared/schema");
+    const bidDocs = await db
+      .select()
+      .from(bidDocuments)
+      .where(eq(bidDocuments.bidId, bid.id));
+
+    if (bidDocs.length > 0) {
+      for (const doc of bidDocs) {
+        await db.insert(planDocuments).values({
+          projectId: newProject.id,
+          type: doc.type,
+          title: doc.title,
+          fileName: doc.fileName,
+          fileUrl: doc.fileUrl,
+          objectKey: doc.objectKey,
+          fileSize: doc.fileSize,
+          mimeType: doc.mimeType,
+          uploadedById: doc.uploadedById,
+        });
+      }
+      console.log(`[Bid Conversion] Transferred ${bidDocs.length} bid documents to project plan_documents`);
+    }
+
     await db.update(bids)
       .set({
         status: "AWARDED",
@@ -1009,6 +1109,30 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         relatedEntityType: "project",
       });
       console.log(`[Bid Conversion] Created PROJECT_ASSIGNMENT notification for project manager ${projectManagerId}`);
+    }
+
+    if (bodyProjectEngineerId) {
+      await db.insert(notificationsTable).values({
+        userId: bodyProjectEngineerId,
+        type: "PROJECT_ASSIGNMENT",
+        title: "New Project Assignment",
+        message: `You have been assigned as Project Engineer for project "${newProject.name}" (${newProject.code})`,
+        relatedEntityId: newProject.id,
+        relatedEntityType: "project",
+      });
+      console.log(`[Bid Conversion] Created PROJECT_ASSIGNMENT notification for project engineer ${bodyProjectEngineerId}`);
+    }
+
+    if (bodyForemanId) {
+      await db.insert(notificationsTable).values({
+        userId: bodyForemanId,
+        type: "PROJECT_ASSIGNMENT",
+        title: "New Project Assignment",
+        message: `You have been assigned as Foreman for project "${newProject.name}" (${newProject.code})`,
+        relatedEntityId: newProject.id,
+        relatedEntityType: "project",
+      });
+      console.log(`[Bid Conversion] Created PROJECT_ASSIGNMENT notification for foreman ${bodyForemanId}`);
     }
 
     await logAudit({
@@ -2261,6 +2385,13 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
 
     if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
 
+    const allowedTransitions = BID_STATUS_TRANSITIONS[bid.status] || [];
+    if (!allowedTransitions.includes("SUBMITTED") && bid.status !== "SUBMITTED") {
+      return res.status(422).json({
+        error: `Cannot submit bid from status ${bid.status}. Bid must be in DRAFT, ACTIVE, or SUBMITTED status.`,
+      });
+    }
+
     const { recipientEmail } = req.body;
     const toEmail = recipientEmail || bid.clientContactEmail;
 
@@ -2312,8 +2443,15 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
       console.warn(`[Bid Submit] Email send failed for bid ${bid.code} to ${toEmail}`);
     }
 
+    const statusUpdate: any = { submittedAt: new Date(), updatedAt: new Date() };
+    const oldStatus = bid.status;
+    const allowedForSubmit = BID_STATUS_TRANSITIONS[oldStatus] || [];
+    if (allowedForSubmit.includes("SUBMITTED")) {
+      statusUpdate.status = "SUBMITTED";
+    }
+
     const [updatedBid] = await db.update(bids)
-      .set({ submittedAt: new Date(), updatedAt: new Date() })
+      .set(statusUpdate)
       .where(eq(bids.code, req.params.code))
       .returning();
 
@@ -2324,6 +2462,37 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
       entityId: bid.id,
       newValue: `Bid submitted to client at ${toEmail}`,
     }, req);
+
+    await eventBus.emit({
+      type: "bid.submitted",
+      version: 1,
+      orgId: bid.gcOrganizationId || req.user!.organizationId || "",
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: {
+        bidId: bid.id,
+        bidCode: bid.code,
+        title: bid.name,
+        clientName: bid.clientName || "",
+      },
+    });
+
+    if (statusUpdate.status && statusUpdate.status !== oldStatus) {
+      await eventBus.emit({
+        type: "bid.status_changed",
+        version: 1,
+        orgId: bid.gcOrganizationId || req.user!.organizationId || "",
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        payload: {
+          bidId: bid.id,
+          bidCode: bid.code,
+          title: bid.name,
+          oldStatus,
+          newStatus: statusUpdate.status,
+        },
+      });
+    }
 
     res.json({ success: true, submittedAt: updatedBid.submittedAt, emailSent });
   } catch (error) {

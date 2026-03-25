@@ -1,6 +1,6 @@
 import { eventBus } from "../eventBus";
 import { db } from "../../db";
-import { notifications, users } from "@shared/schema";
+import { notifications, users, bids } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { logError } from "../../utils/logger";
 import { deliverNotifications } from "../../services/notificationDelivery";
@@ -9,6 +9,10 @@ import type {
   ChangeOrderRejectedEvent,
   PayrollRunCompletedEvent,
   BidConvertedToProjectEvent,
+  BidSubmittedEvent,
+  BidStatusChangedEvent,
+  BidAssignedEvent,
+  BidDueDateApproachingEvent,
 } from "../eventTypes";
 
 type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
@@ -120,6 +124,90 @@ export function registerNotificationListener(): void {
       );
     } catch (err) {
       logError("notificationListener: bid.converted_to_project failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("bid.submitted", async (event: BidSubmittedEvent) => {
+    try {
+      const adminIds = await getAdminUserIds(event.orgId);
+      await insertNotifications(
+        adminIds,
+        "BID_SUBMITTED",
+        "Bid Submitted to Client",
+        `Bid "${event.payload.title}" (${event.payload.bidCode}) has been submitted to ${event.payload.clientName || "client"}`,
+        event.payload.bidId,
+        "bid"
+      );
+    } catch (err) {
+      logError("notificationListener: bid.submitted failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("bid.status_changed", async (event: BidStatusChangedEvent) => {
+    try {
+      const adminIds = await getAdminUserIds(event.orgId);
+      const statusMessages: Record<string, string> = {
+        AWARDED: `Bid "${event.payload.title}" (${event.payload.bidCode}) has been awarded!`,
+        LOST: `Bid "${event.payload.title}" (${event.payload.bidCode}) was marked as lost.`,
+        CANCELLED: `Bid "${event.payload.title}" (${event.payload.bidCode}) has been cancelled.`,
+      };
+      const message = statusMessages[event.payload.newStatus] ||
+        `Bid "${event.payload.title}" (${event.payload.bidCode}) status changed from ${event.payload.oldStatus} to ${event.payload.newStatus}`;
+
+      const recipientIds = new Set(adminIds);
+
+      const [bid] = await db
+        .select({ estimatorId: bids.estimatorId })
+        .from(bids)
+        .where(eq(bids.id, event.payload.bidId))
+        .limit(1);
+      if (bid?.estimatorId) recipientIds.add(bid.estimatorId);
+
+      await insertNotifications(
+        Array.from(recipientIds),
+        "BID_STATUS_CHANGED",
+        "Bid Status Changed",
+        message,
+        event.payload.bidId,
+        "bid"
+      );
+    } catch (err) {
+      logError("notificationListener: bid.status_changed failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("bid.assigned", async (event: BidAssignedEvent) => {
+    try {
+      await insertNotifications(
+        [event.payload.estimatorId],
+        "BID_ASSIGNED",
+        "Bid Assignment",
+        `You have been assigned to bid "${event.payload.title}" (${event.payload.bidCode})`,
+        event.payload.bidId,
+        "bid"
+      );
+    } catch (err) {
+      logError("notificationListener: bid.assigned failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("bid.due_date_approaching", async (event: BidDueDateApproachingEvent) => {
+    try {
+      const adminIds = await getAdminUserIds(event.orgId);
+      const recipientIds = new Set(adminIds);
+      if (event.payload.estimatorId) recipientIds.add(event.payload.estimatorId);
+
+      const hoursLabel = event.payload.hoursRemaining <= 24 ? "24 hours" : "48 hours";
+      await insertNotifications(
+        Array.from(recipientIds),
+        "BID_DUE_DATE_APPROACHING",
+        "Bid Due Date Approaching",
+        `Bid "${event.payload.title}" (${event.payload.bidCode}) is due within ${hoursLabel} (${event.payload.dueDate})`,
+        event.payload.bidId,
+        "bid"
+      );
+    } catch (err) {
+      logError("notificationListener: bid.due_date_approaching failed", { error: String(err) });
     }
   });
 }
