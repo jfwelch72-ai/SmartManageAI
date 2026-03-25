@@ -25,6 +25,7 @@ export interface ImapFetchedMessage {
 }
 
 function buildImapConfig(account: EmailAccount) {
+  const isProduction = process.env.NODE_ENV === "production";
   return {
     host: account.imapHost!,
     port: account.imapPort!,
@@ -33,7 +34,10 @@ function buildImapConfig(account: EmailAccount) {
       user: account.imapUsername || account.emailAddress,
       pass: account.imapPassword!,
     },
-    logger: false as const,
+    logger: isProduction ? (false as const) : console,
+    connectTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000,
   };
 }
 
@@ -102,82 +106,109 @@ export async function fetchImapMessages(
   since?: Date,
   maxMessages: number = 50
 ): Promise<ImapFetchedMessage[]> {
-  const client = new ImapFlow(buildImapConfig(account));
-  const messages: ImapFetchedMessage[] = [];
+  const MAX_RETRIES = 2;
+  let lastError: any;
 
-  try {
-    await client.connect();
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const backoffMs = attempt * 2000;
+      console.log(`IMAP fetch retry ${attempt}/${MAX_RETRIES} for ${account.emailAddress} after ${backoffMs}ms`);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
 
-    const lock = await client.getMailboxLock("INBOX");
+    const client = new ImapFlow(buildImapConfig(account));
+    const messages: ImapFetchedMessage[] = [];
 
     try {
-      const searchCriteria: any = since ? { since } : { since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
+      await client.connect();
 
-      const searchResult = await client.search(searchCriteria, { uid: true });
-      const uids = Array.isArray(searchResult) ? searchResult : [];
+      const lock = await client.getMailboxLock("INBOX");
 
-      if (uids.length > 0) {
-        const uidList = uids.slice(-maxMessages);
-        const uidRange = uidList.join(",");
+      try {
+        const searchCriteria: any = since ? { since } : { since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) };
 
-        for await (const msg of client.fetch(uidRange, {
-          uid: true,
-          envelope: true,
-          source: true,
-          flags: true,
-          bodyStructure: true,
-        }, { uid: true })) {
-          try {
-            const envelope = msg.envelope;
-            if (!envelope) continue;
+        const searchResult = await client.search(searchCriteria, { uid: true });
+        const uids = Array.isArray(searchResult) ? searchResult : [];
 
-            const fromAddr = envelope.from?.[0];
-            const toAddrs = envelope.to || [];
-            const ccAddrs = envelope.cc || [];
+        if (uids.length > 0) {
+          const uidList = uids.slice(-maxMessages);
+          const uidRange = uidList.join(",");
 
-            let bodyText = "";
-            let bodyHtml = "";
+          for await (const msg of client.fetch(uidRange, {
+            uid: true,
+            envelope: true,
+            source: true,
+            flags: true,
+            bodyStructure: true,
+          }, { uid: true })) {
+            try {
+              const envelope = msg.envelope;
+              if (!envelope) continue;
 
-            if (msg.source) {
-              const sourceStr = msg.source.toString();
-              bodyText = extractTextFromSource(sourceStr);
-              bodyHtml = extractHtmlFromSource(sourceStr);
+              const fromAddr = envelope.from?.[0];
+              const toAddrs = envelope.to || [];
+              const ccAddrs = envelope.cc || [];
+
+              let bodyText = "";
+              let bodyHtml = "";
+
+              if (msg.source) {
+                const sourceStr = msg.source.toString();
+                bodyText = extractTextFromSource(sourceStr);
+                bodyHtml = extractHtmlFromSource(sourceStr);
+              }
+
+              const snippet = bodyText
+                ? bodyText.substring(0, 200).replace(/\s+/g, " ").trim()
+                : "";
+
+              const hasAttachments = checkForAttachments(msg.bodyStructure);
+
+              messages.push({
+                externalId: `imap-${account.id}-${msg.uid}`,
+                subject: envelope.subject || "(No Subject)",
+                fromAddress: fromAddr ? `${fromAddr.address}` : "unknown@unknown.com",
+                fromName: fromAddr?.name || "",
+                toAddresses: JSON.stringify(toAddrs.map((a: any) => a.address).filter(Boolean)),
+                ccAddresses: JSON.stringify(ccAddrs.map((a: any) => a.address).filter(Boolean)),
+                bodyText,
+                bodyHtml,
+                snippet,
+                receivedAt: envelope.date ? new Date(envelope.date) : new Date(),
+                isRead: msg.flags ? msg.flags.has("\\Seen") : false,
+                hasAttachments,
+                messageId: envelope.messageId || `imap-${msg.uid}`,
+              });
+            } catch (parseErr) {
+              console.error(`Error parsing IMAP message UID ${msg.uid}:`, parseErr);
             }
-
-            const snippet = bodyText
-              ? bodyText.substring(0, 200).replace(/\s+/g, " ").trim()
-              : "";
-
-            const hasAttachments = checkForAttachments(msg.bodyStructure);
-
-            messages.push({
-              externalId: `imap-${account.id}-${msg.uid}`,
-              subject: envelope.subject || "(No Subject)",
-              fromAddress: fromAddr ? `${fromAddr.address}` : "unknown@unknown.com",
-              fromName: fromAddr?.name || "",
-              toAddresses: JSON.stringify(toAddrs.map((a: any) => a.address).filter(Boolean)),
-              ccAddresses: JSON.stringify(ccAddrs.map((a: any) => a.address).filter(Boolean)),
-              bodyText,
-              bodyHtml,
-              snippet,
-              receivedAt: envelope.date ? new Date(envelope.date) : new Date(),
-              isRead: msg.flags ? msg.flags.has("\\Seen") : false,
-              hasAttachments,
-              messageId: envelope.messageId || `imap-${msg.uid}`,
-            });
-          } catch (parseErr) {
-            console.error(`Error parsing IMAP message UID ${msg.uid}:`, parseErr);
           }
         }
+      } finally {
+        lock.release();
       }
-    } finally {
-      lock.release();
+
+      try { await client.logout(); } catch (_) {}
+      return messages;
+    } catch (err: any) {
+      lastError = err;
+      try { await client.logout(); } catch (_) {}
+
+      const errMsg = String(err?.message || err);
+      const isTransient = errMsg.includes("ETIMEDOUT") ||
+        errMsg.includes("ECONNRESET") ||
+        errMsg.includes("ECONNREFUSED") ||
+        errMsg.includes("ESOCKET") ||
+        errMsg.includes("socket disconnected") ||
+        errMsg.includes("Connection not available");
+
+      if (!isTransient || attempt >= MAX_RETRIES) {
+        throw err;
+      }
     }
-  } finally {
-    try { await client.logout(); } catch (_) {}
   }
 
-  return messages;
+  throw lastError;
 }
 
 export async function sendSmtpEmail(

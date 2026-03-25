@@ -1085,13 +1085,25 @@ function parseBucketObjectPath(fullPath: string): { bucketName: string; objectNa
 }
 
 let imapSyncRunning = false;
+let imapSyncStartedAt: number | null = null;
+const IMAP_SYNC_STALE_TIMEOUT_MS = 10 * 60 * 1000;
 
 async function processImapEmailSync() {
   if (imapSyncRunning) {
-    logInfo("IMAP sync already in progress, skipping");
-    return;
+    if (imapSyncStartedAt && Date.now() - imapSyncStartedAt > IMAP_SYNC_STALE_TIMEOUT_MS) {
+      logError("IMAP sync lock appears stale, resetting", {
+        startedAt: new Date(imapSyncStartedAt).toISOString(),
+        staleDurationMs: Date.now() - imapSyncStartedAt,
+      });
+      imapSyncRunning = false;
+      imapSyncStartedAt = null;
+    } else {
+      logInfo("IMAP sync already in progress, skipping");
+      return;
+    }
   }
   imapSyncRunning = true;
+  imapSyncStartedAt = Date.now();
 
   try {
     const imapAccounts = await db
@@ -1134,5 +1146,6 @@ async function processImapEmailSync() {
     }
   } finally {
     imapSyncRunning = false;
+    imapSyncStartedAt = null;
   }
 }

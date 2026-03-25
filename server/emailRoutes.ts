@@ -1644,6 +1644,10 @@ export async function syncImapAccount(
     const fetched = await fetchImapMessages(account, since, 100);
 
     if (fetched.length === 0) {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
       return result;
     }
 
@@ -1661,6 +1665,10 @@ export async function syncImapAccount(
 
     const newMessages = fetched.filter(m => !existingIds.has(m.externalId));
     if (newMessages.length === 0) {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
       return result;
     }
 
