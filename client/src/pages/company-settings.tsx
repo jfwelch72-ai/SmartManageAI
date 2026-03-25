@@ -1,14 +1,15 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/use-auth";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2 } from "lucide-react";
 import { CompanyTradeConfigTab } from "@/components/settings/CompanyTradeConfigTab";
 import { CompanyProfileTab } from "@/components/settings/CompanyProfileTab";
 import { CompanyNotificationsTab } from "@/components/settings/CompanyNotificationsTab";
 import { CompanyUserInviteTab } from "@/components/settings/CompanyUserInviteTab";
+import type { LucideIcon } from "lucide-react";
 
 const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
 const UsersPage = lazy(() => import("@/pages/users"));
@@ -25,10 +26,89 @@ function TabLoader() {
   );
 }
 
+interface SubTab {
+  value: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+interface TabGroup {
+  parent: string;
+  label: string;
+  icon: LucideIcon;
+  subTabs: SubTab[];
+}
+
+const TAB_GROUPS: TabGroup[] = [
+  {
+    parent: "trade",
+    label: "Trade",
+    icon: Wrench,
+    subTabs: [],
+  },
+  {
+    parent: "company-profile",
+    label: "Company Profile",
+    icon: Building2,
+    subTabs: [
+      { value: "branding", label: "Branding", icon: Image },
+      { value: "insurance", label: "Insurance", icon: Shield },
+      { value: "compliance", label: "Compliance", icon: FileText },
+    ],
+  },
+  {
+    parent: "financial",
+    label: "Financial",
+    icon: DollarSign,
+    subTabs: [
+      { value: "payroll", label: "Payroll", icon: Clock },
+      { value: "cost-codes", label: "Cost Codes", icon: Code },
+      { value: "overhead-costs", label: "Overhead Costs", icon: DollarSign },
+      { value: "production-rates", label: "Production Rates", icon: BarChart3 },
+    ],
+  },
+  {
+    parent: "people",
+    label: "People",
+    icon: Users,
+    subTabs: [
+      { value: "hustler", label: "Hustler Oversight", icon: Users },
+      { value: "users", label: "Users & Roles", icon: Users },
+    ],
+  },
+  {
+    parent: "integrations",
+    label: "Integrations",
+    icon: Link2,
+    subTabs: [],
+  },
+  {
+    parent: "website",
+    label: "Website",
+    icon: Globe,
+    subTabs: [],
+  },
+];
+
 const VALID_TABS = [
   "trade", "branding", "insurance", "compliance", "payroll", "hustler",
   "cost-codes", "users", "integrations", "website", "overhead-costs", "production-rates",
 ];
+
+function getParentForTab(tab: string): string {
+  for (const group of TAB_GROUPS) {
+    if (group.subTabs.length === 0 && group.parent === tab) return group.parent;
+    for (const sub of group.subTabs) {
+      if (sub.value === tab) return group.parent;
+    }
+  }
+  return TAB_GROUPS[0].parent;
+}
+
+function getEffectiveTab(group: TabGroup): string {
+  if (group.subTabs.length === 0) return group.parent;
+  return group.subTabs[0].value;
+}
 
 export default function CompanySettings() {
   const { user } = useAuth();
@@ -83,11 +163,27 @@ export default function CompanySettings() {
 
   const allowedTabs = VALID_TABS.filter(t => tabPermissions[t]);
 
+  const visibleGroups = useMemo(() => {
+    return TAB_GROUPS.map(group => {
+      if (group.subTabs.length === 0) {
+        return tabPermissions[group.parent] ? group : null;
+      }
+      const visibleSubs = group.subTabs.filter(sub => tabPermissions[sub.value]);
+      if (visibleSubs.length === 0) return null;
+      return { ...group, subTabs: visibleSubs };
+    }).filter((g): g is TabGroup => g !== null);
+  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates]);
+
+  const activeParent = getParentForTab(activeTab);
+
+  const activeGroup = visibleGroups.find(g => g.parent === activeParent);
+
   useEffect(() => {
-    if (allowedTabs.length > 0 && !tabPermissions[activeTab]) {
-      setActiveTab(allowedTabs[0]);
+    if (visibleGroups.length > 0 && !tabPermissions[activeTab]) {
+      const firstGroup = visibleGroups[0];
+      setActiveTab(getEffectiveTab(firstGroup));
     }
-  }, [activeTab, allowedTabs.join(",")]);
+  }, [activeTab, visibleGroups]);
 
   if (allowedTabs.length === 0) {
     return (
@@ -96,6 +192,18 @@ export default function CompanySettings() {
       </div>
     );
   }
+
+  const handleParentTabClick = (parentKey: string) => {
+    const group = visibleGroups.find(g => g.parent === parentKey);
+    if (!group) return;
+    if (group.subTabs.length === 0) {
+      setActiveTab(group.parent);
+    } else {
+      if (activeParent === parentKey) return;
+      const firstAllowed = group.subTabs.find(s => tabPermissions[s.value]);
+      if (firstAllowed) setActiveTab(firstAllowed.value);
+    }
+  };
 
   return (
     <div className="p-8 space-y-6">
@@ -118,83 +226,72 @@ export default function CompanySettings() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {canViewCoreTabs && <SelectItem value="trade">Trade</SelectItem>}
-              {canViewCoreTabs && <SelectItem value="branding">Branding</SelectItem>}
-              {canViewCoreTabs && <SelectItem value="insurance">Insurance</SelectItem>}
-              {canViewCoreTabs && <SelectItem value="compliance">Compliance</SelectItem>}
-              {canViewCoreTabs && <SelectItem value="payroll">Payroll</SelectItem>}
-              {canViewCoreTabs && <SelectItem value="hustler">Hustler Oversight</SelectItem>}
-              {canViewCostCodes && <SelectItem value="cost-codes">Cost Codes</SelectItem>}
-              {canViewUsers && <SelectItem value="users">Users & Roles</SelectItem>}
-              {canViewIntegrations && <SelectItem value="integrations">Integrations</SelectItem>}
-              {canViewWebsite && <SelectItem value="website">Website</SelectItem>}
-              {canViewOverhead && <SelectItem value="overhead-costs">Overhead Costs</SelectItem>}
-              {canViewProductionRates && <SelectItem value="production-rates">Production Rates</SelectItem>}
+              {visibleGroups.map(group => {
+                if (group.subTabs.length === 0) {
+                  return (
+                    <SelectItem key={group.parent} value={group.parent} data-testid={`select-item-${group.parent}`}>
+                      {group.label}
+                    </SelectItem>
+                  );
+                }
+                return (
+                  <SelectGroup key={group.parent}>
+                    <SelectLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider" data-testid={`select-group-${group.parent}`}>
+                      {group.label}
+                    </SelectLabel>
+                    {group.subTabs.map(sub => (
+                      <SelectItem key={sub.value} value={sub.value} className="pl-6" data-testid={`select-item-${sub.value}`}>
+                        {sub.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                );
+              })}
             </SelectContent>
           </Select>
         ) : (
-          <TabsList className="flex flex-wrap h-auto gap-1" data-testid="tabs-company-settings">
-            {canViewCoreTabs && (
-              <TabsTrigger value="trade" data-testid="tab-trade">
-                <Wrench className="h-4 w-4 mr-2" /> Trade
-              </TabsTrigger>
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-1 border-b pb-2" data-testid="tabs-company-settings">
+              {visibleGroups.map(group => {
+                const Icon = group.icon;
+                const isActive = activeParent === group.parent;
+                return (
+                  <button
+                    key={group.parent}
+                    type="button"
+                    onClick={() => handleParentTabClick(group.parent)}
+                    className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                      isActive
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                    data-testid={`tab-parent-${group.parent}`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {group.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeGroup && activeGroup.subTabs.length > 0 && (
+              <TabsList className="h-auto gap-1 bg-muted/50 p-1" data-testid="tabs-sub-navigation">
+                {activeGroup.subTabs.map(sub => {
+                  const SubIcon = sub.icon;
+                  return (
+                    <TabsTrigger
+                      key={sub.value}
+                      value={sub.value}
+                      data-testid={`tab-${sub.value}`}
+                    >
+                      <SubIcon className="h-4 w-4 mr-2" />
+                      {sub.label}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
             )}
-            {canViewCoreTabs && (
-              <TabsTrigger value="branding" data-testid="tab-branding">
-                <Image className="h-4 w-4 mr-2" /> Branding
-              </TabsTrigger>
-            )}
-            {canViewCoreTabs && (
-              <TabsTrigger value="insurance" data-testid="tab-insurance">
-                <Shield className="h-4 w-4 mr-2" /> Insurance
-              </TabsTrigger>
-            )}
-            {canViewCoreTabs && (
-              <TabsTrigger value="compliance" data-testid="tab-compliance">
-                <FileText className="h-4 w-4 mr-2" /> Compliance
-              </TabsTrigger>
-            )}
-            {canViewCoreTabs && (
-              <TabsTrigger value="payroll" data-testid="tab-payroll">
-                <Clock className="h-4 w-4 mr-2" /> Payroll
-              </TabsTrigger>
-            )}
-            {canViewCoreTabs && (
-              <TabsTrigger value="hustler" data-testid="tab-hustler">
-                <Users className="h-4 w-4 mr-2" /> Hustler Oversight
-              </TabsTrigger>
-            )}
-            {canViewCostCodes && (
-              <TabsTrigger value="cost-codes" data-testid="tab-cost-codes">
-                <Code className="h-4 w-4 mr-2" /> Cost Codes
-              </TabsTrigger>
-            )}
-            {canViewUsers && (
-              <TabsTrigger value="users" data-testid="tab-users-roles">
-                <Users className="h-4 w-4 mr-2" /> Users & Roles
-              </TabsTrigger>
-            )}
-            {canViewIntegrations && (
-              <TabsTrigger value="integrations" data-testid="tab-integrations">
-                <Link2 className="h-4 w-4 mr-2" /> Integrations
-              </TabsTrigger>
-            )}
-            {canViewWebsite && (
-              <TabsTrigger value="website" data-testid="tab-website">
-                <Globe className="h-4 w-4 mr-2" /> Website
-              </TabsTrigger>
-            )}
-            {canViewOverhead && (
-              <TabsTrigger value="overhead-costs" data-testid="tab-overhead-costs">
-                <DollarSign className="h-4 w-4 mr-2" /> Overhead Costs
-              </TabsTrigger>
-            )}
-            {canViewProductionRates && (
-              <TabsTrigger value="production-rates" data-testid="tab-production-rates">
-                <BarChart3 className="h-4 w-4 mr-2" /> Production Rates
-              </TabsTrigger>
-            )}
-          </TabsList>
+          </div>
         )}
 
         {canViewCoreTabs && (
