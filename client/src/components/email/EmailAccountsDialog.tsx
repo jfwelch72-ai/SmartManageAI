@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount } from "@/hooks/useEmailMutations";
+import { useToast } from "@/hooks/use-toast";
 import type { EmailAccount } from "./shared";
 
 interface EmailAccountsDialogProps {
@@ -54,6 +55,8 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
   const [showPassword, setShowPassword] = useState(false);
   const [deleteAccountId, setDeleteAccountId] = useState<string | null>(null);
 
+  const { toast } = useToast();
+
   const [imapFormData, setImapFormData] = useState({
     emailAddress: "",
     displayName: "",
@@ -66,6 +69,8 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
     imapUsername: "",
     imapPassword: "",
   });
+
+  const [imapFormErrors, setImapFormErrors] = useState<Record<string, string>>({});
 
   const resetImapForm = () => {
     setImapFormData({
@@ -80,6 +85,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
       imapUsername: "",
       imapPassword: "",
     });
+    setImapFormErrors({});
     setShowPassword(false);
   };
 
@@ -98,9 +104,27 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
   });
 
   const handleImapSubmit = () => {
-    if (!imapFormData.emailAddress || !imapFormData.imapHost || !imapFormData.imapPassword) {
+    const errors: Record<string, string> = {};
+    if (!imapFormData.emailAddress.trim()) {
+      errors.emailAddress = "Email address is required";
+    }
+    if (!imapFormData.imapHost.trim()) {
+      errors.imapHost = "IMAP server host is required";
+    }
+    if (!imapFormData.imapPassword) {
+      errors.imapPassword = "Password is required";
+    }
+    if (Object.keys(errors).length > 0) {
+      setImapFormErrors(errors);
+      const missingFields = Object.values(errors).join(", ");
+      toast({
+        title: "Missing required fields",
+        description: missingFields,
+        variant: "destructive",
+      });
       return;
     }
+    setImapFormErrors({});
     createAccountMutation.mutate({
       provider: "IMAP",
       emailAddress: imapFormData.emailAddress,
@@ -306,15 +330,22 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
               <ScrollArea className="max-h-[400px] pr-4">
                 <div className="grid gap-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="emailAddress">Email Address *</Label>
+                    <Label htmlFor="emailAddress">Email Address <span className="text-destructive">*</span></Label>
                     <Input
                       id="emailAddress"
                       type="email"
                       placeholder="you@example.com"
                       value={imapFormData.emailAddress}
-                      onChange={(e) => setImapFormData(prev => ({ ...prev, emailAddress: e.target.value }))}
+                      onChange={(e) => {
+                        setImapFormData(prev => ({ ...prev, emailAddress: e.target.value }));
+                        if (imapFormErrors.emailAddress) setImapFormErrors(prev => ({ ...prev, emailAddress: "" }));
+                      }}
+                      className={imapFormErrors.emailAddress ? "border-destructive" : ""}
                       data-testid="input-email-address"
                     />
+                    {imapFormErrors.emailAddress && (
+                      <p className="text-xs text-destructive" data-testid="error-email-address">{imapFormErrors.emailAddress}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="displayName">Display Name</Label>
@@ -330,14 +361,21 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                   <div className="text-sm font-medium text-muted-foreground">Incoming Mail (IMAP)</div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="imapHost">IMAP Server *</Label>
+                      <Label htmlFor="imapHost">IMAP Server <span className="text-destructive">*</span></Label>
                       <Input
                         id="imapHost"
                         placeholder="imap.example.com"
                         value={imapFormData.imapHost}
-                        onChange={(e) => setImapFormData(prev => ({ ...prev, imapHost: e.target.value }))}
+                        onChange={(e) => {
+                          setImapFormData(prev => ({ ...prev, imapHost: e.target.value }));
+                          if (imapFormErrors.imapHost) setImapFormErrors(prev => ({ ...prev, imapHost: "" }));
+                        }}
+                        className={imapFormErrors.imapHost ? "border-destructive" : ""}
                         data-testid="input-imap-host"
                       />
+                      {imapFormErrors.imapHost && (
+                        <p className="text-xs text-destructive" data-testid="error-imap-host">{imapFormErrors.imapHost}</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="imapPort">Port</Label>
@@ -405,15 +443,18 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="imapPassword">Password *</Label>
+                    <Label htmlFor="imapPassword">Password <span className="text-destructive">*</span></Label>
                     <div className="relative">
                       <Input
                         id="imapPassword"
                         type={showPassword ? "text" : "password"}
                         placeholder="Your email password or app password"
                         value={imapFormData.imapPassword}
-                        onChange={(e) => setImapFormData(prev => ({ ...prev, imapPassword: e.target.value }))}
-                        className="pr-10"
+                        onChange={(e) => {
+                          setImapFormData(prev => ({ ...prev, imapPassword: e.target.value }));
+                          if (imapFormErrors.imapPassword) setImapFormErrors(prev => ({ ...prev, imapPassword: "" }));
+                        }}
+                        className={`pr-10 ${imapFormErrors.imapPassword ? "border-destructive" : ""}`}
                         data-testid="input-imap-password"
                       />
                       <Button
@@ -430,6 +471,9 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                     <p className="text-xs text-muted-foreground">
                       For Gmail/Outlook, use an App Password instead of your regular password
                     </p>
+                    {imapFormErrors.imapPassword && (
+                      <p className="text-xs text-destructive" data-testid="error-imap-password">{imapFormErrors.imapPassword}</p>
+                    )}
                   </div>
                 </div>
               </ScrollArea>
