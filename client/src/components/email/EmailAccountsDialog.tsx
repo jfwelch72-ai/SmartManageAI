@@ -523,7 +523,10 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteAccountId && deleteAccountMutation.mutate(deleteAccountId)}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteAccountId) deleteAccountMutation.mutate(deleteAccountId);
+              }}
               data-testid="button-confirm-delete-account"
             >
               {deleteAccountMutation.isPending ? (

@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import type { EmailAccount } from "@/components/email/shared";
 
 function extractErrorMessage(error: any, fallback: string): string {
   const msg = error?.message || "";
@@ -207,12 +208,24 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
       const res = await apiRequest("DELETE", `/api/email/accounts/${id}`);
       return res.json();
     },
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/email/accounts"] });
+      const previousAccounts = queryClient.getQueryData(["/api/email/accounts"]);
+      queryClient.setQueryData<EmailAccount[]>(["/api/email/accounts"], (old) =>
+        old ? old.filter((account) => account.id !== id) : []
+      );
+      return { previousAccounts };
+    },
     onSuccess: () => {
       toast({ title: "Account removed", description: "Email account removed" });
       queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
       callbacks.onSuccess();
     },
-    onError: () => {
+    onError: (_err, _id, context) => {
+      if (context?.previousAccounts) {
+        queryClient.setQueryData(["/api/email/accounts"], context.previousAccounts);
+      }
       toast({ title: "Delete failed", description: "Could not remove account", variant: "destructive" });
     },
   });
