@@ -253,11 +253,11 @@ const officeTourSteps: TourStep[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-testid="sidebar-schedule-of-values"]',
-    title: "Schedule of Values",
-    content: "Create and manage billing schedules for progress payments. Track what's been billed vs. completed.",
+    target: '[data-testid="sidebar-financials-group"]',
+    title: "Financials",
+    content: "Access financial tools including CFO dashboard, cost rates, and billing schedules within each project.",
     profitabilityTip: "Proper billing schedules improve cash flow.",
-    path: "/schedule-of-values",
+    path: "/dashboard",
     disableBeacon: true,
   },
 ];

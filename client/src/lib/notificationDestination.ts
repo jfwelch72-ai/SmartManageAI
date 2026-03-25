@@ -48,7 +48,7 @@ export function getNotificationDestination(notification: {
     case "DELAY_SUBMITTED":
     case "DELAY_ACKNOWLEDGED":
     case "DELAY_CHANGE_ORDER_NEEDED":
-      return "/delay-claims";
+      return getProjectDestination();
 
     case "PORTAL_ACTIVITY":
     case "PROGRESS_MILESTONE":
@@ -69,7 +69,7 @@ export function getNotificationDestination(notification: {
     case "SUBMITTAL_APPROVED":
     case "SUBMITTAL_REJECTED":
     case "SUBMITTAL_REVISION_REQUESTED":
-      return "/submittals";
+      return getProjectDestination();
 
     case "TM_TICKET_SUBMITTED":
     case "TM_TICKET_APPROVED":

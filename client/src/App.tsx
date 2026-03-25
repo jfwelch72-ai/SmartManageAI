@@ -77,11 +77,7 @@ const VendorPortalPricing = lazy(() => import("@/pages/vendor/pricing"));
 const VendorClients = lazy(() => import("@/pages/vendor/clients"));
 const AIBidAnalysisPage = lazy(() => import("@/pages/ai-bid-analysis"));
 const AIContractAnalysisPage = lazy(() => import("@/pages/ai-contract-analysis"));
-const ScheduleOfValuesPage = lazy(() => import("@/pages/schedule-of-values"));
 const SubcontractsPage = lazy(() => import("@/pages/subcontracts"));
-const RFIsPage = lazy(() => import("@/pages/rfis"));
-const TransmittalsPage = lazy(() => import("@/pages/transmittals"));
-const SubmittalsPage = lazy(() => import("@/pages/submittals"));
 const SocialMediaPage = lazy(() => import("@/pages/social-media"));
 const BidWizardPage = lazy(() => import("@/pages/bid-wizard"));
 const EmailAssistantPage = lazy(() => import("@/pages/email-assistant"));
@@ -95,9 +91,7 @@ const BidInboxPage = lazy(() => import("@/pages/bid-inbox"));
 const MarketplacePage = lazy(() => import("@/pages/marketplace").then(m => ({ default: m.default })));
 const ContractorProfilePage = lazy(() => import("@/pages/marketplace").then(m => ({ default: m.ContractorProfilePage })));
 const BillingPage = lazy(() => import("@/pages/billing"));
-const DelayClaimsPage = lazy(() => import("@/pages/delay-claims"));
 const DailyReportLocksPage = lazy(() => import("@/pages/daily-report-locks"));
-const PhotoCustodyPage = lazy(() => import("@/pages/photo-custody"));
 const VoiceLogsPage = lazy(() => import("@/pages/voice-logs"));
 const IssueCapturesPage = lazy(() => import("@/pages/issue-captures"));
 const OfflineSyncPage = lazy(() => import("@/pages/offline-sync"));
@@ -276,9 +270,7 @@ function Router() {
       <Route path="/ai-contract-analysis" component={() => <ProtectedRoute component={AIContractAnalysisPage} permission={RoutePermissions.AI_CONTRACT_ANALYSIS} featurePerm="canUseAiFeatures" />} />
       
       {/* Delay Claims routes */}
-      <Route path="/delay-claims" component={() => <ProtectedRoute component={DelayClaimsPage} permission={RoutePermissions.DELAY_CLAIMS} />} />
       <Route path="/daily-report-locks" component={() => <ProtectedRoute component={DailyReportLocksPage} permission={RoutePermissions.DAILY_REPORT_LOCKS} />} />
-      <Route path="/photo-custody" component={() => <ProtectedRoute component={PhotoCustodyPage} permission={RoutePermissions.PHOTO_CUSTODY} />} />
       
       {/* Field Productivity routes */}
       <Route path="/voice-logs" component={() => <ProtectedRoute component={VoiceLogsPage} />} />
@@ -312,11 +304,7 @@ function Router() {
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
       <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
-      <Route path="/schedule-of-values" component={() => <ProtectedRoute component={ScheduleOfValuesPage} permission={RoutePermissions.SCHEDULE_OF_VALUES} featurePerm="canAccessFinancials" />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canAccessFinancials" />} />
-      <Route path="/rfis" component={() => <ProtectedRoute component={RFIsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
-      <Route path="/transmittals" component={() => <ProtectedRoute component={TransmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
-      <Route path="/submittals" component={() => <ProtectedRoute component={SubmittalsPage} permission={RoutePermissions.SUBCONTRACTS} />} />
       <Route path="/website-builder" component={() => <Redirect to="/company-settings?tab=website" />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
       <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} />} />

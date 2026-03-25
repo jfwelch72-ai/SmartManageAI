@@ -163,8 +163,8 @@ export function RFIStatusWidget({ config }: WidgetComponentProps) {
               })}
             </div>
 
-            <Link href="/rfis" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors mt-2" data-testid="link-view-all-rfis">
-              View all RFIs
+            <Link href="/projects" className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors mt-2" data-testid="link-view-all-rfis">
+              View all RFIs in Projects
             </Link>
           </div>
         )}

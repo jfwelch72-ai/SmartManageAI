@@ -329,7 +329,6 @@ export const RoutePermissions = {
   // New feature routes
   AI_BID_ANALYSIS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
   AI_CONTRACT_ANALYSIS: (role?: string) => isAdminOrManager(role),
-  SCHEDULE_OF_VALUES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
   SUBCONTRACTS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
   
   // Website Builder routes (ADMIN only - organization feature)
@@ -346,10 +345,7 @@ export const RoutePermissions = {
   TIME_CLOCK: (role?: string) => hasContractorAccess(role),
   MESSAGES: (role?: string) => hasContractorAccess(role),
   
-  // Delay Claims routes (management access)
-  DELAY_CLAIMS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || role === "SAFETY_MANAGER",
   DAILY_REPORT_LOCKS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT",
-  PHOTO_CUSTODY: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
   
   // Bid Network routes
   BID_NETWORK_GC: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR",
@@ -554,36 +550,6 @@ export const NavigationConfig = {
       testId: "nav-equipment",
       visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role) || perms?.canManageEquipment === true,
     },
-    {
-      href: "/delay-claims",
-      label: "Daily Claims",
-      testId: "nav-delay-claims",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || role === "SAFETY_MANAGER",
-    },
-    {
-      href: "/rfis",
-      label: "RFIs",
-      testId: "nav-rfis",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || role === "SAFETY_MANAGER",
-    },
-    {
-      href: "/transmittals",
-      label: "Transmittals",
-      testId: "nav-transmittals",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
-    },
-    {
-      href: "/submittals",
-      label: "Submittals",
-      testId: "nav-submittals",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
-    },
-    {
-      href: "/photo-custody",
-      label: "Photo Custody",
-      testId: "nav-photo-custody",
-      visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
-    },
   ],
 
   preconstructionMenu: [
@@ -619,12 +585,6 @@ export const NavigationConfig = {
       label: "Cost Rates",
       testId: "nav-cost-rates",
       visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
-    },
-    {
-      href: "/schedule-of-values",
-      label: "Schedule of Values",
-      testId: "nav-sov",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {
       href: "/subcontracts",
