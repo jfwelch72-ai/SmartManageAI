@@ -190,7 +190,7 @@ export function ChangeOrderDialog({
 
   const { data: tmTickets = [] } = useQuery<Array<{ id: string; ticketNumber: string; description: string; status: string; totalBillableAmount?: string; }>>({
     queryKey: ["/api/projects", changeOrder?.projectId, "tm-tickets"],
-    enabled: showTmPicker && !!changeOrder?.projectId,
+    enabled: (showTmPicker || !!changeOrder?.linkedTmTicketId) && !!changeOrder?.projectId,
   });
 
   const { data: projectRfis = [] } = useQuery<Array<{ id: string; rfiNumber: string; subject: string; status: string; }>>({
@@ -200,7 +200,7 @@ export function ChangeOrderDialog({
       if (!res.ok) throw new Error("Failed to fetch RFIs");
       return res.json();
     },
-    enabled: showRfiPicker && !!changeOrder?.projectId,
+    enabled: (showRfiPicker || !!changeOrder?.linkedRfiId) && !!changeOrder?.projectId,
   });
 
   useEffect(() => {
@@ -958,13 +958,13 @@ export function ChangeOrderDialog({
           {changeOrder.linkedTmTicketId && (
             <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-tm">
               <div className="flex items-center gap-2"><Link className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Linked T&M Ticket</span></div>
-              <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedTmTicketId}</p>
+              <p className="text-sm mt-1 text-muted-foreground" data-testid="text-linked-tm-name">{(() => { const t = tmTickets.find(t => t.id === changeOrder.linkedTmTicketId); return t ? `${t.ticketNumber} – ${t.description}` : changeOrder.linkedTmTicketId; })()}</p>
             </div>
           )}
           {changeOrder.linkedRfiId && (
             <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-rfi">
               <div className="flex items-center gap-2"><Link className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Linked RFI</span></div>
-              <p className="text-sm mt-1 text-muted-foreground font-mono">{changeOrder.linkedRfiId}</p>
+              <p className="text-sm mt-1 text-muted-foreground" data-testid="text-linked-rfi-name">{(() => { const r = projectRfis.find(r => r.id === changeOrder.linkedRfiId); return r ? `${r.rfiNumber} – ${r.subject}` : changeOrder.linkedRfiId; })()}</p>
             </div>
           )}
 
