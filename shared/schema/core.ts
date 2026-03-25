@@ -34,6 +34,10 @@ export const organizations = pgTable("organizations", {
   hiringAutoTasksEnabled: boolean("hiring_auto_tasks_enabled").notNull().default(false),
   annualRevenueTarget: decimal("annual_revenue_target", { precision: 15, scale: 2 }),
   defaultOverheadPercent: decimal("default_overhead_percent", { precision: 8, scale: 4 }).default("15"),
+  overheadWarningThreshold: decimal("overhead_warning_threshold", { precision: 8, scale: 4 }),
+  overheadCriticalThreshold: decimal("overhead_critical_threshold", { precision: 8, scale: 4 }),
+  overheadCategoryWeights: text("overhead_category_weights"),
+  monthlyRevenueTargets: text("monthly_revenue_targets"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

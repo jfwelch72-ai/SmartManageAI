@@ -21,7 +21,14 @@ interface MarkupCalculatorProps {
 }
 
 export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPercent, onOverheadChange, onProfitChange }: MarkupCalculatorProps) {
-  const { data: overheadSummary } = useQuery<{ defaultOverheadPercent: number; suggestedPercent: number | null }>({
+  const { data: overheadSummary } = useQuery<{
+    defaultOverheadPercent: number;
+    suggestedPercent: number | null;
+    categoryBreakdown?: Record<string, number>;
+    totalMonthly?: number;
+    categoryWeights?: Record<string, number>;
+    weightedCategoryBreakdown?: Record<string, { monthly: number; weight: number; weighted: number }>;
+  }>({
     queryKey: ["/api/overhead/summary"],
   });
 
@@ -50,11 +57,11 @@ export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPerc
                   <Input
                     type="number"
                     min="0"
-                    max="30"
+                    max="50"
                     step="0.5"
                     value={overheadPercent}
                     onChange={(e) => {
-                      const value = Math.min(30, Math.max(0, Number(e.target.value)));
+                      const value = Math.min(50, Math.max(0, Number(e.target.value)));
                       onOverheadChange(value);
                     }}
                     className="w-16 h-8 text-right"
@@ -67,13 +74,13 @@ export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPerc
                 value={[overheadPercent]}
                 onValueChange={(value) => onOverheadChange(value[0])}
                 min={0}
-                max={30}
+                max={50}
                 step={0.5}
                 className="w-full"
                 data-testid="slider-overhead"
               />
               <div className="flex gap-1">
-                {[5, 10, 15].map((preset) => (
+                {[5, 10, 15, 25].map((preset) => (
                   <Button
                     key={preset}
                     type="button"
@@ -88,17 +95,37 @@ export function MarkupCalculatorCard({ totals, overheadPercent, profitMarginPerc
                 ))}
               </div>
               {overheadSummary && (
-                <p className="text-xs text-muted-foreground" data-testid="text-overhead-benchmark">
-                  <Link href="/overhead-costs" className="inline-flex items-center gap-1 hover:underline" data-testid="link-overhead-costs">
-                    <Building2 className="h-3 w-3" />
-                    Org benchmark:
-                  </Link>
-                  {" "}
-                  <span className="font-medium text-foreground">{overheadSummary.defaultOverheadPercent}%</span>
-                  {overheadSummary.suggestedPercent != null && (
-                    <span className="text-muted-foreground"> · suggested {overheadSummary.suggestedPercent}% based on your fixed overhead costs</span>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground" data-testid="text-overhead-benchmark">
+                    <Link href="/overhead-costs" className="inline-flex items-center gap-1 hover:underline" data-testid="link-overhead-costs">
+                      <Building2 className="h-3 w-3" />
+                      Org benchmark:
+                    </Link>
+                    {" "}
+                    <span className="font-medium text-foreground">{overheadSummary.defaultOverheadPercent}%</span>
+                    {overheadSummary.suggestedPercent != null && (
+                      <span className="text-muted-foreground"> · suggested {overheadSummary.suggestedPercent}% based on your fixed overhead costs</span>
+                    )}
+                  </p>
+                  {overheadSummary.categoryBreakdown && overheadSummary.totalMonthly && overheadSummary.totalMonthly > 0 && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5" data-testid="overhead-category-breakdown">
+                      {Object.entries(overheadSummary.categoryBreakdown)
+                        .filter(([, v]) => v > 0)
+                        .sort(([, a], [, b]) => b - a)
+                        .slice(0, 5)
+                        .map(([cat, monthly]) => {
+                          const pct = ((monthly / overheadSummary.totalMonthly!) * 100).toFixed(0);
+                          const label = cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+                          const weight = overheadSummary.categoryWeights?.[cat];
+                          return (
+                            <span key={cat} className="text-[10px] text-muted-foreground" data-testid={`text-category-share-${cat}`}>
+                              {label}: {pct}%{weight != null ? ` @${weight}%` : ""}
+                            </span>
+                          );
+                        })}
+                    </div>
                   )}
-                </p>
+                </div>
               )}
             </div>
 

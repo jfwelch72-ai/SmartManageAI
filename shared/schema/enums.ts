@@ -593,3 +593,6 @@ export const overheadCostCategoryEnum = pgEnum("overhead_cost_category", [
 export const overheadCostFrequencyEnum = pgEnum("overhead_cost_frequency", [
   "MONTHLY", "QUARTERLY", "ANNUAL", "ONE_TIME",
 ]);
+export const overheadCostActionEnum = pgEnum("overhead_cost_action", [
+  "CREATE", "UPDATE", "DELETE",
+]);
