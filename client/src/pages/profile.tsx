@@ -39,6 +39,7 @@ import {
   Plus,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import SkillsCertificationsTab from "@/components/SkillsCertificationsTab";
 import PerformanceHistoryTab from "@/components/PerformanceHistoryTab";
 import { startRegistration } from "@simplewebauthn/browser";
@@ -165,7 +166,7 @@ function PasskeyManagementSection() {
   };
 
   return (
-    <div className="border-t pt-6 mt-6">
+    <div>
       <h2 className="text-xl font-bold mb-1 flex items-center gap-2" data-testid="text-passkey-title">
         <Fingerprint className="h-5 w-5" />
         Passkeys
@@ -1043,7 +1044,15 @@ export default function ProfilePage() {
             <PerformanceHistoryTab />
           </div>
         ) : (
-        <div className="space-y-6">
+        <Tabs defaultValue="my-profile" className="space-y-6" data-testid="tabs-profile">
+        <TabsList data-testid="tabs-list-profile">
+          <TabsTrigger value="my-profile" data-testid="tab-trigger-my-profile">My Profile</TabsTrigger>
+          <TabsTrigger value="change-password" data-testid="tab-trigger-change-password">Change Password</TabsTrigger>
+          <TabsTrigger value="passkeys" data-testid="tab-trigger-passkeys">Passkeys</TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-trigger-notifications">Notification Preferences</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="my-profile" className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-profile-title">My Profile</h1>
         </div>
@@ -1262,8 +1271,10 @@ export default function ProfilePage() {
         >
           {updateProfileMutation.isPending ? "Updating..." : "Update Profile"}
         </Button>
+        </TabsContent>
 
-        <div className="border-t pt-6 mt-6">
+        <TabsContent value="change-password" className="space-y-6">
+        <div>
           <h2 className="text-xl font-bold mb-4" data-testid="text-change-password-title">Change Password</h2>
 
           <div className="space-y-4 max-w-lg">
@@ -1350,10 +1361,14 @@ export default function ProfilePage() {
             </Button>
           </div>
         </div>
+        </TabsContent>
 
+        <TabsContent value="passkeys">
         <PasskeyManagementSection />
+        </TabsContent>
 
-        <div className="border-t pt-6 mt-6">
+        <TabsContent value="notifications" className="space-y-6">
+        <div>
           <h2 className="text-xl font-bold mb-1 flex items-center gap-2" data-testid="text-notification-prefs-title">
             <Bell className="h-5 w-5" />
             Notification Preferences
@@ -1554,7 +1569,8 @@ export default function ProfilePage() {
             </div>
           )}
         </div>
-        </div>
+        </TabsContent>
+        </Tabs>
         )}
       </div>
     </div>
