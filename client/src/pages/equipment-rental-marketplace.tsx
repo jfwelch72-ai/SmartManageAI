@@ -3,24 +3,64 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import {
-  Truck, Plus, MapPin, DollarSign, Calendar, Building2, Search,
-  Trash2, Edit, CheckCircle, XCircle, Clock, Package, ChevronRight,
-  Image as ImageIcon
+  Truck,
+  Plus,
+  MapPin,
+  DollarSign,
+  Calendar,
+  Building2,
+  Search,
+  Trash2,
+  Edit,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Package,
+  ChevronRight,
+  Image as ImageIcon,
 } from "lucide-react";
 
-const EQUIPMENT_CATEGORIES = ["Excavation", "Lifting", "Concrete", "Compaction", "Aerial", "Power", "Scaffolding", "Other"];
+const EQUIPMENT_CATEGORIES = [
+  "Excavation",
+  "Lifting",
+  "Concrete",
+  "Compaction",
+  "Aerial",
+  "Power",
+  "Scaffolding",
+  "Other",
+];
 const CONDITIONS = ["Excellent", "Good", "Fair"];
 
 interface EquipmentListing {
@@ -67,7 +107,14 @@ interface RentalRequest {
 interface RequestWithOrg {
   request: RentalRequest;
   requesterOrg?: { id: string; name: string } | null;
-  listing?: { id: string; name: string; category: string; dailyRate: string | null; location: string | null; organizationId: string } | null;
+  listing?: {
+    id: string;
+    name: string;
+    category: string;
+    dailyRate: string | null;
+    location: string | null;
+    organizationId: string;
+  } | null;
   ownerOrg?: { id: string; name: string } | null;
 }
 
@@ -77,20 +124,50 @@ function formatRate(rate: string | null, period: string) {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  if (status === "ACCEPTED") return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Accepted</Badge>;
-  if (status === "DECLINED") return <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">Declined</Badge>;
-  return <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">Pending</Badge>;
+  if (status === "ACCEPTED")
+    return (
+      <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+        Accepted
+      </Badge>
+    );
+  if (status === "DECLINED")
+    return (
+      <Badge className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">
+        Declined
+      </Badge>
+    );
+  return (
+    <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100">
+      Pending
+    </Badge>
+  );
 }
 
-function ListingCard({ item, onRequestRental, isOwn }: { item: ListingWithOrg; onRequestRental?: () => void; isOwn?: boolean }) {
+function ListingCard({
+  item,
+  onRequestRental,
+  isOwn,
+}: {
+  item: ListingWithOrg;
+  onRequestRental?: () => void;
+  isOwn?: boolean;
+}) {
   const { listing, ownerOrg } = item;
-  const photo = listing.photos && listing.photos.length > 0 ? listing.photos[0] : null;
+  const photo =
+    listing.photos && listing.photos.length > 0 ? listing.photos[0] : null;
 
   return (
-    <Card className="flex flex-col" data-testid={`card-equipment-listing-${listing.id}`}>
+    <Card
+      className="flex flex-col"
+      data-testid={`card-equipment-listing-${listing.id}`}
+    >
       <div className="relative h-40 bg-muted rounded-t-lg overflow-hidden">
         {photo ? (
-          <img src={photo} alt={listing.name} className="w-full h-full object-cover" />
+          <img
+            src={photo}
+            alt={listing.name}
+            className="w-full h-full object-cover"
+          />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground">
             <Truck className="h-10 w-10 opacity-30" />
@@ -103,31 +180,56 @@ function ListingCard({ item, onRequestRental, isOwn }: { item: ListingWithOrg; o
       <CardContent className="flex flex-col flex-1 gap-2 pt-4">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="font-semibold text-base leading-tight" data-testid={`text-listing-name-${listing.id}`}>{listing.name}</h3>
-            {listing.makeModel && <p className="text-sm text-muted-foreground">{listing.makeModel}{listing.year ? ` • ${listing.year}` : ""}</p>}
+            <h3
+              className="font-semibold text-base leading-tight"
+              data-testid={`text-listing-name-${listing.id}`}
+            >
+              {listing.name}
+            </h3>
+            {listing.makeModel && (
+              <p className="text-sm text-muted-foreground">
+                {listing.makeModel}
+                {listing.year ? ` • ${listing.year}` : ""}
+              </p>
+            )}
           </div>
           {listing.condition && (
-            <Badge variant="outline" className="shrink-0 text-xs">{listing.condition}</Badge>
+            <Badge variant="outline" className="shrink-0 text-xs">
+              {listing.condition}
+            </Badge>
           )}
         </div>
 
         {listing.location && (
           <div className="flex items-center gap-1 text-sm text-muted-foreground">
             <MapPin className="h-3.5 w-3.5" />
-            <span data-testid={`text-listing-location-${listing.id}`}>{listing.location}</span>
-            {listing.deliveryRadius && <span>• {listing.deliveryRadius}mi delivery</span>}
+            <span data-testid={`text-listing-location-${listing.id}`}>
+              {listing.location}
+            </span>
+            {listing.deliveryRadius && (
+              <span>• {listing.deliveryRadius}mi delivery</span>
+            )}
           </div>
         )}
 
         <div className="flex flex-wrap gap-2 text-sm">
           {listing.dailyRate && (
-            <span className="font-medium text-primary" data-testid={`text-daily-rate-${listing.id}`}>{formatRate(listing.dailyRate, "day")}</span>
+            <span
+              className="font-medium text-primary"
+              data-testid={`text-daily-rate-${listing.id}`}
+            >
+              {formatRate(listing.dailyRate, "day")}
+            </span>
           )}
           {listing.weeklyRate && (
-            <span className="text-muted-foreground">{formatRate(listing.weeklyRate, "wk")}</span>
+            <span className="text-muted-foreground">
+              {formatRate(listing.weeklyRate, "wk")}
+            </span>
           )}
           {listing.monthlyRate && (
-            <span className="text-muted-foreground">{formatRate(listing.monthlyRate, "mo")}</span>
+            <span className="text-muted-foreground">
+              {formatRate(listing.monthlyRate, "mo")}
+            </span>
           )}
         </div>
 
@@ -136,7 +238,8 @@ function ListingCard({ item, onRequestRental, isOwn }: { item: ListingWithOrg; o
         ) : (
           listing.availableFrom && (
             <p className="text-xs text-muted-foreground">
-              Available: {listing.availableFrom}{listing.availableTo ? ` — ${listing.availableTo}` : ""}
+              Available: {listing.availableFrom}
+              {listing.availableTo ? ` — ${listing.availableTo}` : ""}
             </p>
           )
         )}
@@ -173,10 +276,16 @@ export default function EquipmentRentalMarketplacePage() {
   const [maxRate, setMaxRate] = useState("");
 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [editingListing, setEditingListing] = useState<EquipmentListing | null>(null);
-  const [requestListing, setRequestListing] = useState<ListingWithOrg | null>(null);
-  const [respondingRequest, setRespondingRequest] = useState<RequestWithOrg | null>(null);
-  const [selectedMyListing, setSelectedMyListing] = useState<ListingWithOrg | null>(null);
+  const [editingListing, setEditingListing] = useState<EquipmentListing | null>(
+    null,
+  );
+  const [requestListing, setRequestListing] = useState<ListingWithOrg | null>(
+    null,
+  );
+  const [respondingRequest, setRespondingRequest] =
+    useState<RequestWithOrg | null>(null);
+  const [selectedMyListing, setSelectedMyListing] =
+    useState<ListingWithOrg | null>(null);
 
   const [createForm, setCreateForm] = useState({
     name: "",
@@ -209,8 +318,16 @@ export default function EquipmentRentalMarketplacePage() {
     ownerResponse: "",
   });
 
-  const { data: browseListings, isLoading: isBrowseLoading } = useQuery<ListingWithOrg[]>({
-    queryKey: ["/api/marketplace/equipment", categoryFilter, locationSearch, minRate, maxRate],
+  const { data: browseListings, isLoading: isBrowseLoading } = useQuery<
+    ListingWithOrg[]
+  >({
+    queryKey: [
+      "/api/marketplace/equipment",
+      categoryFilter,
+      locationSearch,
+      minRate,
+      maxRate,
+    ],
     queryFn: () => {
       const params = new URLSearchParams();
       if (categoryFilter !== "ALL") params.set("category", categoryFilter);
@@ -218,90 +335,170 @@ export default function EquipmentRentalMarketplacePage() {
       if (minRate) params.set("minRate", minRate);
       if (maxRate) params.set("maxRate", maxRate);
       const qs = params.toString();
-      return fetch(`/api/marketplace/equipment${qs ? `?${qs}` : ""}`, { credentials: "include" }).then(r => r.json());
+      return fetch(`/api/marketplace/equipment${qs ? `?${qs}` : ""}`, {
+        credentials: "include",
+      }).then((r) => r.json());
     },
   });
 
-  const { data: myListings, isLoading: isMyListingsLoading } = useQuery<ListingWithOrg[]>({
+  const { data: myListings, isLoading: isMyListingsLoading } = useQuery<
+    ListingWithOrg[]
+  >({
     queryKey: ["/api/marketplace/equipment/my"],
     enabled: activeTab === "my-listings",
   });
 
-  const { data: myRequests, isLoading: isMyRequestsLoading } = useQuery<RequestWithOrg[]>({
+  const { data: myRequests, isLoading: isMyRequestsLoading } = useQuery<
+    RequestWithOrg[]
+  >({
     queryKey: ["/api/marketplace/equipment/requests/my"],
     enabled: activeTab === "my-requests",
     queryFn: () =>
-      fetch("/api/marketplace/equipment/requests/my", { credentials: "include" }).then(r => r.json()),
+      fetch("/api/marketplace/equipment/requests/my", {
+        credentials: "include",
+      }).then((r) => r.json()),
   });
 
-  const { data: listingRequests, isLoading: isListingRequestsLoading } = useQuery<RequestWithOrg[]>({
-    queryKey: ["/api/marketplace/equipment", selectedMyListing?.listing.id, "requests"],
-    enabled: !!selectedMyListing,
-    queryFn: () =>
-      fetch(`/api/marketplace/equipment/${selectedMyListing!.listing.id}/requests`, { credentials: "include" }).then(r => r.json()),
-  });
+  const { data: listingRequests, isLoading: isListingRequestsLoading } =
+    useQuery<RequestWithOrg[]>({
+      queryKey: [
+        "/api/marketplace/equipment",
+        selectedMyListing?.listing.id,
+        "requests",
+      ],
+      enabled: !!selectedMyListing,
+      queryFn: () =>
+        fetch(
+          `/api/marketplace/equipment/${selectedMyListing!.listing.id}/requests`,
+          { credentials: "include" },
+        ).then((r) => r.json()),
+    });
 
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, any>) => apiRequest("POST", "/api/marketplace/equipment", data),
+    mutationFn: (data: Record<string, any>) =>
+      apiRequest("POST", "/api/marketplace/equipment", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/equipment"], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment"],
+        exact: false,
+      });
       toast({ title: "Listing created successfully" });
       setShowCreateDialog(false);
       resetCreateForm();
     },
-    onError: () => toast({ title: "Failed to create listing", variant: "destructive" }),
+    onError: () =>
+      toast({ title: "Failed to create listing", variant: "destructive" }),
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, any> }) =>
       apiRequest("PATCH", `/api/marketplace/equipment/${id}`, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/equipment"], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment"],
+        exact: false,
+      });
       toast({ title: "Listing updated" });
       setEditingListing(null);
     },
-    onError: () => toast({ title: "Failed to update listing", variant: "destructive" }),
+    onError: () =>
+      toast({ title: "Failed to update listing", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/marketplace/equipment/${id}`),
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/marketplace/equipment/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/equipment"], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment"],
+        exact: false,
+      });
       toast({ title: "Listing deleted" });
       setSelectedMyListing(null);
     },
-    onError: () => toast({ title: "Failed to delete listing", variant: "destructive" }),
+    onError: () =>
+      toast({ title: "Failed to delete listing", variant: "destructive" }),
   });
 
   const requestMutation = useMutation({
-    mutationFn: ({ listingId, data }: { listingId: string; data: Record<string, any> }) =>
-      apiRequest("POST", `/api/marketplace/equipment/${listingId}/requests`, data),
+    mutationFn: ({
+      listingId,
+      data,
+    }: {
+      listingId: string;
+      data: Record<string, any>;
+    }) =>
+      apiRequest(
+        "POST",
+        `/api/marketplace/equipment/${listingId}/requests`,
+        data,
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/equipment/requests/my"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment/requests/my"],
+      });
       toast({ title: "Rental request submitted" });
       setRequestListing(null);
-      setRequestForm({ startDate: "", endDate: "", deliveryRequested: false, message: "" });
+      setRequestForm({
+        startDate: "",
+        endDate: "",
+        deliveryRequested: false,
+        message: "",
+      });
     },
-    onError: () => toast({ title: "Failed to submit request", variant: "destructive" }),
+    onError: () =>
+      toast({ title: "Failed to submit request", variant: "destructive" }),
   });
 
   const respondMutation = useMutation({
-    mutationFn: ({ listingId, reqId, data }: { listingId: string; reqId: string; data: Record<string, any> }) =>
-      apiRequest("PATCH", `/api/marketplace/equipment/${listingId}/requests/${reqId}`, data),
+    mutationFn: ({
+      listingId,
+      reqId,
+      data,
+    }: {
+      listingId: string;
+      reqId: string;
+      data: Record<string, any>;
+    }) =>
+      apiRequest(
+        "PATCH",
+        `/api/marketplace/equipment/${listingId}/requests/${reqId}`,
+        data,
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/equipment", selectedMyListing?.listing.id, "requests"] });
+      queryClient.invalidateQueries({
+        queryKey: [
+          "/api/marketplace/equipment",
+          selectedMyListing?.listing.id,
+          "requests",
+        ],
+      });
       toast({ title: "Response sent" });
       setRespondingRequest(null);
       setRespondForm({ status: "", ownerResponse: "" });
     },
-    onError: () => toast({ title: "Failed to send response", variant: "destructive" }),
+    onError: () =>
+      toast({ title: "Failed to send response", variant: "destructive" }),
   });
 
   function resetCreateForm() {
     setCreateForm({
-      name: "", category: "", makeModel: "", year: "", dailyRate: "", weeklyRate: "",
-      monthlyRate: "", depositAmount: "", location: "", deliveryRadius: "", photos: "",
-      condition: "", availableFrom: "", availableTo: "", isOngoing: false, description: "",
+      name: "",
+      category: "",
+      makeModel: "",
+      year: "",
+      dailyRate: "",
+      weeklyRate: "",
+      monthlyRate: "",
+      depositAmount: "",
+      location: "",
+      deliveryRadius: "",
+      photos: "",
+      condition: "",
+      availableFrom: "",
+      availableTo: "",
+      isOngoing: false,
+      description: "",
     });
   }
 
@@ -318,11 +515,18 @@ export default function EquipmentRentalMarketplacePage() {
     if (createForm.monthlyRate) data.monthlyRate = createForm.monthlyRate;
     if (createForm.depositAmount) data.depositAmount = createForm.depositAmount;
     if (createForm.location) data.location = createForm.location;
-    if (createForm.deliveryRadius) data.deliveryRadius = parseInt(createForm.deliveryRadius);
-    if (createForm.photos) data.photos = createForm.photos.split(",").map(p => p.trim()).filter(Boolean);
+    if (createForm.deliveryRadius)
+      data.deliveryRadius = parseInt(createForm.deliveryRadius);
+    if (createForm.photos)
+      data.photos = createForm.photos
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
     if (createForm.condition) data.condition = createForm.condition;
-    if (!createForm.isOngoing && createForm.availableFrom) data.availableFrom = createForm.availableFrom;
-    if (!createForm.isOngoing && createForm.availableTo) data.availableTo = createForm.availableTo;
+    if (!createForm.isOngoing && createForm.availableFrom)
+      data.availableFrom = createForm.availableFrom;
+    if (!createForm.isOngoing && createForm.availableTo)
+      data.availableTo = createForm.availableTo;
     if (createForm.description) data.description = createForm.description;
 
     if (editingListing) {
@@ -355,10 +559,13 @@ export default function EquipmentRentalMarketplacePage() {
     setShowCreateDialog(true);
   }
 
-  const isAdmin = user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPER_ADMIN";
+  const isAdmin =
+    user?.role === "ADMIN" ||
+    user?.role === "MANAGER" ||
+    user?.role === "SUPER_ADMIN";
 
   return (
-    <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 space-y-4 max-w-full mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -366,12 +573,17 @@ export default function EquipmentRentalMarketplacePage() {
             Equipment Rental Marketplace
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Rent or list construction equipment — excavators, lifts, compressors, scaffolding &amp; more
+            Rent or list construction equipment — excavators, lifts,
+            compressors, scaffolding &amp; more
           </p>
         </div>
         {isAdmin && (
           <Button
-            onClick={() => { setEditingListing(null); resetCreateForm(); setShowCreateDialog(true); }}
+            onClick={() => {
+              setEditingListing(null);
+              resetCreateForm();
+              setShowCreateDialog(true);
+            }}
             data-testid="button-create-listing"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -382,9 +594,15 @@ export default function EquipmentRentalMarketplacePage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList data-testid="tabs-marketplace">
-          <TabsTrigger value="browse" data-testid="tab-browse">Browse</TabsTrigger>
-          <TabsTrigger value="my-listings" data-testid="tab-my-listings">My Listings</TabsTrigger>
-          <TabsTrigger value="my-requests" data-testid="tab-my-requests">My Requests</TabsTrigger>
+          <TabsTrigger value="browse" data-testid="tab-browse">
+            Browse
+          </TabsTrigger>
+          <TabsTrigger value="my-listings" data-testid="tab-my-listings">
+            My Listings
+          </TabsTrigger>
+          <TabsTrigger value="my-requests" data-testid="tab-my-requests">
+            My Requests
+          </TabsTrigger>
         </TabsList>
 
         {/* BROWSE TAB */}
@@ -393,13 +611,18 @@ export default function EquipmentRentalMarketplacePage() {
             <div className="flex-1 min-w-[160px]">
               <Label htmlFor="filter-category">Category</Label>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger id="filter-category" data-testid="select-category-filter">
+                <SelectTrigger
+                  id="filter-category"
+                  data-testid="select-category-filter"
+                >
                   <SelectValue placeholder="All categories" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">All Categories</SelectItem>
-                  {EQUIPMENT_CATEGORIES.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {EQUIPMENT_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -412,7 +635,7 @@ export default function EquipmentRentalMarketplacePage() {
                   id="filter-location"
                   placeholder="Search by city..."
                   value={locationSearch}
-                  onChange={e => setLocationSearch(e.target.value)}
+                  onChange={(e) => setLocationSearch(e.target.value)}
                   className="pl-9"
                   data-testid="input-location-filter"
                 />
@@ -424,7 +647,7 @@ export default function EquipmentRentalMarketplacePage() {
                 id="filter-min-rate"
                 placeholder="0"
                 value={minRate}
-                onChange={e => setMinRate(e.target.value)}
+                onChange={(e) => setMinRate(e.target.value)}
                 type="number"
                 data-testid="input-min-rate-filter"
               />
@@ -435,7 +658,7 @@ export default function EquipmentRentalMarketplacePage() {
                 id="filter-max-rate"
                 placeholder="Any"
                 value={maxRate}
-                onChange={e => setMaxRate(e.target.value)}
+                onChange={(e) => setMaxRate(e.target.value)}
                 type="number"
                 data-testid="input-max-rate-filter"
               />
@@ -444,11 +667,13 @@ export default function EquipmentRentalMarketplacePage() {
 
           {isBrowseLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[1, 2, 3, 4, 5, 6].map(i => <Skeleton key={i} className="h-64" />)}
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <Skeleton key={i} className="h-64" />
+              ))}
             </div>
           ) : browseListings && browseListings.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {browseListings.map(item => (
+              {browseListings.map((item) => (
                 <ListingCard
                   key={item.listing.id}
                   item={item}
@@ -461,7 +686,9 @@ export default function EquipmentRentalMarketplacePage() {
             <div className="text-center py-16 text-muted-foreground">
               <Package className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No equipment listings found</p>
-              <p className="text-sm">Try adjusting your filters or check back later</p>
+              <p className="text-sm">
+                Try adjusting your filters or check back later
+              </p>
             </div>
           )}
         </TabsContent>
@@ -471,20 +698,34 @@ export default function EquipmentRentalMarketplacePage() {
           {selectedMyListing ? (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => setSelectedMyListing(null)} data-testid="button-back-listings">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedMyListing(null)}
+                  data-testid="button-back-listings"
+                >
                   ← Back to listings
                 </Button>
               </div>
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">{selectedMyListing.listing.name} — Incoming Requests</h2>
+                <h2 className="text-lg font-semibold">
+                  {selectedMyListing.listing.name} — Incoming Requests
+                </h2>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => openEditDialog(selectedMyListing.listing)} data-testid="button-edit-listing">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => openEditDialog(selectedMyListing.listing)}
+                    data-testid="button-edit-listing"
+                  >
                     <Edit className="h-4 w-4 mr-1" /> Edit
                   </Button>
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => deleteMutation.mutate(selectedMyListing.listing.id)}
+                    onClick={() =>
+                      deleteMutation.mutate(selectedMyListing.listing.id)
+                    }
                     disabled={deleteMutation.isPending}
                     data-testid="button-delete-listing"
                   >
@@ -495,36 +736,54 @@ export default function EquipmentRentalMarketplacePage() {
 
               {isListingRequestsLoading ? (
                 <div className="space-y-3">
-                  {[1, 2].map(i => <Skeleton key={i} className="h-24" />)}
+                  {[1, 2].map((i) => (
+                    <Skeleton key={i} className="h-24" />
+                  ))}
                 </div>
               ) : listingRequests && listingRequests.length > 0 ? (
                 <div className="space-y-3">
                   {listingRequests.map((item) => (
-                    <Card key={item.request.id} data-testid={`card-incoming-request-${item.request.id}`}>
+                    <Card
+                      key={item.request.id}
+                      data-testid={`card-incoming-request-${item.request.id}`}
+                    >
                       <CardContent className="pt-4">
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <Building2 className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">{item.requesterOrg?.name ?? "Unknown Org"}</span>
+                              <span className="font-medium">
+                                {item.requesterOrg?.name ?? "Unknown Org"}
+                              </span>
                               <StatusBadge status={item.request.status} />
                             </div>
                             <p className="text-sm text-muted-foreground">
                               {item.request.startDate} — {item.request.endDate}
-                              {item.request.deliveryRequested && " • Delivery requested"}
+                              {item.request.deliveryRequested &&
+                                " • Delivery requested"}
                             </p>
                             {item.request.message && (
-                              <p className="text-sm mt-1 italic">"{item.request.message}"</p>
+                              <p className="text-sm mt-1 italic">
+                                "{item.request.message}"
+                              </p>
                             )}
                             {item.request.ownerResponse && (
-                              <p className="text-sm text-muted-foreground">Your response: {item.request.ownerResponse}</p>
+                              <p className="text-sm text-muted-foreground">
+                                Your response: {item.request.ownerResponse}
+                              </p>
                             )}
                           </div>
                           {item.request.status === "PENDING" && (
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => { setRespondingRequest(item); setRespondForm({ status: "", ownerResponse: "" }); }}
+                              onClick={() => {
+                                setRespondingRequest(item);
+                                setRespondForm({
+                                  status: "",
+                                  ownerResponse: "",
+                                });
+                              }}
                               data-testid={`button-respond-request-${item.request.id}`}
                             >
                               Respond
@@ -546,11 +805,13 @@ export default function EquipmentRentalMarketplacePage() {
             <>
               {isMyListingsLoading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {[1, 2, 3].map(i => <Skeleton key={i} className="h-64" />)}
+                  {[1, 2, 3].map((i) => (
+                    <Skeleton key={i} className="h-64" />
+                  ))}
                 </div>
               ) : myListings && myListings.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {myListings.map(item => (
+                  {myListings.map((item) => (
                     <div
                       key={item.listing.id}
                       className="cursor-pointer"
@@ -561,19 +822,35 @@ export default function EquipmentRentalMarketplacePage() {
                         <CardContent className="pt-4">
                           <div className="flex items-start justify-between">
                             <div>
-                              <h3 className="font-semibold">{item.listing.name}</h3>
-                              <p className="text-sm text-muted-foreground">{item.listing.category} {item.listing.makeModel ? `• ${item.listing.makeModel}` : ""}</p>
+                              <h3 className="font-semibold">
+                                {item.listing.name}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                {item.listing.category}{" "}
+                                {item.listing.makeModel
+                                  ? `• ${item.listing.makeModel}`
+                                  : ""}
+                              </p>
                               {item.listing.dailyRate && (
-                                <p className="text-sm text-primary font-medium mt-1">{formatRate(item.listing.dailyRate, "day")}</p>
+                                <p className="text-sm text-primary font-medium mt-1">
+                                  {formatRate(item.listing.dailyRate, "day")}
+                                </p>
                               )}
                               {item.listing.location && (
                                 <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                  <MapPin className="h-3 w-3" />{item.listing.location}
+                                  <MapPin className="h-3 w-3" />
+                                  {item.listing.location}
                                 </p>
                               )}
                             </div>
                             <div className="flex flex-col items-end gap-2">
-                              <Badge variant={item.listing.isActive ? "default" : "secondary"}>
+                              <Badge
+                                variant={
+                                  item.listing.isActive
+                                    ? "default"
+                                    : "secondary"
+                                }
+                              >
                                 {item.listing.isActive ? "Active" : "Inactive"}
                               </Badge>
                               <ChevronRight className="h-4 w-4 text-muted-foreground" />
@@ -588,10 +865,20 @@ export default function EquipmentRentalMarketplacePage() {
                 <div className="text-center py-16 text-muted-foreground">
                   <Truck className="h-10 w-10 mx-auto mb-3 opacity-30" />
                   <p className="font-medium">No listings yet</p>
-                  <p className="text-sm">Create your first equipment listing to start renting</p>
+                  <p className="text-sm">
+                    Create your first equipment listing to start renting
+                  </p>
                   {isAdmin && (
-                    <Button className="mt-4" onClick={() => { resetCreateForm(); setShowCreateDialog(true); }} data-testid="button-create-first-listing">
-                      <Plus className="h-4 w-4 mr-2" />List Equipment
+                    <Button
+                      className="mt-4"
+                      onClick={() => {
+                        resetCreateForm();
+                        setShowCreateDialog(true);
+                      }}
+                      data-testid="button-create-first-listing"
+                    >
+                      <Plus className="h-4 w-4 mr-2" />
+                      List Equipment
                     </Button>
                   )}
                 </div>
@@ -604,24 +891,34 @@ export default function EquipmentRentalMarketplacePage() {
         <TabsContent value="my-requests" className="space-y-4 mt-4">
           {isMyRequestsLoading ? (
             <div className="space-y-3">
-              {[1, 2, 3].map(i => <Skeleton key={i} className="h-24" />)}
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-24" />
+              ))}
             </div>
           ) : myRequests && myRequests.length > 0 ? (
             <div className="space-y-3">
-              {myRequests.map(item => (
-                <Card key={item.request.id} data-testid={`card-my-request-${item.request.id}`}>
+              {myRequests.map((item) => (
+                <Card
+                  key={item.request.id}
+                  data-testid={`card-my-request-${item.request.id}`}
+                >
                   <CardContent className="pt-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
                           <Truck className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-medium">{item.listing?.name ?? "Equipment"}</span>
-                          <Badge variant="outline" className="text-xs">{item.listing?.category}</Badge>
+                          <span className="font-medium">
+                            {item.listing?.name ?? "Equipment"}
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {item.listing?.category}
+                          </Badge>
                           <StatusBadge status={item.request.status} />
                         </div>
                         {item.ownerOrg && (
                           <p className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Building2 className="h-3.5 w-3.5" /> Owner: {item.ownerOrg.name}
+                            <Building2 className="h-3.5 w-3.5" /> Owner:{" "}
+                            {item.ownerOrg.name}
                           </p>
                         )}
                         <p className="text-sm text-muted-foreground">
@@ -629,7 +926,9 @@ export default function EquipmentRentalMarketplacePage() {
                           {item.request.deliveryRequested && " • Delivery"}
                         </p>
                         {item.request.message && (
-                          <p className="text-sm italic text-muted-foreground">Your note: "{item.request.message}"</p>
+                          <p className="text-sm italic text-muted-foreground">
+                            Your note: "{item.request.message}"
+                          </p>
                         )}
                         {item.request.ownerResponse && (
                           <p className="text-sm mt-1 p-2 bg-muted rounded">
@@ -646,18 +945,33 @@ export default function EquipmentRentalMarketplacePage() {
             <div className="text-center py-16 text-muted-foreground">
               <Clock className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">No rental requests yet</p>
-              <p className="text-sm">Browse equipment and submit a rental inquiry</p>
+              <p className="text-sm">
+                Browse equipment and submit a rental inquiry
+              </p>
             </div>
           )}
         </TabsContent>
       </Tabs>
 
       {/* CREATE / EDIT LISTING DIALOG */}
-      <Dialog open={showCreateDialog} onOpenChange={(open) => { setShowCreateDialog(open); if (!open) setEditingListing(null); }}>
+      <Dialog
+        open={showCreateDialog}
+        onOpenChange={(open) => {
+          setShowCreateDialog(open);
+          if (!open) setEditingListing(null);
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingListing ? "Edit Equipment Listing" : "List Equipment for Rent"}</DialogTitle>
-            <DialogDescription>Provide details about the equipment you want to make available for rental.</DialogDescription>
+            <DialogTitle>
+              {editingListing
+                ? "Edit Equipment Listing"
+                : "List Equipment for Rent"}
+            </DialogTitle>
+            <DialogDescription>
+              Provide details about the equipment you want to make available for
+              rental.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-2 gap-4 py-2">
@@ -666,7 +980,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-name"
                 value={createForm.name}
-                onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, name: e.target.value }))
+                }
                 placeholder="e.g. CAT 320 Excavator"
                 data-testid="input-listing-name"
               />
@@ -674,13 +990,23 @@ export default function EquipmentRentalMarketplacePage() {
 
             <div>
               <Label htmlFor="create-category">Category *</Label>
-              <Select value={createForm.category} onValueChange={v => setCreateForm(f => ({ ...f, category: v }))}>
-                <SelectTrigger id="create-category" data-testid="select-listing-category">
+              <Select
+                value={createForm.category}
+                onValueChange={(v) =>
+                  setCreateForm((f) => ({ ...f, category: v }))
+                }
+              >
+                <SelectTrigger
+                  id="create-category"
+                  data-testid="select-listing-category"
+                >
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {EQUIPMENT_CATEGORIES.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {EQUIPMENT_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -688,13 +1014,23 @@ export default function EquipmentRentalMarketplacePage() {
 
             <div>
               <Label htmlFor="create-condition">Condition</Label>
-              <Select value={createForm.condition} onValueChange={v => setCreateForm(f => ({ ...f, condition: v }))}>
-                <SelectTrigger id="create-condition" data-testid="select-listing-condition">
+              <Select
+                value={createForm.condition}
+                onValueChange={(v) =>
+                  setCreateForm((f) => ({ ...f, condition: v }))
+                }
+              >
+                <SelectTrigger
+                  id="create-condition"
+                  data-testid="select-listing-condition"
+                >
                   <SelectValue placeholder="Select condition" />
                 </SelectTrigger>
                 <SelectContent>
-                  {CONDITIONS.map(c => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  {CONDITIONS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -705,7 +1041,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-makemodel"
                 value={createForm.makeModel}
-                onChange={e => setCreateForm(f => ({ ...f, makeModel: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, makeModel: e.target.value }))
+                }
                 placeholder="e.g. CAT 320"
                 data-testid="input-listing-makemodel"
               />
@@ -716,7 +1054,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-year"
                 value={createForm.year}
-                onChange={e => setCreateForm(f => ({ ...f, year: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, year: e.target.value }))
+                }
                 placeholder="e.g. 2021"
                 type="number"
                 data-testid="input-listing-year"
@@ -728,7 +1068,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-daily"
                 value={createForm.dailyRate}
-                onChange={e => setCreateForm(f => ({ ...f, dailyRate: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, dailyRate: e.target.value }))
+                }
                 placeholder="0.00"
                 type="number"
                 data-testid="input-listing-daily-rate"
@@ -740,7 +1082,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-weekly"
                 value={createForm.weeklyRate}
-                onChange={e => setCreateForm(f => ({ ...f, weeklyRate: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, weeklyRate: e.target.value }))
+                }
                 placeholder="0.00"
                 type="number"
                 data-testid="input-listing-weekly-rate"
@@ -752,7 +1096,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-monthly"
                 value={createForm.monthlyRate}
-                onChange={e => setCreateForm(f => ({ ...f, monthlyRate: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, monthlyRate: e.target.value }))
+                }
                 placeholder="0.00"
                 type="number"
                 data-testid="input-listing-monthly-rate"
@@ -764,7 +1110,12 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-deposit"
                 value={createForm.depositAmount}
-                onChange={e => setCreateForm(f => ({ ...f, depositAmount: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({
+                    ...f,
+                    depositAmount: e.target.value,
+                  }))
+                }
                 placeholder="0.00"
                 type="number"
                 data-testid="input-listing-deposit"
@@ -776,7 +1127,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-location"
                 value={createForm.location}
-                onChange={e => setCreateForm(f => ({ ...f, location: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, location: e.target.value }))
+                }
                 placeholder="e.g. Phoenix, AZ"
                 data-testid="input-listing-location"
               />
@@ -787,7 +1140,12 @@ export default function EquipmentRentalMarketplacePage() {
               <Input
                 id="create-radius"
                 value={createForm.deliveryRadius}
-                onChange={e => setCreateForm(f => ({ ...f, deliveryRadius: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({
+                    ...f,
+                    deliveryRadius: e.target.value,
+                  }))
+                }
                 placeholder="e.g. 50"
                 type="number"
                 data-testid="input-listing-delivery-radius"
@@ -795,11 +1153,15 @@ export default function EquipmentRentalMarketplacePage() {
             </div>
 
             <div className="col-span-2">
-              <Label htmlFor="create-photos">Photo URLs (comma-separated)</Label>
+              <Label htmlFor="create-photos">
+                Photo URLs (comma-separated)
+              </Label>
               <Input
                 id="create-photos"
                 value={createForm.photos}
-                onChange={e => setCreateForm(f => ({ ...f, photos: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, photos: e.target.value }))
+                }
                 placeholder="https://example.com/photo1.jpg, https://..."
                 data-testid="input-listing-photos"
               />
@@ -809,10 +1171,14 @@ export default function EquipmentRentalMarketplacePage() {
               <Switch
                 id="create-ongoing"
                 checked={createForm.isOngoing}
-                onCheckedChange={v => setCreateForm(f => ({ ...f, isOngoing: v }))}
+                onCheckedChange={(v) =>
+                  setCreateForm((f) => ({ ...f, isOngoing: v }))
+                }
                 data-testid="switch-listing-ongoing"
               />
-              <Label htmlFor="create-ongoing">Ongoing availability (no fixed end date)</Label>
+              <Label htmlFor="create-ongoing">
+                Ongoing availability (no fixed end date)
+              </Label>
             </div>
 
             {!createForm.isOngoing && (
@@ -822,7 +1188,12 @@ export default function EquipmentRentalMarketplacePage() {
                   <Input
                     id="create-from"
                     value={createForm.availableFrom}
-                    onChange={e => setCreateForm(f => ({ ...f, availableFrom: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        availableFrom: e.target.value,
+                      }))
+                    }
                     type="date"
                     data-testid="input-listing-available-from"
                   />
@@ -832,7 +1203,12 @@ export default function EquipmentRentalMarketplacePage() {
                   <Input
                     id="create-to"
                     value={createForm.availableTo}
-                    onChange={e => setCreateForm(f => ({ ...f, availableTo: e.target.value }))}
+                    onChange={(e) =>
+                      setCreateForm((f) => ({
+                        ...f,
+                        availableTo: e.target.value,
+                      }))
+                    }
                     type="date"
                     data-testid="input-listing-available-to"
                   />
@@ -845,7 +1221,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Textarea
                 id="create-description"
                 value={createForm.description}
-                onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
+                onChange={(e) =>
+                  setCreateForm((f) => ({ ...f, description: e.target.value }))
+                }
                 placeholder="Details about the equipment, special features, requirements..."
                 rows={3}
                 data-testid="textarea-listing-description"
@@ -854,20 +1232,42 @@ export default function EquipmentRentalMarketplacePage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCreateDialog(false); setEditingListing(null); }}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCreateDialog(false);
+                setEditingListing(null);
+              }}
+            >
+              Cancel
+            </Button>
             <Button
               onClick={handleCreateSubmit}
-              disabled={!createForm.name || !createForm.category || createMutation.isPending || updateMutation.isPending}
+              disabled={
+                !createForm.name ||
+                !createForm.category ||
+                createMutation.isPending ||
+                updateMutation.isPending
+              }
               data-testid="button-submit-listing"
             >
-              {(createMutation.isPending || updateMutation.isPending) ? "Saving..." : editingListing ? "Update Listing" : "Create Listing"}
+              {createMutation.isPending || updateMutation.isPending
+                ? "Saving..."
+                : editingListing
+                  ? "Update Listing"
+                  : "Create Listing"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* REQUEST RENTAL DIALOG */}
-      <Dialog open={!!requestListing} onOpenChange={open => { if (!open) setRequestListing(null); }}>
+      <Dialog
+        open={!!requestListing}
+        onOpenChange={(open) => {
+          if (!open) setRequestListing(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Request Rental</DialogTitle>
@@ -884,7 +1284,9 @@ export default function EquipmentRentalMarketplacePage() {
                   id="req-start"
                   type="date"
                   value={requestForm.startDate}
-                  onChange={e => setRequestForm(f => ({ ...f, startDate: e.target.value }))}
+                  onChange={(e) =>
+                    setRequestForm((f) => ({ ...f, startDate: e.target.value }))
+                  }
                   data-testid="input-request-start-date"
                 />
               </div>
@@ -894,7 +1296,9 @@ export default function EquipmentRentalMarketplacePage() {
                   id="req-end"
                   type="date"
                   value={requestForm.endDate}
-                  onChange={e => setRequestForm(f => ({ ...f, endDate: e.target.value }))}
+                  onChange={(e) =>
+                    setRequestForm((f) => ({ ...f, endDate: e.target.value }))
+                  }
                   data-testid="input-request-end-date"
                 />
               </div>
@@ -904,10 +1308,14 @@ export default function EquipmentRentalMarketplacePage() {
               <Switch
                 id="req-delivery"
                 checked={requestForm.deliveryRequested}
-                onCheckedChange={v => setRequestForm(f => ({ ...f, deliveryRequested: v }))}
+                onCheckedChange={(v) =>
+                  setRequestForm((f) => ({ ...f, deliveryRequested: v }))
+                }
                 data-testid="switch-request-delivery"
               />
-              <Label htmlFor="req-delivery">Request delivery to my location</Label>
+              <Label htmlFor="req-delivery">
+                Request delivery to my location
+              </Label>
             </div>
 
             <div>
@@ -915,7 +1323,9 @@ export default function EquipmentRentalMarketplacePage() {
               <Textarea
                 id="req-message"
                 value={requestForm.message}
-                onChange={e => setRequestForm(f => ({ ...f, message: e.target.value }))}
+                onChange={(e) =>
+                  setRequestForm((f) => ({ ...f, message: e.target.value }))
+                }
                 placeholder="Describe your project and any specific needs..."
                 rows={3}
                 data-testid="textarea-request-message"
@@ -924,13 +1334,22 @@ export default function EquipmentRentalMarketplacePage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRequestListing(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setRequestListing(null)}>
+              Cancel
+            </Button>
             <Button
               onClick={() => {
                 if (!requestListing) return;
-                requestMutation.mutate({ listingId: requestListing.listing.id, data: requestForm });
+                requestMutation.mutate({
+                  listingId: requestListing.listing.id,
+                  data: requestForm,
+                });
               }}
-              disabled={!requestForm.startDate || !requestForm.endDate || requestMutation.isPending}
+              disabled={
+                !requestForm.startDate ||
+                !requestForm.endDate ||
+                requestMutation.isPending
+              }
               data-testid="button-submit-request"
             >
               {requestMutation.isPending ? "Submitting..." : "Submit Request"}
@@ -940,7 +1359,12 @@ export default function EquipmentRentalMarketplacePage() {
       </Dialog>
 
       {/* RESPOND TO REQUEST DIALOG */}
-      <Dialog open={!!respondingRequest} onOpenChange={open => { if (!open) setRespondingRequest(null); }}>
+      <Dialog
+        open={!!respondingRequest}
+        onOpenChange={(open) => {
+          if (!open) setRespondingRequest(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Respond to Rental Request</DialogTitle>
@@ -952,9 +1376,20 @@ export default function EquipmentRentalMarketplacePage() {
           <div className="space-y-4 py-2">
             {respondingRequest && (
               <div className="p-3 bg-muted rounded text-sm space-y-1">
-                <p><span className="font-medium">Dates:</span> {respondingRequest.request.startDate} — {respondingRequest.request.endDate}</p>
-                {respondingRequest.request.deliveryRequested && <p>Delivery requested</p>}
-                {respondingRequest.request.message && <p><span className="font-medium">Note:</span> {respondingRequest.request.message}</p>}
+                <p>
+                  <span className="font-medium">Dates:</span>{" "}
+                  {respondingRequest.request.startDate} —{" "}
+                  {respondingRequest.request.endDate}
+                </p>
+                {respondingRequest.request.deliveryRequested && (
+                  <p>Delivery requested</p>
+                )}
+                {respondingRequest.request.message && (
+                  <p>
+                    <span className="font-medium">Note:</span>{" "}
+                    {respondingRequest.request.message}
+                  </p>
+                )}
               </div>
             )}
 
@@ -962,17 +1397,27 @@ export default function EquipmentRentalMarketplacePage() {
               <Label>Decision *</Label>
               <div className="flex gap-3 mt-2">
                 <Button
-                  variant={respondForm.status === "ACCEPTED" ? "default" : "outline"}
+                  variant={
+                    respondForm.status === "ACCEPTED" ? "default" : "outline"
+                  }
                   className="flex-1"
-                  onClick={() => setRespondForm(f => ({ ...f, status: "ACCEPTED" }))}
+                  onClick={() =>
+                    setRespondForm((f) => ({ ...f, status: "ACCEPTED" }))
+                  }
                   data-testid="button-respond-accept"
                 >
                   <CheckCircle className="h-4 w-4 mr-2" /> Accept
                 </Button>
                 <Button
-                  variant={respondForm.status === "DECLINED" ? "destructive" : "outline"}
+                  variant={
+                    respondForm.status === "DECLINED"
+                      ? "destructive"
+                      : "outline"
+                  }
                   className="flex-1"
-                  onClick={() => setRespondForm(f => ({ ...f, status: "DECLINED" }))}
+                  onClick={() =>
+                    setRespondForm((f) => ({ ...f, status: "DECLINED" }))
+                  }
                   data-testid="button-respond-decline"
                 >
                   <XCircle className="h-4 w-4 mr-2" /> Decline
@@ -985,7 +1430,12 @@ export default function EquipmentRentalMarketplacePage() {
               <Textarea
                 id="respond-message"
                 value={respondForm.ownerResponse}
-                onChange={e => setRespondForm(f => ({ ...f, ownerResponse: e.target.value }))}
+                onChange={(e) =>
+                  setRespondForm((f) => ({
+                    ...f,
+                    ownerResponse: e.target.value,
+                  }))
+                }
                 placeholder="Add a message to the requester..."
                 rows={3}
                 data-testid="textarea-respond-message"
@@ -994,14 +1444,22 @@ export default function EquipmentRentalMarketplacePage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRespondingRequest(null)}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => setRespondingRequest(null)}
+            >
+              Cancel
+            </Button>
             <Button
               onClick={() => {
                 if (!respondingRequest || !respondForm.status) return;
                 respondMutation.mutate({
                   listingId: respondingRequest.request.listingId,
                   reqId: respondingRequest.request.id,
-                  data: { status: respondForm.status, ownerResponse: respondForm.ownerResponse || undefined },
+                  data: {
+                    status: respondForm.status,
+                    ownerResponse: respondForm.ownerResponse || undefined,
+                  },
                 });
               }}
               disabled={!respondForm.status || respondMutation.isPending}

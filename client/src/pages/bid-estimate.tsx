@@ -127,17 +127,24 @@ export default function BidEstimate() {
 
   const addLineItemMutation = useMutation({
     mutationFn: async (data: LineItemFormValues & { estimateId: string }) => {
-      const response = await apiRequest("POST", `/api/estimates/${data.estimateId}/line-items`, data);
+      const response = await apiRequest(
+        "POST",
+        `/api/estimates/${data.estimateId}/line-items`,
+        data,
+      );
       return response.json();
     },
     onSuccess: async (newLineItem: { id: string }) => {
-      const modSelections = hierarchicalSelection?.modifierSelections || selectedScopeData?.modifierSelections || [];
+      const modSelections =
+        hierarchicalSelection?.modifierSelections ||
+        selectedScopeData?.modifierSelections ||
+        [];
       if (modSelections.length > 0 && newLineItem?.id && bidId) {
         try {
           await apiRequest("POST", "/api/bid-modifier-selections", {
             bidId,
             lineItemId: newLineItem.id,
-            selections: modSelections.map(s => ({
+            selections: modSelections.map((s) => ({
               modifierId: s.modifierId,
               selectedFactor: s.selectedFactor,
             })),
@@ -145,7 +152,8 @@ export default function BidEstimate() {
         } catch {
           toast({
             title: "Modifier selections could not be saved",
-            description: "The line item was created, but its modifier selections failed to persist. You can re-apply them by editing the line item.",
+            description:
+              "The line item was created, but its modifier selections failed to persist. You can re-apply them by editing the line item.",
             variant: "destructive",
           });
         }
@@ -459,8 +467,12 @@ export default function BidEstimate() {
           consumablesCost: values.consumablesCost || 0,
           subcontractCost: values.subcontractCost || 0,
           subcontractorQuoteId: values.subcontractorQuoteId || undefined,
-          ...((values.subcontractorAssignments && values.subcontractorAssignments.length > 0) || editHadAssignments
-            ? { subcontractorAssignments: values.subcontractorAssignments || [] }
+          ...((values.subcontractorAssignments &&
+            values.subcontractorAssignments.length > 0) ||
+          editHadAssignments
+            ? {
+                subcontractorAssignments: values.subcontractorAssignments || [],
+              }
             : {}),
           overheadAllocation: values.overheadAllocation,
           profitAllocation: values.profitAllocation,
@@ -487,7 +499,8 @@ export default function BidEstimate() {
         consumablesCost: String(values.consumablesCost || 0),
         subcontractCost: String(values.subcontractCost || 0),
         subcontractorQuoteId: values.subcontractorQuoteId || undefined,
-        ...(values.subcontractorAssignments && values.subcontractorAssignments.length > 0
+        ...(values.subcontractorAssignments &&
+        values.subcontractorAssignments.length > 0
           ? { subcontractorAssignments: values.subcontractorAssignments }
           : {}),
         overheadAllocation: String(values.overheadAllocation),
@@ -510,10 +523,18 @@ export default function BidEstimate() {
     setEditingLineItem(item);
     const lineItemAny = item as any;
 
-    let subAssignments: Array<{ subcontractorQuoteId: string; allocatedCost: number; isSelected: boolean; notes?: string }> = [];
+    let subAssignments: Array<{
+      subcontractorQuoteId: string;
+      allocatedCost: number;
+      isSelected: boolean;
+      notes?: string;
+    }> = [];
     if (estimateData?.estimate) {
       try {
-        const res = await fetch(`/api/estimates/${estimateData.estimate.id}/line-items/${item.id}/subcontractors`, { credentials: "include" });
+        const res = await fetch(
+          `/api/estimates/${estimateData.estimate.id}/line-items/${item.id}/subcontractors`,
+          { credentials: "include" },
+        );
         if (res.ok) {
           const data = await res.json();
           subAssignments = (data || []).map((a: any) => ({
@@ -523,7 +544,9 @@ export default function BidEstimate() {
             notes: a.notes || undefined,
           }));
         }
-      } catch { /* use empty assignments */ }
+      } catch {
+        /* use empty assignments */
+      }
     }
 
     setEditHadAssignments(subAssignments.length > 0);
@@ -599,7 +622,9 @@ export default function BidEstimate() {
   };
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const deleteConfirmItem = estimate?.lineItems?.find(li => li.id === deleteConfirmId);
+  const deleteConfirmItem = estimate?.lineItems?.find(
+    (li) => li.id === deleteConfirmId,
+  );
 
   const handleDeleteLineItem = (lineItemId: string) => {
     setDeleteConfirmId(lineItemId);
@@ -607,7 +632,10 @@ export default function BidEstimate() {
 
   const confirmDeleteLineItem = useCallback(() => {
     if (deleteConfirmId && estimate) {
-      deleteLineItemMutation.mutate({ estimateId: estimate.id, lineItemId: deleteConfirmId });
+      deleteLineItemMutation.mutate({
+        estimateId: estimate.id,
+        lineItemId: deleteConfirmId,
+      });
       setDeleteConfirmId(null);
     }
   }, [deleteConfirmId, estimate, deleteLineItemMutation]);
@@ -665,7 +693,7 @@ export default function BidEstimate() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
+      <main className="mx-auto max-w-full px-6 py-8 space-y-6">
         <div className="mb-6">
           <Button
             variant="ghost"
@@ -789,7 +817,12 @@ export default function BidEstimate() {
         />
       </main>
 
-      <AlertDialog open={!!deleteConfirmId} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null); }}>
+      <AlertDialog
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmId(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
@@ -799,8 +832,11 @@ export default function BidEstimate() {
             <AlertDialogDescription>
               {deleteConfirmItem ? (
                 <>
-                  Are you sure you want to delete <span className="font-medium text-foreground">"{deleteConfirmItem.description}"</span>?
-                  This action cannot be undone.
+                  Are you sure you want to delete{" "}
+                  <span className="font-medium text-foreground">
+                    "{deleteConfirmItem.description}"
+                  </span>
+                  ? This action cannot be undone.
                 </>
               ) : (
                 "Are you sure you want to delete this line item? This action cannot be undone."
@@ -808,7 +844,9 @@ export default function BidEstimate() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete-line-item">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-delete-line-item">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDeleteLineItem}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

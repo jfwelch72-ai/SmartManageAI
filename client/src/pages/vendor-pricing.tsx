@@ -10,7 +10,7 @@ export default function VendorPricingPage() {
   if (!hasManagementAccess(user?.role)) {
     return (
       <div className="min-h-screen bg-background">
-        <main className="container mx-auto px-4 py-8">
+        <main className="container max-w-full mx-auto px-4 py-8">
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Access Denied</AlertTitle>
@@ -25,7 +25,7 @@ export default function VendorPricingPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="container mx-auto px-4 py-8">
+      <main className="container max-w-full mx-auto px-4 py-8">
         <VendorPricingSync />
       </main>
     </div>

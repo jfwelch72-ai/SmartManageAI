@@ -89,10 +89,29 @@ const TRADE_OPTIONS = [
 ];
 
 const TRADE_TYPES = [
-  "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING",
-  "ELECTRICAL", "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL",
-  "PAINTING", "FLOORING", "LANDSCAPING", "DEMOLITION", "STEEL_ERECTION",
-  "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE", "SOLAR", "WATERPROOFING", "OTHER"
+  "GENERAL_CONTRACTOR",
+  "CONCRETE",
+  "EARTHWORK",
+  "ASPHALT_PAVING",
+  "ROOFING",
+  "ELECTRICAL",
+  "PLUMBING",
+  "HVAC",
+  "CARPENTRY",
+  "MASONRY",
+  "DRYWALL",
+  "PAINTING",
+  "FLOORING",
+  "LANDSCAPING",
+  "DEMOLITION",
+  "STEEL_ERECTION",
+  "GLAZING",
+  "INSULATION",
+  "FIRE_PROTECTION",
+  "LOW_VOLTAGE",
+  "SOLAR",
+  "WATERPROOFING",
+  "OTHER",
 ];
 
 const AVAILABILITY_STATUSES = [
@@ -105,7 +124,7 @@ const AVAILABILITY_STATUSES = [
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 function formatTrade(trade: string) {
-  return trade.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  return trade.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ── Contractor Directory types & components ───────────────────────────────────
@@ -141,21 +160,38 @@ interface Review {
   reviewerOrg: { id: string; name: string; logoUrl?: string };
 }
 
-function StarRating({ rating, size = "sm" }: { rating: number; size?: "sm" | "lg" }) {
+function StarRating({
+  rating,
+  size = "sm",
+}: {
+  rating: number;
+  size?: "sm" | "lg";
+}) {
   const cls = size === "lg" ? "w-5 h-5" : "w-4 h-4";
   return (
     <div className="flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((star) => (
         <Star
           key={star}
-          className={cn(cls, star <= Math.round(rating) ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground")}
+          className={cn(
+            cls,
+            star <= Math.round(rating)
+              ? "text-yellow-400 fill-yellow-400"
+              : "text-muted-foreground",
+          )}
         />
       ))}
     </div>
   );
 }
 
-function InteractiveStarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+function InteractiveStarRating({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
   const [hover, setHover] = useState(0);
   return (
     <div className="flex items-center gap-1">
@@ -171,7 +207,9 @@ function InteractiveStarRating({ value, onChange }: { value: number; onChange: (
           <Star
             className={cn(
               "w-6 h-6 cursor-pointer transition-colors",
-              star <= (hover || value) ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground"
+              star <= (hover || value)
+                ? "text-yellow-400 fill-yellow-400"
+                : "text-muted-foreground",
             )}
           />
         </button>
@@ -204,7 +242,12 @@ function ContractorCard({ contractor }: { contractor: ContractorListing }) {
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-start justify-between gap-2">
-              <h3 className="font-semibold text-sm line-clamp-1" data-testid={`text-contractor-name-${contractor.orgId}`}>{contractor.name}</h3>
+              <h3
+                className="font-semibold text-sm line-clamp-1"
+                data-testid={`text-contractor-name-${contractor.orgId}`}
+              >
+                {contractor.name}
+              </h3>
               <Badge variant="secondary" className="shrink-0 text-xs">
                 {formatTrade(contractor.tradeType)}
               </Badge>
@@ -212,7 +255,10 @@ function ContractorCard({ contractor }: { contractor: ContractorListing }) {
             {contractor.avgRating !== null && (
               <div className="flex items-center gap-1.5 mt-1">
                 <StarRating rating={contractor.avgRating} />
-                <span className="text-xs text-muted-foreground" data-testid={`text-rating-${contractor.orgId}`}>
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-testid={`text-rating-${contractor.orgId}`}
+                >
                   {contractor.avgRating.toFixed(1)} ({contractor.reviewCount})
                 </span>
               </div>
@@ -226,17 +272,24 @@ function ContractorCard({ contractor }: { contractor: ContractorListing }) {
                   </span>
                 </div>
               )}
-              {contractor.yearsInBusiness != null && contractor.yearsInBusiness > 0 && (
-                <div className="flex items-center gap-1">
-                  <Briefcase className="w-3 h-3 text-muted-foreground shrink-0" />
-                  <span className="text-xs text-muted-foreground" data-testid={`text-years-${contractor.orgId}`}>
-                    {contractor.yearsInBusiness} yr{contractor.yearsInBusiness !== 1 ? "s" : ""}
-                  </span>
-                </div>
-              )}
+              {contractor.yearsInBusiness != null &&
+                contractor.yearsInBusiness > 0 && (
+                  <div className="flex items-center gap-1">
+                    <Briefcase className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid={`text-years-${contractor.orgId}`}
+                    >
+                      {contractor.yearsInBusiness} yr
+                      {contractor.yearsInBusiness !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                )}
             </div>
             {contractor.bio && (
-              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{contractor.bio}</p>
+              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                {contractor.bio}
+              </p>
             )}
           </div>
         </div>
@@ -245,7 +298,13 @@ function ContractorCard({ contractor }: { contractor: ContractorListing }) {
   );
 }
 
-function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void }) {
+function ReviewForm({
+  orgId,
+  onSuccess,
+}: {
+  orgId: string;
+  onSuccess: () => void;
+}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [rating, setRating] = useState(0);
@@ -254,15 +313,22 @@ function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/marketplace/contractors/${orgId}/reviews`, {
-        rating,
-        comment: comment || null,
-        projectRef: projectRef || null,
-      });
+      const res = await apiRequest(
+        "POST",
+        `/api/marketplace/contractors/${orgId}/reviews`,
+        {
+          rating,
+          comment: comment || null,
+          projectRef: projectRef || null,
+        },
+      );
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Review submitted", description: "Thank you for your feedback." });
+      toast({
+        title: "Review submitted",
+        description: "Thank you for your feedback.",
+      });
       setOpen(false);
       setRating(0);
       setComment("");
@@ -270,7 +336,8 @@ function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void
       onSuccess();
     },
     onError: (err: unknown) => {
-      const message = err instanceof Error ? err.message : "Failed to submit review";
+      const message =
+        err instanceof Error ? err.message : "Failed to submit review";
       toast({ title: "Error", description: message, variant: "destructive" });
     },
   });
@@ -286,7 +353,9 @@ function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Write a Review</DialogTitle>
-          <DialogDescription>Share your experience working with this contractor.</DialogDescription>
+          <DialogDescription>
+            Share your experience working with this contractor.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid gap-2">
@@ -304,7 +373,9 @@ function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="review-project-ref">Project Reference (optional)</Label>
+            <Label htmlFor="review-project-ref">
+              Project Reference (optional)
+            </Label>
             <Input
               id="review-project-ref"
               placeholder="e.g., Main St Office Building"
@@ -315,7 +386,9 @@ function ReviewForm({ orgId, onSuccess }: { orgId: string; onSuccess: () => void
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
           <Button
             onClick={() => mutation.mutate()}
             disabled={rating === 0 || mutation.isPending}
@@ -336,7 +409,9 @@ function TeamMembersSection({ orgId }: { orgId: string }) {
   const { data: members = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/marketplace/contractors", orgId, "team-members"],
     queryFn: async () => {
-      const res = await fetch(`/api/marketplace/contractors/${orgId}/team-members`);
+      const res = await fetch(
+        `/api/marketplace/contractors/${orgId}/team-members`,
+      );
       if (!res.ok) return [];
       return res.json();
     },
@@ -356,19 +431,29 @@ function TeamMembersSection({ orgId }: { orgId: string }) {
       <CardContent className="space-y-2">
         {members.map((m: any) => (
           <Link key={m.user.id} href={`/talent-pool/${m.profile.id}`}>
-            <div className="flex items-center gap-2 py-1 hover:bg-muted/50 rounded px-1 cursor-pointer" data-testid={`team-member-${m.user.id}`}>
+            <div
+              className="flex items-center gap-2 py-1 hover:bg-muted/50 rounded px-1 cursor-pointer"
+              data-testid={`team-member-${m.user.id}`}
+            >
               <Avatar className="w-7 h-7 shrink-0">
                 <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                  {(m.user.firstName?.[0] || "")}{(m.user.lastName?.[0] || "")}
+                  {m.user.firstName?.[0] || ""}
+                  {m.user.lastName?.[0] || ""}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium line-clamp-1">{m.user.firstName} {m.user.lastName}</p>
+                <p className="text-sm font-medium line-clamp-1">
+                  {m.user.firstName} {m.user.lastName}
+                </p>
                 {m.profile.tradeSpecialization && (
-                  <p className="text-xs text-muted-foreground">{formatTrade(m.profile.tradeSpecialization)}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatTrade(m.profile.tradeSpecialization)}
+                  </p>
                 )}
               </div>
-              <Badge variant="secondary" className="text-xs shrink-0">View Profile</Badge>
+              <Badge variant="secondary" className="text-xs shrink-0">
+                View Profile
+              </Badge>
             </div>
           </Link>
         ))}
@@ -381,16 +466,21 @@ export function ContractorProfilePage() {
   const { orgId } = useParams<{ orgId: string }>();
   const { user } = useAuth();
 
-  const { data: profile, isLoading: profileLoading } = useQuery<ContractorProfile>({
-    queryKey: ["/api/marketplace/contractors", orgId],
-    queryFn: async () => {
-      const res = await fetch(`/api/marketplace/contractors/${orgId}`);
-      if (!res.ok) throw new Error("Not found");
-      return res.json();
-    },
-  });
+  const { data: profile, isLoading: profileLoading } =
+    useQuery<ContractorProfile>({
+      queryKey: ["/api/marketplace/contractors", orgId],
+      queryFn: async () => {
+        const res = await fetch(`/api/marketplace/contractors/${orgId}`);
+        if (!res.ok) throw new Error("Not found");
+        return res.json();
+      },
+    });
 
-  const { data: reviews = [], isLoading: reviewsLoading, refetch: refetchReviews } = useQuery<Review[]>({
+  const {
+    data: reviews = [],
+    isLoading: reviewsLoading,
+    refetch: refetchReviews,
+  } = useQuery<Review[]>({
     queryKey: ["/api/marketplace/contractors", orgId, "reviews"],
     queryFn: async () => {
       const res = await fetch(`/api/marketplace/contractors/${orgId}/reviews`);
@@ -400,7 +490,9 @@ export function ContractorProfilePage() {
   });
 
   const isOwnOrg = user?.organizationId === orgId;
-  const hasReviewed = reviews.some((r) => r.reviewerOrg.id === user?.organizationId);
+  const hasReviewed = reviews.some(
+    (r) => r.reviewerOrg.id === user?.organizationId,
+  );
 
   if (profileLoading) {
     return (
@@ -417,7 +509,9 @@ export function ContractorProfilePage() {
   if (!profile) {
     return (
       <div className="p-6 text-center">
-        <p className="text-muted-foreground">Contractor not found in the directory.</p>
+        <p className="text-muted-foreground">
+          Contractor not found in the directory.
+        </p>
         <Link href="/marketplace">
           <Button variant="outline" className="mt-4">
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -429,10 +523,15 @@ export function ContractorProfilePage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
+    <div className="max-w-full mx-auto p-6 space-y-6">
       <div>
         <Link href="/marketplace">
-          <Button variant="ghost" size="sm" className="mb-4" data-testid="link-back-directory">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mb-4"
+            data-testid="link-back-directory"
+          >
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Marketplace
           </Button>
@@ -444,33 +543,50 @@ export function ContractorProfilePage() {
             <div className="flex gap-4 items-start">
               <div className="w-20 h-20 rounded-xl bg-muted flex items-center justify-center shrink-0">
                 {profile.logoUrl ? (
-                  <img src={profile.logoUrl} alt={profile.name} className="w-20 h-20 rounded-xl object-cover" />
+                  <img
+                    src={profile.logoUrl}
+                    alt={profile.name}
+                    className="w-20 h-20 rounded-xl object-cover"
+                  />
                 ) : (
                   <Building2 className="w-10 h-10 text-muted-foreground" />
                 )}
               </div>
               <div className="flex-1">
                 <div className="flex flex-wrap items-start gap-2 justify-between">
-                  <h1 className="text-2xl font-bold" data-testid="text-contractor-profile-name">{profile.name}</h1>
+                  <h1
+                    className="text-2xl font-bold"
+                    data-testid="text-contractor-profile-name"
+                  >
+                    {profile.name}
+                  </h1>
                   <Badge>{formatTrade(profile.tradeType)}</Badge>
                 </div>
                 {profile.avgRating !== null && (
                   <div className="flex items-center gap-2 mt-1">
                     <StarRating rating={profile.avgRating} size="lg" />
-                    <span className="font-medium">{profile.avgRating.toFixed(1)}</span>
-                    <span className="text-muted-foreground">({profile.reviewCount} reviews)</span>
+                    <span className="font-medium">
+                      {profile.avgRating.toFixed(1)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      ({profile.reviewCount} reviews)
+                    </span>
                   </div>
                 )}
                 {profile.serviceAreas.length > 0 && (
                   <div className="flex items-center gap-1 mt-2">
                     <MapPin className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">{profile.serviceAreas.join(", ")}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {profile.serviceAreas.join(", ")}
+                    </span>
                   </div>
                 )}
                 {profile.foundedYear && (
                   <div className="flex items-center gap-1 mt-1">
                     <Clock className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Founded {profile.foundedYear}</span>
+                    <span className="text-sm text-muted-foreground">
+                      Founded {profile.foundedYear}
+                    </span>
                   </div>
                 )}
               </div>
@@ -487,7 +603,10 @@ export function ContractorProfilePage() {
                   <CardTitle className="text-base">About</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-contractor-bio">
+                  <p
+                    className="text-sm text-muted-foreground whitespace-pre-wrap"
+                    data-testid="text-contractor-bio"
+                  >
                     {profile.bio || profile.companyDescription}
                   </p>
                 </CardContent>
@@ -520,9 +639,14 @@ export function ContractorProfilePage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Reviews ({reviews.length})</CardTitle>
+                  <CardTitle className="text-base">
+                    Reviews ({reviews.length})
+                  </CardTitle>
                   {!isOwnOrg && !hasReviewed && (
-                    <ReviewForm orgId={orgId!} onSuccess={() => refetchReviews()} />
+                    <ReviewForm
+                      orgId={orgId!}
+                      onSuccess={() => refetchReviews()}
+                    />
                   )}
                 </div>
               </CardHeader>
@@ -533,14 +657,22 @@ export function ContractorProfilePage() {
                     <div className="h-16 bg-muted rounded" />
                   </div>
                 ) : reviews.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-4">No reviews yet.</p>
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No reviews yet.
+                  </p>
                 ) : (
                   <div className="space-y-4">
                     {reviews.map((review) => (
-                      <div key={review.id} className="border-b last:border-0 pb-4 last:pb-0" data-testid={`review-${review.id}`}>
+                      <div
+                        key={review.id}
+                        className="border-b last:border-0 pb-4 last:pb-0"
+                        data-testid={`review-${review.id}`}
+                      >
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <p className="text-sm font-medium">{review.reviewerOrg.name}</p>
+                            <p className="text-sm font-medium">
+                              {review.reviewerOrg.name}
+                            </p>
                             <StarRating rating={review.rating} />
                           </div>
                           <span className="text-xs text-muted-foreground">
@@ -548,10 +680,14 @@ export function ContractorProfilePage() {
                           </span>
                         </div>
                         {review.comment && (
-                          <p className="text-sm text-muted-foreground mt-2">{review.comment}</p>
+                          <p className="text-sm text-muted-foreground mt-2">
+                            {review.comment}
+                          </p>
                         )}
                         {review.projectRef && (
-                          <p className="text-xs text-muted-foreground mt-1">Project: {review.projectRef}</p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Project: {review.projectRef}
+                          </p>
                         )}
                       </div>
                     ))}
@@ -581,7 +717,8 @@ export function ContractorProfilePage() {
             )}
 
             {/* Certifications, Licenses & Insurance */}
-            {(profile.certifications.length > 0 || profile.licenseNumbers.length > 0) && (
+            {(profile.certifications.length > 0 ||
+              profile.licenseNumbers.length > 0) && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-1.5">
@@ -591,12 +728,21 @@ export function ContractorProfilePage() {
                 </CardHeader>
                 <CardContent className="space-y-2">
                   {profile.certifications.map((c) => (
-                    <Badge key={c} variant="outline" className="text-xs w-full justify-start" data-testid={`badge-cert-${c}`}>
+                    <Badge
+                      key={c}
+                      variant="outline"
+                      className="text-xs w-full justify-start"
+                      data-testid={`badge-cert-${c}`}
+                    >
                       {c}
                     </Badge>
                   ))}
                   {profile.licenseNumbers.map((l) => (
-                    <p key={l} className="text-xs text-muted-foreground" data-testid={`text-license-${l}`}>
+                    <p
+                      key={l}
+                      className="text-xs text-muted-foreground"
+                      data-testid={`text-license-${l}`}
+                    >
                       <span className="font-medium">License:</span> {l}
                     </p>
                   ))}
@@ -633,9 +779,17 @@ function ContractorDirectory() {
   if (minRating !== "all") params.set("minRating", minRating);
 
   const { data: contractors = [], isLoading } = useQuery<ContractorListing[]>({
-    queryKey: ["/api/marketplace/contractors", search, tradeFilter, locationFilter, minRating],
+    queryKey: [
+      "/api/marketplace/contractors",
+      search,
+      tradeFilter,
+      locationFilter,
+      minRating,
+    ],
     queryFn: async () => {
-      const res = await fetch(`/api/marketplace/contractors?${params.toString()}`);
+      const res = await fetch(
+        `/api/marketplace/contractors?${params.toString()}`,
+      );
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
@@ -644,7 +798,8 @@ function ContractorDirectory() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Browse and connect with verified subcontractors and specialty contractors in your area.
+        Browse and connect with verified subcontractors and specialty
+        contractors in your area.
       </p>
       {/* Filters */}
       <Card>
@@ -663,13 +818,18 @@ function ContractorDirectory() {
               </div>
             </div>
             <Select value={tradeFilter} onValueChange={setTradeFilter}>
-              <SelectTrigger className="w-[180px]" data-testid="select-trade-filter">
+              <SelectTrigger
+                className="w-[180px]"
+                data-testid="select-trade-filter"
+              >
                 <SelectValue placeholder="All Trades" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Trades</SelectItem>
                 {TRADE_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t}>{formatTrade(t)}</SelectItem>
+                  <SelectItem key={t} value={t}>
+                    {formatTrade(t)}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -682,7 +842,10 @@ function ContractorDirectory() {
               />
             </div>
             <Select value={minRating} onValueChange={setMinRating}>
-              <SelectTrigger className="w-[140px]" data-testid="select-rating-filter">
+              <SelectTrigger
+                className="w-[140px]"
+                data-testid="select-rating-filter"
+              >
                 <SelectValue placeholder="Min Rating" />
               </SelectTrigger>
               <SelectContent>
@@ -760,7 +923,9 @@ function getStatusBadge(status: string) {
     case "AVAILABLE":
       return <Badge className="bg-green-600 text-white">Available</Badge>;
     case "PARTIALLY_AVAILABLE":
-      return <Badge className="bg-yellow-500 text-white">Partially Available</Badge>;
+      return (
+        <Badge className="bg-yellow-500 text-white">Partially Available</Badge>
+      );
     case "BOOKED":
       return <Badge variant="secondary">Booked</Badge>;
     case "UNAVAILABLE":
@@ -781,7 +946,9 @@ function CrewMarketplaceTab() {
   const [availableTo, setAvailableTo] = useState("");
   const [showOwnOnly, setShowOwnOnly] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [selectedListing, setSelectedListing] = useState<CrewListing | null>(null);
+  const [selectedListing, setSelectedListing] = useState<CrewListing | null>(
+    null,
+  );
   const [editListing, setEditListing] = useState<CrewListing | null>(null);
 
   const buildParams = () => {
@@ -796,23 +963,38 @@ function CrewMarketplaceTab() {
 
   const queryKey = showOwnOnly
     ? ["/api/marketplace/crews/my"]
-    : ["/api/marketplace/crews", tradeFilter, statusFilter, locationSearch, availableFrom, availableTo];
+    : [
+        "/api/marketplace/crews",
+        tradeFilter,
+        statusFilter,
+        locationSearch,
+        availableFrom,
+        availableTo,
+      ];
 
   const { data: listings, isLoading } = useQuery<CrewListing[]>({
     queryKey,
     queryFn: () => {
       if (showOwnOnly) {
-        return fetch("/api/marketplace/crews/my", { credentials: "include" }).then(r => r.json());
+        return fetch("/api/marketplace/crews/my", {
+          credentials: "include",
+        }).then((r) => r.json());
       }
       const qs = buildParams();
-      return fetch(`/api/marketplace/crews${qs ? `?${qs}` : ""}`, { credentials: "include" }).then(r => r.json());
+      return fetch(`/api/marketplace/crews${qs ? `?${qs}` : ""}`, {
+        credentials: "include",
+      }).then((r) => r.json());
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/marketplace/crews/${id}`),
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/marketplace/crews/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crews"], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/crews"],
+        exact: false,
+      });
       toast({ title: "Listing deleted" });
       setSelectedListing(null);
     },
@@ -825,9 +1007,13 @@ function CrewMarketplaceTab() {
     <div className="space-y-4" data-testid="crew-marketplace-tab">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">
-          Browse and list available crews for hire by trade, location, and availability.
+          Browse and list available crews for hire by trade, location, and
+          availability.
         </p>
-        <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-crew-listing">
+        <Button
+          onClick={() => setShowCreateDialog(true)}
+          data-testid="button-create-crew-listing"
+        >
           <Plus className="h-4 w-4 mr-2" />
           List Your Crew
         </Button>
@@ -836,25 +1022,35 @@ function CrewMarketplaceTab() {
       <Card className="p-4">
         <div className="flex flex-wrap items-center gap-3">
           <Select value={tradeFilter} onValueChange={setTradeFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="select-crew-trade-filter">
+            <SelectTrigger
+              className="w-[180px]"
+              data-testid="select-crew-trade-filter"
+            >
               <SelectValue placeholder="All Trades" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Trades</SelectItem>
               {TRADE_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>{formatTrade(t)}</SelectItem>
+                <SelectItem key={t} value={t}>
+                  {formatTrade(t)}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[180px]" data-testid="select-crew-status-filter">
+            <SelectTrigger
+              className="w-[180px]"
+              data-testid="select-crew-status-filter"
+            >
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Statuses</SelectItem>
               {AVAILABILITY_STATUSES.map((s) => (
-                <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                <SelectItem key={s.value} value={s.value}>
+                  {s.label}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -893,7 +1089,10 @@ function CrewMarketplaceTab() {
               onCheckedChange={setShowOwnOnly}
               data-testid="switch-crew-own-only"
             />
-            <Label className="text-sm cursor-pointer" onClick={() => setShowOwnOnly(!showOwnOnly)}>
+            <Label
+              className="text-sm cursor-pointer"
+              onClick={() => setShowOwnOnly(!showOwnOnly)}
+            >
               My Listings Only
             </Label>
           </div>
@@ -941,7 +1140,9 @@ function CrewMarketplaceTab() {
                 {item.listing.rating && (
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                    <span className="font-medium">{parseFloat(item.listing.rating).toFixed(1)}</span>
+                    <span className="font-medium">
+                      {parseFloat(item.listing.rating).toFixed(1)}
+                    </span>
                     {item.listing.completedProjects != null && (
                       <span className="text-sm text-muted-foreground">
                         ({item.listing.completedProjects} projects)
@@ -959,8 +1160,8 @@ function CrewMarketplaceTab() {
                   )}
                   {item.listing.hourlyRate && (
                     <div className="flex items-center gap-1 text-muted-foreground">
-                      <DollarSign className="h-3 w-3" />
-                      ${parseFloat(item.listing.hourlyRate).toFixed(0)}/hr
+                      <DollarSign className="h-3 w-3" />$
+                      {parseFloat(item.listing.hourlyRate).toFixed(0)}/hr
                     </div>
                   )}
                 </div>
@@ -968,7 +1169,9 @@ function CrewMarketplaceTab() {
                 {item.listing.baseLocation && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     <MapPin className="h-3 w-3" />
-                    <span className="truncate">{item.listing.baseLocation}</span>
+                    <span className="truncate">
+                      {item.listing.baseLocation}
+                    </span>
                     {item.listing.travelRadius && (
                       <span>({item.listing.travelRadius} mi radius)</span>
                     )}
@@ -981,21 +1184,28 @@ function CrewMarketplaceTab() {
                   </p>
                 )}
 
-                {item.listing.certifications && item.listing.certifications.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {item.listing.certifications.slice(0, 3).map((cert, i) => (
-                      <Badge key={i} variant="outline" className="text-xs">{cert}</Badge>
-                    ))}
-                    {item.listing.certifications.length > 3 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{item.listing.certifications.length - 3}
-                      </Badge>
-                    )}
-                  </div>
-                )}
+                {item.listing.certifications &&
+                  item.listing.certifications.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {item.listing.certifications
+                        .slice(0, 3)
+                        .map((cert, i) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {cert}
+                          </Badge>
+                        ))}
+                      {item.listing.certifications.length > 3 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{item.listing.certifications.length - 3}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
 
                 {!item.listing.isPublic && (
-                  <Badge variant="secondary" className="text-xs">Private</Badge>
+                  <Badge variant="secondary" className="text-xs">
+                    Private
+                  </Badge>
                 )}
               </CardContent>
             </Card>
@@ -1010,7 +1220,10 @@ function CrewMarketplaceTab() {
               ? "You haven't listed any crews yet."
               : "No crews match your search criteria."}
           </p>
-          <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-first-crew-listing">
+          <Button
+            onClick={() => setShowCreateDialog(true)}
+            data-testid="button-create-first-crew-listing"
+          >
             <Plus className="h-4 w-4 mr-2" />
             List Your Crew
           </Button>
@@ -1021,14 +1234,20 @@ function CrewMarketplaceTab() {
         listing={selectedListing}
         onClose={() => setSelectedListing(null)}
         onDelete={(id) => deleteMutation.mutate(id)}
-        onEdit={(item) => { setSelectedListing(null); setEditListing(item); }}
+        onEdit={(item) => {
+          setSelectedListing(null);
+          setEditListing(item);
+        }}
         isDeleting={deleteMutation.isPending}
       />
 
       <CreateOrEditCrewListingDialog
         open={showCreateDialog || editListing !== null}
         onOpenChange={(open) => {
-          if (!open) { setShowCreateDialog(false); setEditListing(null); }
+          if (!open) {
+            setShowCreateDialog(false);
+            setEditListing(null);
+          }
         }}
         existingListing={editListing}
       />
@@ -1071,9 +1290,13 @@ function CrewListingDetailDialog({
           {l.rating && (
             <div className="flex items-center gap-2">
               <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-              <span className="text-lg font-medium">{parseFloat(l.rating).toFixed(1)}</span>
+              <span className="text-lg font-medium">
+                {parseFloat(l.rating).toFixed(1)}
+              </span>
               {l.completedProjects != null && (
-                <span className="text-muted-foreground">({l.completedProjects} completed projects)</span>
+                <span className="text-muted-foreground">
+                  ({l.completedProjects} completed projects)
+                </span>
               )}
             </div>
           )}
@@ -1081,7 +1304,9 @@ function CrewListingDetailDialog({
           <div className="grid grid-cols-2 gap-4">
             {l.crewSize && (
               <div>
-                <Label className="text-sm text-muted-foreground">Crew Size</Label>
+                <Label className="text-sm text-muted-foreground">
+                  Crew Size
+                </Label>
                 <p className="flex items-center gap-1">
                   <Users className="h-4 w-4" />
                   {l.crewSize} workers
@@ -1090,25 +1315,31 @@ function CrewListingDetailDialog({
             )}
             {l.hourlyRate && (
               <div>
-                <Label className="text-sm text-muted-foreground">Hourly Rate</Label>
+                <Label className="text-sm text-muted-foreground">
+                  Hourly Rate
+                </Label>
                 <p className="flex items-center gap-1">
-                  <DollarSign className="h-4 w-4" />
-                  ${parseFloat(l.hourlyRate).toFixed(2)}/hr
+                  <DollarSign className="h-4 w-4" />$
+                  {parseFloat(l.hourlyRate).toFixed(2)}/hr
                 </p>
               </div>
             )}
             {l.dailyRate && (
               <div>
-                <Label className="text-sm text-muted-foreground">Daily Rate</Label>
+                <Label className="text-sm text-muted-foreground">
+                  Daily Rate
+                </Label>
                 <p className="flex items-center gap-1">
-                  <DollarSign className="h-4 w-4" />
-                  ${parseFloat(l.dailyRate).toFixed(2)}/day
+                  <DollarSign className="h-4 w-4" />$
+                  {parseFloat(l.dailyRate).toFixed(2)}/day
                 </p>
               </div>
             )}
             {l.baseLocation && (
               <div>
-                <Label className="text-sm text-muted-foreground">Location</Label>
+                <Label className="text-sm text-muted-foreground">
+                  Location
+                </Label>
                 <p className="flex items-center gap-1">
                   <MapPin className="h-4 w-4" />
                   {l.baseLocation}
@@ -1120,19 +1351,25 @@ function CrewListingDetailDialog({
 
           {(l.availableFrom || l.availableTo) && (
             <div>
-              <Label className="text-sm text-muted-foreground">Availability Window</Label>
+              <Label className="text-sm text-muted-foreground">
+                Availability Window
+              </Label>
               <p className="flex items-center gap-1">
                 <CalendarIcon className="h-4 w-4" />
-                {l.availableFrom && format(parseISO(l.availableFrom), "MMM d, yyyy")}
+                {l.availableFrom &&
+                  format(parseISO(l.availableFrom), "MMM d, yyyy")}
                 {l.availableFrom && l.availableTo && " – "}
-                {l.availableTo && format(parseISO(l.availableTo), "MMM d, yyyy")}
+                {l.availableTo &&
+                  format(parseISO(l.availableTo), "MMM d, yyyy")}
               </p>
             </div>
           )}
 
           {l.description && (
             <div>
-              <Label className="text-sm text-muted-foreground">Description</Label>
+              <Label className="text-sm text-muted-foreground">
+                Description
+              </Label>
               <p className="text-sm p-3 bg-muted rounded-lg">{l.description}</p>
             </div>
           )}
@@ -1142,7 +1379,9 @@ function CrewListingDetailDialog({
               <Label className="text-sm text-muted-foreground">Skills</Label>
               <div className="flex flex-wrap gap-2 mt-1">
                 {l.skills.map((s, i) => (
-                  <Badge key={i} variant="secondary">{s}</Badge>
+                  <Badge key={i} variant="secondary">
+                    {s}
+                  </Badge>
                 ))}
               </div>
             </div>
@@ -1150,10 +1389,14 @@ function CrewListingDetailDialog({
 
           {l.certifications && l.certifications.length > 0 && (
             <div>
-              <Label className="text-sm text-muted-foreground">Certifications</Label>
+              <Label className="text-sm text-muted-foreground">
+                Certifications
+              </Label>
               <div className="flex flex-wrap gap-2 mt-1">
                 {l.certifications.map((c, i) => (
-                  <Badge key={i} variant="outline">{c}</Badge>
+                  <Badge key={i} variant="outline">
+                    {c}
+                  </Badge>
                 ))}
               </div>
             </div>
@@ -1161,10 +1404,14 @@ function CrewListingDetailDialog({
 
           {l.equipmentOwned && l.equipmentOwned.length > 0 && (
             <div>
-              <Label className="text-sm text-muted-foreground">Equipment Owned</Label>
+              <Label className="text-sm text-muted-foreground">
+                Equipment Owned
+              </Label>
               <div className="flex flex-wrap gap-2 mt-1">
                 {l.equipmentOwned.map((e, i) => (
-                  <Badge key={i} variant="outline">{e}</Badge>
+                  <Badge key={i} variant="outline">
+                    {e}
+                  </Badge>
                 ))}
               </div>
             </div>
@@ -1173,7 +1420,9 @@ function CrewListingDetailDialog({
           <Separator />
           <div className="space-y-2">
             <Label className="text-sm font-medium">Contact Information</Label>
-            {l.contactName && <p className="text-sm font-medium">{l.contactName}</p>}
+            {l.contactName && (
+              <p className="text-sm font-medium">{l.contactName}</p>
+            )}
             {l.contactPhone && (
               <a
                 href={`tel:${l.contactPhone}`}
@@ -1195,7 +1444,9 @@ function CrewListingDetailDialog({
               </a>
             )}
             {!l.contactName && !l.contactPhone && !l.contactEmail && (
-              <p className="text-sm text-muted-foreground">No contact information provided.</p>
+              <p className="text-sm text-muted-foreground">
+                No contact information provided.
+              </p>
             )}
           </div>
         </div>
@@ -1217,7 +1468,11 @@ function CrewListingDetailDialog({
             <Trash2 className="h-4 w-4 mr-2" />
             Delete
           </Button>
-          <Button variant="ghost" onClick={onClose} data-testid="button-close-crew-detail">
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            data-testid="button-close-crew-detail"
+          >
             Close
           </Button>
         </DialogFooter>
@@ -1238,27 +1493,66 @@ function CreateOrEditCrewListingDialog({
   const { toast } = useToast();
   const isEdit = !!existingListing;
 
-  const [crewName, setCrewName] = useState(existingListing?.listing.crewName ?? "");
-  const [tradeType, setTradeType] = useState(existingListing?.listing.tradeType ?? "OTHER");
-  const [crewSize, setCrewSize] = useState(existingListing?.listing.crewSize?.toString() ?? "");
-  const [description, setDescription] = useState(existingListing?.listing.description ?? "");
-  const [hourlyRate, setHourlyRate] = useState(existingListing?.listing.hourlyRate ?? "");
-  const [dailyRate, setDailyRate] = useState(existingListing?.listing.dailyRate ?? "");
-  const [baseLocation, setBaseLocation] = useState(existingListing?.listing.baseLocation ?? "");
-  const [travelRadius, setTravelRadius] = useState(existingListing?.listing.travelRadius?.toString() ?? "");
-  const [availabilityStatus, setAvailabilityStatus] = useState(existingListing?.listing.availabilityStatus ?? "AVAILABLE");
-  const [availableFrom, setAvailableFrom] = useState(existingListing?.listing.availableFrom ?? "");
-  const [availableTo, setAvailableTo] = useState(existingListing?.listing.availableTo ?? "");
-  const [skillsInput, setSkillsInput] = useState((existingListing?.listing.skills ?? []).join(", "));
-  const [certificationsInput, setCertificationsInput] = useState((existingListing?.listing.certifications ?? []).join(", "));
-  const [equipmentInput, setEquipmentInput] = useState((existingListing?.listing.equipmentOwned ?? []).join(", "));
-  const [contactName, setContactName] = useState(existingListing?.listing.contactName ?? "");
-  const [contactPhone, setContactPhone] = useState(existingListing?.listing.contactPhone ?? "");
-  const [contactEmail, setContactEmail] = useState(existingListing?.listing.contactEmail ?? "");
-  const [isPublic, setIsPublic] = useState(existingListing?.listing.isPublic ?? true);
+  const [crewName, setCrewName] = useState(
+    existingListing?.listing.crewName ?? "",
+  );
+  const [tradeType, setTradeType] = useState(
+    existingListing?.listing.tradeType ?? "OTHER",
+  );
+  const [crewSize, setCrewSize] = useState(
+    existingListing?.listing.crewSize?.toString() ?? "",
+  );
+  const [description, setDescription] = useState(
+    existingListing?.listing.description ?? "",
+  );
+  const [hourlyRate, setHourlyRate] = useState(
+    existingListing?.listing.hourlyRate ?? "",
+  );
+  const [dailyRate, setDailyRate] = useState(
+    existingListing?.listing.dailyRate ?? "",
+  );
+  const [baseLocation, setBaseLocation] = useState(
+    existingListing?.listing.baseLocation ?? "",
+  );
+  const [travelRadius, setTravelRadius] = useState(
+    existingListing?.listing.travelRadius?.toString() ?? "",
+  );
+  const [availabilityStatus, setAvailabilityStatus] = useState(
+    existingListing?.listing.availabilityStatus ?? "AVAILABLE",
+  );
+  const [availableFrom, setAvailableFrom] = useState(
+    existingListing?.listing.availableFrom ?? "",
+  );
+  const [availableTo, setAvailableTo] = useState(
+    existingListing?.listing.availableTo ?? "",
+  );
+  const [skillsInput, setSkillsInput] = useState(
+    (existingListing?.listing.skills ?? []).join(", "),
+  );
+  const [certificationsInput, setCertificationsInput] = useState(
+    (existingListing?.listing.certifications ?? []).join(", "),
+  );
+  const [equipmentInput, setEquipmentInput] = useState(
+    (existingListing?.listing.equipmentOwned ?? []).join(", "),
+  );
+  const [contactName, setContactName] = useState(
+    existingListing?.listing.contactName ?? "",
+  );
+  const [contactPhone, setContactPhone] = useState(
+    existingListing?.listing.contactPhone ?? "",
+  );
+  const [contactEmail, setContactEmail] = useState(
+    existingListing?.listing.contactEmail ?? "",
+  );
+  const [isPublic, setIsPublic] = useState(
+    existingListing?.listing.isPublic ?? true,
+  );
 
   const parseTagInput = (input: string) =>
-    input.split(",").map(s => s.trim()).filter(Boolean);
+    input
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
   const buildPayload = () => ({
     crewName,
@@ -1272,9 +1566,18 @@ function CreateOrEditCrewListingDialog({
     availabilityStatus,
     availableFrom: availableFrom || undefined,
     availableTo: availableTo || undefined,
-    skills: parseTagInput(skillsInput).length > 0 ? parseTagInput(skillsInput) : undefined,
-    certifications: parseTagInput(certificationsInput).length > 0 ? parseTagInput(certificationsInput) : undefined,
-    equipmentOwned: parseTagInput(equipmentInput).length > 0 ? parseTagInput(equipmentInput) : undefined,
+    skills:
+      parseTagInput(skillsInput).length > 0
+        ? parseTagInput(skillsInput)
+        : undefined,
+    certifications:
+      parseTagInput(certificationsInput).length > 0
+        ? parseTagInput(certificationsInput)
+        : undefined,
+    equipmentOwned:
+      parseTagInput(equipmentInput).length > 0
+        ? parseTagInput(equipmentInput)
+        : undefined,
     contactName: contactName || undefined,
     contactPhone: contactPhone || undefined,
     contactEmail: contactEmail || undefined,
@@ -1282,9 +1585,13 @@ function CreateOrEditCrewListingDialog({
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/marketplace/crews", data),
+    mutationFn: (data: any) =>
+      apiRequest("POST", "/api/marketplace/crews", data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crews"], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/crews"],
+        exact: false,
+      });
       toast({ title: "Crew listing created successfully" });
       onOpenChange(false);
     },
@@ -1295,9 +1602,16 @@ function CreateOrEditCrewListingDialog({
 
   const updateMutation = useMutation({
     mutationFn: (data: any) =>
-      apiRequest("PATCH", `/api/marketplace/crews/${existingListing!.listing.id}`, data),
+      apiRequest(
+        "PATCH",
+        `/api/marketplace/crews/${existingListing!.listing.id}`,
+        data,
+      ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/marketplace/crews"], exact: false });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/crews"],
+        exact: false,
+      });
       toast({ title: "Crew listing updated successfully" });
       onOpenChange(false);
     },
@@ -1325,7 +1639,9 @@ function CreateOrEditCrewListingDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Crew Listing" : "List Your Crew"}</DialogTitle>
+          <DialogTitle>
+            {isEdit ? "Edit Crew Listing" : "List Your Crew"}
+          </DialogTitle>
           <DialogDescription>
             {isEdit
               ? "Update your crew's availability listing."
@@ -1353,7 +1669,9 @@ function CreateOrEditCrewListingDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {TRADE_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>{formatTrade(t)}</SelectItem>
+                    <SelectItem key={t} value={t}>
+                      {formatTrade(t)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -1396,7 +1714,9 @@ function CreateOrEditCrewListingDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="crew-certifications">Certifications (comma-separated)</Label>
+            <Label htmlFor="crew-certifications">
+              Certifications (comma-separated)
+            </Label>
             <Input
               id="crew-certifications"
               value={certificationsInput}
@@ -1407,7 +1727,9 @@ function CreateOrEditCrewListingDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="crew-equipment">Equipment Owned (comma-separated)</Label>
+            <Label htmlFor="crew-equipment">
+              Equipment Owned (comma-separated)
+            </Label>
             <Input
               id="crew-equipment"
               value={equipmentInput}
@@ -1481,13 +1803,18 @@ function CreateOrEditCrewListingDialog({
 
           <div className="space-y-2">
             <Label>Availability Status</Label>
-            <Select value={availabilityStatus} onValueChange={setAvailabilityStatus}>
+            <Select
+              value={availabilityStatus}
+              onValueChange={setAvailabilityStatus}
+            >
               <SelectTrigger data-testid="select-availability-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {AVAILABILITY_STATUSES.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -1550,15 +1877,27 @@ function CreateOrEditCrewListingDialog({
               id="is-public"
               data-testid="switch-is-public"
             />
-            <Label htmlFor="is-public">Make listing visible to other organizations</Label>
+            <Label htmlFor="is-public">
+              Make listing visible to other organizations
+            </Label>
           </div>
         </div>
         <DialogFooter className="pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending} data-testid="button-submit-crew-listing">
-            {isPending ? (isEdit ? "Saving..." : "Creating...") : (isEdit ? "Save Changes" : "Create Listing")}
+          <Button
+            onClick={handleSubmit}
+            disabled={isPending}
+            data-testid="button-submit-crew-listing"
+          >
+            {isPending
+              ? isEdit
+                ? "Saving..."
+                : "Creating..."
+              : isEdit
+                ? "Save Changes"
+                : "Create Listing"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1573,25 +1912,43 @@ export default function MarketplacePage() {
   const [activeTab, setActiveTab] = useState("crews");
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="page-marketplace">
+    <div
+      className="p-6 max-w-full mx-auto space-y-6"
+      data-testid="page-marketplace"
+    >
       <div>
-        <h1 className="text-2xl font-bold" data-testid="text-marketplace-title">Marketplace</h1>
+        <h1 className="text-2xl font-bold" data-testid="text-marketplace-title">
+          Marketplace
+        </h1>
         <p className="text-muted-foreground mt-1">
-          Discover and connect with contractors, crews, and equipment providers in your network.
+          Discover and connect with contractors, crews, and equipment providers
+          in your network.
         </p>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
-          <TabsTrigger value="contractors" className="flex items-center gap-2" data-testid="tab-contractor-directory">
+          <TabsTrigger
+            value="contractors"
+            className="flex items-center gap-2"
+            data-testid="tab-contractor-directory"
+          >
             <Building2 className="h-4 w-4" />
             Contractor Directory
           </TabsTrigger>
-          <TabsTrigger value="crews" className="flex items-center gap-2" data-testid="tab-crew-marketplace">
+          <TabsTrigger
+            value="crews"
+            className="flex items-center gap-2"
+            data-testid="tab-crew-marketplace"
+          >
             <HardHat className="h-4 w-4" />
             Crew Marketplace
           </TabsTrigger>
-          <TabsTrigger value="equipment" className="flex items-center gap-2" data-testid="tab-equipment-rentals">
+          <TabsTrigger
+            value="equipment"
+            className="flex items-center gap-2"
+            data-testid="tab-equipment-rentals"
+          >
             <Truck className="h-4 w-4" />
             Equipment Rentals
           </TabsTrigger>
