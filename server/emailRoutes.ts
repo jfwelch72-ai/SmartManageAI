@@ -229,6 +229,12 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res) => {
       }).catch((err) => {
         console.error(`Initial IMAP sync failed for ${newAccount.emailAddress}:`, err);
       });
+    } else if (newAccount.provider === "OUTLOOK" && newAccount.accessToken) {
+      syncOutlookAccount(newAccount, req.user.id).then((syncResult) => {
+        console.log(`Initial Outlook sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+      }).catch((err) => {
+        console.error(`Initial Outlook sync failed for ${newAccount.emailAddress}:`, err);
+      });
     }
 
     return res.status(201).json(sanitizeAccountForResponse(newAccount));
@@ -896,8 +902,8 @@ router.get("/oauth/outlook/callback", async (req, res) => {
       )
       .limit(1);
 
+    let accountId: string;
     if (existing) {
-      // Update existing account with new tokens
       await db
         .update(emailAccounts)
         .set({
@@ -908,10 +914,11 @@ router.get("/oauth/outlook/callback", async (req, res) => {
           updatedAt: new Date(),
         })
         .where(eq(emailAccounts.id, existing.id));
+      accountId = existing.id;
     } else {
-      // Create new account
+      accountId = crypto.randomUUID();
       await db.insert(emailAccounts).values({
-        id: crypto.randomUUID(),
+        id: accountId,
         organizationId: userInfo.organizationId,
         userId: userInfo.userId,
         provider: "OUTLOOK",
@@ -924,6 +931,20 @@ router.get("/oauth/outlook/callback", async (req, res) => {
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date(),
+      });
+    }
+
+    const [savedAccount] = await db
+      .select()
+      .from(emailAccounts)
+      .where(eq(emailAccounts.id, accountId))
+      .limit(1);
+
+    if (savedAccount) {
+      syncOutlookAccount(savedAccount, userInfo.userId).then((syncResult) => {
+        console.log(`Initial Outlook OAuth sync for ${emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+      }).catch((err) => {
+        console.error(`Initial Outlook OAuth sync failed for ${emailAddress}:`, err);
       });
     }
 
@@ -1277,6 +1298,63 @@ async function getValidGmailToken(account: typeof emailAccounts.$inferSelect): P
   return refreshGmailAccessToken(account);
 }
 
+async function refreshOutlookAccessToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
+  if (!account.refreshToken) {
+    throw new Error("No refresh token available for account " + account.emailAddress);
+  }
+
+  const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: OUTLOOK_CONFIG.clientId,
+      client_secret: OUTLOOK_CONFIG.clientSecret,
+      refresh_token: account.refreshToken,
+      grant_type: "refresh_token",
+      scope: OUTLOOK_CONFIG.scopes.join(" "),
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("Outlook token refresh failed:", errText);
+    throw new Error("Failed to refresh Outlook access token");
+  }
+
+  const data = await response.json() as { access_token: string; expires_in: number; refresh_token?: string };
+
+  await db
+    .update(emailAccounts)
+    .set({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || account.refreshToken,
+      expiresAt: new Date(Date.now() + data.expires_in * 1000),
+      updatedAt: new Date(),
+    })
+    .where(eq(emailAccounts.id, account.id));
+
+  return data.access_token;
+}
+
+async function getValidOutlookToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
+  if (account.accessToken && account.expiresAt && account.expiresAt.getTime() > Date.now() + 60000) {
+    return account.accessToken;
+  }
+  return refreshOutlookAccessToken(account);
+}
+
+async function outlookApiFetch(url: string, account: typeof emailAccounts.$inferSelect): Promise<Response> {
+  let token = await getValidOutlookToken(account);
+  let response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+  if (response.status === 401) {
+    token = await refreshOutlookAccessToken(account);
+    response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  }
+
+  return response;
+}
+
 interface GmailMessagePart {
   mimeType?: string;
   body?: { data?: string; size?: number };
@@ -1622,6 +1700,312 @@ async function syncGmailAccount(
   return result;
 }
 
+interface OutlookMessage {
+  id: string;
+  conversationId: string;
+  subject: string;
+  bodyPreview: string;
+  body?: { contentType: string; content: string };
+  from?: { emailAddress: { name: string; address: string } };
+  toRecipients?: { emailAddress: { name: string; address: string } }[];
+  ccRecipients?: { emailAddress: { name: string; address: string } }[];
+  receivedDateTime: string;
+  isRead: boolean;
+  hasAttachments: boolean;
+  internetMessageId?: string;
+}
+
+function parseOutlookMessage(msg: OutlookMessage, accountEmail: string): {
+  externalId: string;
+  threadId: string;
+  fromAddress: string;
+  fromName: string;
+  toAddresses: string;
+  ccAddresses: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+  snippet: string;
+  receivedAt: Date;
+  isIncoming: boolean;
+  hasAttachments: boolean;
+  isRead: boolean;
+} {
+  const fromAddress = msg.from?.emailAddress?.address || "unknown@unknown.com";
+  const fromName = msg.from?.emailAddress?.name || "";
+  const toAddresses = JSON.stringify(
+    (msg.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean)
+  );
+  const ccAddresses = JSON.stringify(
+    (msg.ccRecipients || []).map(r => r.emailAddress?.address).filter(Boolean)
+  );
+
+  let bodyText = "";
+  let bodyHtml = "";
+  if (msg.body) {
+    if (msg.body.contentType === "html") {
+      bodyHtml = msg.body.content || "";
+      bodyText = msg.bodyPreview || "";
+    } else {
+      bodyText = msg.body.content || "";
+    }
+  }
+
+  const isIncoming = !fromAddress.toLowerCase().includes(accountEmail.toLowerCase());
+
+  return {
+    externalId: msg.id,
+    threadId: msg.conversationId,
+    fromAddress,
+    fromName,
+    toAddresses,
+    ccAddresses,
+    subject: msg.subject || "(No Subject)",
+    bodyText: bodyText.substring(0, 50000),
+    bodyHtml: bodyHtml.substring(0, 100000),
+    snippet: msg.bodyPreview || "",
+    receivedAt: new Date(msg.receivedDateTime),
+    isIncoming,
+    hasAttachments: msg.hasAttachments,
+    isRead: msg.isRead,
+  };
+}
+
+export async function syncOutlookAccount(
+  account: typeof emailAccounts.$inferSelect,
+  userId: string,
+): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
+  const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
+  const MAX_PAGES = 5;
+  const PAGE_SIZE = 50;
+
+  let filterDate: string;
+  if (account.lastSyncedAt) {
+    filterDate = account.lastSyncedAt.toISOString();
+  } else {
+    filterDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  const allMessages: OutlookMessage[] = [];
+  let nextLink: string | undefined;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let url: string;
+    if (nextLink) {
+      url = nextLink;
+    } else {
+      const graphUrl = new URL("https://graph.microsoft.com/v1.0/me/messages");
+      graphUrl.searchParams.set("$top", String(PAGE_SIZE));
+      graphUrl.searchParams.set("$orderby", "receivedDateTime desc");
+      graphUrl.searchParams.set("$select", "id,conversationId,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments,internetMessageId");
+      graphUrl.searchParams.set("$filter", `receivedDateTime ge ${filterDate}`);
+      url = graphUrl.toString();
+    }
+
+    const listResponse = await outlookApiFetch(url, account);
+
+    if (!listResponse.ok) {
+      const errText = await listResponse.text();
+      console.error("Outlook list messages failed:", errText);
+      throw new Error(`Outlook Graph API error: ${listResponse.status}`);
+    }
+
+    const listData = await listResponse.json() as {
+      value?: OutlookMessage[];
+      "@odata.nextLink"?: string;
+    };
+
+    if (listData.value) {
+      allMessages.push(...listData.value);
+    }
+
+    if (!listData["@odata.nextLink"]) break;
+    nextLink = listData["@odata.nextLink"];
+  }
+
+  if (allMessages.length === 0) {
+    await db
+      .update(emailAccounts)
+      .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
+      .where(eq(emailAccounts.id, account.id));
+    return result;
+  }
+
+  const candidateIds = allMessages.map(m => m.id);
+  const existingMessages = await db
+    .select({ externalId: emailMessages.externalId })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.emailAccountId, account.id),
+        inArray(emailMessages.externalId, candidateIds)
+      )
+    );
+  const existingIds = new Set(existingMessages.map(m => m.externalId));
+
+  const newMessages = allMessages.filter(m => !existingIds.has(m.id));
+  if (newMessages.length === 0) {
+    await db
+      .update(emailAccounts)
+      .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
+      .where(eq(emailAccounts.id, account.id));
+    return result;
+  }
+
+  const threadMap = new Map<string, string>();
+  const messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[] = [];
+
+  for (const outlookMsg of newMessages) {
+    try {
+      const parsed = parseOutlookMessage(outlookMsg, account.emailAddress);
+
+      let dbThreadId = threadMap.get(parsed.threadId);
+
+      if (!dbThreadId) {
+        const [existingThread] = await db
+          .select({ id: emailThreads.id })
+          .from(emailThreads)
+          .where(
+            and(
+              eq(emailThreads.emailAccountId, account.id),
+              eq(emailThreads.externalThreadId, parsed.threadId)
+            )
+          )
+          .limit(1);
+
+        if (existingThread) {
+          dbThreadId = existingThread.id;
+        } else {
+          const newThreadId = crypto.randomUUID();
+          await db.insert(emailThreads).values({
+            id: newThreadId,
+            organizationId: account.organizationId,
+            emailAccountId: account.id,
+            subject: parsed.subject,
+            externalThreadId: parsed.threadId,
+            status: "OPEN",
+            messageCount: 0,
+            unreadCount: 0,
+            lastMessageAt: parsed.receivedAt,
+          });
+          dbThreadId = newThreadId;
+          result.threadsCreated++;
+        }
+        threadMap.set(parsed.threadId, dbThreadId);
+      }
+
+      const newMessageId = crypto.randomUUID();
+      await db.insert(emailMessages).values({
+        id: newMessageId,
+        organizationId: account.organizationId,
+        emailAccountId: account.id,
+        threadId: dbThreadId,
+        externalId: parsed.externalId,
+        fromAddress: parsed.fromAddress,
+        fromName: parsed.fromName || null,
+        toAddresses: parsed.toAddresses,
+        ccAddresses: parsed.ccAddresses,
+        subject: parsed.subject,
+        bodyText: parsed.bodyText || null,
+        bodyHtml: parsed.bodyHtml || null,
+        snippet: parsed.snippet || null,
+        receivedAt: parsed.receivedAt,
+        isRead: parsed.isRead,
+        isIncoming: parsed.isIncoming,
+        hasAttachments: parsed.hasAttachments,
+      });
+      result.messagesImported++;
+
+      const [msgCounts] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+          maxReceivedAt: sql<Date>`max(${emailMessages.receivedAt})`,
+        })
+        .from(emailMessages)
+        .where(eq(emailMessages.threadId, dbThreadId));
+
+      await db
+        .update(emailThreads)
+        .set({
+          messageCount: msgCounts?.total ?? 1,
+          unreadCount: msgCounts?.unread ?? 1,
+          lastMessageAt: msgCounts?.maxReceivedAt ?? parsed.receivedAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailThreads.id, dbThreadId));
+
+      messagesToClassify.push({
+        messageId: newMessageId,
+        threadId: dbThreadId,
+        subject: parsed.subject,
+        bodyText: parsed.bodyText,
+        fromAddress: parsed.fromAddress,
+      });
+    } catch (err) {
+      result.errors.push(`Error processing Outlook message ${outlookMsg.id}: ${String(err)}`);
+    }
+  }
+
+  for (const msg of messagesToClassify) {
+    try {
+      const analysis = await analyzeEmail(msg.subject, msg.bodyText, msg.fromAddress, account.organizationId);
+
+      await db
+        .update(emailMessages)
+        .set({
+          classification: analysis.classification,
+          aiMetadata: JSON.stringify(analysis),
+          aiAnalyzedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(emailMessages.id, msg.messageId));
+
+      await db
+        .update(emailThreads)
+        .set({
+          primaryClassification: analysis.classification,
+          aiSummary: analysis.summary,
+          aiMetadata: JSON.stringify(analysis.extractedEntities),
+          updatedAt: new Date(),
+        })
+        .where(eq(emailThreads.id, msg.threadId));
+
+      const matchedEntities = await matchEmailToEntities(analysis, account.organizationId);
+      if (matchedEntities.projectId || matchedEntities.bidId || matchedEntities.vendorId) {
+        await db
+          .update(emailThreads)
+          .set({
+            projectId: matchedEntities.projectId || undefined,
+            bidId: matchedEntities.bidId || undefined,
+            vendorId: matchedEntities.vendorId || undefined,
+          })
+          .where(eq(emailThreads.id, msg.threadId));
+      }
+
+      await createTaskFromEmail(
+        analysis,
+        msg.messageId,
+        msg.threadId,
+        account.organizationId,
+        userId,
+        matchedEntities,
+      );
+    } catch (err) {
+      console.error(`AI classification failed for Outlook message ${msg.messageId}:`, err);
+    }
+  }
+
+  if (result.errors.length === 0 || result.messagesImported > 0) {
+    await db
+      .update(emailAccounts)
+      .set({ lastSyncedAt: new Date(), lastSyncError: null, updatedAt: new Date() })
+      .where(eq(emailAccounts.id, account.id));
+  }
+
+  return result;
+}
+
 export async function syncImapAccount(
   account: typeof emailAccounts.$inferSelect,
   userId: string,
@@ -1888,6 +2272,12 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
       try {
         if (account.provider === "GMAIL") {
           const accountResult = await syncGmailAccount(account, req.user.id);
+          syncResults.push({
+            account: account.emailAddress,
+            ...accountResult,
+          });
+        } else if (account.provider === "OUTLOOK") {
+          const accountResult = await syncOutlookAccount(account, req.user.id);
           syncResults.push({
             account: account.emailAddress,
             ...accountResult,

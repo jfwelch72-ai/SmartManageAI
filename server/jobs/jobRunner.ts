@@ -15,7 +15,7 @@ import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
 import { bids } from "@shared/schema";
 import { eventBus } from "../events";
 import { emailAccounts } from "@shared/schema";
-import { syncImapAccount } from "../emailRoutes";
+import { syncImapAccount, syncOutlookAccount } from "../emailRoutes";
 
 let outboxTask: ReturnType<typeof cron.schedule> | null = null;
 let retentionTask: ReturnType<typeof cron.schedule> | null = null;
@@ -1117,9 +1117,24 @@ async function processImapEmailSync() {
         )
       );
 
-    if (imapAccounts.length === 0) return;
+    const outlookAccounts = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.isActive, true),
+          eq(emailAccounts.provider, "OUTLOOK")
+        )
+      );
 
-    logInfo("Processing IMAP email sync", { count: imapAccounts.length });
+    if (imapAccounts.length === 0 && outlookAccounts.length === 0) return;
+
+    if (imapAccounts.length > 0) {
+      logInfo("Processing IMAP email sync", { count: imapAccounts.length });
+    }
+    if (outlookAccounts.length > 0) {
+      logInfo("Processing Outlook email sync", { count: outlookAccounts.length });
+    }
 
     for (const account of imapAccounts) {
       try {
@@ -1139,6 +1154,30 @@ async function processImapEmailSync() {
         }
       } catch (err) {
         logError("IMAP sync failed for account", {
+          account: account.emailAddress,
+          error: String(err),
+        });
+      }
+    }
+
+    for (const account of outlookAccounts) {
+      try {
+        const result = await syncOutlookAccount(account, account.userId);
+        if (result.messagesImported > 0) {
+          logInfo("Outlook sync completed", {
+            account: account.emailAddress,
+            messagesImported: result.messagesImported,
+            threadsCreated: result.threadsCreated,
+          });
+        }
+        if (result.errors.length > 0) {
+          logError("Outlook sync had errors", {
+            account: account.emailAddress,
+            errors: result.errors.slice(0, 3),
+          });
+        }
+      } catch (err) {
+        logError("Outlook sync failed for account", {
           account: account.emailAddress,
           error: String(err),
         });
