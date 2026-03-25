@@ -158,6 +158,7 @@ import hiringRoutes from "./hiringRoutes";
 import talentPoolRoutes from "./talentPoolRoutes";
 import overheadRoutes from "./overheadRoutes";
 import modifierRoutes from "./modifierRoutes";
+import leaveRoutes from "./leaveRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -301,6 +302,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Talent Pool routes
   app.use("/api/talent-pool", talentPoolRoutes);
+
+  // Register Leave Management routes
+  app.use(leaveRoutes);
 
   if (process.env.NODE_ENV !== "production") {
     app.use("/api/dev", devSeedEnterpriseRoutes);

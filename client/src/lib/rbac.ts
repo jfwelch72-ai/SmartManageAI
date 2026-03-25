@@ -595,6 +595,12 @@ export const NavigationConfig = {
       testId: "nav-safety-training",
       visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
     },
+    {
+      href: "/leave-management",
+      label: "Leave Management",
+      testId: "nav-leave-management",
+      visible: (role?: string) => hasContractorAccess(role),
+    },
   ],
 
   financialsMenu: [

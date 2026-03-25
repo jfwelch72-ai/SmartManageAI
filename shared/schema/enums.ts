@@ -36,7 +36,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "TAKEOFF_ISSUE_ASSIGNED", "TAKEOFF_ISSUE_STATUS_CHANGED",
   "EQUIPMENT_RENTAL_REQUEST_RECEIVED", "EQUIPMENT_RENTAL_REQUEST_RESPONDED",
   "BID_SUBMITTED", "BID_STATUS_CHANGED", "BID_ASSIGNED", "BID_DUE_DATE_APPROACHING",
+  "LEAVE_APPROVED", "LEAVE_DENIED",
 ]);
+
+export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);
 
 // Messaging enums
 export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);

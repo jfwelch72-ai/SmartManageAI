@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePageVisible } from "@/hooks/use-page-visible";
-import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid, Estimate, ProcurementItem, PlanDocument, Receipt, TimeClockShift, Crew, CrewProjectAssignment } from "@shared/schema";
+import type { Project, ScopeItem, ChangeOrder, CalendarEvent, Notification, TimeEntry, TMDailySheet, ProjectNote, Media, Bid, Estimate, ProcurementItem, PlanDocument, Receipt, TimeClockShift, Crew, CrewProjectAssignment, LeaveType, LeaveRequest } from "@shared/schema";
 
 // Dashboard
 interface DashboardStats {
@@ -229,6 +229,181 @@ export function useMarkAllNotificationsRead() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
       queryClient.invalidateQueries({ queryKey: ["/api/notifications/unread-count"] });
+    },
+  });
+}
+
+// Leave Management
+export interface LeaveBalance {
+  leaveTypeId: string;
+  leaveTypeName: string;
+  annualAllowance: number;
+  used: number;
+  remaining: number;
+}
+
+export interface LeaveRequestWithDetails extends LeaveRequest {
+  employeeFirstName: string | null;
+  employeeLastName: string | null;
+  leaveTypeName: string | null;
+}
+
+export function useLeaveTypes() {
+  return useQuery<LeaveType[]>({
+    queryKey: ["/api/leave/types"],
+  });
+}
+
+export function useLeaveBalances(employeeId?: string) {
+  const queryString = employeeId ? `?employeeId=${employeeId}` : "";
+  return useQuery<LeaveBalance[]>({
+    queryKey: ["/api/leave/balances", employeeId],
+    queryFn: async () => {
+      const response = await fetch(`/api/leave/balances${queryString}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch leave balances");
+      return response.json();
+    },
+  });
+}
+
+export function useLeaveRequests(params?: { status?: string; scope?: string; employeeId?: string }) {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set("status", params.status);
+  if (params?.scope) searchParams.set("scope", params.scope);
+  if (params?.employeeId) searchParams.set("employeeId", params.employeeId);
+  const queryString = searchParams.toString();
+  return useQuery<LeaveRequestWithDetails[]>({
+    queryKey: ["/api/leave/requests", params],
+    queryFn: async () => {
+      const response = await fetch(`/api/leave/requests${queryString ? `?${queryString}` : ""}`, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch leave requests");
+      return response.json();
+    },
+  });
+}
+
+export interface TeamLeaveEntry {
+  id: string;
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  leaveTypeName: string | null;
+  employeeFirstName: string | null;
+  employeeLastName: string | null;
+}
+
+export function useTeamLeaveCalendar() {
+  return useQuery<TeamLeaveEntry[]>({
+    queryKey: ["/api/leave/team-calendar"],
+  });
+}
+
+export function useCreateLeaveRequest() {
+  return useMutation({
+    mutationFn: async (data: { leaveTypeId: string; startDate: string; endDate: string; reason?: string }) => {
+      const response = await apiRequest("POST", "/api/leave/requests", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/balances"] });
+    },
+  });
+}
+
+export function useApproveLeaveRequest() {
+  return useMutation({
+    mutationFn: async ({ id, note }: { id: string; note?: string }) => {
+      const response = await apiRequest("POST", `/api/leave/requests/${id}/approve`, { note });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/team-calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+    },
+  });
+}
+
+export function useDenyLeaveRequest() {
+  return useMutation({
+    mutationFn: async ({ id, note }: { id: string; note?: string }) => {
+      const response = await apiRequest("POST", `/api/leave/requests/${id}/deny`, { note });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/team-calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+    },
+  });
+}
+
+export function useCancelLeaveRequest() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/leave/requests/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/balances"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/team-calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
+    },
+  });
+}
+
+export function useUpdateLeaveRequest() {
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; leaveTypeId?: string; startDate?: string; endDate?: string; reason?: string }) => {
+      const response = await apiRequest("PATCH", `/api/leave/requests/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/balances"] });
+    },
+  });
+}
+
+export function useCreateLeaveType() {
+  return useMutation({
+    mutationFn: async (data: { name: string; annualAllowance: number; isActive?: boolean }) => {
+      const response = await apiRequest("POST", "/api/leave/types", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/types"] });
+    },
+  });
+}
+
+export function useUpdateLeaveType() {
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; annualAllowance?: number; isActive?: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/leave/types/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/types"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/balances"] });
+    },
+  });
+}
+
+export function useDeleteLeaveType() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/leave/types/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leave/types"] });
     },
   });
 }

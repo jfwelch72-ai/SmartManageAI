@@ -63,6 +63,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **BIM Viewer**: IFC file upload and 3D viewer in the Plans & Takeoff tab, with orbit/pan/zoom controls, element tree, properties panel, interactive multi-select, measurement tools, selection-to-takeoff actions, 2D/3D storey association, and split-view mode.
 *   **Contractor Marketplace Directory**: Searchable, filterable public directory of organizations with profile pages, specialties, service areas, certifications, portfolio, and reviews.
 *   **Custom Line Styles & Measurement Grouping**: Measurements support custom line styles and variable line width. Measurement grouping allows organizing measurements into named, collapsible groups with color coding and aggregated totals.
+*   **Leave Management Module**: Dedicated leave management under Workforce & Labor with employee self-service (balance cards, request form, request history) and manager/HR views (pending request queue with approve/deny, team leave calendar). Configurable leave types with annual allowances in company settings. In-app notifications on approval/denial. Approved leave creates TIME_OFF_APPROVED calendar events for backward compatibility.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.

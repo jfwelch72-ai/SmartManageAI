@@ -47,6 +47,7 @@ const TimeEntryPage = lazy(() => import("@/pages/time-entry"));
 const TMDailyPage = lazy(() => import("@/pages/tm-daily"));
 const TMBillingPage = lazy(() => import("@/pages/tm-billing"));
 const CalendarPage = lazy(() => import("@/pages/calendar"));
+const LeaveManagementPage = lazy(() => import("@/pages/leave-management"));
 const TimeClockPage = lazy(() => import("@/pages/time-clock"));
 const TimeClockManagerPage = lazy(() => import("@/pages/time-clock-manager"));
 const AIPMDashboard = lazy(() => import("@/pages/ai-pm-dashboard"));
@@ -226,6 +227,7 @@ function Router() {
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} />} />
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} />} />
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} />} />
+      <Route path="/leave-management" component={() => <ProtectedRoute component={LeaveManagementPage} />} />
       <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} />} />
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
