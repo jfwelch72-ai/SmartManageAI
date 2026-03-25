@@ -511,7 +511,11 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteAccountId} onOpenChange={(open) => !open && setDeleteAccountId(null)}>
+      <AlertDialog open={!!deleteAccountId} onOpenChange={(open) => {
+        if (!open && !deleteAccountMutation.isPending) {
+          setDeleteAccountId(null);
+        }
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove Email Account?</AlertDialogTitle>
@@ -520,9 +524,10 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteAccountMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteAccountMutation.isPending}
               onClick={(e) => {
                 e.preventDefault();
                 if (deleteAccountId) deleteAccountMutation.mutate(deleteAccountId);
@@ -532,7 +537,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
               {deleteAccountMutation.isPending ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               ) : null}
-              Remove Account
+              {deleteAccountMutation.isPending ? "Removing..." : "Remove Account"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

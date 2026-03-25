@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task } from "@shared/schema";
+import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task } from "@shared/schema";
 import { eq, and, desc, gte, or, isNotNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { logCreate, logUpdate, logDelete, logAudit } from "./auditLogger";
@@ -313,15 +313,17 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Email account not found" });
     }
 
+    // Query all threads for this account (used by cleanup steps below)
+    const threads = await db
+      .select({ id: emailThreads.id })
+      .from(emailThreads)
+      .where(eq(emailThreads.emailAccountId, existing.id));
+
+    const threadIds = threads.map((t) => t.id);
+
     // Clean up attachment files from object storage before cascade deletes the records
     try {
-      const threads = await db
-        .select({ id: emailThreads.id })
-        .from(emailThreads)
-        .where(eq(emailThreads.emailAccountId, existing.id));
-
-      if (threads.length > 0) {
-        const threadIds = threads.map((t) => t.id);
+      if (threadIds.length > 0) {
         const attachments = await db
           .select({ storageKey: emailAttachments.storageKey })
           .from(emailAttachments)
@@ -357,25 +359,55 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       console.error("Error cleaning up email summaries:", summaryError);
     }
 
+    // Clean up unified tasks and deprecated emailTasks linked to this account's threads
+    if (threadIds.length > 0) {
+      try {
+        await db
+          .delete(tasks)
+          .where(inArray(tasks.emailThreadId, threadIds));
+      } catch (tasksError) {
+        console.error("Error cleaning up unified tasks:", tasksError);
+      }
+
+      try {
+        await db
+          .delete(emailTasks)
+          .where(inArray(emailTasks.emailThreadId, threadIds));
+      } catch (emailTasksError) {
+        console.error("Error cleaning up deprecated emailTasks:", emailTasksError);
+      }
+    }
+
     // Hard delete (cascades to emailThreads and emailMessages)
-    const [deleted] = await db
-      .delete(emailAccounts)
-      .where(eq(emailAccounts.id, req.params.id))
-      .returning();
+    try {
+      const [deleted] = await db
+        .delete(emailAccounts)
+        .where(eq(emailAccounts.id, req.params.id))
+        .returning();
 
-    // Audit log
-    await logDelete(
-      req.user.id,
-      "EMAIL_ACCOUNT",
-      deleted.id,
-      { provider: deleted.provider, emailAddress: deleted.emailAddress },
-      req
-    );
+      if (!deleted) {
+        return res.status(500).json({ error: "Failed to delete email account: no rows deleted" });
+      }
 
-    return res.json({ success: true, message: "Email account removed" });
+      // Audit log
+      await logDelete(
+        req.user.id,
+        "EMAIL_ACCOUNT",
+        deleted.id,
+        { provider: deleted.provider, emailAddress: deleted.emailAddress },
+        req
+      );
+
+      return res.json({ success: true, message: "Email account removed" });
+    } catch (deleteError) {
+      console.error("Error during account cascade delete:", deleteError);
+      const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
+      return res.status(500).json({ error: `Failed to delete email account: ${message}` });
+    }
   } catch (error) {
     console.error("Error deleting email account:", error);
-    return res.status(500).json({ error: "Failed to delete email account" });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return res.status(500).json({ error: `Failed to delete email account: ${message}` });
   }
 });
 

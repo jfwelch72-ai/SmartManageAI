@@ -220,13 +220,17 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
       toast({ title: "Account removed", description: "Email account removed" });
       queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       callbacks.onSuccess();
     },
-    onError: (_err, _id, context) => {
+    onError: (err, _id, context) => {
       if (context?.previousAccounts) {
         queryClient.setQueryData(["/api/email/accounts"], context.previousAccounts);
       }
-      toast({ title: "Delete failed", description: "Could not remove account", variant: "destructive" });
+      const message = err instanceof Error ? err.message : "Could not remove account";
+      toast({ title: "Delete failed", description: message, variant: "destructive" });
     },
   });
 }
