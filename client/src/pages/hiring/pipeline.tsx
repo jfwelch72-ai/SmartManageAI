@@ -10,7 +10,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Star } from "lucide-react";
+import { Star, Inbox } from "lucide-react";
 import { useHiringCandidates, useHiringJobs } from "@/lib/hiring-api";
 import { format } from "date-fns";
 
@@ -93,13 +93,18 @@ export default function HiringPipelinePage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
-        <div className="flex flex-col sm:flex-row gap-4 sm:overflow-x-auto pb-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="w-full sm:w-56 sm:shrink-0 space-y-2">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-28 w-full" />
-              <Skeleton className="h-28 w-full" />
+      <div className="p-4 sm:p-6">
+        <div className="mb-4 space-y-1">
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-5 w-72" />
+        </div>
+        <div className="flex gap-4 pb-4 overflow-x-auto" style={{ minHeight: "70vh" }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="space-y-3 rounded-xl bg-muted/30 p-3 min-w-[220px] flex-1">
+              <Skeleton className="h-9 w-full rounded-lg" />
+              <Skeleton className="h-24 w-full rounded-lg" />
+              <Skeleton className="h-24 w-full rounded-lg" />
+              <Skeleton className="h-24 w-full rounded-lg" />
             </div>
           ))}
         </div>
@@ -114,30 +119,42 @@ export default function HiringPipelinePage() {
         <p className="text-sm sm:text-base text-muted-foreground">Drag candidates between stages to update their status</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 sm:overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
+      <div
+        className="flex gap-3 pb-4 overflow-x-auto"
+        style={{ minHeight: "70vh" }}
+      >
         {pipelineStages.map((stage) => {
           const cols = byStage(stage.key);
           const isOver = dragOverStage === stage.key;
           return (
             <div
               key={stage.key}
-              className={`w-full sm:w-60 sm:shrink-0 flex flex-col gap-2 rounded-lg p-2 border-2 transition-colors ${isOver ? "border-primary bg-primary/5" : "border-transparent bg-muted/30"}`}
+              className={`min-w-[220px] flex-1 flex flex-col gap-2.5 rounded-xl p-3 border-2 transition-all duration-200 ${
+                isOver
+                  ? "border-primary bg-primary/5 ring-2 ring-primary/20 shadow-md"
+                  : "border-transparent bg-muted/30"
+              }`}
               onDragOver={(e) => handleDragOver(e, stage.key)}
               onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, stage.key)}
               data-testid={`column-${stage.key}`}
             >
-              <div className="flex items-center justify-between px-1">
+              <div className="flex items-center justify-between px-1 py-1">
                 <span
-                  className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                  className="text-sm font-bold px-3 py-1 rounded-full"
                   style={{ backgroundColor: `${stage.color}20`, color: stage.color }}
                 >
                   {stage.name}
                 </span>
-                <span className="text-xs text-muted-foreground">{cols.length}</span>
+                <span
+                  className="text-xs font-semibold px-2 py-0.5 rounded-full bg-background border border-border text-muted-foreground"
+                  data-testid={`badge-count-${stage.key}`}
+                >
+                  {cols.length}
+                </span>
               </div>
 
-              <div className="flex-1 space-y-2 min-h-[120px]">
+              <div className="flex-1 space-y-2.5 min-h-[120px]">
                 {cols.map((c) => {
                   const role = c.jobId ? jobsById[c.jobId]?.title : null;
                   return (
@@ -145,19 +162,20 @@ export default function HiringPipelinePage() {
                       key={c.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, c.id)}
-                      className="cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow touch-manipulation"
+                      className="cursor-grab active:cursor-grabbing active:scale-[0.98] hover:shadow-lg transition-all duration-150 overflow-hidden bg-card relative"
                       data-testid={`card-candidate-${c.id}`}
                     >
-                      <CardContent className="p-3 space-y-1.5 min-h-[44px]">
-                        <div className="flex items-center gap-2">
-                          <Avatar className="w-7 h-7 shrink-0">
-                            <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
+                      <div className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-[inherit]" style={{ backgroundColor: stage.color }} />
+                      <CardContent className="p-3.5 pl-4 space-y-2 min-h-[44px]">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar className="w-8 h-8 shrink-0">
+                            <AvatarFallback className="text-xs font-semibold bg-primary/10 text-primary">{initials(c.fullName)}</AvatarFallback>
                           </Avatar>
                           <div className="min-w-0 flex-1">
-                            <Link href={`/hiring/candidates/${c.id}`} className="font-medium text-xs hover:underline line-clamp-1 block" data-testid={`link-pipeline-candidate-${c.id}`}>
+                            <Link href={`/hiring/candidates/${c.id}`} className="font-semibold text-sm hover:underline line-clamp-1 block" data-testid={`link-pipeline-candidate-${c.id}`}>
                               {c.fullName}
                             </Link>
-                            {role && <p className="text-xs text-muted-foreground line-clamp-1">{role}</p>}
+                            {role && <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">{role}</p>}
                           </div>
                         </div>
                         {c.appliedAt && (
@@ -165,13 +183,13 @@ export default function HiringPipelinePage() {
                         )}
                         <div className="flex items-center justify-between">
                           {c.source && (
-                            <span className="text-xs bg-secondary px-1.5 py-0.5 rounded text-secondary-foreground">
+                            <span className="text-xs bg-secondary px-2 py-0.5 rounded-md text-secondary-foreground font-medium">
                               {SOURCE_SHORT[c.source] ?? c.source}
                             </span>
                           )}
                           {c.aiScore != null && (
-                            <span className="flex items-center gap-0.5 text-xs">
-                              <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                            <span className="flex items-center gap-0.5 text-xs font-medium">
+                              <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500" />
                               {c.aiScore}
                             </span>
                           )}
@@ -181,8 +199,13 @@ export default function HiringPipelinePage() {
                   );
                 })}
                 {cols.length === 0 && (
-                  <div className={`rounded-lg border-2 border-dashed p-4 text-center text-xs text-muted-foreground transition-colors ${isOver ? "border-primary" : "border-border"}`}>
-                    Drop here
+                  <div className={`flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-6 text-center transition-all duration-200 min-h-[140px] ${
+                    isOver
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border/60 text-muted-foreground"
+                  }`}>
+                    <Inbox className={`w-8 h-8 ${isOver ? "text-primary" : "text-muted-foreground/40"}`} />
+                    <span className="text-xs font-medium">Drop candidates here</span>
                   </div>
                 )}
               </div>
