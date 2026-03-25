@@ -397,17 +397,25 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
     }
 
     // Hard delete (cascades to emailThreads and emailMessages)
+    let deleted;
     try {
-      const [deleted] = await db
+      const [result] = await db
         .delete(emailAccounts)
         .where(eq(emailAccounts.id, req.params.id))
         .returning();
 
-      if (!deleted) {
+      if (!result) {
         return res.status(500).json({ error: "Failed to delete email account: no rows deleted" });
       }
+      deleted = result;
+    } catch (deleteError) {
+      console.error("Error during account cascade delete:", deleteError);
+      const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
+      return res.status(500).json({ error: `Failed to delete email account: ${message}` });
+    }
 
-      // Audit log
+    // Audit log (isolated so failures don't affect the success response)
+    try {
       await logDelete(
         req.user.id,
         "EMAIL_ACCOUNT",
@@ -415,13 +423,11 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
         { provider: deleted.provider, emailAddress: deleted.emailAddress },
         req
       );
-
-      return res.json({ success: true, message: "Email account removed" });
-    } catch (deleteError) {
-      console.error("Error during account cascade delete:", deleteError);
-      const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
-      return res.status(500).json({ error: `Failed to delete email account: ${message}` });
+    } catch (auditError) {
+      console.error("Error logging account deletion (account was already deleted):", auditError);
     }
+
+    return res.json({ success: true, message: "Email account removed" });
   } catch (error) {
     console.error("Error deleting email account:", error);
     const message = error instanceof Error ? error.message : "Unknown error";

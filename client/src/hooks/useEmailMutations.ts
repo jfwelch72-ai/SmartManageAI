@@ -218,11 +218,6 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
     },
     onSuccess: () => {
       toast({ title: "Account removed", description: "Email account removed" });
-      queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/email/tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/email/summaries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       callbacks.onSuccess();
     },
     onError: (err, _id, context) => {
@@ -231,6 +226,13 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
       }
       const message = err instanceof Error ? err.message : "Could not remove account";
       toast({ title: "Delete failed", description: message, variant: "destructive" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/email/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
     },
   });
 }
