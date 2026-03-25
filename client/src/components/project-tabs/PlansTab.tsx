@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
+import PdfPreview from "@/components/PdfPreview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
@@ -1529,26 +1530,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       </Button>
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden">
-                      {previewUrlLoading ? (
+                      {isPdf ? (
+                        <PdfPreview
+                          url={`/api/projects/${projectCode}/documents/${doc.id}/stream`}
+                          onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
+                        />
+                      ) : previewUrlLoading ? (
                         <div className="flex items-center justify-center h-full" data-testid="preview-loading">
                           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                        </div>
-                      ) : isPdf && previewUrlData?.url ? (
-                        <iframe
-                          src={previewUrlData.url}
-                          className="w-full h-full border-0"
-                          title={doc.title || doc.fileName}
-                          data-testid="preview-pdf-iframe"
-                        />
-                      ) : isPdf ? (
-                        <div className="flex items-center justify-center h-full">
-                          <div className="text-center space-y-4 p-8 max-w-sm">
-                            <File className="w-16 h-16 text-muted-foreground/40 mx-auto" />
-                            <p className="text-sm text-muted-foreground">Unable to generate preview. Open the file directly.</p>
-                            <Button variant="outline" onClick={() => handleOpenFile(doc.id, doc.fileUrl)} data-testid="button-open-pdf-fallback">
-                              <ExternalLink className="w-4 h-4 mr-2" />Open File
-                            </Button>
-                          </div>
                         </div>
                       ) : isImage ? (
                         <div className="flex items-center justify-center h-full bg-muted/20 p-4">

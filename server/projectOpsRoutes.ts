@@ -225,6 +225,41 @@ router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, asyn
   }
 });
 
+router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const [doc] = await db.select().from(planDocuments)
+      .where(and(eq(planDocuments.id, req.params.docId), eq(planDocuments.projectId, project.id)))
+      .limit(1);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+
+    const { filterFilesByPermissions } = await import("./fileAccessHelpers");
+    const permitted = await filterFilesByPermissions(
+      [doc],
+      req.user!.id,
+      req.user!.role,
+      "DOCUMENT"
+    );
+    if (permitted.length === 0) return res.status(403).json({ error: "You do not have permission to access this document" });
+
+    const storageKey = doc.objectKey || doc.fileUrl;
+    if (!storageKey) return res.status(404).json({ error: "No file associated with this document" });
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    await objectStorageService.downloadObject(objectFile, res, 3600);
+  } catch (error) {
+    console.error("Project document stream error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to stream document" });
+    }
+  }
+});
+
 router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FOREMAN"), async (req: AuthRequest, res) => {
   try {
     const validationResult = insertPlanDocumentSchema.extend({

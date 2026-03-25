@@ -2378,6 +2378,31 @@ router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (r
   }
 });
 
+router.get("/api/bids/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const [doc] = await db.select().from(bidDocuments)
+      .where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id)))
+      .limit(1);
+    if (!doc) return res.status(404).json({ error: "Document not found" });
+    const storageKey = doc.objectKey || doc.fileUrl;
+    if (!storageKey) return res.status(404).json({ error: "No file associated with this document" });
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    await objectStorageService.downloadObject(objectFile, res, 3600);
+  } catch (error) {
+    console.error("Bid document stream error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to stream document" });
+    }
+  }
+});
+
 router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
   try {
     const bid = await db.query.bids.findFirst({ where: eq(bids.code, req.params.code) });
