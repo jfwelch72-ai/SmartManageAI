@@ -41,12 +41,34 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
+function buildUrlFromQueryKey(queryKey: readonly unknown[]): string {
+  const pathParts: string[] = [];
+  const params = new URLSearchParams();
+
+  for (const part of queryKey) {
+    if (typeof part === "string" || typeof part === "number") {
+      pathParts.push(String(part));
+    } else if (part && typeof part === "object" && !Array.isArray(part)) {
+      for (const [key, value] of Object.entries(part as Record<string, unknown>)) {
+        if (value !== undefined && value !== null && value !== "") {
+          params.append(key, String(value));
+        }
+      }
+    }
+  }
+
+  const url = pathParts.join("/");
+  const qs = params.toString();
+  return qs ? `${url}?${qs}` : url;
+}
+
 export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const url = buildUrlFromQueryKey(queryKey);
+    const res = await fetch(url, {
       credentials: "include",
     });
 
@@ -55,7 +77,7 @@ export const getQueryFn: <T>(options: {
     }
 
     if (res.status === 401) {
-      handleGlobal401(queryKey.join("/"));
+      handleGlobal401(url);
     }
 
     await throwIfResNotOk(res);
@@ -69,7 +91,7 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: async ({ queryKey }) => {
-        const url = queryKey.join("/") as string;
+        const url = buildUrlFromQueryKey(queryKey);
         const res = await fetch(url, {
           credentials: "include",
         });

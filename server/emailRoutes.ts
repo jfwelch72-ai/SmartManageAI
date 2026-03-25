@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task } from "@shared/schema";
-import { eq, and, desc, gte, or, isNotNull } from "drizzle-orm";
+import { eq, and, desc, gte, or, isNotNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { logCreate, logUpdate, logDelete, logAudit } from "./auditLogger";
 import { sanitizeEmail, sanitizeText, sanitizeShortText } from "./sanitization";
@@ -1039,6 +1039,394 @@ router.get("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 });
 
+async function refreshGmailAccessToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
+  if (!account.refreshToken) {
+    throw new Error("No refresh token available for account " + account.emailAddress);
+  }
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: GMAIL_CONFIG.clientId,
+      client_secret: GMAIL_CONFIG.clientSecret,
+      refresh_token: account.refreshToken,
+      grant_type: "refresh_token",
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("Gmail token refresh failed:", errText);
+    throw new Error("Failed to refresh Gmail access token");
+  }
+
+  const data = await response.json() as { access_token: string; expires_in: number };
+
+  await db
+    .update(emailAccounts)
+    .set({
+      accessToken: data.access_token,
+      expiresAt: new Date(Date.now() + data.expires_in * 1000),
+      updatedAt: new Date(),
+    })
+    .where(eq(emailAccounts.id, account.id));
+
+  return data.access_token;
+}
+
+async function getValidGmailToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
+  if (account.accessToken && account.expiresAt && account.expiresAt.getTime() > Date.now() + 60000) {
+    return account.accessToken;
+  }
+  return refreshGmailAccessToken(account);
+}
+
+interface GmailMessagePart {
+  mimeType?: string;
+  body?: { data?: string; size?: number };
+  parts?: GmailMessagePart[];
+  headers?: { name: string; value: string }[];
+}
+
+interface GmailMessage {
+  id: string;
+  threadId: string;
+  labelIds?: string[];
+  snippet?: string;
+  payload?: GmailMessagePart & {
+    headers?: { name: string; value: string }[];
+  };
+  internalDate?: string;
+}
+
+function getGmailHeader(headers: { name: string; value: string }[] | undefined, name: string): string {
+  return headers?.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+}
+
+function decodeBase64Url(data: string): string {
+  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(base64, "base64").toString("utf-8");
+}
+
+function extractBodyFromParts(parts: GmailMessagePart[] | undefined, mimeType: string): string {
+  if (!parts) return "";
+  for (const part of parts) {
+    if (part.mimeType === mimeType && part.body?.data) {
+      return decodeBase64Url(part.body.data);
+    }
+    if (part.parts) {
+      const nested = extractBodyFromParts(part.parts, mimeType);
+      if (nested) return nested;
+    }
+  }
+  return "";
+}
+
+function parseGmailMessage(msg: GmailMessage, accountEmail: string): {
+  externalId: string;
+  threadId: string;
+  fromAddress: string;
+  fromName: string;
+  toAddresses: string;
+  ccAddresses: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+  snippet: string;
+  receivedAt: Date;
+  isIncoming: boolean;
+  hasAttachments: boolean;
+  isRead: boolean;
+} {
+  const headers = msg.payload?.headers || [];
+  const fromRaw = getGmailHeader(headers, "From");
+  const fromMatch = fromRaw.match(/^(?:"?(.+?)"?\s+)?<?([^>]+@[^>]+)>?$/);
+  const fromName = fromMatch?.[1] || "";
+  const fromAddress = fromMatch?.[2] || fromRaw;
+  const toRaw = getGmailHeader(headers, "To");
+  const ccRaw = getGmailHeader(headers, "Cc");
+  const subject = getGmailHeader(headers, "Subject") || "(No Subject)";
+
+  let bodyText = "";
+  let bodyHtml = "";
+  if (msg.payload?.body?.data) {
+    if (msg.payload.mimeType === "text/html") {
+      bodyHtml = decodeBase64Url(msg.payload.body.data);
+    } else {
+      bodyText = decodeBase64Url(msg.payload.body.data);
+    }
+  }
+  if (msg.payload?.parts) {
+    bodyText = bodyText || extractBodyFromParts(msg.payload.parts, "text/plain");
+    bodyHtml = bodyHtml || extractBodyFromParts(msg.payload.parts, "text/html");
+  }
+
+  const hasAttachments = !!(msg.payload?.parts?.some(p =>
+    p.body && p.body.size && p.body.size > 0 && p.mimeType && !p.mimeType.startsWith("text/") && !p.mimeType.startsWith("multipart/")
+  ));
+
+  const isRead = !(msg.labelIds?.includes("UNREAD"));
+  const isIncoming = !fromAddress.toLowerCase().includes(accountEmail.toLowerCase());
+
+  return {
+    externalId: msg.id,
+    threadId: msg.threadId,
+    fromAddress,
+    fromName,
+    toAddresses: JSON.stringify(toRaw ? toRaw.split(",").map(s => s.trim()) : []),
+    ccAddresses: JSON.stringify(ccRaw ? ccRaw.split(",").map(s => s.trim()) : []),
+    subject,
+    bodyText: bodyText.substring(0, 50000),
+    bodyHtml: bodyHtml.substring(0, 100000),
+    snippet: msg.snippet || "",
+    receivedAt: new Date(parseInt(msg.internalDate || "0")),
+    isIncoming,
+    hasAttachments,
+    isRead,
+  };
+}
+
+async function gmailApiFetch(url: string, account: typeof emailAccounts.$inferSelect): Promise<Response> {
+  let token = await getValidGmailToken(account);
+  let response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+  if (response.status === 401) {
+    token = await refreshGmailAccessToken(account);
+    response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  }
+
+  return response;
+}
+
+async function syncGmailAccount(
+  account: typeof emailAccounts.$inferSelect,
+  userId: string,
+): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
+  const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
+  const MAX_PAGES = 5;
+  const PAGE_SIZE = 50;
+
+  const query = account.lastSyncedAt
+    ? `after:${Math.floor(account.lastSyncedAt.getTime() / 1000)}`
+    : "newer_than:7d";
+
+  const allMessageRefs: { id: string; threadId: string }[] = [];
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    let listUrl = `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${PAGE_SIZE}`;
+    if (pageToken) {
+      listUrl += `&pageToken=${encodeURIComponent(pageToken)}`;
+    }
+
+    const listResponse = await gmailApiFetch(listUrl, account);
+
+    if (!listResponse.ok) {
+      const errText = await listResponse.text();
+      console.error("Gmail list messages failed:", errText);
+      throw new Error(`Gmail API error: ${listResponse.status}`);
+    }
+
+    const listData = await listResponse.json() as {
+      messages?: { id: string; threadId: string }[];
+      nextPageToken?: string;
+    };
+
+    if (listData.messages) {
+      allMessageRefs.push(...listData.messages);
+    }
+
+    if (!listData.nextPageToken) break;
+    pageToken = listData.nextPageToken;
+  }
+
+  if (allMessageRefs.length === 0) {
+    return result;
+  }
+
+  const candidateIds = allMessageRefs.map(m => m.id);
+  const existingMessages = await db
+    .select({ externalId: emailMessages.externalId })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.emailAccountId, account.id),
+        inArray(emailMessages.externalId, candidateIds)
+      )
+    );
+  const existingIds = new Set(existingMessages.map(m => m.externalId));
+
+  const newMessageRefs = allMessageRefs.filter(m => !existingIds.has(m.id));
+  if (newMessageRefs.length === 0) {
+    return result;
+  }
+
+  const threadMap = new Map<string, string>();
+  const messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[] = [];
+
+  for (const msgRef of newMessageRefs) {
+    try {
+      const msgResponse = await gmailApiFetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msgRef.id}?format=full`,
+        account
+      );
+
+      if (!msgResponse.ok) {
+        result.errors.push(`Failed to fetch message ${msgRef.id}: ${msgResponse.status}`);
+        continue;
+      }
+
+      const gmailMsg = await msgResponse.json() as GmailMessage;
+      const parsed = parseGmailMessage(gmailMsg, account.emailAddress);
+
+      let dbThreadId = threadMap.get(parsed.threadId);
+
+      if (!dbThreadId) {
+        const [existingThread] = await db
+          .select({ id: emailThreads.id })
+          .from(emailThreads)
+          .where(
+            and(
+              eq(emailThreads.emailAccountId, account.id),
+              eq(emailThreads.externalThreadId, parsed.threadId)
+            )
+          )
+          .limit(1);
+
+        if (existingThread) {
+          dbThreadId = existingThread.id;
+        } else {
+          const newThreadId = crypto.randomUUID();
+          await db.insert(emailThreads).values({
+            id: newThreadId,
+            organizationId: account.organizationId,
+            emailAccountId: account.id,
+            subject: parsed.subject,
+            externalThreadId: parsed.threadId,
+            status: "OPEN",
+            messageCount: 0,
+            unreadCount: 0,
+            lastMessageAt: parsed.receivedAt,
+          });
+          dbThreadId = newThreadId;
+          result.threadsCreated++;
+        }
+        threadMap.set(parsed.threadId, dbThreadId);
+      }
+
+      const newMessageId = crypto.randomUUID();
+      await db.insert(emailMessages).values({
+        id: newMessageId,
+        organizationId: account.organizationId,
+        emailAccountId: account.id,
+        threadId: dbThreadId,
+        externalId: parsed.externalId,
+        fromAddress: parsed.fromAddress,
+        fromName: parsed.fromName || null,
+        toAddresses: parsed.toAddresses,
+        ccAddresses: parsed.ccAddresses,
+        subject: parsed.subject,
+        bodyText: parsed.bodyText || null,
+        bodyHtml: parsed.bodyHtml || null,
+        snippet: parsed.snippet || null,
+        receivedAt: parsed.receivedAt,
+        isRead: parsed.isRead,
+        isIncoming: parsed.isIncoming,
+        hasAttachments: parsed.hasAttachments,
+      });
+      result.messagesImported++;
+
+      const [msgCounts] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+          maxReceivedAt: sql<Date>`max(${emailMessages.receivedAt})`,
+        })
+        .from(emailMessages)
+        .where(eq(emailMessages.threadId, dbThreadId));
+
+      await db
+        .update(emailThreads)
+        .set({
+          messageCount: msgCounts?.total ?? 1,
+          unreadCount: msgCounts?.unread ?? 1,
+          lastMessageAt: msgCounts?.maxReceivedAt ?? parsed.receivedAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailThreads.id, dbThreadId));
+
+      messagesToClassify.push({
+        messageId: newMessageId,
+        threadId: dbThreadId,
+        subject: parsed.subject,
+        bodyText: parsed.bodyText,
+        fromAddress: parsed.fromAddress,
+      });
+    } catch (err) {
+      result.errors.push(`Error processing message ${msgRef.id}: ${String(err)}`);
+    }
+  }
+
+  for (const msg of messagesToClassify) {
+    try {
+      const analysis = await analyzeEmail(msg.subject, msg.bodyText, msg.fromAddress, account.organizationId);
+
+      await db
+        .update(emailMessages)
+        .set({
+          classification: analysis.classification,
+          aiMetadata: JSON.stringify(analysis),
+          aiAnalyzedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(emailMessages.id, msg.messageId));
+
+      await db
+        .update(emailThreads)
+        .set({
+          primaryClassification: analysis.classification,
+          aiSummary: analysis.summary,
+          aiMetadata: JSON.stringify(analysis.extractedEntities),
+          updatedAt: new Date(),
+        })
+        .where(eq(emailThreads.id, msg.threadId));
+
+      const matchedEntities = await matchEmailToEntities(analysis, account.organizationId);
+      if (matchedEntities.projectId || matchedEntities.bidId || matchedEntities.vendorId) {
+        await db
+          .update(emailThreads)
+          .set({
+            projectId: matchedEntities.projectId || undefined,
+            bidId: matchedEntities.bidId || undefined,
+            vendorId: matchedEntities.vendorId || undefined,
+          })
+          .where(eq(emailThreads.id, msg.threadId));
+      }
+
+      await createTaskFromEmail(
+        analysis,
+        msg.messageId,
+        msg.threadId,
+        account.organizationId,
+        userId,
+        matchedEntities,
+      );
+    } catch (err) {
+      console.error(`AI classification failed for message ${msg.messageId}:`, err);
+    }
+  }
+
+  if (result.errors.length === 0 || result.messagesImported > 0) {
+    await db
+      .update(emailAccounts)
+      .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+      .where(eq(emailAccounts.id, account.id));
+  }
+
+  return result;
+}
+
 router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -1069,18 +1457,45 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
       });
     }
 
+    const syncResults: { account: string; messagesImported: number; threadsCreated: number; errors: string[] }[] = [];
+
     for (const account of accounts) {
-      await db
-        .update(emailAccounts)
-        .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
-        .where(eq(emailAccounts.id, account.id));
+      try {
+        if (account.provider === "GMAIL") {
+          const accountResult = await syncGmailAccount(account, req.user.id);
+          syncResults.push({
+            account: account.emailAddress,
+            ...accountResult,
+          });
+        } else {
+          syncResults.push({
+            account: account.emailAddress,
+            messagesImported: 0,
+            threadsCreated: 0,
+            errors: [`Provider ${account.provider} sync not yet implemented`],
+          });
+        }
+      } catch (err) {
+        console.error(`Sync failed for account ${account.emailAddress}:`, err);
+        syncResults.push({
+          account: account.emailAddress,
+          messagesImported: 0,
+          threadsCreated: 0,
+          errors: [String(err)],
+        });
+      }
     }
+
+    const totalMessages = syncResults.reduce((sum, r) => sum + r.messagesImported, 0);
+    const totalThreads = syncResults.reduce((sum, r) => sum + r.threadsCreated, 0);
 
     return res.json({
       success: true,
-      message: `Email sync triggered for ${accounts.length} account(s)`,
+      message: `Synced ${totalMessages} message(s) across ${accounts.length} account(s)`,
       accountsProcessed: accounts.length,
-      note: "Full email ingestion requires provider-specific implementation (Gmail API, MS Graph, IMAP)"
+      totalMessagesImported: totalMessages,
+      totalThreadsCreated: totalThreads,
+      details: syncResults,
     });
   } catch (error) {
     console.error("Error syncing emails:", error);
