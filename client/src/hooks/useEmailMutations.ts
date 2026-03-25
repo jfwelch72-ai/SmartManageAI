@@ -206,7 +206,11 @@ export function useDeleteAccount(callbacks: { onSuccess: () => void }) {
   return useMutation({
     mutationFn: async (id: string) => {
       const res = await apiRequest("DELETE", `/api/email/accounts/${id}`);
-      return res.json();
+      const body = await res.json();
+      if (body.success !== true) {
+        throw new Error(body.error || "Deletion failed on the server");
+      }
+      return body;
     },
     onMutate: async (id: string) => {
       await queryClient.cancelQueries({ queryKey: ["/api/email/accounts"] });

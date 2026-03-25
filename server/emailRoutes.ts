@@ -331,16 +331,15 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       return res.status(404).json({ error: "Email account not found" });
     }
 
-    // Query all threads for this account (used by cleanup steps below)
-    const threads = await db
-      .select({ id: emailThreads.id })
-      .from(emailThreads)
-      .where(eq(emailThreads.emailAccountId, existing.id));
-
-    const threadIds = threads.map((t) => t.id);
-
-    // Clean up attachment files from object storage before cascade deletes the records
+    // Clean up attachment files from object storage before the DB transaction
+    // (non-critical: failures here are logged but don't block account deletion)
     try {
+      const threads = await db
+        .select({ id: emailThreads.id })
+        .from(emailThreads)
+        .where(eq(emailThreads.emailAccountId, existing.id));
+      const threadIds = threads.map((t) => t.id);
+
       if (threadIds.length > 0) {
         const attachments = await db
           .select({ storageKey: emailAttachments.storageKey })
@@ -363,49 +362,46 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
       console.error("Error cleaning up attachment files from object storage:", storageError);
     }
 
-    // Clean up email summaries for this user/org
-    try {
-      await db
-        .delete(emailSummaries)
-        .where(
-          and(
-            eq(emailSummaries.userId, existing.userId),
-            eq(emailSummaries.organizationId, existing.organizationId)
-          )
-        );
-    } catch (summaryError) {
-      console.error("Error cleaning up email summaries:", summaryError);
-    }
-
-    // Clean up unified tasks and deprecated emailTasks linked to this account's threads
-    if (threadIds.length > 0) {
-      try {
-        await db
-          .delete(tasks)
-          .where(inArray(tasks.emailThreadId, threadIds));
-      } catch (tasksError) {
-        console.error("Error cleaning up unified tasks:", tasksError);
-      }
-
-      try {
-        await db
-          .delete(emailTasks)
-          .where(inArray(emailTasks.emailThreadId, threadIds));
-      } catch (emailTasksError) {
-        console.error("Error cleaning up deprecated emailTasks:", emailTasksError);
-      }
-    }
-
-    // Explicitly delete dependent rows in a transaction (don't rely on DB cascades which may not exist)
+    // Delete ALL dependent rows inside a single transaction so failures roll back cleanly
+    // Order: tasks → emailTasks → summaries → attachments → messages → threads → account
     let deleted;
     try {
       deleted = await db.transaction(async (tx) => {
+        const threads = await tx
+          .select({ id: emailThreads.id })
+          .from(emailThreads)
+          .where(eq(emailThreads.emailAccountId, existing.id));
+        const threadIds = threads.map((t) => t.id);
+
         if (threadIds.length > 0) {
-          const messageIds = await tx
+          // 1. Delete unified tasks linked to this account's threads
+          await tx
+            .delete(tasks)
+            .where(inArray(tasks.emailThreadId, threadIds));
+
+          // 2. Delete deprecated emailTasks linked to this account's threads
+          await tx
+            .delete(emailTasks)
+            .where(inArray(emailTasks.emailThreadId, threadIds));
+        }
+
+        // 3. Delete email summaries for this user/org
+        await tx
+          .delete(emailSummaries)
+          .where(
+            and(
+              eq(emailSummaries.userId, existing.userId),
+              eq(emailSummaries.organizationId, existing.organizationId)
+            )
+          );
+
+        if (threadIds.length > 0) {
+          // 4. Delete attachments for messages in these threads
+          const messageRows = await tx
             .select({ id: emailMessages.id })
             .from(emailMessages)
             .where(inArray(emailMessages.threadId, threadIds));
-          const msgIds = messageIds.map((m) => m.id);
+          const msgIds = messageRows.map((m) => m.id);
 
           if (msgIds.length > 0) {
             await tx
@@ -413,33 +409,66 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
               .where(inArray(emailAttachments.emailMessageId, msgIds));
           }
 
+          // 5. Delete messages by thread
           await tx
             .delete(emailMessages)
             .where(inArray(emailMessages.threadId, threadIds));
         }
 
+        // 6. Delete any remaining messages by account (catch-all)
         await tx
           .delete(emailMessages)
           .where(eq(emailMessages.emailAccountId, existing.id));
 
+        // 7. Delete threads
         await tx
           .delete(emailThreads)
           .where(eq(emailThreads.emailAccountId, existing.id));
 
+        // 8. Delete the account itself
         const [result] = await tx
           .delete(emailAccounts)
-          .where(eq(emailAccounts.id, req.params.id))
+          .where(eq(emailAccounts.id, existing.id))
           .returning();
 
         if (!result) {
-          throw new Error("No rows deleted");
+          throw new Error("Account delete returned no rows — record may have already been removed");
         }
         return result;
       });
     } catch (deleteError) {
-      console.error("Error during account delete:", deleteError);
+      console.error("Error during account delete transaction:", deleteError);
       const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
-      return res.status(500).json({ error: `Failed to delete email account: ${message}` });
+      return res.status(500).json({ success: false, error: `Failed to delete email account: ${message}` });
+    }
+
+    // Post-delete verification: confirm the account is actually gone
+    const [stillExists] = await db
+      .select({ id: emailAccounts.id })
+      .from(emailAccounts)
+      .where(eq(emailAccounts.id, existing.id))
+      .limit(1);
+
+    if (stillExists) {
+      const remainingThreads = await db.select({ id: emailThreads.id }).from(emailThreads).where(eq(emailThreads.emailAccountId, existing.id));
+      const remainingThreadIds = remainingThreads.map((t) => t.id);
+      const [messageCount] = await db.select({ count: sql<number>`count(*)` }).from(emailMessages).where(eq(emailMessages.emailAccountId, existing.id));
+      let taskCount = 0, emailTaskCount = 0, attachmentCount = 0;
+      if (remainingThreadIds.length > 0) {
+        const [tc] = await db.select({ count: sql<number>`count(*)` }).from(tasks).where(inArray(tasks.emailThreadId, remainingThreadIds));
+        taskCount = tc?.count ?? 0;
+        const [etc] = await db.select({ count: sql<number>`count(*)` }).from(emailTasks).where(inArray(emailTasks.emailThreadId, remainingThreadIds));
+        emailTaskCount = etc?.count ?? 0;
+        const msgRows = await db.select({ id: emailMessages.id }).from(emailMessages).where(inArray(emailMessages.threadId, remainingThreadIds));
+        const msgIds = msgRows.map((m) => m.id);
+        if (msgIds.length > 0) {
+          const [ac] = await db.select({ count: sql<number>`count(*)` }).from(emailAttachments).where(inArray(emailAttachments.emailMessageId, msgIds));
+          attachmentCount = ac?.count ?? 0;
+        }
+      }
+      const [summaryCount] = await db.select({ count: sql<number>`count(*)` }).from(emailSummaries).where(and(eq(emailSummaries.userId, existing.userId), eq(emailSummaries.organizationId, existing.organizationId)));
+      console.error(`Post-delete verification failed: account ${existing.id} still exists after transaction. Remaining rows — threads: ${remainingThreadIds.length}, messages: ${messageCount?.count ?? 0}, tasks: ${taskCount}, emailTasks: ${emailTaskCount}, attachments: ${attachmentCount}, summaries: ${summaryCount?.count ?? 0}`);
+      return res.status(500).json({ success: false, error: "Email account deletion appeared to succeed but the record still exists. Please try again." });
     }
 
     // Audit log (isolated so failures don't affect the success response)
@@ -459,7 +488,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
   } catch (error) {
     console.error("Error deleting email account:", error);
     const message = error instanceof Error ? error.message : "Unknown error";
-    return res.status(500).json({ error: `Failed to delete email account: ${message}` });
+    return res.status(500).json({ success: false, error: `Failed to delete email account: ${message}` });
   }
 });
 
