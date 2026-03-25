@@ -67,7 +67,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -143,12 +145,29 @@ interface MaterialBudgetSummary {
   alertsTriggered: number;
 }
 
+type TabGroup = "General" | "Field Operations" | "Documents & Communication" | "Resources & Workforce" | "Financial" | "AI & Access";
+
+const TAB_GROUP_ORDER: TabGroup[] = [
+  "General",
+  "Field Operations",
+  "Documents & Communication",
+  "Resources & Workforce",
+  "Financial",
+  "AI & Access",
+];
+
 interface TabConfig {
   value: string;
   label: string;
   icon: LucideIcon;
   badge?: number;
   visible: boolean;
+  group: TabGroup;
+}
+
+interface TabGroupEntry {
+  group: TabGroup;
+  tabs: TabConfig[];
 }
 
 function buildTabConfigs(
@@ -161,108 +180,126 @@ function buildTabConfigs(
       label: "Overview",
       icon: LayoutDashboard,
       visible: true,
+      group: "General",
+    },
+    {
+      value: "job-info",
+      label: "Job Info",
+      icon: Info,
+      visible: true,
+      group: "General",
     },
     {
       value: "scope",
       label: "Scope & Progress",
       icon: ListChecks,
       visible: true,
+      group: "General",
     },
-    { value: "materials", label: "Materials", icon: Package, visible: true },
-    { value: "schedule", label: "Schedule", icon: CalendarIcon, visible: true },
-    { value: "delays", label: "Delays", icon: CloudRain, visible: true },
     {
-      value: "inspections",
-      label: "Inspections",
-      icon: CalendarCheck,
+      value: "schedule",
+      label: "Schedule",
+      icon: CalendarIcon,
       visible: true,
-    },
-    {
-      value: "jobsite-ai",
-      label: "AI Jobsite",
-      icon: Bot,
-      visible: hasManagementAccess(userRole),
-    },
-    {
-      value: "email-communications",
-      label: "Email",
-      icon: Mail,
-      visible: hasManagementAccess(userRole),
+      group: "General",
     },
     {
       value: "daily-notes",
       label: "Daily Notes",
       icon: NotebookPen,
       visible: true,
-    },
-    { value: "media", label: "Photos & Videos", icon: Camera, visible: true },
-    {
-      value: "estimate",
-      label: "Estimate",
-      icon: Calculator,
-      visible: FeaturePermissions.VIEW_ESTIMATES_TAB(userRole),
+      group: "Field Operations",
     },
     {
-      value: "procurement",
-      label: "Procurement",
-      icon: ShoppingCart,
-      visible: FeaturePermissions.VIEW_PROCUREMENT_TAB(userRole),
-    },
-    { value: "plans", label: "Plans & Takeoff", icon: Ruler, visible: true },
-    {
-      value: "time",
-      label: "Time & T&M",
-      icon: Clock,
-      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
+      value: "delays",
+      label: "Delays",
+      icon: CloudRain,
+      visible: true,
+      group: "Field Operations",
     },
     {
-      value: "labor",
-      label: "Labor",
-      icon: HardHat,
-      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
+      value: "inspections",
+      label: "Inspections",
+      icon: CalendarCheck,
+      visible: true,
+      group: "Field Operations",
     },
     {
-      value: "subcontractors",
-      label: "Subcontractors",
-      icon: Users,
-      visible: FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(userRole),
-    },
-    { value: "job-info", label: "Job Info", icon: Info, visible: true },
-    {
-      value: "payroll",
-      label: "Payroll",
-      icon: Banknote,
+      value: "punch-list",
+      label: "Punch List",
+      icon: ClipboardList,
       visible: hasManagementAccess(userRole),
+      group: "Field Operations",
     },
     {
-      value: "equipment",
-      label: "Equipment",
-      icon: Truck,
-      visible: FeaturePermissions.VIEW_EQUIPMENT(userRole),
+      value: "email-communications",
+      label: "Email",
+      icon: Mail,
+      visible: hasManagementAccess(userRole),
+      group: "Documents & Communication",
     },
     {
       value: "rfis",
       label: "RFIs",
       icon: HelpCircle,
       visible: hasManagementAccess(userRole),
-    },
-    {
-      value: "transmittals",
-      label: "Transmittals",
-      icon: Send,
-      visible: hasManagementAccess(userRole),
+      group: "Documents & Communication",
     },
     {
       value: "submittals",
       label: "Submittals",
       icon: FileCheck,
       visible: hasManagementAccess(userRole),
+      group: "Documents & Communication",
     },
     {
-      value: "portal-access",
-      label: "Portal Access",
-      icon: ExternalLink,
+      value: "transmittals",
+      label: "Transmittals",
+      icon: Send,
       visible: hasManagementAccess(userRole),
+      group: "Documents & Communication",
+    },
+    {
+      value: "plans",
+      label: "Plans & Takeoff",
+      icon: Ruler,
+      visible: true,
+      group: "Documents & Communication",
+    },
+    {
+      value: "media",
+      label: "Photos & Videos",
+      icon: Camera,
+      visible: true,
+      group: "Documents & Communication",
+    },
+    {
+      value: "time",
+      label: "Time & T&M",
+      icon: Clock,
+      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
+      group: "Resources & Workforce",
+    },
+    {
+      value: "labor",
+      label: "Labor",
+      icon: HardHat,
+      visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
+      group: "Resources & Workforce",
+    },
+    {
+      value: "equipment",
+      label: "Equipment",
+      icon: Truck,
+      visible: FeaturePermissions.VIEW_EQUIPMENT(userRole),
+      group: "Resources & Workforce",
+    },
+    {
+      value: "subcontractors",
+      label: "Subcontractors",
+      icon: Users,
+      visible: FeaturePermissions.VIEW_SUBCONTRACTORS_TAB(userRole),
+      group: "Resources & Workforce",
     },
     {
       value: "project-financials",
@@ -274,20 +311,69 @@ function buildTabConfigs(
         FeaturePermissions.VIEW_CHANGE_ORDERS_TAB(userRole) ||
         canAccessSOV ||
         FeaturePermissions.VIEW_RECEIPTS_TAB(userRole),
+      group: "Financial",
     },
     {
-      value: "punch-list",
-      label: "Punch List",
-      icon: ClipboardList,
+      value: "estimate",
+      label: "Estimate",
+      icon: Calculator,
+      visible: FeaturePermissions.VIEW_ESTIMATES_TAB(userRole),
+      group: "Financial",
+    },
+    {
+      value: "payroll",
+      label: "Payroll",
+      icon: Banknote,
       visible: hasManagementAccess(userRole),
+      group: "Financial",
+    },
+    {
+      value: "procurement",
+      label: "Procurement",
+      icon: ShoppingCart,
+      visible: FeaturePermissions.VIEW_PROCUREMENT_TAB(userRole),
+      group: "Financial",
+    },
+    {
+      value: "materials",
+      label: "Materials",
+      icon: Package,
+      visible: true,
+      group: "Financial",
+    },
+    {
+      value: "jobsite-ai",
+      label: "AI Jobsite",
+      icon: Bot,
+      visible: hasManagementAccess(userRole),
+      group: "AI & Access",
+    },
+    {
+      value: "portal-access",
+      label: "Portal Access",
+      icon: ExternalLink,
+      visible: hasManagementAccess(userRole),
+      group: "AI & Access",
     },
     {
       value: "warranty",
       label: "Warranty",
       icon: ShieldCheck,
       visible: hasManagementAccess(userRole),
+      group: "AI & Access",
     },
   ];
+}
+
+function groupTabs(tabs: TabConfig[]): TabGroupEntry[] {
+  const grouped: TabGroupEntry[] = [];
+  for (const groupName of TAB_GROUP_ORDER) {
+    const groupTabs = tabs.filter((t) => t.group === groupName);
+    if (groupTabs.length > 0) {
+      grouped.push({ group: groupName, tabs: groupTabs });
+    }
+  }
+  return grouped;
 }
 
 export default function ProjectDetailPage() {
@@ -348,6 +434,7 @@ export default function ProjectDetailPage() {
     canAccessFinancialsPerms === true;
   const tabConfigs = buildTabConfigs(user?.role, canAccessSOV);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
+  const groupedTabs = groupTabs(visibleTabs);
 
   const financialSubTabMap: Record<string, string> = {
     "financials": "live-financials",
@@ -555,35 +642,47 @@ export default function ProjectDetailPage() {
                 <SelectValue placeholder="Select tab" />
               </SelectTrigger>
               <SelectContent>
-                {visibleTabs.map((tab) => (
-                  <SelectItem key={tab.value} value={tab.value}>
-                    {tab.label} {tab.badge ? `(${tab.badge})` : ""}
-                  </SelectItem>
+                {groupedTabs.map((entry) => (
+                  <SelectGroup key={entry.group}>
+                    <SelectLabel data-testid={`select-group-${entry.group}`}>{entry.group}</SelectLabel>
+                    {entry.tabs.map((tab) => (
+                      <SelectItem key={tab.value} value={tab.value}>
+                        {tab.label} {tab.badge ? `(${tab.badge})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <TabsList className="hidden lg:flex flex-wrap gap-1 h-auto w-full justify-start p-1">
-            {visibleTabs.map((tab) => {
-              const IconComp = tab.icon;
-              return (
-                <TabsTrigger
-                  key={tab.value}
-                  value={tab.value}
-                  data-testid={`tab-${tab.value}`}
-                >
-                  <IconComp className="h-4 w-4 mr-1" />
-                  {tab.label}
-                  {tab.badge !== undefined && (
-                    <Badge className="ml-2" variant="secondary">
-                      {tab.badge}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-              );
-            })}
-          </TabsList>
+          <div className="hidden lg:flex flex-col gap-1 w-full rounded-md bg-muted p-1">
+            {groupedTabs.map((entry) => (
+              <TabsList key={entry.group} className="flex flex-wrap gap-1 h-auto w-full justify-start p-0 bg-transparent" data-testid={`tab-group-${entry.group}`}>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 shrink-0 select-none flex items-center">
+                  {entry.group}
+                </span>
+                {entry.tabs.map((tab) => {
+                  const IconComp = tab.icon;
+                  return (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      data-testid={`tab-${tab.value}`}
+                    >
+                      <IconComp className="h-4 w-4 mr-1" />
+                      {tab.label}
+                      {tab.badge !== undefined && (
+                        <Badge className="ml-2" variant="secondary">
+                          {tab.badge}
+                        </Badge>
+                      )}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+            ))}
+          </div>
 
           <TabsContent value="overview" className="space-y-6">
             <OverviewTab
