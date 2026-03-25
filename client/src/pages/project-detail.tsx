@@ -25,13 +25,11 @@ import {
   Clock,
   LayoutDashboard,
   ListChecks,
-  FileEdit,
   Bot,
   NotebookPen,
   Camera,
   Calculator,
   ShoppingCart,
-  Receipt,
   Info,
   Banknote,
   HardHat,
@@ -45,15 +43,11 @@ import {
   FileCheck,
   ExternalLink,
   Users,
-  TrendingUp,
   DollarSign,
-  BarChart3,
   ClipboardList,
   ShieldCheck,
   CheckCircle2,
   XCircle,
-  ChevronDown,
-  FileSpreadsheet,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -81,24 +75,19 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import ChangeOrdersTab from "@/components/project-tabs/ChangeOrdersTab";
 import OverviewTab from "@/components/project-tabs/OverviewTab";
 import SubcontractorsTab from "@/components/project-tabs/SubcontractorsTab";
 import LaborTab from "@/components/project-tabs/LaborTab";
 import PlansTab from "@/components/project-tabs/PlansTab";
 import ProcurementTab from "@/components/project-tabs/ProcurementTab";
-import ReceiptsTab from "@/components/project-tabs/ReceiptsTab";
 import MediaTab from "@/components/project-tabs/MediaTab";
 import TimeTab from "@/components/project-tabs/TimeTab";
 import ProjectEmailTab from "@/components/project-tabs/ProjectEmailTab";
 import ProjectPayrollTab from "@/components/project-tabs/ProjectPayrollTab";
 import ProjectEquipmentTab from "@/components/project-tabs/ProjectEquipmentTab";
-import ProfitabilityTab from "@/components/project-tabs/ProfitabilityTab";
-import BudgetTab from "@/components/project-tabs/BudgetTab";
-import CostLedgerTab from "@/components/project-tabs/CostLedgerTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
-import SovTab from "@/components/project-tabs/SovTab";
+import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { LucideIcon } from "lucide-react";
 
@@ -164,7 +153,6 @@ interface TabConfig {
 
 function buildTabConfigs(
   userRole: string | undefined,
-  submittedCOCount: number,
   canAccessSOV: boolean,
 ): TabConfig[] {
   return [
@@ -181,13 +169,6 @@ function buildTabConfigs(
       visible: true,
     },
     { value: "materials", label: "Materials", icon: Package, visible: true },
-    {
-      value: "change-orders",
-      label: "Change Orders",
-      icon: FileEdit,
-      badge: submittedCOCount > 0 ? submittedCOCount : undefined,
-      visible: true,
-    },
     { value: "schedule", label: "Schedule", icon: CalendarIcon, visible: true },
     { value: "delays", label: "Delays", icon: CloudRain, visible: true },
     {
@@ -241,12 +222,6 @@ function buildTabConfigs(
       visible: FeaturePermissions.VIEW_TIME_ENTRIES_TAB(userRole),
     },
     {
-      value: "receipts",
-      label: "Receipts",
-      icon: Receipt,
-      visible: FeaturePermissions.VIEW_RECEIPTS_TAB(userRole),
-    },
-    {
       value: "subcontractors",
       label: "Subcontractors",
       icon: Users,
@@ -290,28 +265,15 @@ function buildTabConfigs(
       visible: hasManagementAccess(userRole),
     },
     {
-      value: "budget",
-      label: "Budget",
+      value: "project-financials",
+      label: "Financials",
       icon: DollarSign,
-      visible: FeaturePermissions.VIEW_BUDGET_TAB(userRole),
-    },
-    {
-      value: "cost-ledger",
-      label: "Cost Ledger",
-      icon: BarChart3,
-      visible: hasFinancialAccess(userRole),
-    },
-    {
-      value: "financials",
-      label: "Live Financials",
-      icon: TrendingUp,
-      visible: hasFinancialAccess(userRole),
-    },
-    {
-      value: "sov",
-      label: "Schedule of Values",
-      icon: FileSpreadsheet,
-      visible: canAccessSOV,
+      visible:
+        FeaturePermissions.VIEW_BUDGET_TAB(userRole) ||
+        hasFinancialAccess(userRole) ||
+        FeaturePermissions.VIEW_CHANGE_ORDERS_TAB(userRole) ||
+        canAccessSOV ||
+        FeaturePermissions.VIEW_RECEIPTS_TAB(userRole),
     },
     {
       value: "punch-list",
@@ -331,6 +293,7 @@ function buildTabConfigs(
 export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
+  const [financialSubTab, setFinancialSubTab] = useState("live-financials");
   const [, params] = useRoute("/projects/:code");
   const { user } = useAuth();
   const { toast } = useToast();
@@ -377,17 +340,32 @@ export default function ProjectDetailPage() {
     enabled: !!project?.id,
   });
 
-  const submittedCOCount = changeOrders.filter(
-    (co) => co.status === "SUBMITTED",
-  ).length;
   const canAccessSOV =
     user?.role === "ADMIN" ||
     user?.role === "MANAGER" ||
     user?.role === "SUPERINTENDENT" ||
     user?.role === "OFFICE_MANAGER" ||
     canAccessFinancialsPerms === true;
-  const tabConfigs = buildTabConfigs(user?.role, submittedCOCount, canAccessSOV);
+  const tabConfigs = buildTabConfigs(user?.role, canAccessSOV);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
+
+  const financialSubTabMap: Record<string, string> = {
+    "financials": "live-financials",
+    "budget": "budget",
+    "cost-ledger": "cost-ledger",
+    "change-orders": "change-orders",
+    "sov": "sov",
+    "receipts": "receipts",
+  };
+
+  const handleSetActiveTab = (tab: string) => {
+    if (tab in financialSubTabMap) {
+      setActiveTab("project-financials");
+      setFinancialSubTab(financialSubTabMap[tab]);
+    } else {
+      setActiveTab(tab);
+    }
+  };
 
   const { data: closeoutReadiness } = useQuery<{
     openPunchListItems: number;
@@ -529,7 +507,7 @@ export default function ProjectDetailPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setActiveTab("financials")}
+                  onClick={() => handleSetActiveTab("financials")}
                   data-testid="button-go-to-financials"
                 >
                   Set Up Financials
@@ -556,7 +534,7 @@ export default function ProjectDetailPage() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setActiveTab("materials")}
+                onClick={() => handleSetActiveTab("materials")}
                 data-testid="button-view-materials-alert"
               >
                 <Package className="h-4 w-4 mr-2" />
@@ -568,11 +546,11 @@ export default function ProjectDetailPage() {
 
         <Tabs
           value={activeTab}
-          onValueChange={setActiveTab}
+          onValueChange={handleSetActiveTab}
           className="space-y-6"
         >
           <div className="lg:hidden">
-            <Select value={activeTab} onValueChange={setActiveTab}>
+            <Select value={activeTab} onValueChange={handleSetActiveTab}>
               <SelectTrigger className="w-full" data-testid="select-tab-mobile">
                 <SelectValue placeholder="Select tab" />
               </SelectTrigger>
@@ -614,7 +592,7 @@ export default function ProjectDetailPage() {
               changeOrders={changeOrders}
               financials={financials}
               financialsLoading={financialsLoading}
-              setActiveTab={setActiveTab}
+              setActiveTab={handleSetActiveTab}
             />
           </TabsContent>
 
@@ -638,18 +616,6 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               projectCode={projectCode}
               scopeItems={scopeItems}
-            />
-          </TabsContent>
-
-          <TabsContent value="change-orders">
-            <ChangeOrdersTab
-              changeOrders={changeOrders}
-              projectCode={projectCode}
-              projectId={project.id}
-              projectName={project.name}
-              clientName={project.clientName}
-              isLoading={changeOrdersLoading}
-              userRole={user?.role || ""}
             />
           </TabsContent>
 
@@ -729,10 +695,6 @@ export default function ProjectDetailPage() {
             />
           </TabsContent>
 
-          <TabsContent value="receipts">
-            <ReceiptsTab projectCode={projectCode} project={project} />
-          </TabsContent>
-
           <TabsContent value="subcontractors">
             <SubcontractorsTab projectCode={projectCode} />
           </TabsContent>
@@ -809,26 +771,17 @@ export default function ProjectDetailPage() {
             </Tabs>
           </TabsContent>
 
-          <TabsContent value="budget">
-            <BudgetTab
+          <TabsContent value="project-financials">
+            <FinancialsTab
+              project={project}
               projectCode={projectCode}
               userRole={user?.role || ""}
-              projectBudget={Number(
-                project.budget || project.contractAmount || 0,
-              )}
+              changeOrders={changeOrders}
+              changeOrdersLoading={changeOrdersLoading}
+              canAccessSOV={canAccessSOV}
+              activeSubTab={financialSubTab}
+              onSubTabChange={setFinancialSubTab}
             />
-          </TabsContent>
-
-          <TabsContent value="cost-ledger">
-            <CostLedgerTab projectCode={projectCode} />
-          </TabsContent>
-
-          <TabsContent value="financials">
-            <ProfitabilityTab projectCode={project.code} />
-          </TabsContent>
-
-          <TabsContent value="sov">
-            <SovTab projectId={project.id} projectCode={project.code} />
           </TabsContent>
 
           <TabsContent value="punch-list">
