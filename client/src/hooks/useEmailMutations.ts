@@ -2,6 +2,20 @@ import { useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+function extractErrorMessage(error: any, fallback: string): string {
+  const msg = error?.message || "";
+  const jsonMatch = msg.match(/^\d+:\s*(.+)$/s);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1]);
+      return parsed.message || parsed.error || fallback;
+    } catch {
+      return jsonMatch[1].substring(0, 200) || fallback;
+    }
+  }
+  return msg || fallback;
+}
+
 export interface EmailSummaryDigest {
   periodDescription: string;
   totalEmails: number;
@@ -19,11 +33,28 @@ export function useSyncEmails(refetchThreads: () => void) {
       return res.json();
     },
     onSuccess: (data: any) => {
-      toast({ title: "Sync completed", description: data.message });
+      const details = data.details as { account: string; errors: string[] }[] | undefined;
+      const accountErrors = details?.filter((d: any) => d.errors?.length > 0) || [];
+      if (accountErrors.length > 0) {
+        const errorSummary = accountErrors
+          .map((d: any) => `${d.account}: ${d.errors[0]}`)
+          .join("; ");
+        toast({ 
+          title: "Sync completed with issues", 
+          description: errorSummary.substring(0, 200),
+          variant: "destructive"
+        });
+      } else {
+        toast({ title: "Sync completed", description: data.message });
+      }
       refetchThreads();
     },
-    onError: () => {
-      toast({ title: "Sync failed", description: "Could not sync emails", variant: "destructive" });
+    onError: (error: any) => {
+      toast({ 
+        title: "Sync failed", 
+        description: extractErrorMessage(error, "Could not sync emails"), 
+        variant: "destructive" 
+      });
     },
   });
 }
@@ -87,7 +118,62 @@ export function useCreateAccount(callbacks: { onSuccess: () => void }) {
     onError: (error: any) => {
       toast({ 
         title: "Failed to add account", 
-        description: error.message || "Could not link email account", 
+        description: extractErrorMessage(error, "Could not link email account"), 
+        variant: "destructive" 
+      });
+    },
+  });
+}
+
+export function useTestAccount() {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/email/accounts/${id}/test`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ 
+        title: "Connection test passed", 
+        description: data.message || "Successfully connected to mail server"
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Connection test failed", 
+        description: extractErrorMessage(error, "Could not connect to mail server. Check your settings."),
+        variant: "destructive" 
+      });
+    },
+  });
+}
+
+export function useSendEmail() {
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (data: {
+      accountId: string;
+      to: string;
+      cc?: string;
+      bcc?: string;
+      subject: string;
+      text?: string;
+      html?: string;
+      inReplyTo?: string;
+      references?: string;
+      replyToMessageId?: string;
+    }) => {
+      const res = await apiRequest("POST", "/api/email/send", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Email sent", description: "Your message was sent successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/email/threads"] });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Send failed", 
+        description: extractErrorMessage(error, "Could not send email. Check your SMTP settings."),
         variant: "destructive" 
       });
     },

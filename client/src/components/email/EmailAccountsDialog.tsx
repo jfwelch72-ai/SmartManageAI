@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  Wifi,
 } from "lucide-react";
 import { SiGmail } from "react-icons/si";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useCreateAccount, useToggleAccount, useDeleteAccount } from "@/hooks/useEmailMutations";
+import { useCreateAccount, useToggleAccount, useDeleteAccount, useTestAccount } from "@/hooks/useEmailMutations";
 import type { EmailAccount } from "./shared";
 
 interface EmailAccountsDialogProps {
@@ -90,6 +91,7 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
     },
   });
 
+  const testAccountMutation = useTestAccount();
   const toggleAccountMutation = useToggleAccount();
   const deleteAccountMutation = useDeleteAccount({
     onSuccess: () => setDeleteAccountId(null),
@@ -206,6 +208,21 @@ export function EmailAccountsDialog({ accounts, accountsLoading }: EmailAccounts
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => testAccountMutation.mutate(account.id)}
+                          disabled={testAccountMutation.isPending}
+                          title="Test connection"
+                          data-testid={`button-test-account-${account.id}`}
+                        >
+                          {testAccountMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Wifi className="h-4 w-4" />
+                          )}
+                        </Button>
                         <Switch
                           checked={account.isActive}
                           onCheckedChange={(checked) => 

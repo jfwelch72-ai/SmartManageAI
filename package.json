@@ -99,6 +99,7 @@
     "file-type": "^21.3.3",
     "framer-motion": "^11.13.1",
     "helmet": "^8.1.0",
+    "imapflow": "^1.2.17",
     "input-otp": "^1.4.2",
     "jsonwebtoken": "^9.0.2",
     "konva": "^9.3.22",

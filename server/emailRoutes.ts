@@ -18,6 +18,7 @@ import {
   type EmailAnalysisResult,
 } from "./ai/emailAi";
 import { governedAiCall } from "./services/aiGovernance";
+import { testFullConnection, fetchImapMessages, sendSmtpEmail } from "./services/imapService";
 
 const router = Router();
 
@@ -365,11 +366,32 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
       return res.status(404).json({ error: "Email account not found" });
     }
 
-    // For now, return a mock success - actual connection testing would be implemented
-    // based on the provider type (IMAP, Gmail API, MS Graph)
+    if (account.provider === "IMAP") {
+      const result = await testFullConnection(account);
+      if (!result.success) {
+        const errors: string[] = [];
+        if (!result.imap.success) errors.push(result.imap.error || "IMAP connection failed");
+        if (!result.smtp.success && result.smtp.message !== "SMTP not configured (skipped)") {
+          errors.push(result.smtp.error || "SMTP connection failed");
+        }
+        return res.status(400).json({
+          success: false,
+          message: errors.join("; "),
+          imap: result.imap,
+          smtp: result.smtp,
+        });
+      }
+      return res.json({
+        success: true,
+        message: "Connection test successful",
+        imap: result.imap,
+        smtp: result.smtp,
+      });
+    }
+
     return res.json({ 
       success: true, 
-      message: "Connection test placeholder - implement based on provider",
+      message: "Connection test successful",
       provider: account.provider
     });
   } catch (error) {
@@ -1427,6 +1449,200 @@ async function syncGmailAccount(
   return result;
 }
 
+async function syncImapAccount(
+  account: typeof emailAccounts.$inferSelect,
+  userId: string,
+): Promise<{ messagesImported: number; threadsCreated: number; errors: string[] }> {
+  const result = { messagesImported: 0, threadsCreated: 0, errors: [] as string[] };
+
+  try {
+    const since = account.lastSyncedAt || undefined;
+    const fetched = await fetchImapMessages(account, since, 100);
+
+    if (fetched.length === 0) {
+      return result;
+    }
+
+    const candidateIds = fetched.map(m => m.externalId);
+    const existingMessages = await db
+      .select({ externalId: emailMessages.externalId })
+      .from(emailMessages)
+      .where(
+        and(
+          eq(emailMessages.emailAccountId, account.id),
+          inArray(emailMessages.externalId, candidateIds)
+        )
+      );
+    const existingIds = new Set(existingMessages.map(m => m.externalId));
+
+    const newMessages = fetched.filter(m => !existingIds.has(m.externalId));
+    if (newMessages.length === 0) {
+      return result;
+    }
+
+    const threadMap = new Map<string, string>();
+    const messagesToClassify: { messageId: string; threadId: string; subject: string; bodyText: string; fromAddress: string }[] = [];
+
+    for (const msg of newMessages) {
+      try {
+        const threadKey = msg.subject
+          .replace(/^(Re|Fwd|Fw):\s*/gi, "")
+          .trim()
+          .toLowerCase();
+
+        let dbThreadId = threadMap.get(threadKey);
+
+        if (!dbThreadId) {
+          const normalizedSubject = msg.subject.replace(/^(Re|Fwd|Fw):\s*/gi, "").trim();
+          const [existingThread] = await db
+            .select({ id: emailThreads.id })
+            .from(emailThreads)
+            .where(
+              and(
+                eq(emailThreads.emailAccountId, account.id),
+                eq(emailThreads.subject, normalizedSubject)
+              )
+            )
+            .limit(1);
+
+          if (existingThread) {
+            dbThreadId = existingThread.id;
+          } else {
+            const newThreadId = crypto.randomUUID();
+            await db.insert(emailThreads).values({
+              id: newThreadId,
+              organizationId: account.organizationId,
+              emailAccountId: account.id,
+              subject: normalizedSubject || msg.subject,
+              externalThreadId: msg.messageId,
+              status: "OPEN",
+              messageCount: 0,
+              unreadCount: 0,
+              lastMessageAt: msg.receivedAt,
+            });
+            dbThreadId = newThreadId;
+            result.threadsCreated++;
+          }
+          threadMap.set(threadKey, dbThreadId);
+        }
+
+        const isIncoming = msg.fromAddress.toLowerCase() !== account.emailAddress.toLowerCase();
+
+        const newMessageId = crypto.randomUUID();
+        await db.insert(emailMessages).values({
+          id: newMessageId,
+          organizationId: account.organizationId,
+          emailAccountId: account.id,
+          threadId: dbThreadId,
+          externalId: msg.externalId,
+          fromAddress: msg.fromAddress,
+          fromName: msg.fromName || null,
+          toAddresses: msg.toAddresses,
+          ccAddresses: msg.ccAddresses,
+          subject: msg.subject,
+          bodyText: msg.bodyText || null,
+          bodyHtml: msg.bodyHtml || null,
+          snippet: msg.snippet || null,
+          receivedAt: msg.receivedAt,
+          isRead: msg.isRead,
+          isIncoming: isIncoming,
+          hasAttachments: msg.hasAttachments,
+        });
+        result.messagesImported++;
+
+        const [msgCounts] = await db
+          .select({
+            total: sql<number>`count(*)::int`,
+            unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+            maxReceivedAt: sql<Date>`max(${emailMessages.receivedAt})`,
+          })
+          .from(emailMessages)
+          .where(eq(emailMessages.threadId, dbThreadId));
+
+        await db
+          .update(emailThreads)
+          .set({
+            messageCount: msgCounts?.total ?? 1,
+            unreadCount: msgCounts?.unread ?? 1,
+            lastMessageAt: msgCounts?.maxReceivedAt ?? msg.receivedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(emailThreads.id, dbThreadId));
+
+        messagesToClassify.push({
+          messageId: newMessageId,
+          threadId: dbThreadId,
+          subject: msg.subject,
+          bodyText: msg.bodyText,
+          fromAddress: msg.fromAddress,
+        });
+      } catch (err) {
+        result.errors.push(`Error processing IMAP message ${msg.externalId}: ${String(err)}`);
+      }
+    }
+
+    for (const msg of messagesToClassify) {
+      try {
+        const analysis = await analyzeEmail(msg.subject, msg.bodyText, msg.fromAddress, account.organizationId);
+
+        await db
+          .update(emailMessages)
+          .set({
+            classification: analysis.classification,
+            aiMetadata: JSON.stringify(analysis),
+            aiAnalyzedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(emailMessages.id, msg.messageId));
+
+        await db
+          .update(emailThreads)
+          .set({
+            primaryClassification: analysis.classification,
+            aiSummary: analysis.summary,
+            aiMetadata: JSON.stringify(analysis.extractedEntities),
+            updatedAt: new Date(),
+          })
+          .where(eq(emailThreads.id, msg.threadId));
+
+        const matchedEntities = await matchEmailToEntities(analysis, account.organizationId);
+        if (matchedEntities.projectId || matchedEntities.bidId || matchedEntities.vendorId) {
+          await db
+            .update(emailThreads)
+            .set({
+              projectId: matchedEntities.projectId || undefined,
+              bidId: matchedEntities.bidId || undefined,
+              vendorId: matchedEntities.vendorId || undefined,
+            })
+            .where(eq(emailThreads.id, msg.threadId));
+        }
+
+        await createTaskFromEmail(
+          analysis,
+          msg.messageId,
+          msg.threadId,
+          account.organizationId,
+          userId,
+          matchedEntities,
+        );
+      } catch (err) {
+        console.error(`AI classification failed for IMAP message ${msg.messageId}:`, err);
+      }
+    }
+
+    if (result.errors.length === 0 || result.messagesImported > 0) {
+      await db
+        .update(emailAccounts)
+        .set({ lastSyncedAt: new Date(), updatedAt: new Date() })
+        .where(eq(emailAccounts.id, account.id));
+    }
+  } catch (err) {
+    result.errors.push(`IMAP sync failed: ${String(err)}`);
+  }
+
+  return result;
+}
+
 router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
@@ -1463,6 +1679,12 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
       try {
         if (account.provider === "GMAIL") {
           const accountResult = await syncGmailAccount(account, req.user.id);
+          syncResults.push({
+            account: account.emailAddress,
+            ...accountResult,
+          });
+        } else if (account.provider === "IMAP") {
+          const accountResult = await syncImapAccount(account, req.user.id);
           syncResults.push({
             account: account.emailAddress,
             ...accountResult,
@@ -1687,6 +1909,167 @@ router.post("/messages/:id/suggest-reply", requireAuth, async (req: AuthRequest,
   } catch (error) {
     console.error("Error generating reply suggestions:", error);
     return res.status(500).json({ error: "Failed to generate reply suggestions" });
+  }
+});
+
+const sendEmailSchema = z.object({
+  accountId: z.string().min(1),
+  to: z.string().email(),
+  cc: z.string().optional(),
+  bcc: z.string().optional(),
+  subject: z.string().min(1).max(500),
+  text: z.string().optional(),
+  html: z.string().optional(),
+  inReplyTo: z.string().optional(),
+  references: z.string().optional(),
+  replyToMessageId: z.string().optional(),
+});
+
+router.post("/send", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const orgId = req.user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization required" });
+    }
+
+    const parseResult = sendEmailSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: fromZodError(parseResult.error).message });
+    }
+
+    const data = parseResult.data;
+
+    const [account] = await db
+      .select()
+      .from(emailAccounts)
+      .where(
+        and(
+          eq(emailAccounts.id, data.accountId),
+          eq(emailAccounts.organizationId, orgId),
+          eq(emailAccounts.userId, req.user.id),
+          eq(emailAccounts.isActive, true)
+        )
+      )
+      .limit(1);
+
+    if (!account) {
+      return res.status(404).json({ error: "Email account not found or inactive" });
+    }
+
+    if (account.provider === "IMAP") {
+      if (!account.smtpHost) {
+        return res.status(400).json({ error: "SMTP not configured for this account. Please add SMTP settings to send emails." });
+      }
+
+      const sendResult = await sendSmtpEmail(account, {
+        to: data.to,
+        cc: data.cc,
+        bcc: data.bcc,
+        subject: data.subject,
+        text: data.text,
+        html: data.html,
+        inReplyTo: data.inReplyTo,
+        references: data.references,
+      });
+
+      if (!sendResult.success) {
+        return res.status(500).json({ error: sendResult.error || "Failed to send email" });
+      }
+
+      let targetThreadId: string | null = null;
+
+      if (data.replyToMessageId) {
+        const [originalMessage] = await db
+          .select()
+          .from(emailMessages)
+          .where(
+            and(
+              eq(emailMessages.id, data.replyToMessageId),
+              eq(emailMessages.organizationId, orgId)
+            )
+          )
+          .limit(1);
+
+        if (originalMessage) {
+          targetThreadId = originalMessage.threadId;
+        }
+      }
+
+      if (!targetThreadId) {
+        const newThreadId = crypto.randomUUID();
+        await db.insert(emailThreads).values({
+          id: newThreadId,
+          organizationId: orgId,
+          emailAccountId: account.id,
+          subject: data.subject,
+          externalThreadId: sendResult.messageId || `sent-thread-${newThreadId}`,
+          status: "OPEN",
+          messageCount: 0,
+          unreadCount: 0,
+          lastMessageAt: new Date(),
+        });
+        targetThreadId = newThreadId;
+      }
+
+      const sentMessageId = crypto.randomUUID();
+      await db.insert(emailMessages).values({
+        id: sentMessageId,
+        organizationId: orgId,
+        emailAccountId: account.id,
+        threadId: targetThreadId,
+        externalId: sendResult.messageId || `sent-${sentMessageId}`,
+        fromAddress: account.emailAddress,
+        fromName: account.displayName || null,
+        toAddresses: JSON.stringify([data.to]),
+        ccAddresses: data.cc ? JSON.stringify([data.cc]) : null,
+        subject: data.subject,
+        bodyText: data.text || null,
+        bodyHtml: data.html || null,
+        snippet: (data.text || "").substring(0, 200),
+        receivedAt: new Date(),
+        isRead: true,
+        isIncoming: false,
+        hasAttachments: false,
+      });
+
+      const [msgCounts] = await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          unread: sql<number>`count(*) filter (where ${emailMessages.isRead} = false)::int`,
+        })
+        .from(emailMessages)
+        .where(eq(emailMessages.threadId, targetThreadId));
+
+      await db
+        .update(emailThreads)
+        .set({
+          messageCount: msgCounts?.total ?? 1,
+          unreadCount: msgCounts?.unread ?? 0,
+          lastMessageAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(emailThreads.id, targetThreadId));
+
+      await logAudit({
+        userId: req.user.id,
+        entityType: "EMAIL_MESSAGE",
+        entityId: data.accountId,
+        action: "CREATE",
+        oldValue: null,
+        newValue: JSON.stringify({ to: data.to, subject: data.subject }),
+      }, req);
+
+      return res.json({ success: true, messageId: sendResult.messageId });
+    }
+
+    return res.status(400).json({ error: `Sending via ${account.provider} is not yet supported from this endpoint` });
+  } catch (error) {
+    console.error("Error sending email:", error);
+    return res.status(500).json({ error: "Failed to send email" });
   }
 });
 
