@@ -159,14 +159,15 @@ router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
 router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess || !orgId) {
+    const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin: isSA } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      console.warn("Leave balances access denied for user:", req.user?.id, "role:", req.user?.role);
       return res.status(403).json({ error: "Access denied" });
     }
 
     const requestedEmployeeId = req.query.employeeId as string | undefined;
     const userRole = req.user!.role;
-    const isManagerRole = ["ADMIN", "MANAGER", "HR_MANAGER", "SUPERINTENDENT"].includes(userRole || "");
+    const isManagerRole = isSA || ["ADMIN", "MANAGER", "HR_MANAGER", "SUPERINTENDENT"].includes(userRole || "");
 
     if (requestedEmployeeId && requestedEmployeeId !== req.user!.id && !isManagerRole) {
       return res.status(403).json({ error: "Access denied. Only managers can view other employees' balances." });
@@ -174,12 +175,26 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => 
 
     const employeeId = requestedEmployeeId || req.user!.id;
 
-    await seedDefaultLeaveTypes(orgId);
+    let effectiveOrgId = orgId;
+    if (!effectiveOrgId) {
+      const [employee] = await db.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, employeeId)).limit(1);
+      effectiveOrgId = employee?.organizationId || null;
+      if (effectiveOrgId) {
+        console.log("Leave balances: resolved orgId from employee record for user:", req.user!.id, "orgId:", effectiveOrgId);
+      }
+    }
+
+    if (!effectiveOrgId) {
+      console.warn("Leave balances: no organization found for user:", req.user!.id, "employeeId:", employeeId);
+      return res.json([]);
+    }
+
+    await seedDefaultLeaveTypes(effectiveOrgId);
 
     const types = await db
       .select()
       .from(leaveTypes)
-      .where(and(eq(leaveTypes.organizationId, orgId), eq(leaveTypes.isActive, true)));
+      .where(and(eq(leaveTypes.organizationId, effectiveOrgId), eq(leaveTypes.isActive, true)));
 
     const currentYear = new Date().getFullYear();
     const yearStart = `${currentYear}-01-01`;
@@ -196,7 +211,7 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => 
       .where(
         and(
           eq(leaveRequests.employeeId, employeeId),
-          eq(leaveRequests.organizationId, orgId),
+          eq(leaveRequests.organizationId, effectiveOrgId),
           eq(leaveRequests.status, "APPROVED"),
           sql`${leaveRequests.startDate} >= ${yearStart}`,
           sql`${leaveRequests.endDate} <= ${yearEnd}`
@@ -216,7 +231,7 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => 
 
     res.json(balances);
   } catch (error: any) {
-    console.error("Get leave balances error:", error.message);
+    console.error("Get leave balances error:", error.message, "| user:", req.user?.id, "| role:", req.user?.role, "| stack:", error.stack);
     res.status(500).json({ error: "Failed to fetch leave balances" });
   }
 });

@@ -23,7 +23,7 @@ import {
   type LeaveRequestWithDetails,
   type TeamLeaveEntry,
 } from "@/hooks/use-data";
-import { Plus, Calendar, CheckCircle, XCircle, Clock, TreePalm, Stethoscope, User, Briefcase, Scale, HelpCircle, type LucideIcon } from "lucide-react";
+import { Plus, Calendar, CheckCircle, XCircle, Clock, TreePalm, Stethoscope, User, Briefcase, Scale, HelpCircle, AlertCircle, type LucideIcon } from "lucide-react";
 import { format, parseISO, differenceInCalendarDays, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfMonth, endOfMonth } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -60,7 +60,7 @@ function getDayCount(startDate: string, endDate: string): number {
   return differenceInCalendarDays(parseISO(endDate), parseISO(startDate)) + 1;
 }
 
-function BalanceCards({ balances, isLoading }: { balances: LeaveBalance[]; isLoading: boolean }) {
+function BalanceCards({ balances, isLoading, isError }: { balances: LeaveBalance[]; isLoading: boolean; isError: boolean }) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -73,6 +73,27 @@ function BalanceCards({ balances, isLoading }: { balances: LeaveBalance[]; isLoa
           </Card>
         ))}
       </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="card-balance-error">
+        <CardContent className="p-6 flex items-center gap-3 text-destructive">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <span className="text-sm">Failed to load leave balances. Please try refreshing the page.</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (balances.length === 0) {
+    return (
+      <Card data-testid="card-balance-empty">
+        <CardContent className="p-6 text-center text-muted-foreground">
+          <span className="text-sm">No leave types configured for your organization.</span>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -559,7 +580,7 @@ export default function LeaveManagementPage() {
 
   const isManager = ["ADMIN", "MANAGER", "HR_MANAGER"].includes(user?.role || "");
 
-  const { data: balances = [], isLoading: balancesLoading } = useLeaveBalances();
+  const { data: balances = [], isLoading: balancesLoading, isError: balancesError } = useLeaveBalances();
 
   return (
     <div className="min-h-screen bg-background">
@@ -589,7 +610,7 @@ export default function LeaveManagementPage() {
 
         <div className="mb-6">
           <h2 className="text-lg font-semibold mb-3" data-testid="text-balance-heading">My Leave Balances</h2>
-          <BalanceCards balances={balances} isLoading={balancesLoading} />
+          <BalanceCards balances={balances} isLoading={balancesLoading} isError={balancesError} />
         </div>
 
         <Tabs defaultValue="my-requests" className="space-y-4">
