@@ -303,10 +303,26 @@ router.patch("/api/time-entries/batch-approve", requireAuth, requireRole("ADMIN"
 
 router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
   try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
     const { projectId } = req.query;
     if (!projectId) {
       return res.status(400).json({ error: "projectId is required" });
     }
+
+    if (shouldFilter && orgId) {
+      const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, projectId as string), eq(projects.gcOrganizationId, orgId)));
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+    }
+
     const rows = await db
       .selectDistinct({ userId: timeEntries.userId })
       .from(timeEntries)
