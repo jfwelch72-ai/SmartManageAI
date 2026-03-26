@@ -19,6 +19,7 @@ import {
 import { eq, and, desc, asc, inArray, ne, sql } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { ObjectStorageService } from "./objectStorage";
+import { insertNotifications } from "./services/notificationService";
 import { z } from "zod";
 import crypto from "crypto";
 import { sendEmail } from "./email";
@@ -966,6 +967,33 @@ router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter
       revisedById: null,
     });
 
+    try {
+      const [project] = await db
+        .select({ gcOrganizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (project?.gcOrganizationId) {
+        const teamMembers = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.organizationId, project.gcOrganizationId), eq(users.isActive, true), inArray(users.role, ["ADMIN", "MANAGER"])));
+
+        if (teamMembers.length > 0) {
+          await insertNotifications(teamMembers.map(u => ({
+            userId: u.id,
+            type: "GENERAL" as const,
+            title: "Change Order Acknowledged by Client",
+            message: `CO #${updated.changeOrderNumber} has been acknowledged and approved by ${verified.access.name || email} via the client portal.`,
+            relatedEntityId: coId,
+            relatedEntityType: "change_order" as const,
+          })));
+        }
+      }
+    } catch (notifError) {
+      console.error("Failed to send CO acknowledgment notifications:", notifError);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Error acknowledging CO:", error);
@@ -1037,6 +1065,33 @@ router.post("/client-portal/public/change-orders/:coId/request-revision", authLi
       revisedById: null,
     });
 
+    try {
+      const [project] = await db
+        .select({ gcOrganizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, projectId));
+
+      if (project?.gcOrganizationId) {
+        const teamMembers = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.organizationId, project.gcOrganizationId), eq(users.isActive, true), inArray(users.role, ["ADMIN", "MANAGER"])));
+
+        if (teamMembers.length > 0) {
+          await insertNotifications(teamMembers.map(u => ({
+            userId: u.id,
+            type: "GENERAL" as const,
+            title: "Client Requested Change Order Revision",
+            message: `${verified.access.name || email} requested a revision on CO #${updated.changeOrderNumber} via the client portal: "${reason.trim().substring(0, 200)}"`,
+            relatedEntityId: coId,
+            relatedEntityType: "change_order" as const,
+          })));
+        }
+      }
+    } catch (notifError) {
+      console.error("Failed to send CO revision request notifications:", notifError);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Error requesting CO revision:", error);
@@ -1044,7 +1099,7 @@ router.post("/client-portal/public/change-orders/:coId/request-revision", authLi
   }
 });
 
-router.get("/public/change-orders/:coId/attachments/:attachmentId/download", async (req, res) => {
+router.get("/client-portal/public/change-orders/:coId/attachments/:attachmentId/download", async (req, res) => {
   try {
     const email = req.headers["x-client-email"] as string;
     const projectId = req.headers["x-client-project-id"] as string;
@@ -1052,13 +1107,9 @@ router.get("/public/change-orders/:coId/attachments/:attachmentId/download", asy
       return res.status(401).json({ error: "Missing portal credentials" });
     }
 
-    const verified = await verifyPortalAccess(email, projectId);
-    if (!verified) {
+    const verified = await verifyPortalAccess(projectId, email);
+    if (!verified || !verified.permissions.viewChangeOrders) {
       return res.status(403).json({ error: "Access denied" });
-    }
-
-    if (!verified.access.permissions?.viewChangeOrders) {
-      return res.status(403).json({ error: "No permission to view change orders" });
     }
 
     const coId = req.params.coId;
