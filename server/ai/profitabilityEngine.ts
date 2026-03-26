@@ -185,7 +185,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
 
   const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
   const pendingCOs = projectChangeOrders.filter(co => 
-    !['APPROVED', 'REJECTED', 'VOIDED'].includes(co.status)
+    ['SUBMITTED', 'PENDING_APPROVAL', 'PCO', 'PRICING_REVIEW'].includes(co.status)
   );
 
   const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);

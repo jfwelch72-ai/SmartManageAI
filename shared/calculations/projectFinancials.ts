@@ -199,9 +199,9 @@ export function analyzeBudget(
   costs: ProjectCosts
 ): BudgetAnalysis {
   const approvedCOValue = calculateChangeOrderValue(changeOrders, 'APPROVED');
-  const TERMINAL_STATUSES = ['APPROVED', 'REJECTED', 'VOIDED'];
+  const PENDING_STATUSES = ['SUBMITTED', 'PENDING_APPROVAL', 'PCO', 'PRICING_REVIEW'];
   const pendingCOValue = calculateChangeOrderValue(
-    changeOrders.filter(co => !TERMINAL_STATUSES.includes(co.status)),
+    changeOrders.filter(co => PENDING_STATUSES.includes(co.status)),
   );
   const adjustedBudget = calculateAdjustedBudget(baseBudget, approvedCOValue);
   const projectedBudget = Math.round((adjustedBudget + pendingCOValue) * 100) / 100;
