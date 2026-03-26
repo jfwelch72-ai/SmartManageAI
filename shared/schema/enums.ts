@@ -401,7 +401,11 @@ export const invoiceMatchStatusEnum = pgEnum("invoice_match_status", ["PENDING",
 export const mobilePlatformEnum = pgEnum("mobile_platform", ["IOS", "ANDROID", "WEB"]);
 export const syncStatusEnum = pgEnum("sync_status", ["IN_PROGRESS", "COMPLETE", "FAILED"]);
 
-export const sovStatusEnum = pgEnum("sov_status", ["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED"]);
+export const sovStatusEnum = pgEnum("sov_status", ["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED", "UNDER_REVIEW", "REJECTED"]);
+
+export const storedMaterialStatusEnum = pgEnum("stored_material_status", ["ON_SITE", "OFF_SITE", "INCORPORATED"]);
+export const retentionReleaseTypeEnum = pgEnum("retention_release_type", ["PARTIAL", "FINAL"]);
+export const retentionReleaseStatusEnum = pgEnum("retention_release_status", ["REQUESTED", "APPROVED", "REJECTED", "RELEASED"]);
 
 export const lienWaiverTypeEnum = pgEnum("lien_waiver_type", ["CONDITIONAL_PARTIAL", "UNCONDITIONAL_PARTIAL", "CONDITIONAL_FINAL", "UNCONDITIONAL_FINAL"]);
 export const lienWaiverStatusEnum = pgEnum("lien_waiver_status", ["PENDING", "SENT", "RECEIVED", "APPROVED", "REJECTED"]);

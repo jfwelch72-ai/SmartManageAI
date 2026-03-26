@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tmTickets } from "./operations";
 
@@ -3091,6 +3091,128 @@ export const sovPayments = pgTable("sov_payments", {
 export const insertSovPaymentSchema = createInsertSchema(sovPayments).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertSovPayment = z.infer<typeof insertSovPaymentSchema>;
 export type SovPayment = typeof sovPayments.$inferSelect;
+
+// ============================================
+// AIA PAY APPLICATIONS (G702 Header)
+// Track AIA G702 Application & Certificate for Payment data
+// ============================================
+export const payApplications = pgTable("pay_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  sovId: varchar("sov_id").notNull().references(() => scheduleOfValues.id, { onDelete: "cascade" }),
+
+  applicationNumber: integer("application_number").notNull(),
+  periodTo: date("period_to"),
+
+  architectName: text("architect_name"),
+  architectAddress: text("architect_address"),
+  ownerName: text("owner_name"),
+  ownerAddress: text("owner_address"),
+  contractorName: text("contractor_name"),
+  contractorAddress: text("contractor_address"),
+  contractDate: date("contract_date"),
+  contractFor: text("contract_for"),
+
+  originalContractSum: decimal("original_contract_sum", { precision: 14, scale: 2 }),
+  netChangeByChangeOrders: decimal("net_change_by_change_orders", { precision: 14, scale: 2 }),
+  contractSumToDate: decimal("contract_sum_to_date", { precision: 14, scale: 2 }),
+  totalCompletedAndStored: decimal("total_completed_and_stored", { precision: 14, scale: 2 }),
+  retainagePercent: decimal("retainage_percent", { precision: 5, scale: 2 }),
+  totalRetained: decimal("total_retained", { precision: 14, scale: 2 }),
+  totalEarnedLessRetainage: decimal("total_earned_less_retainage", { precision: 14, scale: 2 }),
+  lessPreviousCertificates: decimal("less_previous_certificates", { precision: 14, scale: 2 }),
+  currentPaymentDue: decimal("current_payment_due", { precision: 14, scale: 2 }),
+  balanceToFinish: decimal("balance_to_finish", { precision: 14, scale: 2 }),
+
+  status: sovStatusEnum("status").notNull().default("DRAFT"),
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  rejectionReason: text("rejection_reason"),
+
+  paidAmount: decimal("paid_amount", { precision: 14, scale: 2 }).default("0"),
+  paidAt: timestamp("paid_at"),
+  paymentReference: text("payment_reference"),
+  paymentMethod: text("payment_method"),
+
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("pay_app_project_idx").on(table.projectId),
+  orgIdx: index("pay_app_org_idx").on(table.organizationId),
+  sovIdx: index("pay_app_sov_idx").on(table.sovId),
+}));
+
+export const insertPayApplicationSchema = createInsertSchema(payApplications).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPayApplication = z.infer<typeof insertPayApplicationSchema>;
+export type PayApplication = typeof payApplications.$inferSelect;
+
+// ============================================
+// STORED MATERIALS
+// Track materials stored on-site or off-site for G703 billing
+// ============================================
+export const storedMaterials = pgTable("stored_materials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  sovId: varchar("sov_id").notNull().references(() => scheduleOfValues.id, { onDelete: "cascade" }),
+  sovLineItemId: varchar("sov_line_item_id").references(() => sovLineItems.id, { onDelete: "set null" }),
+
+  description: text("description").notNull(),
+  storageLocation: text("storage_location"),
+  storageStatus: storedMaterialStatusEnum("storage_status").notNull().default("ON_SITE"),
+  deliveryDate: date("delivery_date"),
+  incorporatedDate: date("incorporated_date"),
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  vendor: text("vendor"),
+  invoiceReference: text("invoice_reference"),
+  notes: text("notes"),
+
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("stored_mat_project_idx").on(table.projectId),
+  orgIdx: index("stored_mat_org_idx").on(table.organizationId),
+  sovIdx: index("stored_mat_sov_idx").on(table.sovId),
+  lineItemIdx: index("stored_mat_line_item_idx").on(table.sovLineItemId),
+}));
+
+export const insertStoredMaterialSchema = createInsertSchema(storedMaterials).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertStoredMaterial = z.infer<typeof insertStoredMaterialSchema>;
+export type StoredMaterial = typeof storedMaterials.$inferSelect;
+
+// ============================================
+// RETENTION RELEASES
+// Track partial and final retention releases with approval
+// ============================================
+export const retentionReleases = pgTable("retention_releases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  sovId: varchar("sov_id").references(() => scheduleOfValues.id, { onDelete: "set null" }),
+
+  releaseType: retentionReleaseTypeEnum("release_type").notNull(),
+  status: retentionReleaseStatusEnum("status").notNull().default("REQUESTED"),
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  reason: text("reason"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  releasedAt: timestamp("released_at"),
+
+  requestedById: varchar("requested_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("ret_release_project_idx").on(table.projectId),
+  orgIdx: index("ret_release_org_idx").on(table.organizationId),
+}));
+
+export const insertRetentionReleaseSchema = createInsertSchema(retentionReleases).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRetentionRelease = z.infer<typeof insertRetentionReleaseSchema>;
+export type RetentionRelease = typeof retentionReleases.$inferSelect;
 
 // ============================================
 // WEBSITE BUILDER SYSTEM

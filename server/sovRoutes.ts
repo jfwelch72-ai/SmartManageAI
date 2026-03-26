@@ -442,11 +442,15 @@ router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
 const validStatusTransitions: Record<string, { nextStates: string[]; allowedRoles: string[] }> = {
   DRAFT: { 
-    nextStates: ["PENDING"], 
+    nextStates: ["PENDING", "SUBMITTED"], 
     allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"]
   },
   PENDING: { 
-    nextStates: ["APPROVED", "DRAFT"], 
+    nextStates: ["APPROVED", "DRAFT", "UNDER_REVIEW"], 
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER"]
+  },
+  UNDER_REVIEW: {
+    nextStates: ["APPROVED", "REJECTED", "PENDING"],
     allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER"]
   },
   APPROVED: { 
@@ -454,8 +458,12 @@ const validStatusTransitions: Record<string, { nextStates: string[]; allowedRole
     allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER"] 
   },
   SUBMITTED: { 
-    nextStates: ["PAID", "APPROVED"], 
+    nextStates: ["PAID", "APPROVED", "UNDER_REVIEW"], 
     allowedRoles: ["SUPER_ADMIN", "ADMIN"] 
+  },
+  REJECTED: {
+    nextStates: ["DRAFT", "PENDING"],
+    allowedRoles: ["SUPER_ADMIN", "ADMIN", "MANAGER", "OFFICE_MANAGER"]
   },
   PAID: { 
     nextStates: ["ARCHIVED"], 
@@ -468,7 +476,7 @@ const validStatusTransitions: Record<string, { nextStates: string[]; allowedRole
 };
 
 const updateSOVStatusSchema = z.object({
-  status: z.enum(["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED"]),
+  status: z.enum(["DRAFT", "PENDING", "APPROVED", "SUBMITTED", "PAID", "ARCHIVED", "UNDER_REVIEW", "REJECTED"]),
 });
 
 router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Response) => {

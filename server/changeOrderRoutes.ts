@@ -511,6 +511,13 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       }
     }
 
+    try {
+      const { syncApprovedCOToSOV } = await import("./aiaBillingRoutes");
+      await syncApprovedCOToSOV(updatedOrder.id);
+    } catch (syncErr) {
+      console.error("Auto-sync CO to SOV after approval:", syncErr);
+    }
+
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Approve change order error:", error);
@@ -1185,6 +1192,13 @@ router.post("/:id/approve-step", requireAuth, requireRole("ADMIN", "MANAGER"), a
         `Change order ${order.changeOrderNumber} has been fully approved`,
         true
       );
+
+      try {
+        const { syncApprovedCOToSOV } = await import("./aiaBillingRoutes");
+        await syncApprovedCOToSOV((updatedOrder || order).id);
+      } catch (syncErr) {
+        console.error("Auto-sync CO to SOV after step-approval:", syncErr);
+      }
 
       res.json({ approval: updatedApproval, order: updatedOrder, allApproved: true });
     } else {

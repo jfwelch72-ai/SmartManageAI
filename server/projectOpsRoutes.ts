@@ -1215,6 +1215,11 @@ router.patch("/api/change-orders/:id", requireAuth, requireRole("ADMIN", "MANAGE
       return;
     }
 
+    if (updatedOrder.status === "APPROVED") {
+      const { syncApprovedCOToSOV } = await import("./aiaBillingRoutes");
+      syncApprovedCOToSOV(updatedOrder.id).catch(e => console.error("CO auto-sync error:", e));
+    }
+
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Update change order error:", error);

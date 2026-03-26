@@ -321,6 +321,7 @@ export const RoutePermissions = {
   CFO: (role?: string) => isAdminOrManager(role),
   TM_DAILY: (role?: string) => hasManagementAccess(role),
   TM_BILLING: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
+  PROGRESS_BILLING: (role?: string) => isAdminOrManager(role) || role === "OFFICE_MANAGER",
   PRODUCTION_RATES: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "OFFICE_MANAGER",
   CRM: (role?: string) => hasCrmAccess(role),
   SCOPE_SETTINGS: (role?: string) => isAdminOrManager(role) || role === "ESTIMATOR",
@@ -638,6 +639,12 @@ export const NavigationConfig = {
       href: "/tm-billing",
       label: "T&M Billing",
       testId: "nav-tm-billing",
+      visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
+    },
+    {
+      href: "/progress-billing",
+      label: "Progress Billing",
+      testId: "nav-progress-billing",
       visible: (role?: string, perms?: FeaturePerms) => isAdminOrManager(role) || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {

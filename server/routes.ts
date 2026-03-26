@@ -84,6 +84,7 @@ import platformBillingRoutes from "./platformBillingRoutes";
 import calculatorRoutes from "./calculatorRoutes";
 import organizationDocumentRoutes from "./organizationDocumentRoutes";
 import sovRoutes from "./sovRoutes";
+import aiaBillingRoutes from "./aiaBillingRoutes";
 import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
 import websiteRoutes from "./websiteRoutes";
@@ -235,6 +236,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Schedule of Values (SOV) routes (consolidated)
   app.use("/api", sovRoutes);
+
+  // Register AIA Progress Billing routes
+  app.use("/api/aia-billing", aiaBillingRoutes);
 
   // Register Subcontract Agreement routes
   app.use("/api", subcontractRoutes);
