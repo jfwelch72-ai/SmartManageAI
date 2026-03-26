@@ -617,6 +617,18 @@ export const NavigationConfig = {
       visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "OFFICE_MANAGER" || perms?.canAccessFinancials === true,
     },
     {
+      href: "/contracts",
+      label: "Contracts",
+      testId: "nav-contracts",
+      visible: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
+    },
+    {
+      href: "/clause-library",
+      label: "Clause Library",
+      testId: "nav-clause-library",
+      visible: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER",
+    },
+    {
       href: "/subcontracts",
       label: "Subcontracts & Payables",
       testId: "nav-subcontracts",

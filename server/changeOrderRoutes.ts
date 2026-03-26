@@ -474,6 +474,43 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       },
     });
 
+    if (updatedOrder.contractId) {
+      const { contracts: contractsTable, contractVersions: contractVersionsTable } = await import("@shared/schema");
+      const [linkedContract] = await db.select().from(contractsTable).where(eq(contractsTable.id, updatedOrder.contractId));
+      if (linkedContract && ["EXECUTED", "APPROVED", "AMENDED"].includes(linkedContract.status)) {
+        const currentValue = Number(linkedContract.contractValue || 0);
+        const coAmount = Number(updatedOrder.amount || 0);
+        const newValue = (currentValue + coAmount).toFixed(2);
+
+        const [updatedContract] = await db.update(contractsTable)
+          .set({ contractValue: newValue, status: "AMENDED" as const, updatedAt: new Date() })
+          .where(eq(contractsTable.id, updatedOrder.contractId))
+          .returning();
+
+        if (updatedContract) {
+          await db.update(projects)
+            .set({ contractAmount: newValue, updatedAt: new Date() })
+            .where(eq(projects.id, updatedOrder.projectId));
+
+          const newVersion = (updatedContract.currentVersion || 0) + 1;
+          await db.update(contractsTable)
+            .set({ currentVersion: newVersion })
+            .where(eq(contractsTable.id, updatedOrder.contractId));
+          await db.insert(contractVersionsTable).values({
+            contractId: updatedOrder.contractId,
+            versionNumber: newVersion,
+            snapshotJson: JSON.stringify({ ...updatedContract, currentVersion: newVersion }),
+            changedById: req.user!.id,
+            changeNote: `Contract amended via approved CO #${updatedOrder.changeOrderNumber}: value ${currentValue} → ${newValue}`,
+          });
+
+          console.log(`[CO Finalized] Updated contract ${linkedContract.contractNumber} and project value: ${currentValue} + ${coAmount} = ${newValue}`);
+        } else {
+          console.warn(`[CO Finalized] Contract update returned no rows for ${updatedOrder.contractId}`);
+        }
+      }
+    }
+
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Approve change order error:", error);
@@ -1451,6 +1488,62 @@ router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Link RFI error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/:id/link-contract", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { contractId } = req.body;
+    if (!contractId || typeof contractId !== "string") {
+      res.status(400).json({ error: "contractId is required" });
+      return;
+    }
+
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const { contracts: contractsTable } = await import("@shared/schema");
+    const [contract] = await db.select().from(contractsTable).where(eq(contractsTable.id, contractId)).limit(1);
+    if (!contract) {
+      res.status(404).json({ error: "Contract not found" });
+      return;
+    }
+
+    if (contract.projectId !== order.projectId) {
+      res.status(400).json({ error: "Contract does not belong to the same project as this change order" });
+      return;
+    }
+
+    const [updatedOrder] = await db
+      .update(changeOrders)
+      .set({ contractId, updatedAt: new Date() })
+      .where(eq(changeOrders.id, req.params.id))
+      .returning();
+
+    await createRevision(
+      order.id,
+      order.status,
+      order.status,
+      req.user!.id,
+      `Linked to contract ${contract.contractNumber}`,
+      order.amount,
+      { contractId }
+    );
+
+    res.json(updatedOrder);
+  } catch (error: any) {
+    console.error("Link contract error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -95,6 +95,15 @@ export const delayResponsibilityEnum = pgEnum("delay_responsibility", ["OWNER", 
 export const delayNotificationStatusEnum = pgEnum("delay_notification_status", ["DRAFT", "FINALIZED"]);
 export const delayNotificationRecipientTypeEnum = pgEnum("delay_notification_recipient_type", ["OWNER_REP", "GC_REP", "OTHER"]);
 
+// Contract Management Enums
+export const contractStatusEnum = pgEnum("contract_status", ["DRAFT", "IN_REVIEW", "REDLINED", "PENDING_APPROVAL", "APPROVED", "EXECUTED", "AMENDED"]);
+export const contractTypeEnum = pgEnum("contract_type", ["PRIME", "SUBCONTRACT", "JV", "T_AND_M"]);
+export const contractRedlineStatusEnum = pgEnum("contract_redline_status", ["OPEN", "RESOLVED", "REJECTED"]);
+export const contractApprovalDecisionEnum = pgEnum("contract_approval_decision", ["PENDING", "APPROVED", "REJECTED"]);
+export const clauseCategoryEnum = pgEnum("clause_category", ["PAYMENT", "INSURANCE", "INDEMNIFICATION", "SCOPE", "TERMINATION", "DISPUTE_RESOLUTION", "WARRANTY", "SAFETY", "COMPLIANCE", "RETENTION", "LIQUIDATED_DAMAGES", "FORCE_MAJEURE", "CHANGE_ORDER", "CONFIDENTIALITY", "OTHER"]);
+export const signatureRequestStatusEnum = pgEnum("signature_request_status", ["PENDING", "SENT", "PARTIALLY_SIGNED", "COMPLETED", "DECLINED", "EXPIRED"]);
+export const signerStatusEnum = pgEnum("signer_status", ["PENDING", "SIGNED", "DECLINED"]);
+
 // Delay Claims Enums
 export const delayClaimStatusEnum = pgEnum("delay_claim_status", ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "APPROVED", "REJECTED", "CLOSED"]);
 export const delayClaimTypeEnum = pgEnum("delay_claim_type", ["TIME_EXTENSION", "COST_IMPACT", "BOTH"]);

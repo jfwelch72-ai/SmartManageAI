@@ -132,6 +132,8 @@ const HiringAnalyticsPage = lazy(() => import("@/pages/hiring/analytics"));
 const HiringTasksPage = lazy(() => import("@/pages/hiring/tasks"));
 const HiringSettingsPage = lazy(() => import("@/pages/hiring/settings"));
 const TalentPoolPage = lazy(() => import("@/pages/talent-pool"));
+const ContractsPage = lazy(() => import("@/pages/contracts"));
+const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -310,6 +312,8 @@ function Router() {
       <Route path="/manage-workers" component={() => <ProtectedRoute component={ManageWorkersPage} permission={RoutePermissions.MANAGE_WORKERS} featurePerm="canManagePayroll" />} />
       <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
+      <Route path="/contracts" component={() => <ProtectedRoute component={ContractsPage} permission={(role?: string) => ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"].includes(role || "")} />} />
+      <Route path="/clause-library" component={() => <ProtectedRoute component={ClauseLibraryPage} permission={(role?: string) => ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(role || "")} />} />
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canAccessFinancials" />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=website" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />

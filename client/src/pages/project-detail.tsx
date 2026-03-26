@@ -48,6 +48,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
+  FileText,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -89,6 +90,7 @@ import ProjectPayrollTab from "@/components/project-tabs/ProjectPayrollTab";
 import ProjectEquipmentTab from "@/components/project-tabs/ProjectEquipmentTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
+import ContractsTab from "@/components/project-tabs/ContractsTab";
 import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { LucideIcon } from "lucide-react";
@@ -257,6 +259,13 @@ function buildTabConfigs(
       label: "Transmittals",
       icon: Send,
       visible: hasManagementAccess(userRole),
+      group: "Documents & Communication",
+    },
+    {
+      value: "contracts",
+      label: "Contracts",
+      icon: FileText,
+      visible: ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"].includes(userRole || ""),
       group: "Documents & Communication",
     },
     {
@@ -928,6 +937,14 @@ export default function ProjectDetailPage() {
               projectId={project.id}
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
+          <TabsContent value="contracts">
+            <ContractsTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role || ""}
             />
           </TabsContent>
 

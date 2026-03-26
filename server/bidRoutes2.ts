@@ -1140,6 +1140,37 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       })
       .where(eq(bids.code, req.params.code));
 
+    const { contracts: contractsTable, contractVersions: contractVersionsTable } = await import("@shared/schema");
+    try {
+      const contractNum = `CTR-${newProject.code}-001`;
+      const partiesStr = [bid.clientName].filter(Boolean).join(", ");
+      const [newContract] = await db.insert(contractsTable).values({
+        organizationId: newProject.organizationId,
+        projectId: newProject.id,
+        bidId: bid.id,
+        contractNumber: contractNum,
+        contractType: "PRIME",
+        status: "DRAFT",
+        parties: partiesStr || null,
+        contractValue: contractAmount || null,
+        scopeSummary: bid.description || null,
+        currentVersion: 1,
+        createdById: req.user!.id,
+      }).returning();
+
+      await db.insert(contractVersionsTable).values({
+        contractId: newContract.id,
+        versionNumber: 1,
+        snapshotJson: JSON.stringify(newContract),
+        changedById: req.user!.id,
+        changeNote: "Auto-created from bid conversion",
+      });
+      console.log(`[Bid Conversion] Auto-created draft contract ${contractNum} for project ${newProject.code}`);
+    } catch (contractErr) {
+      const errMsg = contractErr instanceof Error ? contractErr.message : String(contractErr);
+      console.error(`[Bid Conversion] Failed to auto-create contract: ${errMsg}`);
+    }
+
     const { notifications: notificationsTable } = await import("@shared/schema");
     
     if (superintendentId) {

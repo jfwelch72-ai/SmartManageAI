@@ -51,6 +51,8 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Social Media Management System**: Comprehensive content management with scheduling, AI generation, multi-platform support, rich media picker, and approval workflow.
 *   **BIM Quantity Extraction**: Client-side IFC file parsing using web-ifc to extract building element quantities, generating BIM takeoff sheets. Supports re-extraction diff view and category mapping.
 *   **Reports System**: Provides various report types across Takeoff and Estimate categories, with CSV export, browser print, and snapshot creation.
+*   **Contract Management Lifecycle**: Full contract lifecycle (Award → Draft → Review → Redlines → Approval → Execution → Versioning) with status pipeline, version history, redline tracking, approval workflow, execution recording, document attachments, version comparison, bid conversion auto-draft, and change order linkage with financial sync. Includes E-Signature Integration for digital signing workflow with multi-signer support, signature tracking, and auto-execution on completion.
+*   **Clause Library & Template Builder**: Organization-scoped reusable contract clause management with 15 categories, required/default flags, and sort ordering. Template builder assembles clauses with default terms, and templates can be applied to draft contracts to auto-populate fields and clause content.
 *   **Change Order Workflow Enhancement**: Includes revision history tracking and a multi-level approval chain.
 *   **Approval Workflow Notifications**: In-app notifications across 6 approval workflows.
 *   **Submittal Items & Attachments**: Normalized tables for managing submittal items and attachments with status tracking.

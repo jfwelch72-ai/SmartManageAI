@@ -46,6 +46,7 @@ interface ChangeOrder {
   clientResponseDueDate?: string | Date | null;
   linkedTmTicketId?: string | null;
   linkedRfiId?: string | null;
+  contractId?: string | null;
   projectId?: string;
 }
 
@@ -168,6 +169,7 @@ export function ChangeOrderDialog({
   const [newApprovalSteps, setNewApprovalSteps] = useState<Array<{ approverRole: string }>>([{ approverRole: "MANAGER" }]);
   const [showTmPicker, setShowTmPicker] = useState(false);
   const [showRfiPicker, setShowRfiPicker] = useState(false);
+  const [showContractPicker, setShowContractPicker] = useState(false);
 
   const [breakdown, setBreakdown] = useState<CostBreakdown>(emptyBreakdown());
   const [overheadPct, setOverheadPct] = useState("10");
@@ -218,6 +220,11 @@ export function ChangeOrderDialog({
       return res.json();
     },
     enabled: (showRfiPicker || !!changeOrder?.linkedRfiId) && !!changeOrder?.projectId,
+  });
+
+  const { data: projectContracts = [] } = useQuery<Array<{ id: string; contractNumber: string; status: string; contractType: string; }>>({
+    queryKey: ["/api/contracts/by-project", changeOrder?.projectId],
+    enabled: (showContractPicker || !!changeOrder?.contractId) && !!changeOrder?.projectId,
   });
 
   useEffect(() => {
@@ -495,6 +502,16 @@ export function ChangeOrderDialog({
       setShowRfiPicker(false);
     },
     onError: () => { toast({ title: "Error", description: "Failed to link RFI", variant: "destructive" }); },
+  });
+
+  const linkContractMutation = useMutation({
+    mutationFn: async (contractId: string) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/link-contract`, { contractId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      toast({ title: "Success", description: "Contract linked" });
+      setShowContractPicker(false);
+    },
+    onError: () => { toast({ title: "Error", description: "Failed to link contract", variant: "destructive" }); },
   });
 
   const handleSave = () => {
@@ -1012,6 +1029,12 @@ export function ChangeOrderDialog({
               <p className="text-sm mt-1 text-muted-foreground" data-testid="text-linked-rfi-name">{(() => { const r = projectRfis.find(r => r.id === changeOrder.linkedRfiId); return r ? `${r.rfiNumber} – ${r.subject}` : changeOrder.linkedRfiId; })()}</p>
             </div>
           )}
+          {changeOrder.contractId && (
+            <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-contract">
+              <div className="flex items-center gap-2"><FileText className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-medium">Linked Contract</span></div>
+              <p className="text-sm mt-1 text-muted-foreground" data-testid="text-linked-contract-name">{(() => { const c = projectContracts.find(c => c.id === changeOrder.contractId); return c ? `${c.contractNumber} (${c.status})` : changeOrder.contractId; })()}</p>
+            </div>
+          )}
 
           {canLinkItems && (
             <div className="flex gap-2 flex-wrap">
@@ -1020,6 +1043,9 @@ export function ChangeOrderDialog({
               </Button>
               <Button variant="outline" size="sm" onClick={() => setShowRfiPicker(true)} data-testid="button-link-rfi">
                 <Link className="w-4 h-4 mr-2" />{changeOrder.linkedRfiId ? "Change RFI" : "Link RFI"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowContractPicker(true)} data-testid="button-link-contract">
+                <FileText className="w-4 h-4 mr-2" />{changeOrder.contractId ? "Change Contract" : "Link Contract"}
               </Button>
             </div>
           )}
@@ -1430,6 +1456,25 @@ export function ChangeOrderDialog({
             ))}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setShowRfiPicker(false)}>Cancel</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showContractPicker} onOpenChange={setShowContractPicker}>
+        <DialogContent className="max-w-lg" data-testid="dialog-contract-picker">
+          <DialogHeader><DialogTitle>Link Contract</DialogTitle></DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-y-auto">
+            {projectContracts.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No contracts found for this project</p>
+            ) : projectContracts.map((c) => (
+              <Card key={c.id} className="p-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => linkContractMutation.mutate(c.id)} data-testid={`button-select-contract-${c.id}`}>
+                <div className="flex items-center justify-between">
+                  <div><p className="font-medium text-sm font-mono">{c.contractNumber}</p><p className="text-xs text-muted-foreground mt-0.5">{c.contractType}</p></div>
+                  <Badge variant="outline" className="text-xs shrink-0">{c.status}</Badge>
+                </div>
+              </Card>
+            ))}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setShowContractPicker(false)}>Cancel</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </Dialog>
