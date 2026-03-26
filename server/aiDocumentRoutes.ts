@@ -3181,14 +3181,94 @@ Generate a realistic schedule that:
       .from(projectScheduleTasks)
       .where(eq(projectScheduleTasks.scheduleId, newSchedule.id));
 
+    try {
+      await db.delete(aiGanttRecommendations).where(eq(aiGanttRecommendations.projectId, project.id));
+
+      const recommendations: Array<{
+        recommendationType: string;
+        title: string;
+        description: string;
+        estimatedDaysImprovement?: number;
+      }> = [];
+
+      const criticalTasks = createdTasks.filter(t => t.isCriticalPath);
+      const nonCriticalTasks = createdTasks.filter(t => !t.isCriticalPath);
+
+      const highFloatTasks = createdTasks.filter(t => (t.totalFloat || 0) > 5);
+      if (highFloatTasks.length > 0) {
+        recommendations.push({
+          recommendationType: "CRITICAL_PATH",
+          title: "Tasks with Excessive Float",
+          description: `${highFloatTasks.length} task(s) have more than 5 days of float: ${highFloatTasks.slice(0, 3).map(t => t.name).join(", ")}${highFloatTasks.length > 3 ? "..." : ""}. Consider reallocating resources from these tasks to critical path items.`,
+          estimatedDaysImprovement: Math.min(Math.max(...highFloatTasks.map(t => t.totalFloat || 0)), 5),
+        });
+      }
+
+      const noDeps = nonCriticalTasks.filter(t => !t.dependencies || t.dependencies.length === 0);
+      if (noDeps.length > 2) {
+        recommendations.push({
+          recommendationType: "PARALLEL_WORK",
+          title: "Parallelization Opportunity",
+          description: `${noDeps.length} tasks have no dependencies and could potentially be executed in parallel: ${noDeps.slice(0, 3).map(t => t.name).join(", ")}${noDeps.length > 3 ? "..." : ""}. Verify resource availability to compress the schedule.`,
+          estimatedDaysImprovement: Math.round(noDeps.reduce((s, t) => s + (t.durationDays || 0), 0) * 0.3),
+        });
+      }
+
+      if (criticalTasks.length > 3) {
+        const longestCritical = criticalTasks.sort((a, b) => (b.durationDays || 0) - (a.durationDays || 0))[0];
+        recommendations.push({
+          recommendationType: "RESOURCE_ALLOCATION",
+          title: "Resource Leveling Suggestion",
+          description: `The critical path has ${criticalTasks.length} tasks. Consider adding resources to "${longestCritical.name}" (${longestCritical.durationDays} days) to reduce its duration and compress the overall schedule.`,
+          estimatedDaysImprovement: Math.ceil((longestCritical.durationDays || 1) * 0.2),
+        });
+      }
+
+      const tradeGroups = new Map<string, number>();
+      for (const t of createdTasks) {
+        if (t.tradeType) {
+          tradeGroups.set(t.tradeType, (tradeGroups.get(t.tradeType) || 0) + 1);
+        }
+      }
+      for (const [trade, count] of tradeGroups) {
+        if (count >= 4) {
+          recommendations.push({
+            recommendationType: "TASK_ORDER",
+            title: `${trade} Task Sequencing`,
+            description: `${count} tasks are assigned to ${trade}. Ensure proper sequencing to avoid crew conflicts and optimize workflow continuity.`,
+          });
+        }
+      }
+
+      if (recommendations.length > 0) {
+        await db.insert(aiGanttRecommendations).values(
+          recommendations.map(r => ({
+            projectId: project.id,
+            recommendationType: r.recommendationType,
+            title: r.title,
+            description: r.description,
+            estimatedDaysImprovement: r.estimatedDaysImprovement || null,
+          }))
+        );
+      }
+    } catch (recErr) {
+      console.error("Failed to generate AI recommendations:", recErr);
+    }
+
     const [updatedSchedule] = await db
       .select()
       .from(projectSchedules)
       .where(eq(projectSchedules.id, newSchedule.id));
 
+    const generatedRecommendations = await db
+      .select()
+      .from(aiGanttRecommendations)
+      .where(eq(aiGanttRecommendations.projectId, project.id));
+
     res.json({
       schedule: updatedSchedule || newSchedule,
       tasks: createdTasks,
+      recommendations: generatedRecommendations,
       summary: {
         totalTasks: createdTasks.length,
         criticalPathTasks: createdTasks.filter(t => t.isCriticalPath).length,
@@ -3228,6 +3308,57 @@ function calculateTaskEndDate(baselineStart: string, tasks: ScheduleTaskData[], 
   startDate.setDate(startDate.getDate() + task.durationDays);
   return startDate.toISOString().split('T')[0];
 }
+
+const reorderSchema = z.object({
+  taskIds: z.array(z.string()).min(1),
+});
+
+router.patch("/projects/:code/schedule/tasks/reorder", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { code } = req.params;
+    const orgId = req.user?.organizationId;
+    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+
+    const [project] = await db.select().from(projects).where(eq(projects.code, code));
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+    if (project.gcOrganizationId !== orgId && req.user?.role !== "SUPER_ADMIN") {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+
+    const parsed = reorderSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid request", details: parsed.error.errors }); return; }
+
+    const [schedule] = await db.select().from(projectSchedules)
+      .where(and(eq(projectSchedules.projectId, project.id), eq(projectSchedules.isActive, true)))
+      .limit(1);
+    if (!schedule) { res.status(404).json({ error: "No active schedule" }); return; }
+
+    const uniqueIds = new Set(parsed.data.taskIds);
+    if (uniqueIds.size !== parsed.data.taskIds.length) {
+      res.status(400).json({ error: "Duplicate task IDs in reorder request" }); return;
+    }
+
+    const existingTasks = await db.select({ id: projectScheduleTasks.id }).from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
+    const existingIds = new Set(existingTasks.map(t => t.id));
+    for (const id of parsed.data.taskIds) {
+      if (!existingIds.has(id)) {
+        res.status(400).json({ error: `Task ${id} not found in schedule` }); return;
+      }
+    }
+
+    for (let i = 0; i < parsed.data.taskIds.length; i++) {
+      await db.update(projectScheduleTasks)
+        .set({ sortOrder: i, updatedAt: new Date() })
+        .where(and(eq(projectScheduleTasks.id, parsed.data.taskIds[i]), eq(projectScheduleTasks.scheduleId, schedule.id)));
+    }
+
+    const tasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
+    res.json({ tasks });
+  } catch (error) {
+    console.error("Reorder tasks error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
   try {
@@ -3270,7 +3401,30 @@ router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole(
       return;
     }
 
-    const { name, description, plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, percentComplete, isCriticalPath, status, dependencies, crewIds, durationDays } = req.body;
+    const { name, description, plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, percentComplete, isCriticalPath, status, dependencies, crewIds, durationDays, parentTaskId } = req.body;
+
+    if (parentTaskId !== undefined && parentTaskId !== null) {
+      const scheduleId = taskWithSchedule[0].task.scheduleId;
+      const allTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, scheduleId));
+      const parentTask = allTasks.find(t => t.id === parentTaskId);
+      if (!parentTask) {
+        res.status(400).json({ error: "Parent task not found in this schedule" });
+        return;
+      }
+      if (parentTaskId === taskId) {
+        res.status(400).json({ error: "Task cannot be its own parent" });
+        return;
+      }
+      let currentId: string | null = parentTask.parentTaskId;
+      while (currentId) {
+        if (currentId === taskId) {
+          res.status(400).json({ error: "Circular parent hierarchy detected" });
+          return;
+        }
+        const ancestor = allTasks.find(t => t.id === currentId);
+        currentId = ancestor?.parentTaskId || null;
+      }
+    }
 
     if (percentComplete !== undefined && (percentComplete < 0 || percentComplete > 100)) {
       res.status(400).json({ error: "percentComplete must be between 0 and 100" });
@@ -3312,6 +3466,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole(
         ...(dependencies !== undefined && { dependencies }),
         ...(crewIds !== undefined && { crewIds }),
         ...(durationDays !== undefined && { durationDays }),
+        ...(parentTaskId !== undefined && { parentTaskId }),
         updatedAt: new Date(),
       })
       .where(eq(projectScheduleTasks.id, taskId))

@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
-import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, projects, changeOrders, projectDelays, crews } from "@shared/schema";
+import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, projects, changeOrders, projectDelays, crews, aiGanttRecommendations } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -221,6 +221,7 @@ const taskCreateSchema = z.object({
   plannedStartDate: z.string().optional(),
   plannedEndDate: z.string().optional(),
   tradeType: z.string().optional(),
+  parentTaskId: z.string().optional(),
 });
 
 router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
@@ -235,14 +236,24 @@ router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", 
     const schedule = await getActiveSchedule(project.id);
     if (!schedule) return res.status(404).json({ error: "No active schedule" });
 
+    const allTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
+
     if (parsed.data.dependencies && parsed.data.dependencies.length > 0) {
-      const allTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
       for (const depId of parsed.data.dependencies) {
         if (!allTasks.some(t => t.id === depId)) {
           return res.status(400).json({ error: `Dependency task ${depId} not found in schedule` });
         }
       }
     }
+
+    if (parsed.data.parentTaskId) {
+      const parentTask = allTasks.find(t => t.id === parsed.data.parentTaskId);
+      if (!parentTask) {
+        return res.status(400).json({ error: "Parent task not found in this schedule" });
+      }
+    }
+
+    const maxSortOrder = allTasks.reduce((max, t) => Math.max(max, t.sortOrder || 0), 0);
 
     const [newTask] = await db.insert(projectScheduleTasks).values({
       scheduleId: schedule.id,
@@ -254,7 +265,9 @@ router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", 
       plannedStartDate: parsed.data.plannedStartDate,
       plannedEndDate: parsed.data.plannedEndDate,
       tradeType: parsed.data.tradeType || null,
+      parentTaskId: parsed.data.parentTaskId || null,
       percentComplete: 0,
+      sortOrder: maxSortOrder + 1,
     }).returning();
 
     await recalculateSchedule(schedule.id);
@@ -351,6 +364,8 @@ router.get("/projects/:code/schedule/resource-loading", requireAuth, async (req:
     const overAllocations: Array<{ crewId: string; crewName: string; date: string; tasks: string[] }> = [];
     const crewDateTasks = new Map<string, Map<string, string[]>>();
 
+    const workingDaysList: number[] = schedule.workingDays ? (schedule.workingDays as number[]) : [1, 2, 3, 4, 5];
+
     for (const alloc of allocations) {
       if (!alloc.startDate || !alloc.endDate) continue;
       const start = new Date(alloc.startDate);
@@ -358,12 +373,14 @@ router.get("/projects/:code/schedule/resource-loading", requireAuth, async (req:
       const current = new Date(start);
 
       while (current <= end) {
-        const dateStr = current.toISOString().split("T")[0];
-        const key = alloc.crewId;
-        if (!crewDateTasks.has(key)) crewDateTasks.set(key, new Map());
-        const dateTasks = crewDateTasks.get(key)!;
-        if (!dateTasks.has(dateStr)) dateTasks.set(dateStr, []);
-        dateTasks.get(dateStr)!.push(alloc.taskName);
+        if (workingDaysList.includes(current.getDay())) {
+          const dateStr = current.toISOString().split("T")[0];
+          const key = alloc.crewId;
+          if (!crewDateTasks.has(key)) crewDateTasks.set(key, new Map());
+          const dateTasks = crewDateTasks.get(key)!;
+          if (!dateTasks.has(dateStr)) dateTasks.set(dateStr, []);
+          dateTasks.get(dateStr)!.push(alloc.taskName);
+        }
         current.setDate(current.getDate() + 1);
       }
     }
@@ -519,6 +536,92 @@ router.post("/projects/:code/schedule/delay-change-order", requireAuth, requireR
     res.json({ changeOrder: newCO, delayId });
   } catch (error) {
     console.error("Delay change order error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/projects/:code/schedule/recommendations", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const recommendations = await db
+      .select()
+      .from(aiGanttRecommendations)
+      .where(eq(aiGanttRecommendations.projectId, project.id))
+      .orderBy(desc(aiGanttRecommendations.createdAt));
+
+    res.json({ recommendations });
+  } catch (error) {
+    console.error("Get recommendations error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/projects/:code/schedule/recommendations/:recId/dismiss", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const [updated] = await db.update(aiGanttRecommendations)
+      .set({ isApplied: true, appliedById: req.user!.id, appliedAt: new Date() })
+      .where(and(eq(aiGanttRecommendations.id, req.params.recId), eq(aiGanttRecommendations.projectId, project.id)))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "Recommendation not found" });
+    res.json({ recommendation: updated });
+  } catch (error) {
+    console.error("Dismiss recommendation error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const manualScheduleSchema = z.object({
+  name: z.string().min(1).default("Master Schedule"),
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  workingDays: z.array(z.number().min(0).max(6)).optional(),
+});
+
+router.post("/projects/:code/schedule/create", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response) => {
+  try {
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!checkAccess(req, project)) return res.status(403).json({ error: "Access denied" });
+
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const parsed = manualScheduleSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+
+    const existingSchedules = await db
+      .select()
+      .from(projectSchedules)
+      .where(and(eq(projectSchedules.projectId, project.id), eq(projectSchedules.isActive, true)));
+
+    if (existingSchedules.length > 0) {
+      for (const s of existingSchedules) {
+        await db.update(projectSchedules)
+          .set({ isActive: false, updatedAt: new Date() })
+          .where(eq(projectSchedules.id, s.id));
+      }
+    }
+
+    const [newSchedule] = await db.insert(projectSchedules).values({
+      organizationId: orgId,
+      projectId: project.id,
+      name: parsed.data.name,
+      generatedBy: "MANUAL",
+      baselineStartDate: parsed.data.startDate,
+      workingDays: parsed.data.workingDays || [1, 2, 3, 4, 5],
+      isActive: true,
+    }).returning();
+
+    res.status(201).json({ schedule: newSchedule, tasks: [] });
+  } catch (error) {
+    console.error("Create manual schedule error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -1342,22 +1342,6 @@ router.get("/ai-features/schedule/:projectId", requireAuth, async (req: AuthRequ
   }
 });
 
-// PATCH /api/ai-features/schedule/tasks/:taskId - Update task
-router.patch("/ai-features/schedule/tasks/:taskId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
-  try {
-    const updates = req.body;
-    
-    const [task] = await db.update(projectScheduleTasks)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(projectScheduleTasks.id, req.params.taskId))
-      .returning();
-
-    res.json({ task });
-  } catch (error) {
-    console.error("Update task error:", error);
-    res.status(500).json({ error: "Failed to update task" });
-  }
-});
 
 // ============================================
 // FEATURE C: AI JOBSITE CAMERA ANALYSIS ROUTES

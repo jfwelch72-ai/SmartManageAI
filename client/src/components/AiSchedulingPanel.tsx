@@ -33,6 +33,11 @@ import {
   ArrowRight,
   Link2,
   Target,
+  ChevronRight,
+  ChevronDown,
+  Plus,
+  Lightbulb,
+  X,
 } from "lucide-react";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -43,6 +48,7 @@ import { format, differenceInDays, parseISO } from "date-fns";
 interface ScheduleTask {
   id: string;
   name: string;
+  description?: string;
   tradeType: string;
   plannedStartDate: string;
   plannedEndDate: string;
@@ -64,6 +70,18 @@ interface ScheduleTask {
   freeFloat?: number;
   baselineStartDate?: string;
   baselineEndDate?: string;
+  parentTaskId?: string | null;
+  isMilestone?: boolean;
+}
+
+interface AIRecommendation {
+  id: string;
+  recommendationType: string;
+  title: string;
+  description: string;
+  estimatedDaysImprovement?: number | null;
+  estimatedCostSavings?: string | null;
+  isApplied: boolean;
 }
 
 interface ProjectSchedule {
@@ -134,6 +152,8 @@ const STATUS_CONFIG = {
 
 export default function AiSchedulingPanel({ projectId, projectCode, projectName, tradeType }: AiSchedulingPanelProps) {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [manualCreateOpen, setManualCreateOpen] = useState(false);
+  const [manualName, setManualName] = useState("Master Schedule");
   const [startDate, setStartDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [selectedTask, setSelectedTask] = useState<ScheduleTask | null>(null);
@@ -142,6 +162,15 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
   const [depTask, setDepTask] = useState<ScheduleTask | null>(null);
   const [depSelected, setDepSelected] = useState<string[]>([]);
   const [activeSubTab, setActiveSubTab] = useState("gantt");
+  const [addTaskOpen, setAddTaskOpen] = useState(false);
+  const [newTaskName, setNewTaskName] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskDuration, setNewTaskDuration] = useState(1);
+  const [newTaskParentId, setNewTaskParentId] = useState<string>("");
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDuration, setEditDuration] = useState(1);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const { toast } = useToast();
 
@@ -164,6 +193,11 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     enabled: !!scheduleData?.schedule,
   });
 
+  const { data: recommendationsData } = useQuery<{ recommendations: AIRecommendation[] }>({
+    queryKey: ["/api/projects", projectCode, "schedule", "recommendations"],
+    enabled: !!scheduleData?.schedule,
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", `/api/projects/${projectCode}/ai-schedule`, { startDate });
@@ -172,6 +206,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "forecast"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "recommendations"] });
       setGenerateDialogOpen(false);
       toast({ title: "Schedule Generated", description: `AI created ${data.tasks?.length || 0} tasks` });
     },
@@ -247,6 +282,61 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     },
   });
 
+  const createManualScheduleMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/schedule/create`, {
+        name: manualName,
+        startDate,
+        workingDays,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      setManualCreateOpen(false);
+      toast({ title: "Schedule Created", description: "Empty schedule created. Add tasks to get started." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Creation Failed", description: error.message || "Failed to create schedule", variant: "destructive" });
+    },
+  });
+
+  const addTaskMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/projects/${projectCode}/schedule/tasks`, {
+        name: newTaskName,
+        description: newTaskDescription,
+        durationDays: newTaskDuration,
+        parentTaskId: newTaskParentId || undefined,
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "forecast"] });
+      setAddTaskOpen(false);
+      setNewTaskName("");
+      setNewTaskDescription("");
+      setNewTaskDuration(1);
+      setNewTaskParentId("");
+      toast({ title: "Task Added", description: "New task added to schedule" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Add Failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const dismissRecommendationMutation = useMutation({
+    mutationFn: async (recId: string) => {
+      const response = await apiRequest("PATCH", `/api/projects/${projectCode}/schedule/recommendations/${recId}/dismiss`, {});
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "schedule", "recommendations"] });
+      toast({ title: "Recommendation Dismissed" });
+    },
+  });
+
   const toggleWorkingDay = (day: number) => {
     setWorkingDays(prev =>
       prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort()
@@ -255,7 +345,30 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
 
   const handleTaskClick = (task: ScheduleTask) => {
     setSelectedTask(task);
+    setEditName(task.name);
+    setEditDescription(task.description || "");
+    setEditDuration(task.durationDays);
     setTaskDialogOpen(true);
+  };
+
+  const handleSaveTaskEdits = () => {
+    if (!selectedTask) return;
+    const updates: Partial<ScheduleTask> = {};
+    if (editName !== selectedTask.name) updates.name = editName;
+    if (editDescription !== (selectedTask.description || "")) updates.description = editDescription;
+    if (editDuration !== selectedTask.durationDays) updates.durationDays = editDuration;
+    if (Object.keys(updates).length > 0) {
+      updateTaskMutation.mutate({ taskId: selectedTask.id, updates });
+    }
+  };
+
+  const toggleCollapse = (taskId: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
   };
 
   const handleStatusChange = (status: ScheduleTask["status"]) => {
@@ -287,8 +400,38 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
     : 0;
 
   const sortedTasks = useMemo(() => {
-    return [...tasks].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const sorted = [...tasks].sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    return sorted;
   }, [tasks]);
+
+  const wbsTasks = useMemo(() => {
+    const rootTasks = sortedTasks.filter(t => !t.parentTaskId);
+    const childMap = new Map<string, ScheduleTask[]>();
+    for (const t of sortedTasks) {
+      if (t.parentTaskId) {
+        if (!childMap.has(t.parentTaskId)) childMap.set(t.parentTaskId, []);
+        childMap.get(t.parentTaskId)!.push(t);
+      }
+    }
+
+    const result: Array<{ task: ScheduleTask; depth: number; hasChildren: boolean }> = [];
+    const visited = new Set<string>();
+    function addTask(task: ScheduleTask, depth: number) {
+      if (visited.has(task.id)) return;
+      visited.add(task.id);
+      const children = childMap.get(task.id) || [];
+      result.push({ task, depth, hasChildren: children.length > 0 });
+      if (!collapsedGroups.has(task.id)) {
+        for (const child of children) {
+          addTask(child, depth + 1);
+        }
+      }
+    }
+    for (const root of rootTasks) {
+      addTask(root, 0);
+    }
+    return result;
+  }, [sortedTasks, collapsedGroups]);
 
   const taskMap = useMemo(() => {
     const map = new Map<string, ScheduleTask>();
@@ -363,14 +506,26 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
               )}
             </>
           )}
+          {schedule && (
+            <Button variant="outline" size="sm" onClick={() => setAddTaskOpen(true)} data-testid="button-add-task">
+              <CalendarIcon className="w-4 h-4 mr-2" />
+              Add Task
+            </Button>
+          )}
           <Button size="sm" onClick={() => setGenerateDialogOpen(true)} data-testid="button-generate-schedule" className="flex-1 sm:flex-none">
             <Sparkles className="w-4 h-4 mr-2" />
             {schedule ? "Regenerate" : "Generate with AI"}
           </Button>
+          {!schedule && (
+            <Button variant="outline" size="sm" onClick={() => setManualCreateOpen(true)} data-testid="button-create-blank" className="flex-1 sm:flex-none">
+              <CalendarIcon className="w-4 h-4 mr-2" />
+              Create Blank Schedule
+            </Button>
+          )}
         </div>
       </div>
 
-      {schedule && tasks.length > 0 ? (
+      {schedule ? (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <Card>
@@ -458,12 +613,19 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
             <TabsContent value="gantt">
               <GanttChart
                 tasks={sortedTasks}
+                wbsTasks={wbsTasks}
                 schedule={schedule}
                 taskMap={taskMap}
                 getBarPosition={getBarPosition}
                 getGanttRange={getGanttRange}
                 onTaskClick={handleTaskClick}
                 onEditDeps={openDepDialog}
+                collapsedGroups={collapsedGroups}
+                onToggleCollapse={toggleCollapse}
+              />
+              <RecommendationsPanel
+                recommendations={recommendationsData?.recommendations || []}
+                onDismiss={(id) => dismissRecommendationMutation.mutate(id)}
               />
             </TabsContent>
 
@@ -542,19 +704,77 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
       <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{selectedTask?.name}</DialogTitle>
-            <DialogDescription>Update task status, progress, and dates</DialogDescription>
+            <DialogTitle>Edit Task</DialogTitle>
+            <DialogDescription>Update task details, status, and progress</DialogDescription>
           </DialogHeader>
           {selectedTask && (
             <div className="space-y-4 py-4">
+              <div>
+                <Label>Task Name</Label>
+                <Input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  data-testid="input-task-name"
+                />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Task description..."
+                  data-testid="input-task-description"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Duration (days)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={editDuration}
+                    onChange={(e) => setEditDuration(parseInt(e.target.value) || 1)}
+                    data-testid="input-task-duration"
+                  />
+                </div>
+                <div>
+                  <Label>Parent Task</Label>
+                  <Select
+                    value={selectedTask.parentTaskId || "__none__"}
+                    onValueChange={(v) => {
+                      updateTaskMutation.mutate({
+                        taskId: selectedTask.id,
+                        updates: { parentTaskId: v === "__none__" ? null : v },
+                      });
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-parent-task">
+                      <SelectValue placeholder="None" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None (Root Task)</SelectItem>
+                      {tasks.filter(t => t.id !== selectedTask.id).map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {(editName !== selectedTask.name || editDescription !== (selectedTask.description || "") || editDuration !== selectedTask.durationDays) && (
+                <Button size="sm" onClick={handleSaveTaskEdits} disabled={updateTaskMutation.isPending} data-testid="button-save-task-edits">
+                  {updateTaskMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Save Changes
+                </Button>
+              )}
+              <Separator />
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">Planned Start</Label>
-                  <p className="font-medium">{format(parseISO(selectedTask.plannedStartDate), "MMM d, yyyy")}</p>
+                  <p className="font-medium">{selectedTask.plannedStartDate ? format(parseISO(selectedTask.plannedStartDate), "MMM d, yyyy") : "—"}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Planned End</Label>
-                  <p className="font-medium">{format(parseISO(selectedTask.plannedEndDate), "MMM d, yyyy")}</p>
+                  <p className="font-medium">{selectedTask.plannedEndDate ? format(parseISO(selectedTask.plannedEndDate), "MMM d, yyyy") : "—"}</p>
                 </div>
               </div>
               {selectedTask.baselineStartDate && selectedTask.baselineEndDate && (
@@ -690,37 +910,125 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={manualCreateOpen} onOpenChange={setManualCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Blank Schedule</DialogTitle>
+            <DialogDescription>Create an empty schedule and add tasks manually.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Schedule Name</Label>
+              <Input value={manualName} onChange={(e) => setManualName(e.target.value)} data-testid="input-schedule-name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Start Date</Label>
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} data-testid="input-manual-start-date" />
+            </div>
+            <div>
+              <Label>Working Days</Label>
+              <div className="flex gap-2 mt-2">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, index) => (
+                  <Button key={day} variant={workingDays.includes(index) ? "default" : "outline"} size="sm" onClick={() => toggleWorkingDay(index)}>
+                    {day}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManualCreateOpen(false)}>Cancel</Button>
+            <Button onClick={() => createManualScheduleMutation.mutate()} disabled={createManualScheduleMutation.isPending} data-testid="button-confirm-create-schedule">
+              {createManualScheduleMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Create Schedule
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addTaskOpen} onOpenChange={setAddTaskOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Task</DialogTitle>
+            <DialogDescription>Add a new task to the schedule.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <Label>Task Name</Label>
+              <Input value={newTaskName} onChange={(e) => setNewTaskName(e.target.value)} placeholder="Enter task name" data-testid="input-new-task-name" />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input value={newTaskDescription} onChange={(e) => setNewTaskDescription(e.target.value)} placeholder="Optional description" data-testid="input-new-task-description" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Duration (days)</Label>
+                <Input type="number" min={1} value={newTaskDuration} onChange={(e) => setNewTaskDuration(parseInt(e.target.value) || 1)} data-testid="input-new-task-duration" />
+              </div>
+              <div>
+                <Label>Parent Task</Label>
+                <Select value={newTaskParentId || "__none__"} onValueChange={(v) => setNewTaskParentId(v === "__none__" ? "" : v)}>
+                  <SelectTrigger data-testid="select-new-task-parent">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None (Root Task)</SelectItem>
+                    {tasks.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddTaskOpen(false)}>Cancel</Button>
+            <Button onClick={() => addTaskMutation.mutate()} disabled={addTaskMutation.isPending || !newTaskName} data-testid="button-confirm-add-task">
+              {addTaskMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+              Add Task
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function GanttChart({
   tasks,
+  wbsTasks,
   schedule,
   taskMap,
   getBarPosition,
   getGanttRange,
   onTaskClick,
   onEditDeps,
+  collapsedGroups,
+  onToggleCollapse,
 }: {
   tasks: ScheduleTask[];
+  wbsTasks: Array<{ task: ScheduleTask; depth: number; hasChildren: boolean }>;
   schedule: ProjectSchedule;
   taskMap: Map<string, ScheduleTask>;
   getBarPosition: (start: string, end: string) => { left: string; width: string };
   getGanttRange: () => { start: Date; end: Date; totalDays: number };
   onTaskClick: (task: ScheduleTask) => void;
   onEditDeps: (task: ScheduleTask) => void;
+  collapsedGroups: Set<string>;
+  onToggleCollapse: (taskId: string) => void;
 }) {
   const ganttBodyRef = useRef<HTMLDivElement>(null);
   const { start: ganttStart, end: ganttEnd, totalDays } = getGanttRange();
 
   const depLines = useMemo(() => {
     const lines: Array<{ fromIdx: number; toIdx: number; fromLeft: number; toLeft: number }> = [];
-    tasks.forEach((task, toIdx) => {
+    wbsTasks.forEach(({ task }, toIdx) => {
       for (const depId of (task.dependencies || [])) {
         const fromTask = taskMap.get(depId);
         if (!fromTask) continue;
-        const fromIdx = tasks.findIndex(t => t.id === depId);
+        const fromIdx = wbsTasks.findIndex(w => w.task.id === depId);
         if (fromIdx < 0) continue;
 
         const fromEnd = fromTask.plannedEndDate;
@@ -739,7 +1047,7 @@ function GanttChart({
       }
     });
     return lines;
-  }, [tasks, taskMap, ganttStart, totalDays]);
+  }, [wbsTasks, taskMap, ganttStart, totalDays]);
 
   const rowHeight = 36;
   const headerHeight = 28;
@@ -769,8 +1077,8 @@ function GanttChart({
           </div>
           <Separator className="hidden md:block" />
           <ScrollArea className="h-[420px]">
-            <div className="relative" style={{ minHeight: tasks.length * rowHeight + headerHeight }}>
-              <svg className="absolute inset-0 w-full pointer-events-none" style={{ height: tasks.length * rowHeight + headerHeight, zIndex: 5 }}>
+            <div className="relative" style={{ minHeight: wbsTasks.length * rowHeight + headerHeight }}>
+              <svg className="absolute inset-0 w-full pointer-events-none" style={{ height: wbsTasks.length * rowHeight + headerHeight, zIndex: 5 }}>
                 {depLines.map((line, idx) => {
                   const fromY = headerHeight + line.fromIdx * rowHeight + rowHeight / 2;
                   const toY = headerHeight + line.toIdx * rowHeight + rowHeight / 2;
@@ -800,9 +1108,9 @@ function GanttChart({
               </svg>
 
               <div ref={ganttBodyRef} className="space-y-0">
-                {tasks.map((task) => {
+                {wbsTasks.map(({ task, depth, hasChildren }) => {
                   const StatusIcon = STATUS_CONFIG[task.status].icon;
-                  const barStyle = getBarPosition(task.plannedStartDate, task.plannedEndDate);
+                  const barStyle = task.plannedStartDate && task.plannedEndDate ? getBarPosition(task.plannedStartDate, task.plannedEndDate) : { left: "0%", width: "2%" };
                   const hasBaseline = task.baselineStartDate && task.baselineEndDate;
                   const baselineStyle = hasBaseline ? getBarPosition(task.baselineStartDate!, task.baselineEndDate!) : null;
 
@@ -810,9 +1118,11 @@ function GanttChart({
                     ? `${((task.freeFloat || 0) / totalDays) * 100}%`
                     : "0%";
 
-                  const baselineVariance = hasBaseline
+                  const baselineVariance = hasBaseline && task.plannedEndDate
                     ? differenceInDays(parseISO(task.plannedEndDate), parseISO(task.baselineEndDate!))
                     : null;
+
+                  const isCollapsed = collapsedGroups.has(task.id);
 
                   return (
                     <div
@@ -822,9 +1132,18 @@ function GanttChart({
                       onClick={() => onTaskClick(task)}
                       data-testid={`task-row-${task.id}`}
                     >
-                      <div className="md:w-56 shrink-0 flex items-center gap-1.5 md:pr-2 min-w-0">
+                      <div className="md:w-56 shrink-0 flex items-center gap-1.5 md:pr-2 min-w-0" style={{ paddingLeft: depth * 20 }}>
+                        {hasChildren && (
+                          <button
+                            className="shrink-0 p-0.5 rounded hover:bg-muted"
+                            onClick={(e) => { e.stopPropagation(); onToggleCollapse(task.id); }}
+                            data-testid={`button-collapse-${task.id}`}
+                          >
+                            {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                          </button>
+                        )}
                         <StatusIcon className={cn("w-3.5 h-3.5 shrink-0", STATUS_CONFIG[task.status].color.split(" ")[1])} />
-                        <span className="text-xs truncate">{task.name}</span>
+                        <span className={cn("text-xs truncate", hasChildren && "font-semibold")}>{task.name}</span>
                         {task.isCriticalPath && <Badge variant="destructive" className="text-[10px] px-1 py-0 shrink-0">CP</Badge>}
                         {baselineVariance != null && baselineVariance > 0 && (
                           <span className="text-[10px] text-red-500 shrink-0">+{baselineVariance}d</span>
@@ -949,27 +1268,76 @@ function ForecastPanel({ forecast: forecastData, schedule }: { forecast?: Foreca
       {snapshots.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Completion Trend</CardTitle>
+            <CardTitle className="text-lg">Projected Completion Trend</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <div className="flex items-end gap-1 h-40 border-b">
-                {snapshots.slice(-15).map((snap, idx) => {
-                  const progress = snap.overallProgress || 0;
-                  return (
-                    <div key={idx} className="flex-1 flex flex-col items-center justify-end gap-1">
-                      <div
-                        className={cn("w-full rounded-t", parseFloat(snap.spiValue || "0") >= 1 ? "bg-green-400" : parseFloat(snap.spiValue || "0") >= 0.9 ? "bg-yellow-400" : "bg-red-400")}
-                        style={{ height: `${Math.max(progress, 2)}%` }}
-                        title={`${snap.snapshotDate}: ${progress}% complete, SPI: ${snap.spiValue}`}
+              <svg viewBox="0 0 600 200" className="w-full h-48" data-testid="chart-completion-trend">
+                {(() => {
+                  const recentSnaps = snapshots.slice(-15);
+                  if (recentSnaps.length < 2) return null;
+
+                  const completionDates = recentSnaps.map(s => s.projectedCompletionDate ? new Date(s.projectedCompletionDate).getTime() : 0).filter(d => d > 0);
+                  if (completionDates.length < 2) return null;
+
+                  const minDate = Math.min(...completionDates);
+                  const maxDate = Math.max(...completionDates);
+                  const dateRange = maxDate - minDate || 1;
+
+                  const padding = { top: 20, bottom: 30, left: 10, right: 10 };
+                  const chartW = 600 - padding.left - padding.right;
+                  const chartH = 200 - padding.top - padding.bottom;
+
+                  const points = recentSnaps.map((snap, idx) => {
+                    const x = padding.left + (idx / (recentSnaps.length - 1)) * chartW;
+                    const dateVal = snap.projectedCompletionDate ? new Date(snap.projectedCompletionDate).getTime() : minDate;
+                    const y = padding.top + chartH - ((dateVal - minDate) / dateRange) * chartH;
+                    const spi = parseFloat(snap.spiValue || "0");
+                    return { x, y, spi, snap };
+                  });
+
+                  const segments: JSX.Element[] = [];
+                  for (let i = 0; i < points.length - 1; i++) {
+                    const spi = points[i].spi;
+                    const color = spi >= 1 ? "#22c55e" : spi >= 0.9 ? "#eab308" : "#ef4444";
+                    segments.push(
+                      <line
+                        key={`seg-${i}`}
+                        x1={points[i].x}
+                        y1={points[i].y}
+                        x2={points[i + 1].x}
+                        y2={points[i + 1].y}
+                        stroke={color}
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
                       />
-                    </div>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <line x1={padding.left} y1={padding.top + chartH} x2={padding.left + chartW} y2={padding.top + chartH} stroke="#e5e7eb" strokeWidth="1" />
+                      <line x1={padding.left} y1={padding.top} x2={padding.left + chartW} y2={padding.top} stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 2" />
+                      <line x1={padding.left} y1={padding.top + chartH / 2} x2={padding.left + chartW} y2={padding.top + chartH / 2} stroke="#e5e7eb" strokeWidth="1" strokeDasharray="4 2" />
+                      {segments}
+                      {points.map((p, i) => (
+                        <g key={i}>
+                          <circle cx={p.x} cy={p.y} r="4" fill={p.spi >= 1 ? "#22c55e" : p.spi >= 0.9 ? "#eab308" : "#ef4444"} stroke="white" strokeWidth="1.5" />
+                          <title>{`${p.snap.snapshotDate}: ${p.snap.projectedCompletionDate ? format(parseISO(p.snap.projectedCompletionDate), "MMM d") : "?"} (SPI: ${p.spi.toFixed(2)})`}</title>
+                        </g>
+                      ))}
+                      <text x={padding.left} y={padding.top + chartH + 18} className="text-[10px] fill-muted-foreground">{recentSnaps[0].snapshotDate}</text>
+                      <text x={padding.left + chartW} y={padding.top + chartH + 18} className="text-[10px] fill-muted-foreground" textAnchor="end">{recentSnaps[recentSnaps.length - 1].snapshotDate}</text>
+                      <text x={padding.left + chartW + 5} y={padding.top + 5} className="text-[9px] fill-muted-foreground" textAnchor="start">{format(new Date(maxDate), "MMM d")}</text>
+                      <text x={padding.left + chartW + 5} y={padding.top + chartH} className="text-[9px] fill-muted-foreground" textAnchor="start">{format(new Date(minDate), "MMM d")}</text>
+                    </>
                   );
-                })}
-              </div>
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>{snapshots.length > 0 ? snapshots[Math.max(0, snapshots.length - 15)]?.snapshotDate : ""}</span>
-                <span>{snapshots[snapshots.length - 1]?.snapshotDate}</span>
+                })()}
+              </svg>
+              <div className="flex justify-center gap-4 text-[10px] text-muted-foreground">
+                <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-green-500 inline-block" />SPI &ge; 1.0</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-yellow-500 inline-block" />SPI 0.9-1.0</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-0.5 bg-red-500 inline-block" />SPI &lt; 0.9</span>
               </div>
             </div>
           </CardContent>
@@ -1051,6 +1419,56 @@ function ResourcePanel({ data }: { data?: ResourceData }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function RecommendationsPanel({ recommendations, onDismiss }: { recommendations: AIRecommendation[]; onDismiss: (id: string) => void }) {
+  const activeRecs = recommendations.filter(r => !r.isApplied);
+  if (activeRecs.length === 0) return null;
+
+  const typeConfig: Record<string, { color: string; icon: string }> = {
+    CRITICAL_PATH: { color: "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30", icon: "text-red-500" },
+    PARALLEL_WORK: { color: "border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/30", icon: "text-blue-500" },
+    RESOURCE_ALLOCATION: { color: "border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30", icon: "text-yellow-500" },
+    TASK_ORDER: { color: "border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30", icon: "text-green-500" },
+  };
+
+  return (
+    <Card className="mt-4">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Lightbulb className="w-5 h-5 text-yellow-500" />
+          AI Optimization Recommendations
+          <Badge variant="secondary" className="ml-2">{activeRecs.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {activeRecs.map(rec => {
+            const config = typeConfig[rec.recommendationType] || typeConfig.TASK_ORDER;
+            return (
+              <div key={rec.id} className={cn("border rounded-lg p-3", config.color)} data-testid={`recommendation-${rec.id}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Lightbulb className={cn("w-4 h-4 shrink-0", config.icon)} />
+                      <p className="font-medium text-sm">{rec.title}</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{rec.description}</p>
+                    {rec.estimatedDaysImprovement && (
+                      <p className="text-xs font-medium mt-1 text-green-600">Potential savings: ~{rec.estimatedDaysImprovement} days</p>
+                    )}
+                  </div>
+                  <Button variant="ghost" size="sm" className="shrink-0 h-6 w-6 p-0" onClick={() => onDismiss(rec.id)} data-testid={`button-dismiss-rec-${rec.id}`}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
