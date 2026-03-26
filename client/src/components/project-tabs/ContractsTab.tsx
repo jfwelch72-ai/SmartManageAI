@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { Plus, Eye, FileText, CheckCircle, XCircle, Clock, ArrowRight, History, MessageSquare, Paperclip, Upload, Trash2, PenTool, Send, BookTemplate, LayoutTemplate } from "lucide-react";
+import { Plus, Eye, FileText, CheckCircle, XCircle, Clock, ArrowRight, History, MessageSquare, Paperclip, Upload, Trash2, PenTool, Send, BookTemplate, LayoutTemplate, ShieldAlert, AlertTriangle, ChevronDown, ChevronUp, Brain } from "lucide-react";
 interface ContractsTabProps {
   projectId: string;
   projectCode: string;
@@ -47,6 +47,41 @@ interface ContractApproval {
   comments: string | null;
   decidedAt: string | null;
   createdAt: string;
+}
+
+interface RiskClauseAnalysis {
+  category: string;
+  title: string;
+  riskScore: number;
+  riskLevel: string;
+  finding: string;
+  suggestion: string;
+}
+
+interface RiskMissingProtection {
+  category: string;
+  title: string;
+  severity: string;
+  description: string;
+}
+
+interface RiskRecommendation {
+  priority: number;
+  title: string;
+  description: string;
+  impact: string;
+}
+
+interface ContractRiskAnalysis {
+  id: string;
+  contractId: string;
+  overallRiskScore: number;
+  riskLevel: string;
+  summary: string;
+  clauseAnalysis: RiskClauseAnalysis[];
+  missingProtections: RiskMissingProtection[];
+  recommendations: RiskRecommendation[];
+  analyzedAt: string;
 }
 
 interface ContractAttachment {
@@ -134,6 +169,8 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
   const [compareV2, setCompareV2] = useState<number | null>(null);
   const [compareResult, setCompareResult] = useState<{ field: string; from: string; to: string }[] | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showRiskAnalysis, setShowRiskAnalysis] = useState(false);
+  const [expandedClauseIdx, setExpandedClauseIdx] = useState<number | null>(null);
 
   const defaultForm = {
     contractNumber: "",
@@ -441,6 +478,68 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
+
+  const { data: riskAnalyses = [], isLoading: isLoadingRisk } = useQuery<ContractRiskAnalysis[]>({
+    queryKey: ["/api/contracts", selectedContract?.id, "risk-analysis"],
+    queryFn: async () => {
+      if (!selectedContract) return [];
+      const res = await fetch(`/api/contracts/${selectedContract.id}/risk-analysis`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedContract && showRiskAnalysis,
+  });
+
+  const runRiskAnalysisMutation = useMutation({
+    mutationFn: async (contractId: string) => {
+      const res = await apiRequest("POST", `/api/contracts/${contractId}/risk-analysis`);
+      return res.json();
+    },
+    onSuccess: () => {
+      if (selectedContract) {
+        queryClient.invalidateQueries({ queryKey: ["/api/contracts", selectedContract.id, "risk-analysis"] });
+      }
+      toast({ title: "Risk analysis complete" });
+    },
+    onError: (err: Error) => toast({ title: "Analysis failed", description: err.message, variant: "destructive" }),
+  });
+
+  const getRiskColor = (level: string) => {
+    switch (level) {
+      case "LOW": return "text-green-600 dark:text-green-400";
+      case "MODERATE": return "text-yellow-600 dark:text-yellow-400";
+      case "HIGH": return "text-orange-600 dark:text-orange-400";
+      case "CRITICAL": return "text-red-600 dark:text-red-400";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  const getRiskBadgeVariant = (level: string): "default" | "secondary" | "destructive" | "outline" => {
+    switch (level) {
+      case "LOW": return "secondary";
+      case "MODERATE": return "outline";
+      case "HIGH": return "destructive";
+      case "CRITICAL": return "destructive";
+      default: return "outline";
+    }
+  };
+
+  const getRiskBg = (level: string) => {
+    switch (level) {
+      case "LOW": return "bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-800";
+      case "MODERATE": return "bg-yellow-50 border-yellow-200 dark:bg-yellow-950/30 dark:border-yellow-800";
+      case "HIGH": return "bg-orange-50 border-orange-200 dark:bg-orange-950/30 dark:border-orange-800";
+      case "CRITICAL": return "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800";
+      default: return "bg-muted border";
+    }
+  };
+
+  const getScoreColor = (score: number) => {
+    if (score <= 25) return "text-green-600 dark:text-green-400";
+    if (score <= 50) return "text-yellow-600 dark:text-yellow-400";
+    if (score <= 75) return "text-orange-600 dark:text-orange-400";
+    return "text-red-600 dark:text-red-400";
+  };
 
   const openEdit = (contract: Contract) => {
     setForm({
@@ -970,6 +1069,171 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
                   )}
                 </div>
               )}
+
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-1">
+                    <Brain className="h-4 w-4" /> AI Risk Analysis
+                  </h3>
+                  <div className="flex gap-2">
+                    {canManage && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setShowRiskAnalysis(true);
+                          runRiskAnalysisMutation.mutate(selectedContract.id);
+                        }}
+                        disabled={runRiskAnalysisMutation.isPending}
+                        data-testid="button-run-risk-analysis"
+                      >
+                        <ShieldAlert className="h-4 w-4 mr-1" />
+                        {runRiskAnalysisMutation.isPending ? "Analyzing..." : "Run Analysis"}
+                      </Button>
+                    )}
+                    {riskAnalyses.length > 0 && !showRiskAnalysis && (
+                      <Button size="sm" variant="ghost" onClick={() => setShowRiskAnalysis(true)} data-testid="button-show-risk">
+                        View Results
+                      </Button>
+                    )}
+                    {showRiskAnalysis && (
+                      <Button size="sm" variant="ghost" onClick={() => { setShowRiskAnalysis(false); setExpandedClauseIdx(null); }} data-testid="button-hide-risk">
+                        Hide
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {runRiskAnalysisMutation.isPending && (
+                  <div className="flex items-center gap-2 p-4 rounded-lg border bg-muted/50 text-sm text-muted-foreground" data-testid="risk-analysis-loading">
+                    <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full" />
+                    Analyzing contract for risks... This may take a moment.
+                  </div>
+                )}
+
+                {showRiskAnalysis && !runRiskAnalysisMutation.isPending && riskAnalyses.length > 0 && (() => {
+                  const latest = riskAnalyses[0];
+                  return (
+                    <div className="space-y-4" data-testid="risk-analysis-results">
+                      <div className={`p-4 rounded-lg border ${getRiskBg(latest.riskLevel)}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <div className="text-center">
+                              <div className={`text-3xl font-bold ${getScoreColor(latest.overallRiskScore)}`} data-testid="text-risk-score">
+                                {latest.overallRiskScore}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground uppercase">Risk Score</div>
+                            </div>
+                            <div>
+                              <Badge variant={getRiskBadgeVariant(latest.riskLevel)} className="mb-1" data-testid="badge-risk-level">
+                                {latest.riskLevel} RISK
+                              </Badge>
+                              <p className="text-sm">{latest.summary}</p>
+                            </div>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Analyzed {format(new Date(latest.analyzedAt), "MMM d, yyyy 'at' h:mm a")}
+                        </p>
+                      </div>
+
+                      {latest.clauseAnalysis.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                            <FileText className="h-3.5 w-3.5" /> Clause-by-Clause Analysis ({latest.clauseAnalysis.length})
+                          </h4>
+                          <div className="space-y-1">
+                            {latest.clauseAnalysis.map((clause, idx) => (
+                              <div key={idx} className="rounded-lg border text-sm" data-testid={`risk-clause-${idx}`}>
+                                <button
+                                  className="w-full flex items-center justify-between p-3 text-left hover:bg-muted/50 transition-colors"
+                                  onClick={() => setExpandedClauseIdx(expandedClauseIdx === idx ? null : idx)}
+                                  data-testid={`button-expand-clause-${idx}`}
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className={`font-mono text-xs font-bold ${getScoreColor(clause.riskScore)}`}>{clause.riskScore}</span>
+                                    <span className="font-medium">{clause.title}</span>
+                                    <Badge variant={getRiskBadgeVariant(clause.riskLevel)} className="text-[10px] px-1.5 py-0">
+                                      {clause.riskLevel}
+                                    </Badge>
+                                  </div>
+                                  {expandedClauseIdx === idx ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                </button>
+                                {expandedClauseIdx === idx && (
+                                  <div className="px-3 pb-3 space-y-2 border-t">
+                                    <div className="pt-2">
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase">Finding</span>
+                                      <p className="text-sm mt-0.5">{clause.finding}</p>
+                                    </div>
+                                    <div>
+                                      <span className="text-xs font-semibold text-muted-foreground uppercase">Suggestion</span>
+                                      <p className="text-sm mt-0.5">{clause.suggestion}</p>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {latest.missingProtections.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                            <AlertTriangle className="h-3.5 w-3.5 text-orange-500" /> Missing Protections ({latest.missingProtections.length})
+                          </h4>
+                          <div className="space-y-2">
+                            {latest.missingProtections.map((mp, idx) => (
+                              <div key={idx} className={`p-3 rounded-lg border text-sm ${getRiskBg(mp.severity)}`} data-testid={`risk-missing-${idx}`}>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant={getRiskBadgeVariant(mp.severity)} className="text-[10px] px-1.5 py-0">
+                                    {mp.severity}
+                                  </Badge>
+                                  <span className="font-medium">{mp.title}</span>
+                                  <span className="text-xs text-muted-foreground">({mp.category})</span>
+                                </div>
+                                <p className="text-sm text-muted-foreground">{mp.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {latest.recommendations.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-semibold mb-2">Recommendations</h4>
+                          <div className="space-y-2">
+                            {latest.recommendations.sort((a, b) => a.priority - b.priority).map((rec, idx) => (
+                              <div key={idx} className="p-3 rounded-lg border text-sm" data-testid={`risk-recommendation-${idx}`}>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-bold">{rec.priority}</span>
+                                  <span className="font-medium">{rec.title}</span>
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                    {rec.impact} Impact
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground ml-7">{rec.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {riskAnalyses.length > 1 && (
+                        <p className="text-xs text-muted-foreground">
+                          {riskAnalyses.length} analyses on record. Showing most recent.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {showRiskAnalysis && !runRiskAnalysisMutation.isPending && !isLoadingRisk && riskAnalyses.length === 0 && (
+                  <p className="text-sm text-muted-foreground p-3 text-center" data-testid="risk-no-results">
+                    No risk analysis has been run yet. Click "Run Analysis" to get started.
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </DialogContent>

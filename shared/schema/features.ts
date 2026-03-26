@@ -6978,3 +6978,22 @@ export const insertSignatureRequestSchema = createInsertSchema(signatureRequests
 export type InsertSignatureRequest = z.infer<typeof insertSignatureRequestSchema>;
 export type SignatureRequest = typeof signatureRequests.$inferSelect;
 
+export const contractRiskAnalyses = pgTable("contract_risk_analyses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => contracts.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  overallRiskScore: integer("overall_risk_score").notNull(),
+  riskLevel: text("risk_level").notNull(),
+  summaryText: text("summary_text").notNull(),
+  clauseAnalysisJson: text("clause_analysis_json").notNull().default("[]"),
+  missingProtectionsJson: text("missing_protections_json").notNull().default("[]"),
+  recommendationsJson: text("recommendations_json").notNull().default("[]"),
+  analyzedById: varchar("analyzed_by_id").notNull().references(() => users.id),
+  analyzedAt: timestamp("analyzed_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("contract_risk_analyses_contract_idx").on(table.contractId),
+  orgIdx: index("contract_risk_analyses_org_idx").on(table.organizationId),
+}));
+
+export type ContractRiskAnalysis = typeof contractRiskAnalyses.$inferSelect;
+

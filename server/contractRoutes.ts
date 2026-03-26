@@ -22,15 +22,15 @@ interface ContractAttachment {
   version: number | null;
 }
 
-const CONTRACT_MANAGE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
-const CONTRACT_VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"];
+const CONTRACT_MANAGE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
+const CONTRACT_VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"] as const;
 
 function canManageContracts(role?: string) {
-  return CONTRACT_MANAGE_ROLES.includes(role || "");
+  return (CONTRACT_MANAGE_ROLES as readonly string[]).includes(role || "");
 }
 
 function canViewContracts(role?: string) {
-  return CONTRACT_VIEW_ROLES.includes(role || "");
+  return (CONTRACT_VIEW_ROLES as readonly string[]).includes(role || "");
 }
 
 async function recordVersionSnapshot(contractId: string, contract: Partial<Contract> & { currentVersion?: number | null }, changedById: string, changeNote: string) {
@@ -1100,6 +1100,184 @@ router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", require
   } catch (err) {
     console.error("[Contracts] Sign error:", err);
     res.status(500).json({ error: "Failed to process signature" });
+  }
+});
+
+router.post("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTRACT_MANAGE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { orgId, isSuperAdmin: isSA, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || (!isSA && !orgId)) return res.status(403).json({ error: "Organization required" });
+
+    const [contract] = await db.select().from(contracts)
+      .where(isSA ? eq(contracts.id, req.params.id) : and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId!)));
+    if (!contract) return res.status(404).json({ error: "Contract not found" });
+
+    const { contractRiskAnalyses } = await import("@shared/schema");
+    const { governedAiCall } = await import("./services/aiGovernance");
+    const { openai, AI_MODEL_GPT4O } = await import("./ai/openaiClient");
+
+    const [project] = await db.select({ name: projects.name, code: projects.code })
+      .from(projects).where(eq(projects.id, contract.projectId)).limit(1);
+
+    const redlines = await db.select().from(contractRedlines)
+      .where(eq(contractRedlines.contractId, contract.id));
+
+    const effectiveOrgId = orgId || contract.organizationId;
+    const clauses = await (async () => {
+      const { contractClauses } = await import("@shared/schema");
+      return db.select().from(contractClauses)
+        .where(eq(contractClauses.organizationId, effectiveOrgId));
+    })();
+
+    const contractContext = [
+      `Contract Number: ${contract.contractNumber}`,
+      `Type: ${contract.contractType}`,
+      `Status: ${contract.status}`,
+      `Value: $${contract.contractValue || "Not specified"}`,
+      `Parties: ${contract.parties || "Not specified"}`,
+      `Effective Date: ${contract.effectiveDate || "Not specified"}`,
+      `Expiration Date: ${contract.expirationDate || "Not specified"}`,
+      `Payment Terms: ${contract.paymentTerms || "Not specified"}`,
+      `Retention: ${contract.retentionPercent ? contract.retentionPercent + "%" : "Not specified"}`,
+      `Insurance Requirements: ${contract.insuranceRequirements || "Not specified"}`,
+      `Scope Summary: ${contract.scopeSummary || "Not specified"}`,
+      `Key Dates: ${contract.keyDates || "Not specified"}`,
+      `Project: ${project?.name || "Unknown"} (${project?.code || "N/A"})`,
+      redlines.length > 0 ? `\nRedlines (${redlines.length}):\n${redlines.map(r => `- [${r.status}] ${r.description} (Section: ${r.section || "General"})`).join("\n")}` : "",
+      clauses.length > 0 ? `\nOrg Clause Library (${clauses.length} clauses available):\n${clauses.map(c => `- ${c.title} [${c.category}]${c.isRequired ? " (Required)" : ""}`).join("\n")}` : "",
+    ].filter(Boolean).join("\n");
+
+    const systemPrompt = `You are an expert construction contract risk analyst. Analyze the provided contract details and produce a comprehensive risk assessment. You understand AIA, ConsensusDocs, and standard construction contract law.
+
+Respond with a JSON object in this EXACT structure:
+{
+  "overallRiskScore": <number 0-100, where 0=no risk, 100=extreme risk>,
+  "riskLevel": "<LOW|MODERATE|HIGH|CRITICAL>",
+  "summary": "<2-3 sentence executive summary of the risk profile>",
+  "clauseAnalysis": [
+    {
+      "category": "<PAYMENT|INSURANCE|INDEMNIFICATION|SCOPE|TERMINATION|DISPUTE_RESOLUTION|WARRANTY|SAFETY|COMPLIANCE|RETENTION|LIQUIDATED_DAMAGES|FORCE_MAJEURE|CHANGE_ORDER|CONFIDENTIALITY|OTHER>",
+      "title": "<clause area name>",
+      "riskScore": <0-100>,
+      "riskLevel": "<LOW|MODERATE|HIGH|CRITICAL>",
+      "finding": "<specific finding about this area>",
+      "suggestion": "<actionable suggestion to mitigate risk>"
+    }
+  ],
+  "missingProtections": [
+    {
+      "category": "<category>",
+      "title": "<what is missing>",
+      "severity": "<LOW|MODERATE|HIGH|CRITICAL>",
+      "description": "<why this matters and what could happen without it>"
+    }
+  ],
+  "recommendations": [
+    {
+      "priority": <1-5, 1=most urgent>,
+      "title": "<short action title>",
+      "description": "<detailed recommendation>",
+      "impact": "<LOW|MODERATE|HIGH>"
+    }
+  ]
+}
+
+Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope definition, Termination rights, Dispute resolution, Warranty, Retention, Change order provisions, and Force majeure. Flag any areas that are missing or underspecified. Compare against industry best practices for construction contracts.`;
+
+    const { result, blocked, reason } = await governedAiCall<{
+      overallRiskScore: number;
+      riskLevel: string;
+      summary: string;
+      clauseAnalysis: Array<{ category: string; title: string; riskScore: number; riskLevel: string; finding: string; suggestion: string }>;
+      missingProtections: Array<{ category: string; title: string; severity: string; description: string }>;
+      recommendations: Array<{ priority: number; title: string; description: string; impact: string }>;
+    }>({
+      orgId,
+      userId: req.user!.id,
+      actionType: "contract_risk_analysis",
+      inputRefs: { contractId: contract.id, contractNumber: contract.contractNumber },
+      fn: async () => {
+        const completion = await openai.chat.completions.create({
+          model: AI_MODEL_GPT4O,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Analyze this construction contract for risks:\n\n${contractContext}` },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+          max_tokens: 4096,
+        });
+        const content = completion.choices[0]?.message?.content;
+        if (!content) throw new Error("No response from AI");
+        return { result: JSON.parse(content), completion };
+      },
+    });
+
+    if (blocked) {
+      return res.status(429).json({ error: reason || "AI usage limit reached" });
+    }
+
+    const [analysis] = await db.insert(contractRiskAnalyses).values({
+      contractId: contract.id,
+      organizationId: effectiveOrgId,
+      overallRiskScore: result.overallRiskScore,
+      riskLevel: result.riskLevel,
+      summaryText: result.summary,
+      clauseAnalysisJson: JSON.stringify(result.clauseAnalysis || []),
+      missingProtectionsJson: JSON.stringify(result.missingProtections || []),
+      recommendationsJson: JSON.stringify(result.recommendations || []),
+      analyzedById: req.user!.id,
+    }).returning();
+
+    res.json({
+      id: analysis.id,
+      contractId: analysis.contractId,
+      overallRiskScore: analysis.overallRiskScore,
+      riskLevel: analysis.riskLevel,
+      summary: analysis.summaryText,
+      clauseAnalysis: result.clauseAnalysis || [],
+      missingProtections: result.missingProtections || [],
+      recommendations: result.recommendations || [],
+      analyzedAt: analysis.analyzedAt,
+    });
+  } catch (err) {
+    console.error("[Contracts] Risk analysis error:", err);
+    res.status(500).json({ error: "Failed to run risk analysis" });
+  }
+});
+
+router.get("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTRACT_VIEW_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { orgId, isSuperAdmin: isSA, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || (!isSA && !orgId)) return res.status(403).json({ error: "Organization required" });
+
+    const { contractRiskAnalyses } = await import("@shared/schema");
+
+    const conditions = [eq(contractRiskAnalyses.contractId, req.params.id)];
+    if (!isSA && orgId) {
+      conditions.push(eq(contractRiskAnalyses.organizationId, orgId));
+    }
+
+    const analyses = await db.select().from(contractRiskAnalyses)
+      .where(and(...conditions))
+      .orderBy(desc(contractRiskAnalyses.analyzedAt));
+
+    const formatted = analyses.map(a => ({
+      id: a.id,
+      contractId: a.contractId,
+      overallRiskScore: a.overallRiskScore,
+      riskLevel: a.riskLevel,
+      summary: a.summaryText,
+      clauseAnalysis: JSON.parse(a.clauseAnalysisJson || "[]"),
+      missingProtections: JSON.parse(a.missingProtectionsJson || "[]"),
+      recommendations: JSON.parse(a.recommendationsJson || "[]"),
+      analyzedAt: a.analyzedAt,
+    }));
+
+    res.json(formatted);
+  } catch (err) {
+    console.error("[Contracts] Get risk analyses error:", err);
+    res.status(500).json({ error: "Failed to get risk analyses" });
   }
 });
 
