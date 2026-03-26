@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DollarSign, AlertTriangle, Sparkles, RefreshCw } from "lucide-react";
+import { DollarSign, AlertTriangle, Sparkles, RefreshCw, Shield, Target } from "lucide-react";
 import type { ProjectProfitability } from "./types";
 
 interface ProjectProfitabilityTableProps {
@@ -91,7 +91,7 @@ export function ProjectProfitabilityTable({
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-4 text-sm">
                       <div>
                         <p className="text-muted-foreground">Labor</p>
                         <p className="font-semibold">{formatCurrency(project.total_labor_cost)}</p>
@@ -101,6 +101,23 @@ export function ProjectProfitabilityTable({
                         <p className="text-muted-foreground">Materials</p>
                         <p className="font-semibold">{formatCurrency(project.total_material_cost)}</p>
                         <p className="text-xs text-muted-foreground">{project.key_metrics.material_spend_rate}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground flex items-center gap-1">
+                          <Shield className="h-3 w-3 text-indigo-500" />
+                          Committed
+                        </p>
+                        <p className="font-semibold">{formatCurrency(project.committed_cost || 0)}</p>
+                        <p className="text-xs text-muted-foreground">POs + Subs</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground flex items-center gap-1">
+                          <Target className="h-3 w-3 text-purple-500" />
+                          Forecast Final
+                        </p>
+                        <p className={`font-semibold ${(project.forecast_final_cost || 0) > project.adjusted_budget ? 'text-red-500' : ''}`}>
+                          {formatCurrency(project.forecast_final_cost || 0)}
+                        </p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Projected Cost</p>

@@ -144,6 +144,10 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
       grantedById: req.user!.id,
     }]);
 
+    if (newReceipt.projectId) {
+      import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(newReceipt.projectId!)).catch(e => console.error("Budget alert eval after receipt:", e));
+    }
+
     res.status(201).json(newReceipt);
   } catch (error: any) {
     console.error("Create receipt error:", error);

@@ -139,6 +139,11 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
       newValue: JSON.stringify({ approvalStatus: "APPROVED" }),
     }, req);
 
+    if (entry.entry.projectId) {
+      const { evaluateBudgetAlerts } = await import("./costLedgerRoutes");
+      evaluateBudgetAlerts(entry.entry.projectId).catch(e => console.error("Budget alert eval after time approval:", e));
+    }
+
     res.json(updatedEntry);
   } catch (error) {
     console.error("Approve time entry error:", error);
@@ -286,6 +291,15 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
           );
         }
       } catch (e) { /* non-blocking */ }
+    }
+
+    const projectIds = new Set(entries.filter(e => e.entry.projectId).map(e => e.entry.projectId!));
+    if (projectIds.size > 0) {
+      import("./costLedgerRoutes").then(m => {
+        for (const pid of projectIds) {
+          m.evaluateBudgetAlerts(pid).catch(e => console.error("Budget alert eval after bulk time approval:", e));
+        }
+      }).catch(() => {});
     }
 
     res.json({ 

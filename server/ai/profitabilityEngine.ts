@@ -9,9 +9,11 @@ import {
   subcontractorContracts,
   subcontractorPayments,
   tmTickets,
-  projectEquipmentPlans
+  projectEquipmentPlans,
+  purchaseOrders,
+  purchaseOrderItems,
 } from "@shared/schema";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, inArray } from "drizzle-orm";
 
 export interface ProjectProfitability {
   project_code: string;
@@ -33,6 +35,8 @@ export interface ProjectProfitability {
   status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
   projected_completion_cost: number;
   estimated_margin: number;
+  committed_cost: number;
+  forecast_final_cost: number;
   texturaDrawDate: string | null;
   drawDayOfMonth: number | null;
   billingUrgency: 'CRITICAL' | 'HIGH' | null;
@@ -140,6 +144,21 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     .where(eq(subcontractorContracts.projectId, project.id));
 
   const subcontractorCount = Number(subcontractorContractsData[0]?.count || 0);
+
+  const committedSubContracts = await db
+    .select({ total: sql<number>`COALESCE(SUM(${subcontractorContracts.contractAmount}), 0)`.as("total") })
+    .from(subcontractorContracts)
+    .where(and(eq(subcontractorContracts.projectId, project.id), sql`${subcontractorContracts.status} IN ('ACTIVE', 'PENDING', 'APPROVED')`));
+  const committedSubTotal = Number(committedSubContracts[0]?.total || 0);
+
+  const committedPOData = await db
+    .select({ total: sql<number>`COALESCE(SUM(${purchaseOrderItems.quantity} * ${purchaseOrderItems.unitCost}), 0)`.as("total") })
+    .from(purchaseOrderItems)
+    .innerJoin(purchaseOrders, eq(purchaseOrderItems.poId, purchaseOrders.id))
+    .where(and(eq(purchaseOrders.projectId, project.id), sql`${purchaseOrders.status} IN ('APPROVED', 'SENT', 'PARTIAL', 'FULFILLED')`));
+  const committedPOTotal = Number(committedPOData[0]?.total || 0);
+
+  const totalCommittedCost = committedPOTotal + committedSubTotal;
 
   // Calculate equipment costs from project equipment plans
   const equipmentPlans = await db
@@ -252,6 +271,11 @@ export async function calculateProjectProfitability(projectCode: string): Promis
 
   const estimatedMargin = adjustedBudget - projectedCompletionCost;
 
+  const committedActuals = totalMaterialCost + totalSubcontractorCost;
+  const remainingCommitted = Math.max(0, totalCommittedCost - committedActuals);
+  const estimatedOpenRemaining = Math.max(0, projectedCompletionCost - totalActualCost - remainingCommitted);
+  const forecastFinalCost = totalActualCost + remainingCommitted + estimatedOpenRemaining;
+
   // Labor efficiency - compare actual hours to budgeted hours (assume 40% of budget is labor)
   const budgetedLaborHours = baseBudget * 0.4 / DEFAULT_COST_RATE;
   const laborEfficiency = budgetedLaborHours > 0
@@ -347,6 +371,8 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     status,
     projected_completion_cost: Math.round(projectedCompletionCost * 100) / 100,
     estimated_margin: Math.round(estimatedMargin * 100) / 100,
+    committed_cost: Math.round(totalCommittedCost * 100) / 100,
+    forecast_final_cost: Math.round(forecastFinalCost * 100) / 100,
     texturaDrawDate: project.texturaDrawDate || null,
     drawDayOfMonth: project.drawDayOfMonth || null,
     billingUrgency,

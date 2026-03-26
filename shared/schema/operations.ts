@@ -2269,6 +2269,46 @@ export const insertBudgetLineItemSchema = createInsertSchema(budgetLineItems).om
 export type InsertBudgetLineItem = z.infer<typeof insertBudgetLineItemSchema>;
 export type BudgetLineItem = typeof budgetLineItems.$inferSelect;
 
+export const forecastAdjustments = pgTable("forecast_adjustments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCode: varchar("cost_code", { length: 20 }).notNull(),
+  adjustedETC: decimal("adjusted_etc", { precision: 12, scale: 2 }).notNull(),
+  note: text("note"),
+  updatedBy: varchar("updated_by").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => [
+  index("forecast_adjustments_project_idx").on(table.projectId),
+  unique("forecast_adjustments_project_code_uniq").on(table.projectId, table.costCode),
+]);
+
+export const insertForecastAdjustmentSchema = createInsertSchema(forecastAdjustments).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertForecastAdjustment = z.infer<typeof insertForecastAdjustmentSchema>;
+export type ForecastAdjustment = typeof forecastAdjustments.$inferSelect;
+
+export const budgetAlerts = pgTable("budget_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCode: varchar("cost_code", { length: 20 }),
+  alertLevel: text("alert_level").notNull(),
+  thresholdPercent: decimal("threshold_percent", { precision: 5, scale: 2 }).notNull(),
+  currentPercent: decimal("current_percent", { precision: 5, scale: 2 }).notNull(),
+  budgetAmount: decimal("budget_amount", { precision: 12, scale: 2 }).notNull(),
+  actualAmount: decimal("actual_amount", { precision: 12, scale: 2 }).notNull(),
+  isDismissed: boolean("is_dismissed").notNull().default(false),
+  dismissedBy: varchar("dismissed_by").references(() => users.id),
+  dismissedAt: timestamp("dismissed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("budget_alerts_project_idx").on(table.projectId),
+  index("budget_alerts_dismissed_idx").on(table.isDismissed),
+]);
+
+export const insertBudgetAlertSchema = createInsertSchema(budgetAlerts).omit({ id: true, createdAt: true });
+export type InsertBudgetAlert = z.infer<typeof insertBudgetAlertSchema>;
+export type BudgetAlert = typeof budgetAlerts.$inferSelect;
+
 export const domainEvents = pgTable("domain_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   type: text("type").notNull(),

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes, organizations } from "@shared/schema";
+import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes, organizations, forecastAdjustments, budgetAlerts } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -87,6 +87,7 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
     const total = Number(data.laborBudget || 0) + Number(data.materialBudget || 0) +
       Number(data.subcontractorBudget || 0) + Number(data.equipmentBudget || 0) + Number(data.otherBudget || 0);
     const [row] = await db.insert(budgetLineItems).values({ ...data, totalBudget: String(total) }).returning();
+    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
     res.status(201).json(row);
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "23505") {
@@ -152,6 +153,7 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
       });
       return tx.insert(budgetLineItems).values(toInsert).returning();
     });
+    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
     res.json(rows);
   } catch (error: unknown) {
     console.error("Bulk upsert budget lines error:", error);
@@ -207,6 +209,7 @@ router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req
       .where(and(eq(budgetLineItems.id, req.params.lineId), eq(budgetLineItems.projectId, project.id)))
       .returning();
 
+    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
     res.json(row);
   } catch (error: unknown) {
     console.error("Update budget line error:", error);
@@ -250,6 +253,8 @@ router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthReque
       projectBudget,
       project.startDate,
       project.estimatedCompletionDate,
+      Number(project.budgetAlertThreshold || 80),
+      Number(project.budgetCriticalThreshold || 95),
     );
 
     res.json(result);
@@ -258,5 +263,235 @@ router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthReque
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+const forecastAdjustmentSchema = z.object({
+  costCode: z.string().min(1),
+  adjustedETC: z.coerce.number().finite().min(0, "ETC must be non-negative").transform(v => String(v)),
+  note: z.string().optional().nullable(),
+});
+
+router.put("/api/projects/:code/forecast-adjustments", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!canEditBudgetLines(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const parseResult = forecastAdjustmentSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Validation error", details: parseResult.error.flatten() });
+    }
+
+    const { costCode, adjustedETC, note } = parseResult.data;
+
+    const [existing] = await db.select().from(forecastAdjustments)
+      .where(and(eq(forecastAdjustments.projectId, project.id), eq(forecastAdjustments.costCode, costCode)));
+
+    let row;
+    if (existing) {
+      [row] = await db.update(forecastAdjustments).set({
+        adjustedETC,
+        note: note || null,
+        updatedBy: req.user!.id,
+        updatedAt: new Date(),
+      }).where(eq(forecastAdjustments.id, existing.id)).returning();
+    } else {
+      [row] = await db.insert(forecastAdjustments).values({
+        projectId: project.id,
+        costCode,
+        adjustedETC,
+        note: note || null,
+        updatedBy: req.user!.id,
+      }).returning();
+    }
+
+    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    res.json(row);
+  } catch (error) {
+    console.error("Forecast adjustment error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/projects/:code/forecast-adjustments/:costCode", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!canEditBudgetLines(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const [deleted] = await db.delete(forecastAdjustments)
+      .where(and(eq(forecastAdjustments.projectId, project.id), eq(forecastAdjustments.costCode, req.params.costCode)))
+      .returning();
+
+    if (!deleted) return res.status(404).json({ error: "Forecast adjustment not found" });
+    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete forecast adjustment error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/projects/:code/budget-thresholds", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (req.user!.role !== "ADMIN" && req.user!.role !== "MANAGER") {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const schema = z.object({
+      budgetAlertThreshold: z.number().min(1).max(100).optional(),
+      budgetCriticalThreshold: z.number().min(1).max(100).optional(),
+    });
+    const parseResult = schema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Validation error", details: parseResult.error.flatten() });
+    }
+
+    const updates: Record<string, any> = { updatedAt: new Date() };
+    if (parseResult.data.budgetAlertThreshold !== undefined) {
+      updates.budgetAlertThreshold = String(parseResult.data.budgetAlertThreshold);
+    }
+    if (parseResult.data.budgetCriticalThreshold !== undefined) {
+      updates.budgetCriticalThreshold = String(parseResult.data.budgetCriticalThreshold);
+    }
+
+    const [updated] = await db.update(projects).set(updates).where(eq(projects.id, project.id)).returning();
+    res.json({
+      budgetAlertThreshold: Number(updated.budgetAlertThreshold || 80),
+      budgetCriticalThreshold: Number(updated.budgetCriticalThreshold || 95),
+    });
+  } catch (error) {
+    console.error("Update budget thresholds error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/projects/:code/budget-alerts", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!canAccessCostLedger(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const alerts = await db.select().from(budgetAlerts)
+      .where(and(eq(budgetAlerts.projectId, project.id), eq(budgetAlerts.isDismissed, false)));
+
+    res.json(alerts);
+  } catch (error) {
+    console.error("Get budget alerts error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/projects/:code/budget-alerts/:alertId/dismiss", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    if (!canEditBudgetLines(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const project = await getProjectByCode(req.params.code);
+    if (!project) return res.status(404).json({ error: "Project not found" });
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const [updated] = await db.update(budgetAlerts).set({
+      isDismissed: true,
+      dismissedBy: req.user!.id,
+      dismissedAt: new Date(),
+    }).where(and(eq(budgetAlerts.id, req.params.alertId), eq(budgetAlerts.projectId, project.id))).returning();
+
+    if (!updated) return res.status(404).json({ error: "Alert not found" });
+    res.json(updated);
+  } catch (error) {
+    console.error("Dismiss budget alert error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+export async function evaluateBudgetAlerts(projectId: string): Promise<void> {
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!project) return;
+
+    const projectBudget = Number(project.contractAmount || project.budget || 0);
+    const alertThreshold = Number(project.budgetAlertThreshold || 80);
+    const criticalThreshold = Number(project.budgetCriticalThreshold || 95);
+
+    const ledger = await calculateCostLedger(
+      project.id,
+      projectBudget,
+      project.startDate,
+      project.estimatedCompletionDate,
+      alertThreshold,
+      criticalThreshold,
+    );
+
+    const existingAlerts = await db.select().from(budgetAlerts)
+      .where(and(eq(budgetAlerts.projectId, project.id), eq(budgetAlerts.isDismissed, false)));
+
+    const existingAlertKeys = new Set(existingAlerts.map(a => `${a.costCode || 'TOTAL'}-${a.alertLevel}`));
+
+    const alertsToCreate: Array<{
+      projectId: string;
+      costCode: string | null;
+      alertLevel: string;
+      thresholdPercent: string;
+      currentPercent: string;
+      budgetAmount: string;
+      actualAmount: string;
+    }> = [];
+
+    for (const row of [...ledger.rows, ledger.totals]) {
+      if (!row.alertLevel) continue;
+      const costCodeKey = row.costCode === "TOTAL" ? null : row.costCode;
+      const key = `${costCodeKey || 'TOTAL'}-${row.alertLevel}`;
+      if (existingAlertKeys.has(key)) continue;
+
+      alertsToCreate.push({
+        projectId: project.id,
+        costCode: costCodeKey,
+        alertLevel: row.alertLevel,
+        thresholdPercent: String(row.alertLevel === "CRITICAL" ? criticalThreshold : alertThreshold),
+        currentPercent: String(row.percentUsed),
+        budgetAmount: String(row.budgetedTotal),
+        actualAmount: String(row.actualTotal),
+      });
+    }
+
+    if (alertsToCreate.length > 0) {
+      await db.insert(budgetAlerts).values(alertsToCreate);
+
+      const { eventBus } = await import("./events");
+
+      for (const alert of alertsToCreate) {
+        await eventBus.emit({
+          type: "budget.alert_triggered",
+          version: 1,
+          orgId: project.gcOrganizationId || "",
+          actorId: "system",
+          timestamp: new Date(),
+          payload: {
+            projectId: project.id,
+            projectCode: project.code,
+            costCode: alert.costCode || null,
+            alertLevel: alert.alertLevel,
+            thresholdPercent: Number(alert.thresholdPercent),
+            currentPercent: Number(alert.currentPercent),
+          },
+        });
+      }
+    }
+  } catch (error) {
+    console.error("evaluateBudgetAlerts error:", error);
+  }
+}
 
 export default router;

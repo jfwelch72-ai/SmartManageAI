@@ -205,7 +205,20 @@ export type DomainEvent =
   | HiringIntegrationConnectedEvent
   | BidStatusChangedEvent
   | BidAssignedEvent
-  | BidDueDateApproachingEvent;
+  | BidDueDateApproachingEvent
+  | BudgetAlertTriggeredEvent;
+
+export interface BudgetAlertTriggeredEvent extends EventEnvelope {
+  type: "budget.alert_triggered";
+  payload: {
+    projectId: string;
+    projectCode: string;
+    costCode: string | null;
+    alertLevel: string;
+    thresholdPercent: number;
+    currentPercent: number;
+  };
+}
 
 export type DomainEventType = DomainEvent["type"];
 
@@ -228,4 +241,5 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "hiring.candidate_hired",
   "hiring.interview_scheduled",
   "hiring.integration_connected",
+  "budget.alert_triggered",
 ];

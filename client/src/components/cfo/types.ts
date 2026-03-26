@@ -13,6 +13,8 @@ export interface ProjectProfitability {
   status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
   projected_completion_cost: number;
   estimated_margin: number;
+  committed_cost: number;
+  forecast_final_cost: number;
   texturaDrawDate: string | null;
   drawDayOfMonth: number | null;
   billingUrgency: 'CRITICAL' | 'HIGH' | null;
@@ -23,6 +25,48 @@ export interface ProjectProfitability {
     material_spend_rate: string;
     pending_change_orders_value: number;
   };
+}
+
+export interface CFOForecastingSummary {
+  portfolio_budget: number;
+  portfolio_ffc: number;
+  portfolio_committed: number;
+  portfolio_actual: number;
+  portfolio_variance: number;
+  project_count: number;
+  at_risk_count: number;
+}
+
+export interface CFOForecastingProject {
+  project_code: string;
+  project_name: string;
+  budget: number;
+  committed: number;
+  actual: number;
+  ffc: number;
+  variance: number;
+  variance_percent: number;
+  status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
+}
+
+export interface BudgetAlertItem {
+  id: string;
+  projectId: string;
+  costCode: string | null;
+  alertLevel: string;
+  thresholdPercent: number;
+  currentPercent: number;
+  budgetAmount: number;
+  actualAmount: number;
+  createdAt: string;
+  projectCode?: string;
+  projectName?: string;
+}
+
+export interface CFOForecastingData {
+  summary: CFOForecastingSummary;
+  projects: CFOForecastingProject[];
+  alerts: BudgetAlertItem[];
 }
 
 export interface EquipmentMetricsData {

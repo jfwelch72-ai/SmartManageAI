@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { FinancialKPICards } from "@/components/cfo/FinancialKPICards";
 import { ProjectProfitabilityTable } from "@/components/cfo/ProjectProfitabilityTable";
 import { EquipmentMetrics } from "@/components/cfo/EquipmentMetrics";
+import { CostForecastingSection } from "@/components/cfo/CostForecastingSection";
 import type {
   ProjectProfitability,
   EquipmentMetricsData,
@@ -235,6 +236,11 @@ export default function CFODashboard() {
           <>
             <FinancialKPICards
               profitability={profitability || []}
+              formatCurrency={formatCurrency}
+              onProjectClick={handleProjectClick}
+            />
+
+            <CostForecastingSection
               formatCurrency={formatCurrency}
               onProjectClick={handleProjectClick}
             />

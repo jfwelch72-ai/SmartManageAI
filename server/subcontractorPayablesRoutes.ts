@@ -366,6 +366,8 @@ router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"],
       req.user!.id
     );
 
+    import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(contract.project.id)).catch(e => console.error("Budget alert eval after sub payment:", e));
+
     res.status(201).json({
       ...newPayment,
       contract: {

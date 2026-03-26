@@ -13,6 +13,7 @@ import type {
   BidStatusChangedEvent,
   BidAssignedEvent,
   BidDueDateApproachingEvent,
+  BudgetAlertTriggeredEvent,
 } from "../eventTypes";
 
 type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
@@ -73,6 +74,10 @@ export function registerNotificationListener(): void {
         `Change order on project was approved for $${event.payload.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
         event.payload.changeOrderId,
         "changeOrder"
+      );
+      const { evaluateBudgetAlerts } = await import("../../costLedgerRoutes");
+      evaluateBudgetAlerts(event.payload.projectId).catch(e =>
+        logError("notificationListener: budget alert eval after CO approval failed", { error: String(e) })
       );
     } catch (err) {
       logError("notificationListener: change_order.approved failed", { error: String(err) });
@@ -208,6 +213,24 @@ export function registerNotificationListener(): void {
       );
     } catch (err) {
       logError("notificationListener: bid.due_date_approaching failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("budget.alert_triggered", async (event: BudgetAlertTriggeredEvent) => {
+    try {
+      const adminIds = await getAdminUserIds(event.orgId);
+      const costCodeLabel = event.payload.costCode ? `Cost code ${event.payload.costCode}` : "Project total";
+      const level = event.payload.alertLevel === "CRITICAL" ? "CRITICAL" : "Warning";
+      await insertNotifications(
+        adminIds,
+        "BUDGET_ALERT",
+        `Budget ${level}: ${event.payload.projectCode}`,
+        `${costCodeLabel} has reached ${event.payload.currentPercent.toFixed(0)}% of budget (${level} threshold: ${event.payload.thresholdPercent.toFixed(0)}%)`,
+        event.payload.projectId,
+        "project"
+      );
+    } catch (err) {
+      logError("notificationListener: budget.alert_triggered failed", { error: String(err) });
     }
   });
 }

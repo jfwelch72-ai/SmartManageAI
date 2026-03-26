@@ -12,6 +12,7 @@ import {
   projectEquipmentPlans,
   receipts,
   budgetLineItems,
+  forecastAdjustments,
 } from "@shared/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
 
@@ -38,6 +39,12 @@ export interface CostCodeLedgerRow {
   remainingBudget: number;
   percentUsed: number;
   forecast: number;
+  etc: number;
+  ffc: number;
+  projectedVariance: number;
+  forecastAdjustment: number | null;
+  forecastAdjustmentNote: string | null;
+  alertLevel: string | null;
 }
 
 export interface CostLedgerSummary {
@@ -46,12 +53,21 @@ export interface CostLedgerSummary {
   projectBudget: number;
   budgetLineTotal: number;
   percentComplete: number;
+  budgetAlertThreshold: number;
+  budgetCriticalThreshold: number;
 }
 
 const DEFAULT_COST_RATE = 50;
 const DEFAULT_OT_MULTIPLIER = 1.5;
 
-export async function calculateCostLedger(projectId: string, projectBudget: number, projectStartDate?: Date | null, projectEndDate?: Date | null): Promise<CostLedgerSummary> {
+export async function calculateCostLedger(
+  projectId: string,
+  projectBudget: number,
+  projectStartDate?: Date | null,
+  projectEndDate?: Date | null,
+  alertThreshold: number = 80,
+  criticalThreshold: number = 95
+): Promise<CostLedgerSummary> {
   const costMap = new Map<string, CostCodeLedgerRow>();
 
   const ensureRow = (costCode: string, description?: string, division?: string): CostCodeLedgerRow => {
@@ -64,6 +80,9 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
         committedPO: 0, committedSub: 0, committedTotal: 0,
         actualLabor: 0, actualMaterial: 0, actualSub: 0, actualEquipment: 0, actualTM: 0, actualOther: 0, actualTotal: 0,
         remainingBudget: 0, percentUsed: 0, forecast: 0,
+        etc: 0, ffc: 0, projectedVariance: 0,
+        forecastAdjustment: null, forecastAdjustmentNote: null,
+        alertLevel: null,
       });
     }
     return costMap.get(costCode)!;
@@ -255,6 +274,12 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     row.actualOther += Number(receipt.amount || 0);
   }
 
+  const adjustments = await db.select().from(forecastAdjustments).where(eq(forecastAdjustments.projectId, projectId));
+  const adjustmentMap = new Map<string, { adjustedETC: number; note: string | null }>();
+  for (const adj of adjustments) {
+    adjustmentMap.set(normalizeCostCode(adj.costCode), { adjustedETC: Number(adj.adjustedETC), note: adj.note });
+  }
+
   let percentComplete = 0;
   if (projectStartDate && projectEndDate) {
     const start = new Date(projectStartDate).getTime();
@@ -272,6 +297,7 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     row.actualTotal = row.actualLabor + row.actualMaterial + row.actualSub + row.actualEquipment + row.actualTM + row.actualOther;
     row.remainingBudget = row.budgetedTotal - row.actualTotal;
     row.percentUsed = row.budgetedTotal > 0 ? (row.actualTotal / row.budgetedTotal) * 100 : (row.actualTotal > 0 ? 100 : 0);
+
     if (percentComplete > 0 && percentComplete < 100) {
       row.forecast = row.actualTotal / (percentComplete / 100);
     } else if (row.budgetedTotal > 0 && row.actualTotal > 0) {
@@ -279,6 +305,38 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
       row.forecast = budgetRatio > 0 ? row.budgetedTotal * Math.max(1, budgetRatio) : row.actualTotal;
     } else {
       row.forecast = row.actualTotal;
+    }
+
+    const adj = adjustmentMap.get(row.costCode);
+    if (adj) {
+      row.forecastAdjustment = adj.adjustedETC;
+      row.forecastAdjustmentNote = adj.note;
+    }
+
+    const committedActuals = row.actualMaterial + row.actualSub;
+    const remainingCommitted = Math.max(0, row.committedTotal - committedActuals);
+
+    let estimatedOpenRemaining = 0;
+    if (row.budgetedTotal > 0) {
+      const coveredByActualsAndCommitted = row.actualTotal + remainingCommitted;
+      estimatedOpenRemaining = Math.max(0, row.budgetedTotal - coveredByActualsAndCommitted);
+    }
+
+    if (adj && adj.adjustedETC !== null) {
+      row.etc = adj.adjustedETC;
+    } else {
+      row.etc = remainingCommitted + estimatedOpenRemaining;
+    }
+
+    row.ffc = row.actualTotal + row.etc;
+    row.projectedVariance = row.budgetedTotal - row.ffc;
+
+    if (row.budgetedTotal > 0) {
+      if (row.percentUsed >= criticalThreshold) {
+        row.alertLevel = "CRITICAL";
+      } else if (row.percentUsed >= alertThreshold) {
+        row.alertLevel = "WARNING";
+      }
     }
 
     row.actualLabor = round2(row.actualLabor);
@@ -294,6 +352,9 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     row.remainingBudget = round2(row.remainingBudget);
     row.percentUsed = round2(row.percentUsed);
     row.forecast = round2(row.forecast);
+    row.etc = round2(row.etc);
+    row.ffc = round2(row.ffc);
+    row.projectedVariance = round2(row.projectedVariance);
 
     rows.push(row);
   }
@@ -312,6 +373,9 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     committedPO: 0, committedSub: 0, committedTotal: 0,
     actualLabor: 0, actualMaterial: 0, actualSub: 0, actualEquipment: 0, actualTM: 0, actualOther: 0, actualTotal: 0,
     remainingBudget: 0, percentUsed: 0, forecast: 0,
+    etc: 0, ffc: 0, projectedVariance: 0,
+    forecastAdjustment: null, forecastAdjustmentNote: null,
+    alertLevel: null,
   };
 
   for (const row of rows) {
@@ -331,6 +395,8 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     totals.actualTM += row.actualTM;
     totals.actualOther += row.actualOther;
     totals.actualTotal += row.actualTotal;
+    totals.etc += row.etc;
+    totals.ffc += row.ffc;
   }
 
   totals.budgetedLabor = round2(totals.budgetedLabor);
@@ -351,6 +417,10 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
   totals.actualTotal = round2(totals.actualTotal);
   totals.remainingBudget = round2(totals.budgetedTotal - totals.actualTotal);
   totals.percentUsed = totals.budgetedTotal > 0 ? round2((totals.actualTotal / totals.budgetedTotal) * 100) : 0;
+  totals.etc = round2(totals.etc);
+  totals.ffc = round2(totals.ffc);
+  totals.projectedVariance = round2(totals.budgetedTotal - totals.ffc);
+
   if (percentComplete > 0 && percentComplete < 100) {
     totals.forecast = round2(totals.actualTotal / (percentComplete / 100));
   } else if (totals.budgetedTotal > 0 && totals.actualTotal > 0) {
@@ -358,6 +428,14 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     totals.forecast = round2(totals.budgetedTotal * Math.max(1, budgetRatio));
   } else {
     totals.forecast = round2(totals.actualTotal);
+  }
+
+  if (totals.budgetedTotal > 0) {
+    if (totals.percentUsed >= criticalThreshold) {
+      totals.alertLevel = "CRITICAL";
+    } else if (totals.percentUsed >= alertThreshold) {
+      totals.alertLevel = "WARNING";
+    }
   }
 
   const budgetLineTotal = round2(totals.budgetedTotal);
@@ -368,6 +446,8 @@ export async function calculateCostLedger(projectId: string, projectBudget: numb
     projectBudget: projectBudget,
     budgetLineTotal,
     percentComplete: round2(percentComplete),
+    budgetAlertThreshold: alertThreshold,
+    budgetCriticalThreshold: criticalThreshold,
   };
 }
 

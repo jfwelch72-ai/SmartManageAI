@@ -384,6 +384,247 @@ router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res) 
   }
 });
 
+router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const { calculateAllProjectsProfitability } = await import("./ai/profitabilityEngine");
+    const { projects } = await import("@shared/schema");
+    const allProjects = await db.select({ id: projects.id, code: projects.code, gcOrganizationId: projects.gcOrganizationId }).from(projects).where(eq(projects.gcOrganizationId, orgId));
+    const allProfitability = await calculateAllProjectsProfitability();
+    const orgProjectCodes = new Set(allProjects.map(p => p.code));
+    const profitabilityData = allProfitability.filter(p => orgProjectCodes.has(p.project_code));
+
+    const portfolioFFC = profitabilityData.reduce((sum, p) => sum + p.forecast_final_cost, 0);
+    const portfolioBudget = profitabilityData.reduce((sum, p) => sum + p.adjusted_budget, 0);
+    const portfolioCommitted = profitabilityData.reduce((sum, p) => sum + p.committed_cost, 0);
+    const portfolioActual = profitabilityData.reduce((sum, p) => sum + p.total_actual_cost, 0);
+    const portfolioVariance = portfolioBudget - portfolioFFC;
+
+    const projectsByOverrun = [...profitabilityData]
+      .map(p => ({
+        project_code: p.project_code,
+        project_name: p.project_name,
+        budget: p.adjusted_budget,
+        committed: p.committed_cost,
+        actual: p.total_actual_cost,
+        ffc: p.forecast_final_cost,
+        variance: p.adjusted_budget - p.forecast_final_cost,
+        variance_percent: p.adjusted_budget > 0 ? ((p.adjusted_budget - p.forecast_final_cost) / p.adjusted_budget) * 100 : 0,
+        status: p.status,
+      }))
+      .sort((a, b) => a.variance - b.variance);
+
+    const { budgetAlerts } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const activeAlerts = await db.select().from(budgetAlerts).where(eq(budgetAlerts.isDismissed, false)).limit(200);
+
+    const projectIdMap = new Map<string, typeof profitabilityData[0]>();
+    for (const p of profitabilityData) {
+      const projRow = allProjects.find(pr => pr.code === p.project_code);
+      if (projRow) projectIdMap.set(projRow.id, p);
+    }
+
+    const alertsWithProject = activeAlerts
+      .filter(a => {
+        const proj = projectIdMap.get(a.projectId);
+        return proj !== undefined;
+      })
+      .map(a => {
+        const proj = projectIdMap.get(a.projectId);
+        return {
+          id: a.id,
+          projectId: a.projectId,
+          projectCode: proj?.project_code || "",
+          projectName: proj?.project_name || "",
+          costCode: a.costCode,
+          alertLevel: a.alertLevel,
+          thresholdPercent: Number(a.thresholdPercent),
+          currentPercent: Number(a.currentPercent),
+          budgetAmount: Number(a.budgetAmount),
+          actualAmount: Number(a.actualAmount),
+          createdAt: a.createdAt,
+        };
+      });
+
+    res.json({
+      summary: {
+        portfolio_budget: Math.round(portfolioBudget * 100) / 100,
+        portfolio_ffc: Math.round(portfolioFFC * 100) / 100,
+        portfolio_committed: Math.round(portfolioCommitted * 100) / 100,
+        portfolio_actual: Math.round(portfolioActual * 100) / 100,
+        portfolio_variance: Math.round(portfolioVariance * 100) / 100,
+        project_count: profitabilityData.length,
+        at_risk_count: profitabilityData.filter(p => p.status === 'MAJOR_RISK').length,
+      },
+      projects: projectsByOverrun,
+      alerts: alertsWithProject,
+    });
+  } catch (error: any) {
+    console.error("Error fetching CFO forecasting data:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const { projects: projectsTable, timeEntries, receipts, subcontractorPayments, subcontractorContracts, budgetLineItems } = await import("@shared/schema");
+    const { eq, and: andOp, sql, inArray } = await import("drizzle-orm");
+
+    const orgProjects = await db.select({
+      id: projectsTable.id,
+      budget: projectsTable.budget,
+      contractAmount: projectsTable.contractAmount,
+      startDate: projectsTable.startDate,
+      endDate: projectsTable.endDate,
+    }).from(projectsTable).where(andOp(
+      eq(projectsTable.gcOrganizationId, orgId),
+      sql`${projectsTable.status} IN ('ACTIVE', 'PLANNING')`
+    )).limit(100);
+
+    if (orgProjects.length === 0) return res.json({ months: [] });
+
+    const projectIds = orgProjects.map(p => p.id);
+
+    const totalBudget = orgProjects.reduce((sum, p) => sum + Number(p.contractAmount || p.budget || 0), 0);
+
+    let earliestStart: Date | null = null;
+    let latestEnd: Date | null = null;
+    for (const p of orgProjects) {
+      if (p.startDate) {
+        const s = new Date(p.startDate);
+        if (!earliestStart || s < earliestStart) earliestStart = s;
+      }
+      if (p.endDate) {
+        const e = new Date(p.endDate);
+        if (!latestEnd || e > latestEnd) latestEnd = e;
+      }
+    }
+
+    if (!earliestStart) earliestStart = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    if (!latestEnd) latestEnd = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+
+    const laborByMonth = await db.select({
+      month: sql<string>`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`.as("month"),
+      total: sql<number>`COALESCE(SUM(
+        (COALESCE(${timeEntries.hoursRegular}, 0) + COALESCE(${timeEntries.hoursOvertime}, 0) * 1.5) * 
+        COALESCE(${timeEntries.payRate}, 45)
+      ), 0)`.as("total"),
+    }).from(timeEntries)
+      .where(andOp(
+        inArray(timeEntries.projectId, projectIds),
+        eq(timeEntries.approvalStatus, "APPROVED")
+      ))
+      .groupBy(sql`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(${timeEntries.date}, 'YYYY-MM')`);
+
+    const receiptsByMonth = await db.select({
+      month: sql<string>`TO_CHAR(${receipts.date}, 'YYYY-MM')`.as("month"),
+      total: sql<number>`COALESCE(SUM(${receipts.amount}), 0)`.as("total"),
+    }).from(receipts)
+      .where(inArray(receipts.projectId, projectIds))
+      .groupBy(sql`TO_CHAR(${receipts.date}, 'YYYY-MM')`)
+      .orderBy(sql`TO_CHAR(${receipts.date}, 'YYYY-MM')`);
+
+    const contractIds = await db.select({ id: subcontractorContracts.id })
+      .from(subcontractorContracts)
+      .where(inArray(subcontractorContracts.projectId, projectIds));
+    
+    let subPaymentsByMonth: { month: string; total: number }[] = [];
+    if (contractIds.length > 0) {
+      subPaymentsByMonth = await db.select({
+        month: sql<string>`TO_CHAR(${subcontractorPayments.paymentDate}, 'YYYY-MM')`.as("month"),
+        total: sql<number>`COALESCE(SUM(${subcontractorPayments.amount}), 0)`.as("total"),
+      }).from(subcontractorPayments)
+        .where(inArray(subcontractorPayments.contractId, contractIds.map(c => c.id)))
+        .groupBy(sql`TO_CHAR(${subcontractorPayments.paymentDate}, 'YYYY-MM')`)
+        .orderBy(sql`TO_CHAR(${subcontractorPayments.paymentDate}, 'YYYY-MM')`);
+    }
+
+    const actualByMonth = new Map<string, number>();
+    for (const row of laborByMonth) { actualByMonth.set(row.month, (actualByMonth.get(row.month) || 0) + Number(row.total)); }
+    for (const row of receiptsByMonth) { actualByMonth.set(row.month, (actualByMonth.get(row.month) || 0) + Number(row.total)); }
+    for (const row of subPaymentsByMonth) { actualByMonth.set(row.month, (actualByMonth.get(row.month) || 0) + Number(row.total)); }
+
+    const startMs = earliestStart.getTime();
+    const endMs = latestEnd.getTime();
+    const totalDuration = endMs - startMs;
+
+    const allMonths: string[] = [];
+    const cursor = new Date(earliestStart);
+    cursor.setDate(1);
+    const endCursor = new Date(Math.max(endMs, Date.now() + 90 * 24 * 60 * 60 * 1000));
+    while (cursor <= endCursor) {
+      allMonths.push(cursor.toISOString().slice(0, 7));
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    let cumulativeActual = 0;
+    const result = allMonths.map(month => {
+      const monthDate = new Date(month + "-15");
+      const t = totalDuration > 0 ? Math.max(0, Math.min(1, (monthDate.getTime() - startMs) / totalDuration)) : 0;
+      const sCurve = 1 / (1 + Math.exp(-10 * (t - 0.5)));
+      const minS = 1 / (1 + Math.exp(5));
+      const maxS = 1 / (1 + Math.exp(-5));
+      const norm = (sCurve - minS) / (maxS - minS);
+      const plannedCumulative = Math.round(totalBudget * Math.max(0, Math.min(1, norm)));
+
+      const monthActual = actualByMonth.get(month) || 0;
+      cumulativeActual += monthActual;
+
+      const isFuture = monthDate > new Date();
+
+      return {
+        month: new Date(month + "-01").toLocaleDateString("en-US", { month: "short", year: "2-digit" }),
+        planned: plannedCumulative,
+        actual: !isFuture ? Math.round(cumulativeActual) : null,
+        forecast: isFuture ? Math.round(cumulativeActual) : null,
+      };
+    });
+
+    res.json({ months: result });
+  } catch (error: any) {
+    console.error("Error fetching S-curve data:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/cfo/budget-alerts", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const { budgetAlerts, projects: projectsTable } = await import("@shared/schema");
+    const { eq, and: andOp } = await import("drizzle-orm");
+
+    const activeAlerts = await db.select({
+      alert: budgetAlerts,
+      projectCode: projectsTable.code,
+      projectName: projectsTable.name,
+    }).from(budgetAlerts)
+      .innerJoin(projectsTable, eq(budgetAlerts.projectId, projectsTable.id))
+      .where(andOp(eq(budgetAlerts.isDismissed, false), eq(projectsTable.gcOrganizationId, orgId)))
+      .limit(200);
+
+    res.json(activeAlerts.map(r => ({
+      ...r.alert,
+      thresholdPercent: Number(r.alert.thresholdPercent),
+      currentPercent: Number(r.alert.currentPercent),
+      budgetAmount: Number(r.alert.budgetAmount),
+      actualAmount: Number(r.alert.actualAmount),
+      projectCode: r.projectCode,
+      projectName: r.projectName,
+    })));
+  } catch (error: any) {
+    console.error("Error fetching budget alerts:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get("/ai-pm/runs", requireAuth, async (req: AuthRequest, res) => {
   try {
     const runs = await db

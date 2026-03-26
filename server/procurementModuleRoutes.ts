@@ -789,6 +789,10 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
       }).catch(() => {});
     }
 
+    if (existing.projectId) {
+      import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(existing.projectId!)).catch(e => console.error("Budget alert eval after PO approval:", e));
+    }
+
     res.json(updated);
   } catch (error) {
     console.error("Approve PO error:", error);
