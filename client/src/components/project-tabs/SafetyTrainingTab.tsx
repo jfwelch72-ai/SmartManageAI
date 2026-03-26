@@ -7,7 +7,8 @@ import { ShieldCheck } from "lucide-react";
 interface TrainingAssignment {
   id: string;
   employeeId: string;
-  employeeName: string;
+  employeeFirstName: string;
+  employeeLastName: string;
   trainingTitle: string;
   trainingCategory: string;
   trainingDuration: number | null;
@@ -17,12 +18,6 @@ interface TrainingAssignment {
   completedAt: string | null;
   completedByName: string | null;
   notes: string | null;
-}
-
-interface TimeEntry {
-  id: string;
-  employeeId: string;
-  projectId: string;
 }
 
 interface SafetyTrainingTabProps {
@@ -37,8 +32,8 @@ function fmtDate(d: string | null | undefined) {
 }
 
 export default function SafetyTrainingTab({ projectId, projectCode, userRole }: SafetyTrainingTabProps) {
-  const { data: timeEntries = [] } = useQuery<TimeEntry[]>({
-    queryKey: ["/api/time-entries/pending-approvals"],
+  const { data: timeEntries = [] } = useQuery<Array<{ entry: { userId: string; projectId: string } }>>({
+    queryKey: ["/api/time-entries/pending-approvals", projectId],
     queryFn: async () => {
       const res = await fetch(`/api/time-entries/pending-approvals?projectId=${encodeURIComponent(projectId)}`, { credentials: "include" });
       if (!res.ok) return [];
@@ -46,19 +41,19 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
     },
   });
 
-  const { data: allShifts = [] } = useQuery<Array<{ employeeId: string; projectId: string }>>({
-    queryKey: ["/api/time-clock/shifts", "project-crew", projectId],
+  const { data: activeShifts = [] } = useQuery<Array<{ userId: string; projectId: string | null }>>({
+    queryKey: ["/api/time-clock/active-shifts", "project-crew", projectId],
     queryFn: async () => {
-      const res = await fetch("/api/time-clock/shifts", { credentials: "include" });
+      const res = await fetch("/api/time-clock/active-shifts", { credentials: "include" });
       if (!res.ok) return [];
       const data = await res.json();
-      return Array.isArray(data) ? data.filter((s: { projectId: string }) => s.projectId === projectId) : [];
+      return Array.isArray(data) ? data.filter((s: { projectId: string | null }) => s.projectId === projectId) : [];
     },
   });
 
   const projectCrewIds = new Set<string>();
-  timeEntries.forEach(e => { if (e.projectId === projectId) projectCrewIds.add(e.employeeId); });
-  allShifts.forEach(s => projectCrewIds.add(s.employeeId));
+  timeEntries.forEach(e => { if (e.entry?.projectId === projectId && e.entry?.userId) projectCrewIds.add(e.entry.userId); });
+  activeShifts.forEach(s => { if (s.userId) projectCrewIds.add(s.userId); });
 
   const { data: allAssignments = [], isLoading } = useQuery<TrainingAssignment[]>({
     queryKey: ["/api/safety-training/assignments"],
@@ -114,7 +109,7 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
                     {a.status === "PENDING" && <Badge className="bg-amber-500/15 text-amber-700 border-transparent text-xs">Pending</Badge>}
                   </div>
                   <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
-                    <span>{a.employeeName}</span>
+                    <span>{a.employeeFirstName} {a.employeeLastName}</span>
                     <span>{a.trainingCategory}</span>
                     {a.trainingDuration && <span>{a.trainingDuration} min</span>}
                     <span>Assigned {fmtDate(a.assignedAt)}</span>
