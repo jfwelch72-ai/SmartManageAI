@@ -205,6 +205,11 @@ export function ChangeOrderDialog({
     enabled: open && isEditing,
   });
 
+  const { data: orgDefaults } = useQuery<{ defaultOverheadPercent: number }>({
+    queryKey: ["/api/overhead/summary"],
+    enabled: open && !changeOrder,
+  });
+
   const { data: approvals } = useQuery<Array<{
     approval: { id: string; approverRole: string; status: string; stepOrder: number; comments: string | null; decidedAt: string | null; createdAt: string; };
     approver: { id: string; firstName: string; lastName: string; email: string; } | null;
@@ -246,9 +251,10 @@ export function ChangeOrderDialog({
 
   useEffect(() => {
     if (lineItemsData) {
+      const orgOH = orgDefaults?.defaultOverheadPercent ? String(orgDefaults.defaultOverheadPercent) : "10";
       if (lineItemsData.costBreakdown) {
         setBreakdown(lineItemsData.costBreakdown);
-        setOverheadPct(lineItemsData.overheadPercent || "10");
+        setOverheadPct(lineItemsData.overheadPercent || orgOH);
         setProfitPct(lineItemsData.profitPercent || "5");
         setSubMarkupPct(lineItemsData.subcontractorMarkupPercent || "5");
         setSectionVisibility(lineItemsData.costBreakdown.sectionVisibility || { ...DEFAULT_SECTION_VISIBILITY });
@@ -261,12 +267,18 @@ export function ChangeOrderDialog({
           setUseStructuredForm(true);
           setBreakdown(emptyBreakdown());
         }
-        setOverheadPct(lineItemsData.overheadPercent || "10");
+        setOverheadPct(lineItemsData.overheadPercent || orgOH);
         setProfitPct(lineItemsData.profitPercent || "5");
         setSubMarkupPct(lineItemsData.subcontractorMarkupPercent || "5");
       }
     }
-  }, [lineItemsData]);
+  }, [lineItemsData, orgDefaults]);
+
+  useEffect(() => {
+    if (!changeOrder && orgDefaults?.defaultOverheadPercent && !lineItemsData) {
+      setOverheadPct(String(orgDefaults.defaultOverheadPercent));
+    }
+  }, [changeOrder, orgDefaults, lineItemsData]);
 
   useEffect(() => {
     setSectionVisibility(prev => {

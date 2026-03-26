@@ -1024,7 +1024,7 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
-        status: targetStatus as typeof changeOrderStatusEnum.enumValues[number],
+        status: targetStatus as "PCO" | "PRICING_REVIEW" | "SUBMITTED" | "APPROVED" | "REJECTED" | "VOID",
         submittedAt: null,
         updatedAt: new Date(),
       })
