@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, type Column } from "drizzle-orm";
 import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest } from "./auth";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { contracts, contractVersions, contractRedlines, contractApprovals, signatureRequests, type InsertContract, type Contract } from "@shared/schema";
@@ -46,7 +46,7 @@ function resolveOrgFilter(req: AuthRequest, res: Response): { orgId: string | nu
   return { orgId, shouldFilter };
 }
 
-function orgCondition(column: any, orgId: string | null, shouldFilter: boolean) {
+function orgCondition(column: Column, orgId: string | null, shouldFilter: boolean) {
   return shouldFilter && orgId ? eq(column, orgId) : undefined;
 }
 
