@@ -1145,12 +1145,14 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       }
     }
 
-    const [maxResult] = await db
-      .select({ maxNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(${changeOrders.changeOrderNumber}, '^CO-', ''), '') AS INTEGER)), 0)` })
-      .from(changeOrders)
-      .where(eq(changeOrders.projectId, validationResult.data.projectId));
-
-    const changeOrderNumber = `CO-${String((maxResult?.maxNum ?? 0) + 1).padStart(3, "0")}`;
+    let changeOrderNumber = validationResult.data.changeOrderNumber;
+    if (!changeOrderNumber || changeOrderNumber.trim() === "") {
+      const [maxResult] = await db
+        .select({ maxNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(${changeOrders.changeOrderNumber}, '^CO-', ''), '') AS INTEGER)), 0)` })
+        .from(changeOrders)
+        .where(eq(changeOrders.projectId, validationResult.data.projectId));
+      changeOrderNumber = `CO-${String((maxResult?.maxNum ?? 0) + 1).padStart(3, "0")}`;
+    }
 
     const insertData = { 
       ...validationResult.data,

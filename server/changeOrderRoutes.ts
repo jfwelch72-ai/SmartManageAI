@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, tmTickets, rfis, scheduleOfValues, sovLineItems } from "@shared/schema";
+import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, tmTickets, rfis, scheduleOfValues, sovLineItems, budgetLineItems, orgCostCodes } from "@shared/schema";
 import { eq, and, desc, sql, max } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -416,6 +416,41 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       oldValue: JSON.stringify({ status: order.status }),
       newValue: JSON.stringify({ status: "APPROVED", approvedById: req.user!.id }),
     }, req);
+
+    if (updatedOrder.costCodeId && project) {
+      try {
+        const [costCode] = await db.select().from(orgCostCodes)
+          .where(eq(orgCostCodes.id, updatedOrder.costCodeId))
+          .limit(1);
+        if (costCode) {
+          const coAmount = Number(updatedOrder.amount || 0);
+          const [existing] = await db.select().from(budgetLineItems)
+            .where(and(
+              eq(budgetLineItems.projectId, project.id),
+              eq(budgetLineItems.costCode, costCode.code)
+            ))
+            .limit(1);
+          if (existing) {
+            const newOther = Number(existing.otherBudget) + coAmount;
+            const newTotal = Number(existing.laborBudget) + Number(existing.materialBudget) + Number(existing.subcontractorBudget) + Number(existing.equipmentBudget) + newOther;
+            await db.update(budgetLineItems)
+              .set({ otherBudget: String(newOther), totalBudget: String(newTotal), updatedAt: new Date() })
+              .where(eq(budgetLineItems.id, existing.id));
+          } else {
+            await db.insert(budgetLineItems).values({
+              projectId: project.id,
+              costCode: costCode.code,
+              description: `${costCode.description} (CO: ${updatedOrder.changeOrderNumber})`,
+              division: costCode.division,
+              otherBudget: String(coAmount),
+              totalBudget: String(coAmount),
+            });
+          }
+        }
+      } catch (ledgerError) {
+        console.error("Failed to update cost ledger for approved CO:", ledgerError);
+      }
+    }
 
     // Notify requester
     await notifyStatusChange(
@@ -963,6 +998,20 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
+    if (order.status !== "SUBMITTED") {
+      res.status(400).json({ 
+        error: `Cannot return to draft from ${order.status} status. Only SUBMITTED change orders can be returned.` 
+      });
+      return;
+    }
+
+    if (order.approvedAt) {
+      res.status(400).json({ 
+        error: "Cannot return to draft after client has responded." 
+      });
+      return;
+    }
+
     const targetStatus = isValidTransition(order.status, "PCO") ? "PCO" : 
                          isValidTransition(order.status, "DRAFT") ? "DRAFT" : null;
     if (!targetStatus) {
@@ -975,7 +1024,7 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
-        status: targetStatus as any,
+        status: targetStatus as typeof changeOrderStatusEnum.enumValues[number],
         submittedAt: null,
         updatedAt: new Date(),
       })

@@ -106,7 +106,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       const res = await apiRequest("POST", "/api/change-orders/bulk-submit", { ids });
       return res.json();
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data: { summary?: { succeeded?: number; total?: number } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Bulk Submit Complete", description: `${data.summary?.succeeded || 0} of ${data.summary?.total || 0} submitted successfully` });
@@ -124,7 +124,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     }
 
     try {
-      const result = await createMutation.mutateAsync({
+      const createPayload: Record<string, unknown> & { projectCode: string } = {
         projectId,
         projectCode,
         description,
@@ -139,8 +139,9 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         canonicalName: scopeSelection?.canonicalName || undefined,
         scopeUnit: scopeSelection?.unit || undefined,
         scopeQuantity: scopeQuantity || undefined,
-      } as any);
-      const generatedNumber = (result as any)?.changeOrderNumber || "";
+      };
+      const result = await createMutation.mutateAsync(createPayload as Parameters<typeof createMutation.mutateAsync>[0]);
+      const generatedNumber = (result as { changeOrderNumber?: string })?.changeOrderNumber || "";
       toast({
         title: "Change order created",
         description: generatedNumber ? `CO #${generatedNumber} has been created` : "Change order created successfully",
@@ -227,8 +228,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   }, [changeOrders, statusFilter]);
 
   const isResponseOverdue = (co: ChangeOrder) => {
-    const coAny = co as any;
-    return co.status === "SUBMITTED" && coAny.clientResponseDueDate && isPast(new Date(coAny.clientResponseDueDate));
+    return co.status === "SUBMITTED" && co.clientResponseDueDate && isPast(new Date(co.clientResponseDueDate));
   };
 
   const toggleSelection = useCallback((id: string) => {
@@ -302,15 +302,28 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                   )}
                 </>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleBulkExportCsv}
-                data-testid="button-export-csv"
-              >
-                <Download className="w-4 h-4 mr-1" />
-                Export CSV
-              </Button>
+              {selectedIds.size > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleBulkExportCsv}
+                  data-testid="button-export-csv"
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Export {selectedIds.size} Selected
+                </Button>
+              )}
+              {selectedIds.size === 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleBulkExportCsv}
+                  data-testid="button-export-csv-all"
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Export All CSV
+                </Button>
+              )}
               <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
                 <DialogTrigger asChild>
                   <Button size="sm" data-testid="button-new-change-order" className="w-full sm:w-auto">
@@ -518,9 +531,9 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                               Response Overdue
                             </Badge>
                           )}
-                          {(co as any).costCodeId && costCodeMap.has((co as any).costCodeId) && (
+                          {co.costCodeId && costCodeMap.has(co.costCodeId) && (
                             <Badge variant="outline" className="text-xs" data-testid={`badge-cost-code-${co.id}`}>
-                              {costCodeMap.get((co as any).costCodeId)?.code}
+                              {costCodeMap.get(co.costCodeId)?.code}
                             </Badge>
                           )}
                           <Button
@@ -540,10 +553,10 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                         <p className="text-sm text-muted-foreground">
                           Created {format(new Date(co.createdAt), "MMM d, yyyy")}
                         </p>
-                        {(co as any).clientResponseDueDate && co.status === "SUBMITTED" && (
+                        {co.clientResponseDueDate && co.status === "SUBMITTED" && (
                           <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
-                            Response due: {format(new Date((co as any).clientResponseDueDate), "MMM d, yyyy")}
+                            Response due: {format(new Date(co.clientResponseDueDate), "MMM d, yyyy")}
                           </p>
                         )}
                         {co.rejectionReason && (
