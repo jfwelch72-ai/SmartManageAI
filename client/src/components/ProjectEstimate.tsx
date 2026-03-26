@@ -10,6 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Calculator, Sparkles } from "lucide-react";
 import { AISowAssistantDialog } from "@/components/AISowAssistantDialog";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
+import MaterialCalculator, { getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { 
@@ -83,6 +84,7 @@ export default function ProjectEstimate() {
   const [aiSowAssistantOpen, setAiSowAssistantOpen] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [profitMarginPercent, setProfitMarginPercent] = useState<number>(15);
+  const [materialCalcData, setMaterialCalcData] = useState<MaterialCalculatorData>(getDefaultMaterialCalculatorData());
 
   // Fetch estimate data
   const { data: estimateData, isLoading: estimateLoading } = useQuery<{
@@ -178,6 +180,7 @@ export default function ProjectEstimate() {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
       setAddLineItemOpen(false);
       form.reset();
+      setMaterialCalcData(getDefaultMaterialCalculatorData());
       toast({ title: "Line item added successfully" });
     },
     onError: () => {
@@ -256,6 +259,47 @@ export default function ProjectEstimate() {
       profitAllocation: String(values.profitAllocation),
       source: "MANUAL",
       notes: values.notes || undefined,
+      concreteDepthInches: materialCalcData.concreteDepthInches || null,
+      dimensionWidthInches: materialCalcData.dimensionWidthInches || null,
+      dimensionHeightInches: materialCalcData.dimensionHeightInches || null,
+      concreteWasteFactor: materialCalcData.concreteWasteFactor || null,
+      calculatedConcreteYards: materialCalcData.calculatedConcreteYards || null,
+      requiresStoneBase: materialCalcData.requiresStoneBase,
+      stoneType: materialCalcData.stoneType || null,
+      stoneSize: materialCalcData.stoneSize || null,
+      stoneDepthInches: materialCalcData.stoneDepthInches || null,
+      stoneWasteFactor: materialCalcData.stoneWasteFactor || null,
+      calculatedStoneTons: materialCalcData.calculatedStoneTons || null,
+      requiresExcavation: materialCalcData.requiresExcavation,
+      excavationDepthInches: materialCalcData.excavationDepthInches || null,
+      excavationWidthInches: materialCalcData.excavationWidthInches || null,
+      excavationSwellFactor: materialCalcData.excavationSwellFactor || null,
+      calculatedExcavationYards: materialCalcData.calculatedExcavationYards || null,
+      requiresWireMesh: materialCalcData.requiresWireMesh,
+      wireMeshType: materialCalcData.wireMeshType || null,
+      wireMeshWasteFactor: materialCalcData.wireMeshWasteFactor || null,
+      calculatedWireMeshRolls: materialCalcData.calculatedWireMeshRolls || null,
+      requiresRebar: materialCalcData.requiresRebar,
+      rebarSize: materialCalcData.rebarSize || null,
+      rebarFabType: materialCalcData.rebarFabType || null,
+      rebarSpacingInches: materialCalcData.rebarSpacingInches || null,
+      rebarWasteFactor: materialCalcData.rebarWasteFactor || null,
+      calculatedRebarCount: materialCalcData.calculatedRebarCount || null,
+      calculatedRebarLinearFeet: materialCalcData.calculatedRebarLinearFeet || null,
+      requiresDowels: materialCalcData.requiresDowels,
+      dowelSpacingInches: materialCalcData.dowelSpacingInches || null,
+      jointLengthFeet: materialCalcData.jointLengthFeet || null,
+      calculatedDowelCount: materialCalcData.calculatedDowelCount || null,
+      requiresSealer: materialCalcData.requiresSealer,
+      sealerType: materialCalcData.sealerType || null,
+      sealerCoats: materialCalcData.sealerCoats || null,
+      sealerWasteFactor: materialCalcData.sealerWasteFactor || null,
+      calculatedSealerGallons: materialCalcData.calculatedSealerGallons || null,
+      requiresUnderlayment: materialCalcData.requiresUnderlayment,
+      underlaymentType: materialCalcData.underlaymentType || null,
+      underlaymentOverlapInches: materialCalcData.underlaymentOverlapInches || null,
+      underlaymentWasteFactor: materialCalcData.underlaymentWasteFactor || null,
+      calculatedUnderlaymentSF: materialCalcData.calculatedUnderlaymentSF || null,
     };
 
     addLineItemMutation.mutate(payload as any);
@@ -650,7 +694,12 @@ export default function ProjectEstimate() {
             </DialogContent>
           </Dialog>
 
-          <Dialog open={addLineItemOpen} onOpenChange={setAddLineItemOpen}>
+          <Dialog open={addLineItemOpen} onOpenChange={(open) => {
+            setAddLineItemOpen(open);
+            if (!open) {
+              setMaterialCalcData(getDefaultMaterialCalculatorData());
+            }
+          }}>
             <DialogTrigger asChild>
               <Button data-testid="button-open-add-line-item">
                 <Plus className="h-4 w-4 mr-2" />
@@ -776,6 +825,45 @@ export default function ProjectEstimate() {
                           </FormItem>
                         )}
                       />
+
+                      {(() => {
+                        const unit = form.watch("unit") || "";
+                        const quantity = Number(form.watch("quantity")) || 0;
+                        const category = form.watch("category") || "";
+                        const description = form.watch("description") || "";
+
+                        const materialCategories = [
+                          "CONCRETE", "FLATWORK", "FOUNDATION", "PATIO", "DRIVEWAY", "SIDEWALK", "CURB",
+                          "EXCAVATION", "GRADING", "SITE_WORK", "UTILITY", "TRENCH", "EARTHWORK"
+                        ];
+                        const materialKeywords = /concrete|flatwork|foundation|patio|driveway|sidewalk|curb|excavat|grading|site.?work|trench|earthwork|stone|slab|footing/i;
+
+                        const hasExistingCalcData = !!(
+                          materialCalcData.concreteDepthInches ||
+                          materialCalcData.requiresStoneBase ||
+                          materialCalcData.requiresExcavation ||
+                          materialCalcData.requiresWireMesh ||
+                          materialCalcData.requiresRebar
+                        );
+
+                        const unitMatch = unit === "SF" || unit === "LF" || unit === "SY" || unit === "CY";
+                        const categoryMatch = materialCategories.includes(category);
+                        const descriptionMatch = materialKeywords.test(description);
+
+                        const showMaterialCalc = unitMatch && (categoryMatch || descriptionMatch || hasExistingCalcData);
+
+                        return showMaterialCalc ? (
+                          <div className="col-span-2">
+                            <MaterialCalculator
+                              unit={unit}
+                              quantity={quantity}
+                              description={description}
+                              value={materialCalcData}
+                              onChange={setMaterialCalcData}
+                            />
+                          </div>
+                        ) : null;
+                      })()}
 
                       <div className="col-span-2 space-y-3 p-3 rounded-md border bg-muted/30">
                         <h5 className="font-medium text-sm">Labor Costs</h5>
