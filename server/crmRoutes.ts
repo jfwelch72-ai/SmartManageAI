@@ -1749,6 +1749,59 @@ router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requir
   }
 });
 
+router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SALES"), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const oppConditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
+    if (shouldFilter) oppConditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    const [opp] = await db.select().from(crmOpportunities).where(and(...oppConditions)).limit(1);
+    if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+    if (opp.stage === "LOST") return res.status(400).json({ error: "Cannot create a bid from a LOST opportunity" });
+
+    const { bids } = await import("@shared/schema");
+
+    const { name, description } = req.body as {
+      name?: string;
+      description?: string;
+    };
+
+    const code = await getNextProjectCode();
+
+    const [newBid] = await db.insert(bids).values({
+      code,
+      name: name || opp.name,
+      clientName: opp.name,
+      gcOrganizationId: orgId,
+      status: "DRAFT",
+      estimatorId: req.user!.id,
+      locationAddress: opp.projectLocation || null,
+      description: description || opp.notes || null,
+      crmOpportunityId: opp.id,
+    }).returning();
+
+    await db.insert(crmOpportunityActivities).values({
+      opportunityId: opp.id,
+      activityType: "NOTE",
+      description: `[Bid Created] Bid #${newBid.code} "${newBid.name}" created from this opportunity`,
+      createdById: req.user!.id,
+    });
+
+    if (opp.stage === "LEAD" || opp.stage === "QUALIFIED") {
+      await db.update(crmOpportunities)
+        .set({ stage: "ESTIMATING", updatedAt: new Date() })
+        .where(eq(crmOpportunities.id, opp.id));
+    }
+
+    res.status(201).json({ bid: newBid, opportunityId: opp.id });
+  } catch (error) {
+    console.error("Create bid from opportunity error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ============================================================
 // CRM PIPELINE REPORTS
 // ============================================================

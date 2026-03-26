@@ -1077,7 +1077,28 @@ export default function ProjectEstimate() {
                 <TableBody>
                   {estimate.lineItems.map((item) => (
                     <TableRow key={item.id} data-testid={`row-line-item-${item.id}`}>
-                      <TableCell className="font-medium">{item.description}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {item.description}
+                          {item.vendorMatchConfidence && (
+                            <Badge
+                              variant={item.vendorMatchConfidence === "EXACT" ? "default" : "outline"}
+                              className={`text-[10px] px-1.5 py-0 ${
+                                item.vendorMatchConfidence === "EXACT"
+                                  ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-400"
+                                  : item.vendorMatchConfidence === "FUZZY"
+                                  ? "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400"
+                                  : "bg-gray-100 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400"
+                              }`}
+                              data-testid={`badge-vendor-match-${item.id}`}
+                            >
+                              {item.vendorMatchConfidence === "EXACT" ? "Exact Match" :
+                               item.vendorMatchConfidence === "FUZZY" ? "Fuzzy Match" :
+                               "No Match"}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
                           {item.category}
@@ -1139,7 +1160,26 @@ export default function ProjectEstimate() {
                   data-testid={`row-line-item-mobile-${item.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="font-medium text-sm" data-testid={`text-description-mobile-${item.id}`}>{item.description}</span>
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-sm" data-testid={`text-description-mobile-${item.id}`}>{item.description}</span>
+                      {item.vendorMatchConfidence && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 w-fit ${
+                            item.vendorMatchConfidence === "EXACT"
+                              ? "bg-green-100 text-green-700 border-green-300"
+                              : item.vendorMatchConfidence === "FUZZY"
+                              ? "bg-amber-100 text-amber-700 border-amber-300"
+                              : "bg-gray-100 text-gray-500 border-gray-300"
+                          }`}
+                          data-testid={`badge-vendor-match-mobile-${item.id}`}
+                        >
+                          {item.vendorMatchConfidence === "EXACT" ? "Exact Match" :
+                           item.vendorMatchConfidence === "FUZZY" ? "Fuzzy Match" :
+                           "No Match"}
+                        </Badge>
+                      )}
+                    </div>
                     <Badge variant="outline" className="text-xs shrink-0" data-testid={`badge-category-mobile-${item.id}`}>
                       {item.category}
                     </Badge>

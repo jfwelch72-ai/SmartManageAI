@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History, Tag } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History, Tag, AlertTriangle } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
@@ -64,6 +65,9 @@ export default function BidScopeStep({
   const [lastLaborRateAppliedCount, setLastLaborRateAppliedCount] = useState<number | null>(null);
   const [lastClassificationName, setLastClassificationName] = useState<string | null>(null);
   const [selectedClassificationId, setSelectedClassificationId] = useState<string>("none");
+  const [duplicateConflicts, setDuplicateConflicts] = useState<{ id: string; description: string; category: string }[]>([]);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [pendingImportType, setPendingImportType] = useState<"importOnly" | "createAndImport" | null>(null);
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<TakeoffCategory[]>({
     queryKey: ["/api/bids", bidId, "takeoff", "categories"],
@@ -123,17 +127,25 @@ export default function BidScopeStep({
   });
 
   const importOnlyMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opts?: { duplicateAction?: "skip" | "replace" | "alongside" }) => {
       if (!estimate) throw new Error("No estimate to import into");
       const categoryIds = unimportedCategories.map((c) => c.id);
       const importRes = await apiRequest("POST", `/api/bids/${bidId}/estimate/import-takeoff`, {
         estimateId: estimate.id,
         categoryIds,
         jobClassificationId: selectedClassificationId !== "none" ? selectedClassificationId : undefined,
+        checkDuplicates: !opts?.duplicateAction,
+        duplicateAction: opts?.duplicateAction,
       });
-      return importRes.json() as Promise<{ count: number; laborRateAppliedCount?: number; classificationName?: string | null }>;
+      return importRes.json() as Promise<{ count: number; laborRateAppliedCount?: number; classificationName?: string | null; hasConflicts?: boolean; conflicts?: { id: string; description: string; category: string }[] }>;
     },
     onSuccess: (data) => {
+      if (data.hasConflicts && data.conflicts && data.conflicts.length > 0) {
+        setDuplicateConflicts(data.conflicts);
+        setPendingImportType("importOnly");
+        setDuplicateDialogOpen(true);
+        return;
+      }
       handleImportSuccess(data);
       toast({
         title: "Import complete",
@@ -511,6 +523,59 @@ export default function BidScopeStep({
         )}
       </CardContent>
     </Card>
+    <Dialog open={duplicateDialogOpen} onOpenChange={setDuplicateDialogOpen}>
+      <DialogContent data-testid="dialog-duplicate-detection">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+            Potential Duplicates Detected
+          </DialogTitle>
+          <DialogDescription>
+            The following existing manual line items may overlap with the takeoff categories you are importing:
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-48 overflow-y-auto space-y-2">
+          {duplicateConflicts.map(c => (
+            <div key={c.id} className="flex items-center gap-2 p-2 rounded border text-sm" data-testid={`conflict-item-${c.id}`}>
+              <Badge variant="outline" className="text-xs shrink-0">{c.category}</Badge>
+              <span className="truncate">{c.description}</span>
+            </div>
+          ))}
+        </div>
+        <DialogFooter className="flex flex-col sm:flex-row gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setDuplicateDialogOpen(false);
+              if (pendingImportType === "importOnly") importOnlyMutation.mutate({ duplicateAction: "skip" });
+            }}
+            data-testid="button-duplicate-skip"
+          >
+            Skip Import
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              setDuplicateDialogOpen(false);
+              if (pendingImportType === "importOnly") importOnlyMutation.mutate({ duplicateAction: "alongside" });
+            }}
+            data-testid="button-duplicate-alongside"
+          >
+            Import Alongside
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              setDuplicateDialogOpen(false);
+              if (pendingImportType === "importOnly") importOnlyMutation.mutate({ duplicateAction: "replace" });
+            }}
+            data-testid="button-duplicate-replace"
+          >
+            Replace Existing
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     {estimate && canViewHistory && (
       <EstimateRevisionHistory
         open={showHistory}

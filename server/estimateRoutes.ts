@@ -17,6 +17,7 @@ import {
   scopeItems,
   jobClassifications,
   bidSubcontractorQuotes,
+  vendorPricingCatalogs,
   type EstimateLineItem,
   type EstimateLineItemSubcontractor,
 } from "@shared/schema";
@@ -40,6 +41,63 @@ import {
   type ProductionRateStats,
   type LaborEstimate 
 } from "./productionRateService";
+
+async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId: string): Promise<void> {
+  try {
+    const catalogItems = await db
+      .select({
+        id: vendorPricingCatalogs.id,
+        itemName: vendorPricingCatalogs.itemName,
+        itemCode: vendorPricingCatalogs.itemCode,
+        category: vendorPricingCatalogs.category,
+        unit: vendorPricingCatalogs.unit,
+      })
+      .from(vendorPricingCatalogs)
+      .where(eq(vendorPricingCatalogs.organizationId, organizationId));
+
+    if (catalogItems.length === 0) return;
+
+    for (const li of lineItems) {
+      const desc = (li.description || "").toLowerCase().trim();
+      const liUnit = (li.unit || "").toLowerCase().trim();
+      let bestMatch: { id: string; confidence: string } | null = null;
+
+      for (const cat of catalogItems) {
+        const catName = (cat.itemName || "").toLowerCase().trim();
+        const catCode = (cat.itemCode || "").toLowerCase().trim();
+        const catUnit = (cat.unit || "").toLowerCase().trim();
+
+        if (catCode && desc === catCode) {
+          bestMatch = { id: cat.id, confidence: "EXACT" };
+          break;
+        }
+        if (desc === catName && liUnit === catUnit) {
+          bestMatch = { id: cat.id, confidence: "EXACT" };
+          break;
+        }
+        if (desc === catName) {
+          bestMatch = { id: cat.id, confidence: "EXACT" };
+          break;
+        }
+        if (catName && (desc.includes(catName) || catName.includes(desc)) && liUnit === catUnit) {
+          if (!bestMatch || bestMatch.confidence !== "EXACT") {
+            bestMatch = { id: cat.id, confidence: "FUZZY" };
+          }
+        }
+      }
+
+      const confidence = bestMatch?.confidence || "NO_MATCH";
+      await db.update(estimateLineItems)
+        .set({
+          vendorPricingId: bestMatch?.id || null,
+          vendorMatchConfidence: confidence,
+        })
+        .where(eq(estimateLineItems.id, li.id));
+    }
+  } catch (err) {
+    console.error("[VendorMatch] Error matching vendor pricing:", err);
+  }
+}
 
 // Helper to check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
 function hasEstimateAccess(role: string): boolean {
@@ -689,6 +747,9 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       if (lineItemsToCreate.length > 0) {
         const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
+        if (req.user?.organizationId) {
+          matchVendorPricing(newLineItems, req.user.organizationId).catch(() => {});
+        }
         try {
           await createEstimateSnapshot(estimateId, req.user!.id);
         } catch (snapshotErr) {
@@ -708,10 +769,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   router.post("/api/bids/:bidId/estimate/import-takeoff", requireAuth, async (req: AuthRequest, res) => {
     try {
       const { bidId } = req.params;
-      const { estimateId, categoryIds, jobClassificationId } = req.body as {
+      const { estimateId, categoryIds, jobClassificationId, checkDuplicates, duplicateAction } = req.body as {
         estimateId: string;
         categoryIds: string[];
         jobClassificationId?: string;
+        checkDuplicates?: boolean;
+        duplicateAction?: "skip" | "replace" | "alongside";
       };
 
       if (!hasEstimateAccess(req.user!.role)) {
@@ -747,6 +810,79 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       );
 
       const filteredCategories = categories.filter(c => !existingImportedCategoryIds.has(c.id));
+
+      if (checkDuplicates) {
+        const existingManualItems = await db
+          .select({
+            id: estimateLineItems.id,
+            description: estimateLineItems.description,
+            category: estimateLineItems.category,
+            workTypeCode: estimateLineItems.workTypeCode,
+          })
+          .from(estimateLineItems)
+          .where(and(
+            eq(estimateLineItems.estimateId, estimateId),
+            eq(estimateLineItems.source, "MANUAL"),
+          ));
+
+        const categoryNames = filteredCategories.map(c => c.name.toLowerCase());
+        const categoryEnumValues = filteredCategories.map(c => c.name.toUpperCase().replace(/\s+/g, "_"));
+        const conflicts = existingManualItems.filter(item => {
+          const desc = (item.description || "").toLowerCase();
+          const itemCategory = (item.category || "").toUpperCase();
+          const matchByCategory = categoryEnumValues.some(enumVal => itemCategory === enumVal);
+          const matchByDescription = categoryNames.some(catName =>
+            desc === catName || desc.startsWith(catName + " ") || desc.startsWith(catName + ":")
+          );
+          return matchByCategory || matchByDescription;
+        });
+
+        if (conflicts.length > 0) {
+          return res.json({
+            hasConflicts: true,
+            conflicts: conflicts.map(c => ({
+              id: c.id,
+              description: c.description,
+              category: c.category,
+            })),
+            message: `${conflicts.length} existing manual line item(s) may overlap with takeoff categories being imported.`,
+          });
+        }
+      }
+
+      if (duplicateAction === "skip") {
+        return res.json({ lineItems: [], count: 0, skipped: true });
+      }
+
+      if (duplicateAction === "replace") {
+        const categoryNames = filteredCategories.map(c => c.name.toLowerCase());
+        const categoryEnumValues = filteredCategories.map(c => c.name.toUpperCase().replace(/\s+/g, "_"));
+        const existingManualItems = await db
+          .select({
+            id: estimateLineItems.id,
+            description: estimateLineItems.description,
+            category: estimateLineItems.category,
+          })
+          .from(estimateLineItems)
+          .where(and(
+            eq(estimateLineItems.estimateId, estimateId),
+            eq(estimateLineItems.source, "MANUAL"),
+          ));
+        const idsToRemove = existingManualItems
+          .filter(item => {
+            const desc = (item.description || "").toLowerCase();
+            const itemCategory = (item.category || "").toUpperCase();
+            const matchByCategory = categoryEnumValues.some(enumVal => itemCategory === enumVal);
+            const matchByDescription = categoryNames.some(catName =>
+              desc === catName || desc.startsWith(catName + " ") || desc.startsWith(catName + ":")
+            );
+            return matchByCategory || matchByDescription;
+          })
+          .map(item => item.id);
+        if (idsToRemove.length > 0) {
+          await db.delete(estimateLineItems).where(inArray(estimateLineItems.id, idsToRemove));
+        }
+      }
 
       // Resolve labor classification rate if provided — scoped to org for tenant isolation
       let classificationRate: number | null = null;
@@ -1004,6 +1140,9 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       if (lineItemsToCreate.length > 0) {
         const newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
+        if (req.user?.organizationId) {
+          matchVendorPricing(newLineItems, req.user.organizationId).catch(() => {});
+        }
         const laborRateAppliedCount = newLineItems.filter((li) => li.laborRateUsed !== null && Number(li.laborRateUsed) > 0).length;
         try {
           await createEstimateSnapshot(estimateId, req.user!.id);
@@ -1202,6 +1341,10 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
         newLineItem.subcontractCost = totalAllocated.toFixed(2);
         newLineItem.totalCost = refreshedTotalCost.toFixed(2);
+      }
+
+      if (req.user?.organizationId) {
+        matchVendorPricing([newLineItem], req.user.organizationId).catch(() => {});
       }
 
       try {

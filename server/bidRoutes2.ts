@@ -748,22 +748,21 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
         });
 
         if (!existingScopeItem) {
-          const lineItemAny = lineItem as any;
           const [newScopeItem] = await db.insert(scopeItems).values({
             projectId: newProject.id,
             estimateLineItemId: lineItem.id,
-            organizationSowItemId: lineItemAny.organizationSowItemId || null,
-            subcontractorQuoteId: lineItemAny.subcontractorQuoteId || null,
+            organizationSowItemId: lineItem.organizationSowItemId || null,
+            subcontractorQuoteId: lineItem.subcontractorQuoteId || null,
             description: lineItem.description,
             unit: lineItem.unit,
             totalQuantity: lineItem.quantity,
             unitPrice: lineItem.totalCost ? 
               (Number(lineItem.totalCost) / Number(lineItem.quantity)).toFixed(2) : 
               null,
-            estimatedConcreteYards: lineItemAny.calculatedConcreteYards || null,
-            estimatedStoneTons: lineItemAny.calculatedStoneTons || null,
-            estimatedExcavationYards: lineItemAny.calculatedExcavationYards || null,
-            materialResponsibility: lineItemAny.subcontractorQuoteId ? "SUBCONTRACTOR" : "TFR",
+            estimatedConcreteYards: lineItem.calculatedConcreteYards || null,
+            estimatedStoneTons: lineItem.calculatedStoneTons || null,
+            estimatedExcavationYards: lineItem.calculatedExcavationYards || null,
+            materialResponsibility: lineItem.subcontractorQuoteId ? "SUBCONTRACTOR" : "TFR",
           }).returning();
 
           const materialCost = Number(lineItem.materialCost || 0);
@@ -819,58 +818,114 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       console.log(`[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${newProject.code}`);
     }
 
-    // Seed budget line items aggregated by cost component across all estimate line items.
-    // Rather than one row per estimate category (CONCRETE, EXCAVATION, etc.), we aggregate
-    // into five universal cost-type buckets: Labor, Material, Equipment, Subcontractor,
-    // and Other. This produces a clean starting baseline that PMs can refine per CSI code.
-    // Generic 01-xxx cost codes are used because they exist in every org's valid code set.
+    // Seed budget line items from individual estimate line items, preserving each
+    // line item's specific cost code (workTypeCode, CSI division, category) rather
+    // than collapsing into generic Division 01 buckets.
     if (sovSeedLineItems.length > 0) {
       const { budgetLineItems } = await import("@shared/schema");
-
-      // Aggregate by cost type across all estimate line items
-      let totalLabor = 0;
-      let totalMaterial = 0;
-      let totalEquipment = 0;
-      let totalSubcontract = 0;
-      let totalOther = 0;
-
-      for (const li of sovSeedLineItems) {
-        totalLabor += Number(li.laborCost || 0);
-        totalMaterial += Number(li.materialCost || 0);
-        totalEquipment += Number(li.equipmentCost || 0);
-        totalSubcontract += Number(li.subcontractCost || 0);
-        totalOther += Number(li.consumablesCost || 0) + Number(li.overheadAllocation || 0) + Number(li.profitAllocation || 0);
-      }
 
       const seededAt = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const budgetSeedRows: { projectId: string; costCode: string; description: string; division: string; laborBudget: string; materialBudget: string; subcontractorBudget: string; equipmentBudget: string; otherBudget: string; totalBudget: string }[] = [];
 
-      const addBudgetRow = (costCode: string, description: string, division: string, labor: number, material: number, subcontractor: number, equipment: number, other: number) => {
-        const total = labor + material + subcontractor + equipment + other;
-        if (total <= 0) return;
+      const CATEGORY_DIVISION_MAP: Record<string, { division: string; codePrefix: string }> = {
+        CONCRETE: { division: "Division 03 — Concrete", codePrefix: "03" },
+        EXCAVATION: { division: "Division 31 — Earthwork", codePrefix: "31" },
+        PAVERS: { division: "Division 32 — Exterior Improvements", codePrefix: "32" },
+        BOLLARDS: { division: "Division 32 — Exterior Improvements", codePrefix: "32" },
+        GC: { division: "Division 01 — General Requirements", codePrefix: "01" },
+        OVERHEAD: { division: "Division 01 — General Requirements", codePrefix: "01" },
+        PROFIT: { division: "Division 01 — General Requirements", codePrefix: "01" },
+        GENERAL: { division: "Division 01 — General Requirements", codePrefix: "01" },
+      };
+
+      const usedCostCodes = new Set<string>();
+      for (let i = 0; i < sovSeedLineItems.length; i++) {
+        const li = sovSeedLineItems[i];
+        const labor = Number(li.laborCost || 0);
+        const material = Number(li.materialCost || 0);
+        const equipment = Number(li.equipmentCost || 0);
+        const subcontract = Number(li.subcontractCost || 0);
+        const other = Number(li.consumablesCost || 0) + Number(li.overheadAllocation || 0) + Number(li.profitAllocation || 0);
+        const total = labor + material + subcontract + equipment + other;
+        if (total <= 0) continue;
+
+        const category = li.category || "GENERAL";
+        const divInfo = CATEGORY_DIVISION_MAP[category] || CATEGORY_DIVISION_MAP.GENERAL;
+        const baseCostCode = li.workTypeCode || `${divInfo.codePrefix}-${String(i + 1).padStart(3, '0')}`;
+        const division = divInfo.division;
+
+        let costCode = baseCostCode;
+        if (usedCostCodes.has(costCode)) {
+          let suffix = 2;
+          while (usedCostCodes.has(`${baseCostCode}.${suffix}`)) suffix++;
+          costCode = `${baseCostCode}.${suffix}`;
+        }
+        usedCostCodes.add(costCode);
+
         budgetSeedRows.push({
           projectId: newProject.id,
           costCode,
-          description: `${description} — Seeded from estimate on ${seededAt}`,
+          description: `${li.description || `Line Item ${i + 1}`} — Seeded from estimate on ${seededAt}`,
           division,
           laborBudget: labor.toFixed(2),
           materialBudget: material.toFixed(2),
-          subcontractorBudget: subcontractor.toFixed(2),
+          subcontractorBudget: subcontract.toFixed(2),
           equipmentBudget: equipment.toFixed(2),
           otherBudget: other.toFixed(2),
           totalBudget: total.toFixed(2),
         });
-      };
-
-      addBudgetRow("01-600", "Labor", "Division 01 — General Requirements", totalLabor, 0, 0, 0, 0);
-      addBudgetRow("01-100", "Materials", "Division 01 — General Requirements", 0, totalMaterial, 0, 0, 0);
-      addBudgetRow("01-900", "Subcontractors", "Division 01 — General Requirements", 0, 0, totalSubcontract, 0, 0);
-      addBudgetRow("01-500", "Equipment", "Division 01 — General Requirements", 0, 0, 0, totalEquipment, 0);
-      addBudgetRow("01-800", "Other (Consumables / Overhead / Profit)", "Division 01 — General Requirements", 0, 0, 0, 0, totalOther);
+      }
 
       if (budgetSeedRows.length > 0) {
-        await db.insert(budgetLineItems).values(budgetSeedRows).onConflictDoNothing();
-        console.log(`[Bid Conversion] Seeded ${budgetSeedRows.length} budget line(s) for project ${newProject.code}`);
+        await db.insert(budgetLineItems).values(budgetSeedRows);
+        console.log(`[Bid Conversion] Seeded ${budgetSeedRows.length} granular budget line(s) for project ${newProject.code}`);
+      }
+    }
+
+    // Seed project labor rates from job classifications used in estimate line items
+    if (sovSeedLineItems.length > 0) {
+      const { projectLaborRates, jobClassifications } = await import("@shared/schema");
+
+      const classificationIds = new Set<string>();
+      for (const li of sovSeedLineItems) {
+        if (li.jobClassificationId) {
+          classificationIds.add(li.jobClassificationId);
+        }
+      }
+
+      if (classificationIds.size > 0) {
+        const classifications = await db
+          .select()
+          .from(jobClassifications)
+          .where(inArray(jobClassifications.id, Array.from(classificationIds)));
+
+        if (classifications.length > 0) {
+          const [existingRate] = await db
+            .select()
+            .from(projectLaborRates)
+            .where(eq(projectLaborRates.projectId, newProject.id))
+            .limit(1);
+
+          if (!existingRate) {
+            const primary = classifications[0];
+            const regularRate = primary.defaultRegularRate || "0.00";
+            const overtimeRate = primary.defaultOvertimeRate || (Number(regularRate) * 1.5).toFixed(2);
+            const classificationSummary = classifications.map(c => {
+              const reg = c.defaultRegularRate || "0.00";
+              const ot = c.defaultOvertimeRate || (Number(reg) * 1.5).toFixed(2);
+              return `${c.name}: $${reg}/hr reg, $${ot}/hr OT`;
+            }).join("; ");
+
+            await db.insert(projectLaborRates).values({
+              projectId: newProject.id,
+              defaultRegularRate: regularRate,
+              defaultOvertimeRate: overtimeRate,
+              burdenMultiplier: "1.0000",
+              notes: `Seeded from estimate classifications — ${classificationSummary}`,
+            });
+            console.log(`[Bid Conversion] Seeded project labor rate from primary classification: ${primary.name}`);
+          }
+        }
       }
     }
 
@@ -1397,16 +1452,27 @@ router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole
       return;
     }
 
-    const recipientEmail = quote.contactEmail;
+    const { overrideEmail } = req.body as { overrideEmail?: string };
+    const recipientEmail = overrideEmail || quote.contactEmail;
     if (!recipientEmail) {
       res.status(400).json({ error: "Quote has no contact email. Add a contact email first." });
       return;
+    }
+
+    if (overrideEmail && overrideEmail !== quote.contactEmail) {
+      await db
+        .update(bidSubcontractorQuotes)
+        .set({ contactEmail: overrideEmail, updatedAt: new Date() })
+        .where(eq(bidSubcontractorQuotes.id, quote.id));
     }
 
     const [gcOrg] = await db
       .select({ name: organizations.name })
       .from(organizations)
       .where(eq(organizations.id, bid.gcOrganizationId));
+
+    const crypto = await import("crypto");
+    const responseToken = crypto.randomBytes(32).toString("hex");
 
     const sent = await sendRfqEmail(
       recipientEmail,
@@ -1415,13 +1481,14 @@ router.post("/api/bids/:code/quotes/:quoteId/send-rfq", requireAuth, requireRole
       quote.scopeOfWork,
       gcOrg?.name || "Unknown",
       "subcontractor",
-      bid.dueDate ? new Date(bid.dueDate) : undefined
+      bid.dueDate ? new Date(bid.dueDate) : undefined,
+      responseToken
     );
 
     if (sent) {
       await db
         .update(bidSubcontractorQuotes)
-        .set({ rfqSentAt: new Date(), rfqStatus: "sent", updatedAt: new Date() })
+        .set({ rfqSentAt: new Date(), rfqStatus: "sent", rfqResponseToken: responseToken, updatedAt: new Date() })
         .where(eq(bidSubcontractorQuotes.id, quote.id));
 
       const [updated] = await db
@@ -2522,6 +2589,155 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
     res.json({ success: true, submittedAt: updatedBid.submittedAt, emailSent });
   } catch (error) {
     console.error("Bid submit error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/public/rfq-response/:token", async (req, res) => {
+  try {
+    const { bidSubcontractorQuotes } = await import("@shared/schema");
+    const { organizations } = await import("@shared/schema");
+
+    const [quote] = await db
+      .select()
+      .from(bidSubcontractorQuotes)
+      .where(eq(bidSubcontractorQuotes.rfqResponseToken, req.params.token))
+      .limit(1);
+
+    if (!quote) {
+      res.status(404).json({ error: "Invalid or expired RFQ link" });
+      return;
+    }
+
+    const bid = quote.bidId
+      ? (await db.select().from(bids).where(eq(bids.id, quote.bidId)).limit(1))[0]
+      : null;
+
+    let gcOrgName = "Unknown";
+    if (bid?.gcOrganizationId) {
+      const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, bid.gcOrganizationId)).limit(1);
+      if (org) gcOrgName = org.name;
+    }
+
+    res.json({
+      quoteId: quote.id,
+      bidName: bid?.name || "Project",
+      gcOrganizationName: gcOrgName,
+      scopeOfWork: quote.scopeOfWork,
+      subcontractorName: quote.subcontractorName,
+      dueDate: bid?.dueDate || null,
+      alreadyResponded: quote.rfqStatus === "responded",
+    });
+  } catch (error) {
+    console.error("Public RFQ response lookup error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+interface MulterFile {
+  filename: string;
+  originalname: string;
+  size: number;
+  mimetype: string;
+}
+
+interface MulterRequest extends Request {
+  files?: MulterFile[];
+}
+
+router.post("/api/public/rfq-response/:token", async (req, res) => {
+  let parsedFiles: MulterFile[] = [];
+
+  try {
+    const multer = (await import("multer")).default;
+    const upload = multer({
+      dest: "uploads/rfq-responses",
+      limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+    }).array("attachments", 5);
+
+    await new Promise<void>((resolve, reject) => {
+      upload(req, res, (err: Error | null) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+
+    parsedFiles = ((req as MulterRequest).files || []);
+  } catch (uploadErr: unknown) {
+    const multerErr = uploadErr as { code?: string };
+    if (multerErr?.code === "LIMIT_FILE_SIZE") {
+      res.status(400).json({ error: "File too large. Maximum 10MB per file." });
+      return;
+    }
+    res.status(400).json({ error: "File upload failed" });
+    return;
+  }
+
+  try {
+    const { bidSubcontractorQuotes } = await import("@shared/schema");
+
+    const [quote] = await db
+      .select()
+      .from(bidSubcontractorQuotes)
+      .where(eq(bidSubcontractorQuotes.rfqResponseToken, req.params.token))
+      .limit(1);
+
+    if (!quote) {
+      res.status(404).json({ error: "Invalid or expired RFQ link" });
+      return;
+    }
+
+    if (quote.rfqStatus === "responded") {
+      res.status(400).json({ error: "This quote has already been submitted. Please contact the GC directly to make changes." });
+      return;
+    }
+
+    const rfqSentAt = quote.rfqSentAt ? new Date(quote.rfqSentAt).getTime() : 0;
+    const TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000;
+    if (rfqSentAt && Date.now() - rfqSentAt > TOKEN_EXPIRY_MS) {
+      res.status(410).json({ error: "This RFQ link has expired. Please request a new one from the GC." });
+      return;
+    }
+
+    const quoteAmount = req.body.quoteAmount as string;
+    const leadTime = req.body.leadTime as string | undefined;
+    const notes = req.body.notes as string | undefined;
+    const contactName = req.body.contactName as string | undefined;
+    const contactPhone = req.body.contactPhone as string | undefined;
+
+    if (!quoteAmount || isNaN(parseFloat(quoteAmount)) || parseFloat(quoteAmount) < 0) {
+      res.status(400).json({ error: "A valid quote amount is required" });
+      return;
+    }
+
+    const attachmentsMeta = parsedFiles.map(f => ({
+      filename: f.filename,
+      originalName: f.originalname,
+      size: f.size,
+      mimeType: f.mimetype,
+    }));
+
+    const existingNotes = quote.notes || "";
+    const responseNotes = notes ? `${existingNotes ? existingNotes + "\n\n" : ""}[Sub Response] ${notes}` : existingNotes;
+
+    await db
+      .update(bidSubcontractorQuotes)
+      .set({
+        quoteAmount,
+        leadTime: leadTime || quote.leadTime,
+        notes: responseNotes,
+        contactName: contactName || quote.contactName,
+        contactPhone: contactPhone || quote.contactPhone,
+        rfqStatus: "responded",
+        rfqResponseToken: null,
+        rfqResponseAttachmentsJson: attachmentsMeta.length > 0 ? JSON.stringify(attachmentsMeta) : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(bidSubcontractorQuotes.id, quote.id));
+
+    res.json({ success: true, message: "Quote submitted successfully" });
+  } catch (error) {
+    console.error("Public RFQ response submit error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

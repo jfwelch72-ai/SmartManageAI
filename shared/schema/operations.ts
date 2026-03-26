@@ -13,19 +13,21 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   subcontractorName: text("subcontractor_name").notNull(),
   scopeOfWork: text("scope_of_work").notNull(),
   quoteAmount: decimal("quote_amount", { precision: 12, scale: 2 }).notNull(),
-  leadTime: text("lead_time"), // e.g., "2 weeks", "30 days"
-  estimatedCompletionTime: text("estimated_completion_time"), // e.g., "3 months", "45 days"
+  leadTime: text("lead_time"),
+  estimatedCompletionTime: text("estimated_completion_time"),
   contactName: text("contact_name"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
   notes: text("notes"),
-  isSelected: boolean("is_selected").notNull().default(false), // Selected quote transfers on award
+  isSelected: boolean("is_selected").notNull().default(false),
   fileUrl: text("file_url"),
   fileName: text("file_name"),
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
   rfqSentAt: timestamp("rfq_sent_at"),
   rfqStatus: text("rfq_status"),
+  rfqResponseToken: text("rfq_response_token"),
+  rfqResponseAttachmentsJson: text("rfq_response_attachments_json"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -1343,6 +1345,9 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   
   // Unified SOW Tracking - links to organization's master SOW library for production rate tracking
   organizationSowItemId: varchar("organization_sow_item_id").references(() => organizationSowItems.id, { onDelete: "set null" }),
+  
+  vendorPricingId: varchar("vendor_pricing_id"),
+  vendorMatchConfidence: text("vendor_match_confidence"),
   
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

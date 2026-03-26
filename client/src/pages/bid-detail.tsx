@@ -1036,7 +1036,7 @@ export default function BidDetailPage() {
                     isSelected: sel,
                   })
                 }
-                onSendRfq={(quoteId) => mutations.sendSubRfq.mutate(quoteId)}
+                onSendRfq={(quoteId, overrideEmail) => mutations.sendSubRfq.mutate({ quoteId, overrideEmail })}
                 sendRfqPending={mutations.sendSubRfq.isPending}
                 onPrevStep={() => setCurrentStep(4)}
                 onNextStep={() => setCurrentStep(6)}

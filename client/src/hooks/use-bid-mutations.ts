@@ -151,7 +151,7 @@ export function useBidMutations(opts: UseBidMutationsOptions) {
   });
 
   const sendSubRfq = useMutation({
-    mutationFn: async (quoteId: string) => { const res = await apiRequest("POST", `/api/bids/${opts.bidCode}/quotes/${quoteId}/send-rfq`); return res.json(); },
+    mutationFn: async ({ quoteId, overrideEmail }: { quoteId: string; overrideEmail?: string }) => { const res = await apiRequest("POST", `/api/bids/${opts.bidCode}/quotes/${quoteId}/send-rfq`, overrideEmail ? { overrideEmail } : {}); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/bids", opts.bidCode, "quotes"] }); toast({ title: "RFQ Sent", description: "Request for quote email sent to subcontractor" }); },
     onError: errHandler("Failed to send RFQ"),
   });

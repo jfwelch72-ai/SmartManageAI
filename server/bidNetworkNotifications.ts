@@ -522,7 +522,8 @@ export async function sendRfqEmail(
   scopeDescription: string,
   gcOrganizationName: string,
   quoteType: "subcontractor" | "material",
-  bidDueDate?: Date
+  bidDueDate?: Date,
+  responseToken?: string
 ): Promise<boolean> {
   try {
     const safeBidTitle = escapeHtml(bidTitle);
@@ -582,6 +583,18 @@ export async function sendRfqEmail(
               <p style="margin: 10px 0 0 0; color: #475569;">${safeScope}${scopeDescription.length > 500 ? "..." : ""}</p>
             </div>
             
+            ${responseToken ? `
+            <div style="text-align: center; margin: 20px 0;">
+              <a href="${BASE_URL}/rfq-response/${responseToken}" 
+                 style="display: inline-block; background: #4f46e5; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
+                Submit Your Quote Online
+              </a>
+              <p style="color: #64748b; font-size: 12px; margin-top: 10px;">
+                Or copy this link: ${BASE_URL}/rfq-response/${responseToken}
+              </p>
+            </div>
+            ` : ""}
+            
             <p style="color: #64748b; font-size: 14px;">
               Please respond to ${safeGcName} with your pricing and availability at your earliest convenience.
             </p>
@@ -594,7 +607,8 @@ export async function sendRfqEmail(
       </html>
     `;
 
-    const text = `Request for Quote from ${gcOrganizationName}\n\nHi${recipientName ? ` ${recipientName}` : ""},\n\n${gcOrganizationName} is requesting a quote from you for: ${bidTitle}\nType: ${typeLabel}\n${bidDueDate ? `Response Needed By: ${formatDate(bidDueDate)}\n` : ""}\nScope: ${scopeDescription.substring(0, 500)}\n\nPlease respond with your pricing and availability.\n\n---\nThis email was sent by ${APP_NAME}`;
+    const responseLink = responseToken ? `\nSubmit your quote online: ${BASE_URL}/rfq-response/${responseToken}\n` : "";
+    const text = `Request for Quote from ${gcOrganizationName}\n\nHi${recipientName ? ` ${recipientName}` : ""},\n\n${gcOrganizationName} is requesting a quote from you for: ${bidTitle}\nType: ${typeLabel}\n${bidDueDate ? `Response Needed By: ${formatDate(bidDueDate)}\n` : ""}${responseLink}\nScope: ${scopeDescription.substring(0, 500)}\n\nPlease respond with your pricing and availability.\n\n---\nThis email was sent by ${APP_NAME}`;
 
     await sendEmail({ to: recipientEmail, subject, html, text });
     logInfo("RFQ email sent", { to: recipientEmail, bidTitle, quoteType });

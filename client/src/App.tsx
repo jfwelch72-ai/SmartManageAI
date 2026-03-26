@@ -106,6 +106,7 @@ const EquipmentRentalMarketplacePage = lazy(() => import("@/pages/equipment-rent
 const PricebookImportPage = lazy(() => import("@/pages/pricebook-import"));
 const ClientPortalPublic = lazy(() => import("@/pages/client-portal-public"));
 const SubPortalPage = lazy(() => import("@/pages/sub-portal"));
+const RfqResponsePage = lazy(() => import("@/pages/rfq-response"));
 const CompanyHealthPage = lazy(() => import("@/pages/company-health"));
 const ExecutiveDigestPage = lazy(() => import("@/pages/executive-digest"));
 const WhatIfSimulatorPage = lazy(() => import("@/pages/what-if-simulator"));
@@ -219,6 +220,7 @@ function Router() {
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
       <Route path="/portal/:projectId" component={ClientPortalPublic} />
       <Route path="/sub-portal" component={SubPortalPage} />
+      <Route path="/rfq-response/:token" component={RfqResponsePage} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
       {/* Routes accessible to all authenticated users */}
@@ -399,7 +401,7 @@ function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
   
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/');
 
   const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/hustler/accept-invite'].some(
     route => location === route || (route !== '/' && location.startsWith(route))

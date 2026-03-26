@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Users, Plus, Edit, Trash2, FileText, CheckCircle2, ChevronRight, Send, Clock } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Users, Plus, Edit, Trash2, FileText, CheckCircle2, ChevronRight, Send, Clock, RefreshCw, Mail } from "lucide-react";
 import type { BidSubcontractorQuote } from "@shared/schema";
 
 interface DerivedSubRequirement {
@@ -24,7 +28,7 @@ interface BidSubcontractorsStepProps {
   onEditQuote: (quote: BidSubcontractorQuote) => void;
   onDeleteQuote: (quoteId: string) => void;
   onToggleSelection: (quoteId: string, isSelected: boolean) => void;
-  onSendRfq?: (quoteId: string) => void;
+  onSendRfq?: (quoteId: string, overrideEmail?: string) => void;
   sendRfqPending?: boolean;
   onPrevStep: () => void;
   onNextStep: () => void;
@@ -46,7 +50,75 @@ export default function BidSubcontractorsStep({
   onPrevStep,
   onNextStep,
 }: BidSubcontractorsStepProps) {
+  const [resendDialogOpen, setResendDialogOpen] = useState(false);
+  const [resendQuoteId, setResendQuoteId] = useState<string | null>(null);
+  const [resendEmail, setResendEmail] = useState("");
+  const [useDifferentEmail, setUseDifferentEmail] = useState(false);
+
+  const handleResendClick = (quoteId: string, currentEmail: string) => {
+    setResendQuoteId(quoteId);
+    setResendEmail(currentEmail);
+    setUseDifferentEmail(false);
+    setResendDialogOpen(true);
+  };
+
+  const handleResendConfirm = () => {
+    if (resendQuoteId && onSendRfq) {
+      onSendRfq(resendQuoteId, useDifferentEmail ? resendEmail : undefined);
+    }
+    setResendDialogOpen(false);
+    setResendQuoteId(null);
+  };
+
   return (
+    <>
+    <Dialog open={resendDialogOpen} onOpenChange={setResendDialogOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Resend RFQ</DialogTitle>
+          <DialogDescription>
+            Resend the request for quote to the subcontractor. You can send to the same email or a different address.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="use-different-email"
+              checked={useDifferentEmail}
+              onCheckedChange={(checked) => setUseDifferentEmail(!!checked)}
+              data-testid="checkbox-different-email"
+            />
+            <Label htmlFor="use-different-email" className="text-sm">Send to a different email address</Label>
+          </div>
+          {useDifferentEmail && (
+            <div>
+              <Label htmlFor="resend-email" className="text-sm">New Email Address</Label>
+              <Input
+                id="resend-email"
+                type="email"
+                value={resendEmail}
+                onChange={(e) => setResendEmail(e.target.value)}
+                placeholder="new-email@example.com"
+                data-testid="input-resend-email"
+              />
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setResendDialogOpen(false)} data-testid="button-cancel-resend">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleResendConfirm}
+            disabled={useDifferentEmail && !resendEmail}
+            data-testid="button-confirm-resend"
+          >
+            <Mail className="w-4 h-4 mr-2" />
+            Resend RFQ
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Card data-testid="card-subcontractor-quotes">
       <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
@@ -195,6 +267,18 @@ export default function BidSubcontractorsStep({
                           Send RFQ
                         </Button>
                       )}
+                      {onSendRfq && quote.contactEmail && quote.rfqSentAt && quote.rfqStatus !== "responded" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleResendClick(quote.id, quote.contactEmail || "")}
+                          disabled={sendRfqPending}
+                          data-testid={`button-resend-rfq-${quote.id}`}
+                        >
+                          <RefreshCw className="w-3 h-3 mr-1" />
+                          Resend RFQ
+                        </Button>
+                      )}
                       <Button size="icon" variant="ghost" onClick={() => onEditQuote(quote)}>
                         <Edit className="w-4 h-4" />
                       </Button>
@@ -219,5 +303,6 @@ export default function BidSubcontractorsStep({
         )}
       </CardContent>
     </Card>
+    </>
   );
 }

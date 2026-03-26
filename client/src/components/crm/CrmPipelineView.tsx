@@ -232,6 +232,8 @@ export default function CrmPipelineView() {
   const [editForm, setEditForm] = useState({ ...DEFAULT_FORM });
   const [convertOpen, setConvertOpen] = useState(false);
   const [convertForm, setConvertForm] = useState({ ...DEFAULT_CONVERT_FORM });
+  const [createBidOpen, setCreateBidOpen] = useState(false);
+  const [createBidForm, setCreateBidForm] = useState({ name: "", description: "" });
   const [sortField, setSortField] = useState<SortField>("updatedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -409,6 +411,23 @@ export default function CrmPipelineView() {
       toast({ title: "Project created from opportunity" });
     },
     onError: () => toast({ title: "Failed to convert to project", variant: "destructive" }),
+  });
+
+  const createBidMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof createBidForm }) =>
+      apiRequest("POST", `/api/crm/opportunities/${id}/create-bid`, {
+        name: data.name || undefined,
+        description: data.description || undefined,
+      }),
+    onSuccess: () => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", selectedOpp?.id, "activities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bids"] });
+      setCreateBidOpen(false);
+      setCreateBidForm({ name: "", description: "" });
+      toast({ title: "Bid created from opportunity" });
+    },
+    onError: () => toast({ title: "Failed to create bid", variant: "destructive" }),
   });
 
   const openDetail = (opp: Opportunity) => {
@@ -968,6 +987,44 @@ export default function CrmPipelineView() {
         </DialogContent>
       </Dialog>
 
+      {/* Create Bid Dialog */}
+      <Dialog open={createBidOpen} onOpenChange={setCreateBidOpen}>
+        <DialogContent data-testid="dialog-create-bid">
+          <DialogHeader>
+            <DialogTitle>Create Bid</DialogTitle>
+            <DialogDescription>Create a new bid from this opportunity. The opportunity stage will be updated to Estimating if applicable.</DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div>
+              <Label>Bid Name *</Label>
+              <Input
+                value={createBidForm.name}
+                onChange={e => setCreateBidForm(f => ({ ...f, name: e.target.value }))}
+                data-testid="input-create-bid-name"
+              />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input
+                value={createBidForm.description}
+                onChange={e => setCreateBidForm(f => ({ ...f, description: e.target.value }))}
+                data-testid="input-create-bid-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateBidOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => selectedOpp && createBidMutation.mutate({ id: selectedOpp.id, data: createBidForm })}
+              disabled={!createBidForm.name.trim() || createBidMutation.isPending}
+              data-testid="button-submit-create-bid"
+            >
+              {createBidMutation.isPending ? "Creating Bid..." : "Create Bid"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Convert to Project Dialog */}
       <Dialog open={convertOpen} onOpenChange={setConvertOpen}>
         <DialogContent data-testid="dialog-convert-project">
@@ -1128,6 +1185,21 @@ export default function CrmPipelineView() {
                 {canEdit && (
                   <Button size="sm" variant="outline" onClick={() => openEdit(selectedOpp)} data-testid="button-edit-opp">
                     Edit Details
+                  </Button>
+                )}
+                {canEdit && selectedOpp.stage !== "LOST" && selectedOpp.stage !== "WON" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-blue-600 text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
+                    onClick={() => {
+                      setCreateBidForm({ name: selectedOpp.name, description: "" });
+                      setCreateBidOpen(true);
+                    }}
+                    data-testid="button-create-bid-from-opp"
+                  >
+                    <FileText className="w-3.5 h-3.5 mr-1.5" />
+                    Create Bid
                   </Button>
                 )}
                 {canManageProjects && selectedOpp.stage === "WON" && (
