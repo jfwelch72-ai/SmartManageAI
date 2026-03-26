@@ -92,6 +92,7 @@ import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
 import ContractsTab from "@/components/project-tabs/ContractsTab";
 import FinancialsTab from "@/components/project-tabs/FinancialsTab";
+import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { LucideIcon } from "lucide-react";
 
@@ -147,7 +148,7 @@ interface MaterialBudgetSummary {
   alertsTriggered: number;
 }
 
-type TabGroup = "General" | "Field Operations" | "Documents & Communication" | "Resources & Workforce" | "Financial" | "AI & Access";
+type TabGroup = "General" | "Field Operations" | "Documents & Communication" | "Resources & Workforce" | "Financial" | "AI";
 
 const TAB_GROUP_ORDER: TabGroup[] = [
   "General",
@@ -155,7 +156,7 @@ const TAB_GROUP_ORDER: TabGroup[] = [
   "Documents & Communication",
   "Resources & Workforce",
   "Financial",
-  "AI & Access",
+  "AI",
 ];
 
 interface TabConfig {
@@ -230,6 +231,20 @@ function buildTabConfigs(
       value: "punch-list",
       label: "Punch List",
       icon: ClipboardList,
+      visible: hasManagementAccess(userRole),
+      group: "Field Operations",
+    },
+    {
+      value: "warranty",
+      label: "Warranty",
+      icon: ShieldCheck,
+      visible: hasManagementAccess(userRole),
+      group: "Field Operations",
+    },
+    {
+      value: "safety-training",
+      label: "Safety Training",
+      icon: ShieldCheck,
       visible: hasManagementAccess(userRole),
       group: "Field Operations",
     },
@@ -351,25 +366,18 @@ function buildTabConfigs(
       group: "Financial",
     },
     {
-      value: "jobsite-ai",
-      label: "AI Jobsite",
-      icon: Bot,
-      visible: hasManagementAccess(userRole),
-      group: "AI & Access",
-    },
-    {
       value: "portal-access",
       label: "Portal Access",
       icon: ExternalLink,
       visible: hasManagementAccess(userRole),
-      group: "AI & Access",
+      group: "Documents & Communication",
     },
     {
-      value: "warranty",
-      label: "Warranty",
-      icon: ShieldCheck,
+      value: "jobsite-ai",
+      label: "AI Jobsite",
+      icon: Bot,
       visible: hasManagementAccess(userRole),
-      group: "AI & Access",
+      group: "AI",
     },
   ];
 }
@@ -453,6 +461,8 @@ export default function ProjectDetailPage() {
     "change-orders": "change-orders",
     "sov": "sov",
     "receipts": "receipts",
+    "billing": "billing",
+    "production-rates": "production-rates",
   };
 
   const findCategoryForTab = (tabValue: string): TabGroup | undefined => {
@@ -950,6 +960,14 @@ export default function ProjectDetailPage() {
 
           <TabsContent value="warranty">
             <WarrantyTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
+          <TabsContent value="safety-training">
+            <SafetyTrainingTab
               projectId={project.id}
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
