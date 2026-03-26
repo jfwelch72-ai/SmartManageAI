@@ -2620,10 +2620,14 @@ export const projectSchedules = pgTable("project_schedules", {
   actualStartDate: date("actual_start_date"),
   actualEndDate: date("actual_end_date"),
   workingDays: integer("working_days").array().default(sql`'{1,2,3,4,5}'`),
-  optionsJson: text("options_json"),                  // Buffer days, weather contingency, etc.
+  optionsJson: text("options_json"),
   aiNotes: text("ai_notes"),
   version: integer("version").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
+  baselineLocked: boolean("baseline_locked").notNull().default(false),
+  baselineLockedAt: timestamp("baseline_locked_at"),
+  projectedCompletionDate: date("projected_completion_date"),
+  spiValue: decimal("spi_value", { precision: 5, scale: 3 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   createdByUserId: varchar("created_by_user_id").references(() => users.id),
@@ -2648,7 +2652,7 @@ export const projectScheduleTasks = pgTable("project_schedule_tasks", {
   actualStartDate: date("actual_start_date"),
   actualEndDate: date("actual_end_date"),
   durationDays: integer("duration_days"),
-  dependencies: varchar("dependencies").array(),      // Array of task IDs
+  dependencies: varchar("dependencies").array(),
   percentComplete: integer("percent_complete").notNull().default(0),
   isCriticalPath: boolean("is_critical_path").notNull().default(false),
   isMilestone: boolean("is_milestone").notNull().default(false),
@@ -2658,6 +2662,15 @@ export const projectScheduleTasks = pgTable("project_schedule_tasks", {
   delayIds: varchar("delay_ids").array(),
   status: scheduleTaskStatusEnum("status").notNull().default("NOT_STARTED"),
   sortOrder: integer("sort_order").notNull().default(0),
+  earlyStart: date("early_start"),
+  earlyFinish: date("early_finish"),
+  lateStart: date("late_start"),
+  lateFinish: date("late_finish"),
+  totalFloat: integer("total_float"),
+  freeFloat: integer("free_float"),
+  baselineStartDate: date("baseline_start_date"),
+  baselineEndDate: date("baseline_end_date"),
+  crewIds: varchar("crew_ids").array(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -2668,6 +2681,26 @@ export const projectScheduleTasks = pgTable("project_schedule_tasks", {
 export const insertProjectScheduleTaskSchema = createInsertSchema(projectScheduleTasks).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertProjectScheduleTask = z.infer<typeof insertProjectScheduleTaskSchema>;
 export type ProjectScheduleTask = typeof projectScheduleTasks.$inferSelect;
+
+export const scheduleForecastSnapshots = pgTable("schedule_forecast_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => projectSchedules.id, { onDelete: "cascade" }),
+  snapshotDate: date("snapshot_date").notNull(),
+  projectedCompletionDate: date("projected_completion_date"),
+  spiValue: decimal("spi_value", { precision: 5, scale: 3 }),
+  baselineEndDate: date("baseline_end_date"),
+  currentEndDate: date("current_end_date"),
+  criticalPathDaysRemaining: integer("critical_path_days_remaining"),
+  overallProgress: integer("overall_progress"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  scheduleIdx: index("forecast_snapshots_schedule_idx").on(table.scheduleId),
+  dateIdx: index("forecast_snapshots_date_idx").on(table.snapshotDate),
+}));
+
+export const insertScheduleForecastSnapshotSchema = createInsertSchema(scheduleForecastSnapshots).omit({ id: true, createdAt: true });
+export type InsertScheduleForecastSnapshot = z.infer<typeof insertScheduleForecastSnapshotSchema>;
+export type ScheduleForecastSnapshot = typeof scheduleForecastSnapshots.$inferSelect;
 
 // ============================================
 // FEATURE C: AI JOBSITE CAMERA ANALYSIS

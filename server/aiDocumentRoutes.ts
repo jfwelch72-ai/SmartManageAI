@@ -3151,13 +3151,43 @@ Generate a realistic schedule that:
       await db.insert(projectScheduleTasks).values(taskInserts);
     }
 
+    const insertedTasks = await db
+      .select()
+      .from(projectScheduleTasks)
+      .where(eq(projectScheduleTasks.scheduleId, newSchedule.id));
+
+    const nameToIdMap = new Map<string, string>();
+    for (const t of insertedTasks) {
+      nameToIdMap.set(t.name, t.id);
+    }
+    for (const t of insertedTasks) {
+      if (t.dependencies && t.dependencies.length > 0) {
+        const resolvedDeps = t.dependencies
+          .map(dep => nameToIdMap.get(dep) || dep)
+          .filter(dep => insertedTasks.some(it => it.id === dep));
+        if (JSON.stringify(resolvedDeps) !== JSON.stringify(t.dependencies)) {
+          await db.update(projectScheduleTasks)
+            .set({ dependencies: resolvedDeps, updatedAt: new Date() })
+            .where(eq(projectScheduleTasks.id, t.id));
+        }
+      }
+    }
+
+    const { recalculateSchedule } = await import("./cpmEngine");
+    await recalculateSchedule(newSchedule.id);
+
     const createdTasks = await db
       .select()
       .from(projectScheduleTasks)
       .where(eq(projectScheduleTasks.scheduleId, newSchedule.id));
 
+    const [updatedSchedule] = await db
+      .select()
+      .from(projectSchedules)
+      .where(eq(projectSchedules.id, newSchedule.id));
+
     res.json({
-      schedule: newSchedule,
+      schedule: updatedSchedule || newSchedule,
       tasks: createdTasks,
       summary: {
         totalTasks: createdTasks.length,
@@ -3240,11 +3270,31 @@ router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole(
       return;
     }
 
-    const { name, description, plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, percentComplete, isCriticalPath } = req.body;
+    const { name, description, plannedStartDate, plannedEndDate, actualStartDate, actualEndDate, percentComplete, isCriticalPath, status, dependencies, crewIds, durationDays } = req.body;
 
     if (percentComplete !== undefined && (percentComplete < 0 || percentComplete > 100)) {
       res.status(400).json({ error: "percentComplete must be between 0 and 100" });
       return;
+    }
+
+    if (dependencies !== undefined && Array.isArray(dependencies)) {
+      const scheduleId = taskWithSchedule[0].task.scheduleId;
+      const allTasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, scheduleId));
+      for (const depId of dependencies) {
+        if (depId === taskId) {
+          res.status(400).json({ error: "Task cannot depend on itself" });
+          return;
+        }
+        if (!allTasks.some(t => t.id === depId)) {
+          res.status(400).json({ error: `Dependency task ${depId} not found in schedule` });
+          return;
+        }
+      }
+      const { detectCycle } = await import("./cpmEngine");
+      if (detectCycle(taskId, dependencies, allTasks.map(t => ({ id: t.id, dependencies: t.dependencies })))) {
+        res.status(400).json({ error: "Circular dependency detected" });
+        return;
+      }
     }
 
     const [updatedTask] = await db
@@ -3258,12 +3308,29 @@ router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole(
         ...(actualEndDate !== undefined && { actualEndDate }),
         ...(percentComplete !== undefined && { percentComplete }),
         ...(isCriticalPath !== undefined && { isCriticalPath }),
+        ...(status !== undefined && { status }),
+        ...(dependencies !== undefined && { dependencies }),
+        ...(crewIds !== undefined && { crewIds }),
+        ...(durationDays !== undefined && { durationDays }),
         updatedAt: new Date(),
       })
       .where(eq(projectScheduleTasks.id, taskId))
       .returning();
 
-    res.json(updatedTask);
+    if (updatedTask) {
+      try {
+        const { recalculateSchedule } = await import("./cpmEngine");
+        await recalculateSchedule(updatedTask.scheduleId);
+      } catch (e) {
+        console.error("CPM recalculation failed:", e);
+      }
+    }
+
+    const allTasks = updatedTask
+      ? await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, updatedTask.scheduleId))
+      : [];
+
+    res.json({ task: updatedTask, tasks: allTasks });
   } catch (error) {
     console.error("Update schedule task error:", error);
     res.status(500).json({ error: "Internal server error" });

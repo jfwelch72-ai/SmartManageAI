@@ -92,6 +92,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
   const [selectedDelay, setSelectedDelay] = useState<ExtendedDelay | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [reasonFilter, setReasonFilter] = useState<string>("all");
+  const [scheduleImpactDialog, setScheduleImpactDialog] = useState<{ delayId: string; impactDays: number; criticalPathAffected: boolean } | null>(null);
 
   const [formData, setFormData] = useState({
     reason: "",
@@ -139,7 +140,7 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
 
   const createDelay = useMutation({
     mutationFn: async (data: typeof formData) => {
-      return apiRequest("POST", `/api/projects/${projectId}/delays`, {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/delays`, {
         reason: data.reason,
         reasonNotes: data.reasonNotes || null,
         startDateTime: new Date(data.startDateTime).toISOString(),
@@ -152,12 +153,20 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
         proceedToWorkDate: data.proceedToWorkDate ? new Date(data.proceedToWorkDate).toISOString() : null,
         proceedToWorkNotes: data.proceedToWorkNotes || null
       });
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "delays"] });
       setShowCreateDialog(false);
       resetForm();
       toast({ title: "Success", description: "Delay report created" });
+      if (data?.scheduleImpact?.criticalPathAffected && data?.id) {
+        setScheduleImpactDialog({
+          delayId: data.id,
+          impactDays: data.scheduleImpact.impactDays,
+          criticalPathAffected: true,
+        });
+      }
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to create delay", variant: "destructive" });
@@ -178,17 +187,39 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
       if (data.changeOrderRequired !== undefined) payload.changeOrderRequired = data.changeOrderRequired;
       if (data.proceedToWorkDate !== undefined) payload.proceedToWorkDate = data.proceedToWorkDate ? new Date(data.proceedToWorkDate).toISOString() : null;
       if (data.proceedToWorkNotes !== undefined) payload.proceedToWorkNotes = data.proceedToWorkNotes;
-      return apiRequest("PATCH", `/api/delays/${id}`, payload);
+      const res = await apiRequest("PATCH", `/api/delays/${id}`, payload);
+      return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "delays"] });
       setShowEditDialog(false);
       setSelectedDelay(null);
       resetForm();
       toast({ title: "Success", description: "Delay updated" });
+      if (data?.scheduleImpact?.criticalPathAffected && data?.id) {
+        setScheduleImpactDialog({
+          delayId: data.id,
+          impactDays: data.scheduleImpact.impactDays,
+          criticalPathAffected: true,
+        });
+      }
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to update delay", variant: "destructive" });
+    },
+  });
+
+  const createDraftCOFromImpact = useMutation({
+    mutationFn: async (delayId: string) => {
+      return apiRequest("POST", `/api/delays/${delayId}/create-change-order`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "delays"] });
+      setScheduleImpactDialog(null);
+      toast({ title: "Draft Change Order Created", description: "A draft change order has been created from the schedule impact analysis." });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to create change order", variant: "destructive" });
     },
   });
 
@@ -1340,6 +1371,37 @@ export function DelaysSection({ projectId, projectCode, userRole }: DelaySection
               Close
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!scheduleImpactDialog} onOpenChange={() => setScheduleImpactDialog(null)}>
+        <DialogContent data-testid="dialog-schedule-impact">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Critical Path Impact Detected
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This delay impacts the project critical path by <strong>{scheduleImpactDialog?.impactDays} day(s)</strong>.
+              This may push the project completion date. Would you like to create a draft Change Order to document this impact?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setScheduleImpactDialog(null)} data-testid="button-dismiss-impact">
+                Dismiss
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => scheduleImpactDialog && createDraftCOFromImpact.mutate(scheduleImpactDialog.delayId)}
+                disabled={createDraftCOFromImpact.isPending}
+                data-testid="button-create-draft-co-from-impact"
+              >
+                {createDraftCOFromImpact.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <DollarSign className="h-4 w-4 mr-2" />}
+                Create Draft Change Order
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

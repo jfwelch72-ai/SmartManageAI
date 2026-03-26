@@ -362,10 +362,20 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       newValue: JSON.stringify({ delayNumber, reason: newDelay.reason, projectId }),
     }, req);
 
+    let scheduleImpact = null;
+    try {
+      const { computeProjectDelayImpact } = await import("./cpmEngine");
+      const delayStart = newDelay.startDateTime ? new Date(newDelay.startDateTime).toISOString().split("T")[0] : undefined;
+      scheduleImpact = await computeProjectDelayImpact(projectId, newDelay.estimatedDuration || 0, delayStart);
+    } catch (e) {
+      console.error("Schedule impact computation failed (non-blocking):", e);
+    }
+
     res.status(201).json({
       ...newDelay,
       reasonLabel: DELAY_REASON_LABELS[newDelay.reason] || newDelay.reason,
-      responsibilityLabel: RESPONSIBILITY_LABELS[newDelay.financiallyResponsible] || newDelay.financiallyResponsible
+      responsibilityLabel: RESPONSIBILITY_LABELS[newDelay.financiallyResponsible] || newDelay.financiallyResponsible,
+      scheduleImpact,
     });
   } catch (error) {
     console.error("Error creating delay:", error);
@@ -454,10 +464,20 @@ router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERI
       newValue: JSON.stringify({ changes: Object.keys(updateData) }),
     }, req);
 
+    let scheduleImpact = null;
+    try {
+      const { computeProjectDelayImpact } = await import("./cpmEngine");
+      const delayStart = updatedDelay.startDateTime ? new Date(updatedDelay.startDateTime).toISOString().split("T")[0] : undefined;
+      scheduleImpact = await computeProjectDelayImpact(updatedDelay.projectId, updatedDelay.estimatedDuration || 0, delayStart);
+    } catch (e) {
+      console.error("Schedule impact computation failed (non-blocking):", e);
+    }
+
     res.json({
       ...updatedDelay,
       reasonLabel: DELAY_REASON_LABELS[updatedDelay.reason] || updatedDelay.reason,
-      responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
+      responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible,
+      scheduleImpact,
     });
   } catch (error) {
     console.error("Error updating delay:", error);
@@ -686,12 +706,24 @@ router.post("/delays/:id/create-change-order", requireAuth, requireRole("ADMIN",
     const count = countResult?.count || 0;
     const changeOrderNumber = `CO-${project.code}-${String(count + 1).padStart(3, '0')}`;
 
+    let impactAnalysis = null;
+    try {
+      const { computeProjectDelayImpact } = await import("./cpmEngine");
+      const delayStart = delay.startDateTime ? new Date(delay.startDateTime).toISOString().split("T")[0] : undefined;
+      impactAnalysis = await computeProjectDelayImpact(delay.projectId, delay.estimatedDuration || 0, delayStart);
+    } catch (e) {
+      console.error("Schedule impact computation failed (non-blocking):", e);
+    }
+
     const startDate = new Date(delay.startDateTime).toLocaleDateString();
     const endDate = delay.endDateTime ? new Date(delay.endDateTime).toLocaleDateString() : 'Ongoing';
+    const impactSuffix = impactAnalysis
+      ? `\nSchedule Impact: ${impactAnalysis.impactDays} day(s), Critical Path Affected: ${impactAnalysis.criticalPathAffected ? 'Yes' : 'No'}`
+      : '';
     const description = `Delay: ${DELAY_REASON_LABELS[delay.reason]}\n` +
       `Period: ${startDate} - ${endDate}\n` +
       `Financially Responsible: ${RESPONSIBILITY_LABELS[delay.financiallyResponsible]}\n` +
-      `Details: ${delay.reasonNotes || 'N/A'}\n\n` +
+      `Details: ${delay.reasonNotes || 'N/A'}${impactSuffix}\n\n` +
       `Created from Delay Record: ${delay.delayNumber}`;
 
     const [newChangeOrder] = await db

@@ -75,6 +75,7 @@ import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
 import aiCoreRoutes from "./aiCoreRoutes";
 import aiDocumentRoutes from "./aiDocumentRoutes";
+import scheduleRoutes from "./scheduleRoutes";
 import notesRoutes from "./notesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
@@ -208,6 +209,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register AI document routes (bids, contracts, notes, scope, insights, schedule, assistant)
   app.use("/api", aiDocumentRoutes);
+
+  // Register schedule management routes (CPM engine, baseline, resource loading, forecasting)
+  app.use("/api", scheduleRoutes);
 
   // Register onboarding library routes (read-only reference data)
   app.use(onboardingLibraryRoutes);

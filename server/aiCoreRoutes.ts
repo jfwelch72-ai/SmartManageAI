@@ -1298,6 +1298,13 @@ async function generateTradeScheduleTasks(scheduleId: string, tradeType: string,
       .where(eq(projectSchedules.id, scheduleId));
   }
 
+  try {
+    const { recalculateSchedule } = await import("./cpmEngine");
+    await recalculateSchedule(scheduleId);
+  } catch (e) {
+    console.error("CPM recalculation after generation failed:", e);
+  }
+
   return tasks;
 }
 
