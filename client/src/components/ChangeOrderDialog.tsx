@@ -315,7 +315,7 @@ export function ChangeOrderDialog({
     const kRows = breakdown.sectionK.rows?.reduce((s: number, r: any) => s + p(r.total), 0) || 0;
     const K = sv.K ? p(breakdown.sectionK.bondInsurance) + p(breakdown.sectionK.permits) + p(breakdown.sectionK.lodging) + kRows : 0;
     const grand = subtotalForProfit + H + I + J + K;
-    return { A, A1, B, B1, C, D, E, F, G, H, I, J, K, grand };
+    return { A, A1, B, B1, C, D, E, F, G, H, I, J, K, grand, subtotalForOH, subtotalForProfit };
   }, [breakdown, overheadPct, profitPct, subMarkupPct, sectionVisibility]);
 
   const updateBreakdownSection = <T extends keyof CostBreakdown>(section: T, updater: (prev: CostBreakdown[T]) => CostBreakdown[T]) => {
@@ -902,37 +902,40 @@ export function ChangeOrderDialog({
     sectionJ: [5, 10, 15],
   };
 
-  const renderCalculatedSection = (label: string, sectionKey: string, total: number, pctLabel: string, pctValue: string, onPctChange: (v: string) => void, formula: string) => (
+  const renderCalculatedSection = (label: string, sectionKey: string, total: number, pctLabel: string, pctValue: string, onPctChange: (v: string) => void, formula: string, baseAmount?: number) => (
     <div className="space-y-2" data-testid={`section-${sectionKey}`}>
-      <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{label}</span>
-          <span className="text-xs text-muted-foreground">({formula})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {canEdit ? (
-            <div className="flex items-center gap-1">
-              {MARKUP_PRESETS[sectionKey]?.map(preset => (
-                <Button
-                  key={preset}
-                  type="button"
-                  size="sm"
-                  variant={pctValue === String(preset) ? "default" : "ghost"}
-                  className="h-6 px-1.5 text-xs"
-                  onClick={() => onPctChange(String(preset))}
-                  data-testid={`button-preset-${sectionKey}-${preset}`}
-                >
-                  {preset}%
-                </Button>
-              ))}
-              <Input type="number" step="0.1" value={pctValue} onChange={(e) => onPctChange(e.target.value)} className="h-7 w-16 text-xs text-right" data-testid={`input-${sectionKey}-pct`} />
-              <Percent className="w-3 h-3 text-muted-foreground" />
-            </div>
-          ) : (
-            <span className="text-xs text-muted-foreground">{pctValue}%</span>
-          )}
+      <div className="flex flex-col gap-1 py-2 px-3 bg-muted/50 rounded-md">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold">{label}</span>
+            <span className="text-xs text-muted-foreground">({formula})</span>
+          </div>
           <span className="font-mono text-sm font-bold">${fmt(total)}</span>
         </div>
+        {canEdit && (
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-xs text-muted-foreground mr-1">Apply {pctLabel}:</span>
+            {MARKUP_PRESETS[sectionKey]?.map(preset => (
+              <Button
+                key={preset}
+                type="button"
+                size="sm"
+                variant={pctValue === String(preset) ? "default" : "ghost"}
+                className="h-6 px-1.5 text-xs"
+                onClick={() => onPctChange(String(preset))}
+                data-testid={`button-preset-${sectionKey}-${preset}`}
+              >
+                {preset}%
+              </Button>
+            ))}
+            <Input type="number" step="0.1" value={pctValue} onChange={(e) => onPctChange(e.target.value)} className="h-7 w-16 text-xs text-right" data-testid={`input-${sectionKey}-pct`} />
+            <Percent className="w-3 h-3 text-muted-foreground" />
+            {baseAmount !== undefined && baseAmount > 0 && (
+              <span className="text-xs text-muted-foreground ml-1">on ${fmt(baseAmount)}</span>
+            )}
+          </div>
+        )}
+        {!canEdit && <span className="text-xs text-muted-foreground">{pctValue}%</span>}
       </div>
     </div>
   );
@@ -1244,14 +1247,14 @@ export function ChangeOrderDialog({
                 {sectionVisibility.D && renderItemSection("sectionD", "Section D — Owned Equipment", totals.D)}
                 {sectionVisibility.E && renderItemSection("sectionE", "Section E — Trucking", totals.E)}
                 {sectionVisibility.F && <Separator />}
-                {sectionVisibility.F && renderCalculatedSection("Section F — Overhead", "sectionF", totals.F, "Overhead %", overheadPct, setOverheadPct, `(${["A","A1","B","B1","C","D","E"].filter((k) => sectionVisibility[k.replace("1","") as SectionKey]).join("+")}) × ${overheadPct}%`)}
+                {sectionVisibility.F && renderCalculatedSection("Section F — Overhead", "sectionF", totals.F, "Overhead %", overheadPct, setOverheadPct, `(${["A","A1","B","B1","C","D","E"].filter((k) => sectionVisibility[k.replace("1","") as SectionKey]).join("+")}) × ${overheadPct}%`, totals.subtotalForOH)}
                 {sectionVisibility.G && <Separator />}
                 {sectionVisibility.G && renderItemSection("sectionG", "Section G — Material", totals.G)}
                 {sectionVisibility.H && <Separator />}
-                {sectionVisibility.H && renderCalculatedSection("Section H — Profit", "sectionH", totals.H, "Profit %", profitPct, setProfitPct, `(${["A","A1","B","B1","C","D","E","F","G"].filter((k) => sectionVisibility[k.replace("1","") as SectionKey]).join("+")}) × ${profitPct}%`)}
+                {sectionVisibility.H && renderCalculatedSection("Section H — Profit", "sectionH", totals.H, "Profit %", profitPct, setProfitPct, `(${["A","A1","B","B1","C","D","E","F","G"].filter((k) => sectionVisibility[k.replace("1","") as SectionKey]).join("+")}) × ${profitPct}%`, totals.subtotalForProfit)}
                 {sectionVisibility.I && <Separator />}
                 {sectionVisibility.I && renderSubcontractorSection()}
-                {sectionVisibility.J && renderCalculatedSection("Section J — Contractor Markup on Subcontractor", "sectionJ", totals.J, "Markup %", subMarkupPct, setSubMarkupPct, `I × ${subMarkupPct}%`)}
+                {sectionVisibility.J && renderCalculatedSection("Section J — Contractor Markup on Subcontractor", "sectionJ", totals.J, "Markup %", subMarkupPct, setSubMarkupPct, `I × ${subMarkupPct}%`, totals.I)}
                 {sectionVisibility.K && <Separator />}
                 {sectionVisibility.K && renderMiscSection()}
 
