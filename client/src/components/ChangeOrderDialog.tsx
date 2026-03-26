@@ -500,8 +500,8 @@ export function ChangeOrderDialog({
     voidMutation.mutate(voidReason);
   };
 
-  const pdfAllowedStatuses = ["SUBMITTED", "APPROVED", "VOIDED", "REJECTED", "PRICING_REVIEW"];
-  const canExportPdf = changeOrder && pdfAllowedStatuses.includes(changeOrder.status);
+  const pdfDraftStatuses = ["DRAFT", "PENDING_APPROVAL"];
+  const canExportPdf = changeOrder && !pdfDraftStatuses.includes(changeOrder.status);
 
   const handleDownloadPdf = async () => {
     if (!changeOrder) return;

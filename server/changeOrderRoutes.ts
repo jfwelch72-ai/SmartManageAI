@@ -2089,9 +2089,9 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
       return;
     }
 
-    const allowedStatuses = ["SUBMITTED", "APPROVED", "VOIDED", "REJECTED", "PRICING_REVIEW"];
-    if (!allowedStatuses.includes(order.status)) {
-      res.status(400).json({ error: "PDF is only available for submitted, approved, or completed change orders" });
+    const draftStatuses = ["DRAFT", "PENDING_APPROVAL"];
+    if (draftStatuses.includes(order.status)) {
+      res.status(400).json({ error: "PDF is not available for draft change orders" });
       return;
     }
 
@@ -2116,13 +2116,19 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
       if (approver) approvedByName = `${approver.firstName} ${approver.lastName}`;
     }
 
-    let lineItemsData = null;
+    let costBreakdownData = null;
     try {
-      const [li] = await db.select().from(changeOrders).where(eq(changeOrders.id, order.id)).limit(1);
-      if (li?.lineItems) {
-        lineItemsData = typeof li.lineItems === 'string' ? JSON.parse(li.lineItems) : li.lineItems;
+      if (order.costBreakdownJson) {
+        costBreakdownData = typeof order.costBreakdownJson === 'string' ? JSON.parse(order.costBreakdownJson) : order.costBreakdownJson;
       }
     } catch (e) {}
+
+    let contractNumber: string | null = null;
+    if (order.contractId) {
+      const { contracts } = await import("@shared/schema");
+      const [contract] = await db.select({ contractNumber: contracts.contractNumber }).from(contracts).where(eq(contracts.id, order.contractId)).limit(1);
+      if (contract) contractNumber = contract.contractNumber;
+    }
 
     const approvalRows = await db.select({
       approval: {
@@ -2177,11 +2183,12 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
         costCodeLabel,
         linkedTmTicketNumber,
         linkedRfiNumber,
+        contractNumber,
         requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
         approvedByName,
       },
       project: projectData || { name: 'Unknown', code: '' },
-      lineItems: lineItemsData,
+      lineItems: costBreakdownData,
       approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
       revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
       branding: orgBranding,
@@ -2225,8 +2232,8 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
     let coQuery = db.select().from(changeOrders).where(eq(changeOrders.projectId, projectId));
     const allCOs = await coQuery;
 
-    const exportStatuses = ["SUBMITTED", "APPROVED", "VOIDED", "REJECTED", "PRICING_REVIEW"];
-    let eligibleCOs = allCOs.filter(co => exportStatuses.includes(co.status));
+    const draftStatuses = ["DRAFT", "PENDING_APPROVAL"];
+    let eligibleCOs = allCOs.filter(co => !draftStatuses.includes(co.status));
 
     if (selectedIdsParam) {
       const selectedIds = new Set(selectedIdsParam.split(','));
@@ -2256,13 +2263,13 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
 
     for (const co of eligibleCOs) {
       try {
-        let lineItemsData = null;
+        let costBreakdownData = null;
         try {
-          if (co.lineItems) {
-            lineItemsData = typeof co.lineItems === 'string' ? JSON.parse(co.lineItems as string) : co.lineItems;
+          if (co.costBreakdownJson) {
+            costBreakdownData = typeof co.costBreakdownJson === 'string' ? JSON.parse(co.costBreakdownJson) : co.costBreakdownJson;
           }
         } catch (parseErr) {
-          console.warn(`Skipping malformed lineItems for CO ${co.changeOrderNumber}`);
+          console.warn(`Skipping malformed costBreakdownJson for CO ${co.changeOrderNumber}`);
         }
 
         let costCodeLabel: string | null = null;
@@ -2288,6 +2295,13 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
         if (co.linkedTmTicketId) {
           const [tm] = await db.select({ ticketNumber: tmTickets.ticketNumber }).from(tmTickets).where(eq(tmTickets.id, co.linkedTmTicketId)).limit(1);
           if (tm) linkedTmTicketNumber = tm.ticketNumber;
+        }
+
+        let contractNumber: string | null = null;
+        if (co.contractId) {
+          const { contracts } = await import("@shared/schema");
+          const [contract] = await db.select({ contractNumber: contracts.contractNumber }).from(contracts).where(eq(contracts.id, co.contractId)).limit(1);
+          if (contract) contractNumber = contract.contractNumber;
         }
 
         const approvalRows = await db.select({
@@ -2316,11 +2330,12 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
             costCodeLabel,
             linkedTmTicketNumber,
             linkedRfiNumber,
+            contractNumber,
             requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
             approvedByName,
           },
           project: { name: projectData.name, code: projectData.code, clientName: projectData.clientName || undefined, locationAddress: projectData.locationAddress },
-          lineItems: lineItemsData,
+          lineItems: costBreakdownData,
           approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
           revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
           branding: orgBranding,
