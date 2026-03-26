@@ -301,6 +301,22 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
 router.post("/api/time-entries/bulk-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 router.patch("/api/time-entries/batch-approve", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), bulkApproveHandler);
 
+router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.query;
+    if (!projectId) {
+      return res.status(400).json({ error: "projectId is required" });
+    }
+    const rows = await db
+      .selectDistinct({ userId: timeEntries.userId })
+      .from(timeEntries)
+      .where(eq(timeEntries.projectId, projectId as string));
+    res.json(rows.map(r => r.userId));
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);

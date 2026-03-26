@@ -32,39 +32,28 @@ function fmtDate(d: string | null | undefined) {
 }
 
 export default function SafetyTrainingTab({ projectId, projectCode, userRole }: SafetyTrainingTabProps) {
-  const { data: timeEntries = [] } = useQuery<Array<{ entry: { userId: string; projectId: string } }>>({
-    queryKey: ["/api/time-entries/pending-approvals", projectId],
+  const { data: crewUserIds = [], isLoading: crewLoading } = useQuery<string[]>({
+    queryKey: ["/api/time-entries/project-crew", projectId],
     queryFn: async () => {
-      const res = await fetch(`/api/time-entries/pending-approvals?projectId=${encodeURIComponent(projectId)}`, { credentials: "include" });
+      const res = await fetch(`/api/time-entries/project-crew?projectId=${encodeURIComponent(projectId)}`, { credentials: "include" });
       if (!res.ok) return [];
       return res.json();
     },
   });
 
-  const { data: activeShifts = [] } = useQuery<Array<{ userId: string; projectId: string | null }>>({
-    queryKey: ["/api/time-clock/active-shifts", "project-crew", projectId],
-    queryFn: async () => {
-      const res = await fetch("/api/time-clock/active-shifts", { credentials: "include" });
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data) ? data.filter((s: { projectId: string | null }) => s.projectId === projectId) : [];
-    },
-  });
-
-  const projectCrewIds = new Set<string>();
-  timeEntries.forEach(e => { if (e.entry?.projectId === projectId && e.entry?.userId) projectCrewIds.add(e.entry.userId); });
-  activeShifts.forEach(s => { if (s.userId) projectCrewIds.add(s.userId); });
-
-  const { data: allAssignments = [], isLoading } = useQuery<TrainingAssignment[]>({
+  const { data: allAssignments = [], isLoading: assignmentsLoading } = useQuery<TrainingAssignment[]>({
     queryKey: ["/api/safety-training/assignments"],
   });
 
-  const assignments = allAssignments.filter(a => projectCrewIds.has(a.employeeId));
+  const crewSet = new Set(crewUserIds);
+  const assignments = allAssignments.filter(a => crewSet.has(a.employeeId));
 
   const completed = assignments.filter(a => a.status === "COMPLETED").length;
   const pending = assignments.filter(a => a.status === "PENDING").length;
   const overdue = assignments.filter(a => a.status === "OVERDUE").length;
   const total = assignments.length;
+
+  const isLoading = crewLoading || assignmentsLoading;
 
   if (isLoading) {
     return <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-16 rounded" />)}</div>;
@@ -84,7 +73,7 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
         </div>
       </div>
 
-      {projectCrewIds.size === 0 ? (
+      {crewSet.size === 0 ? (
         <div className="text-center py-12 text-muted-foreground border rounded-lg" data-testid="empty-project-crew">
           <ShieldCheck className="h-10 w-10 mx-auto mb-2 opacity-30" />
           <p className="font-medium text-sm">No crew members found for this project</p>
