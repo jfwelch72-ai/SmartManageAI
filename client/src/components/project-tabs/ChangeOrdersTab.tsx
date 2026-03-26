@@ -53,6 +53,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [manualCoNumber, setManualCoNumber] = useState("");
   const [selectedCostCodeId, setSelectedCostCodeId] = useState<string>("");
   const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
   const [scopeQuantity, setScopeQuantity] = useState("");
@@ -129,6 +130,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         projectCode,
         description,
         amount,
+        changeOrderNumber: manualCoNumber.trim() || undefined,
         costCodeId: selectedCostCodeId && selectedCostCodeId !== "none" ? parseInt(selectedCostCodeId, 10) : undefined,
         workTypeId: scopeSelection?.workTypeId || undefined,
         workTypeCode: scopeSelection?.workTypeCode || undefined,
@@ -149,6 +151,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       setShowCreateDialog(false);
       setDescription("");
       setAmount("");
+      setManualCoNumber("");
       setSelectedCostCodeId("");
       setScopeSelection(null);
       setScopeQuantity("");
@@ -336,8 +339,19 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                   <DialogTitle>Create Change Order</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
-                  <p className="text-xs text-muted-foreground">Creates a new Potential Change Order (PCO). A CO number will be auto-assigned.</p>
+                  <p className="text-xs text-muted-foreground">Creates a new Potential Change Order (PCO). A CO number will be auto-assigned unless you specify one.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="co-number">CO Number (optional)</Label>
+                      <Input
+                        id="co-number"
+                        value={manualCoNumber}
+                        onChange={(e) => setManualCoNumber(e.target.value)}
+                        placeholder="Auto-generated (e.g. CO-001)"
+                        data-testid="input-manual-co-number"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">Leave blank for auto-numbering</p>
+                    </div>
                     <div>
                       <Label htmlFor="co-amount">Amount ($)</Label>
                       <Input

@@ -1146,7 +1146,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
     }
 
     let changeOrderNumber = validationResult.data.changeOrderNumber;
-    if (!changeOrderNumber || changeOrderNumber.trim() === "") {
+    if (!changeOrderNumber || changeOrderNumber.trim() === "" || changeOrderNumber === "AUTO") {
       const [maxResult] = await db
         .select({ maxNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(${changeOrders.changeOrderNumber}, '^CO-', ''), '') AS INTEGER)), 0)` })
         .from(changeOrders)

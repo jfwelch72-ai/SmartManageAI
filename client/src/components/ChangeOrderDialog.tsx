@@ -997,15 +997,20 @@ export function ChangeOrderDialog({
                     { status: "PCO", date: changeOrder.createdAt },
                     ...sortedRevs.map(r => ({ status: r.revision.newStatus, date: r.revision.createdAt })),
                   ];
-                  return steps.map((step, idx) => (
-                    <div key={idx} className="flex items-center gap-1">
-                      {idx > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />}
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs">
-                        <span className="font-medium">{step.status.replace(/_/g, " ")}</span>
-                        <span className="text-muted-foreground">{format(new Date(step.date), "M/d")}</span>
+                  return steps.map((step, idx) => {
+                    const nextDate = idx < steps.length - 1 ? new Date(steps[idx + 1].date) : new Date();
+                    const days = differenceInDays(nextDate, new Date(step.date));
+                    return (
+                      <div key={idx} className="flex items-center gap-1">
+                        {idx > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />}
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs">
+                          <span className="font-medium">{step.status.replace(/_/g, " ")}</span>
+                          <span className="text-muted-foreground">{format(new Date(step.date), "M/d")}</span>
+                          <span className={`text-muted-foreground ${days > 7 ? "text-amber-600 font-semibold" : ""}`}>({days}d)</span>
+                        </div>
                       </div>
-                    </div>
-                  ));
+                    );
+                  });
                 })()}
               </div>
             </div>
