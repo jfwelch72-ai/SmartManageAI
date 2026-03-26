@@ -2271,10 +2271,58 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
           if (cc) costCodeLabel = `${cc.code} — ${cc.description}`;
         }
 
+        const [requestedBy] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, co.requestedById)).limit(1);
+        let approvedByName: string | undefined;
+        if (co.approvedById) {
+          const [approver] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, co.approvedById)).limit(1);
+          if (approver) approvedByName = `${approver.firstName} ${approver.lastName}`;
+        }
+
+        let linkedRfiNumber: string | null = null;
+        if (co.linkedRfiId) {
+          const [rfi] = await db.select({ rfiNumber: rfis.rfiNumber }).from(rfis).where(eq(rfis.id, co.linkedRfiId)).limit(1);
+          if (rfi) linkedRfiNumber = rfi.rfiNumber;
+        }
+
+        let linkedTmTicketNumber: string | null = null;
+        if (co.linkedTmTicketId) {
+          const [tm] = await db.select({ ticketNumber: tmTickets.ticketNumber }).from(tmTickets).where(eq(tmTickets.id, co.linkedTmTicketId)).limit(1);
+          if (tm) linkedTmTicketNumber = tm.ticketNumber;
+        }
+
+        const approvalRows = await db.select({
+          approval: {
+            approverRole: changeOrderApprovals.approverRole,
+            status: changeOrderApprovals.status,
+            stepOrder: changeOrderApprovals.stepOrder,
+            comments: changeOrderApprovals.comments,
+            decidedAt: changeOrderApprovals.decidedAt,
+          },
+        }).from(changeOrderApprovals).where(eq(changeOrderApprovals.changeOrderId, co.id)).orderBy(changeOrderApprovals.stepOrder);
+
+        const revisionRows = await db.select({
+          revision: {
+            revisionNumber: changeOrderRevisions.revisionNumber,
+            previousStatus: changeOrderRevisions.previousStatus,
+            newStatus: changeOrderRevisions.newStatus,
+            description: changeOrderRevisions.description,
+            createdAt: changeOrderRevisions.createdAt,
+          },
+        }).from(changeOrderRevisions).where(eq(changeOrderRevisions.changeOrderId, co.id)).orderBy(changeOrderRevisions.revisionNumber);
+
         const stream = generateChangeOrderPDF({
-          changeOrder: { ...co, costCodeLabel },
+          changeOrder: {
+            ...co,
+            costCodeLabel,
+            linkedTmTicketNumber,
+            linkedRfiNumber,
+            requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
+            approvedByName,
+          },
           project: { name: projectData.name, code: projectData.code, clientName: projectData.clientName || undefined, locationAddress: projectData.locationAddress },
           lineItems: lineItemsData,
+          approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
+          revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
           branding: orgBranding,
         });
 
