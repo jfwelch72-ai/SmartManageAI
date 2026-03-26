@@ -66,9 +66,10 @@ export default function ContractsPage() {
     queryKey: ["/api/contracts"],
   });
 
-  const { data: allProjects = [] } = useQuery<Project[]>({
+  const { data: projectsResponse } = useQuery<{ data: Project[] }>({
     queryKey: ["/api/projects"],
   });
+  const allProjects = projectsResponse?.data ?? [];
 
   const projectMap = new Map(allProjects.map(p => [p.id, p]));
 
