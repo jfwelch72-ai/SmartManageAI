@@ -33,6 +33,23 @@ function canViewContracts(role?: string) {
   return (CONTRACT_VIEW_ROLES as readonly string[]).includes(role || "");
 }
 
+function resolveOrgFilter(req: AuthRequest, res: Response): { orgId: string | null; shouldFilter: boolean } | null {
+  const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+  if (mustDenyAccess) {
+    res.status(403).json({ error: "Access denied" });
+    return null;
+  }
+  if (shouldFilter && !orgId) {
+    res.status(400).json({ error: "Organization required" });
+    return null;
+  }
+  return { orgId, shouldFilter };
+}
+
+function orgCondition(column: any, orgId: string | null, shouldFilter: boolean) {
+  return shouldFilter && orgId ? eq(column, orgId) : undefined;
+}
+
 async function recordVersionSnapshot(contractId: string, contract: Partial<Contract> & { currentVersion?: number | null }, changedById: string, changeNote: string) {
   const newVersion = (contract.currentVersion || 0) + 1;
   await db.update(contracts)
@@ -54,12 +71,14 @@ router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const { status, projectId, contractType } = req.query;
 
-    let query = db.select().from(contracts).where(eq(contracts.organizationId, orgId)).orderBy(desc(contracts.createdAt));
+    const conditions = orgCondition(contracts.organizationId, orgId, shouldFilter);
+    let query = db.select().from(contracts).where(conditions).orderBy(desc(contracts.createdAt));
 
     const allContracts = await query;
 
@@ -87,11 +106,12 @@ router.get("/api/contracts/by-project/:projectId", requireAuth, async (req: Auth
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const result = await db.select().from(contracts)
-      .where(and(eq(contracts.projectId, req.params.projectId), eq(contracts.organizationId, orgId)))
+      .where(and(eq(contracts.projectId, req.params.projectId), orgCondition(contracts.organizationId, orgId, shouldFilter)))
       .orderBy(desc(contracts.createdAt));
 
     res.json(result);
@@ -107,11 +127,12 @@ router.get("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Resp
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
 
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
@@ -140,8 +161,9 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const { projectId, contractNumber, contractType, parties, contractValue, effectiveDate, expirationDate, paymentTerms, retentionPercent, insuranceRequirements, scopeSummary, keyDates, bidId } = req.body;
 
@@ -151,14 +173,16 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
     }
 
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
+      .where(and(eq(projects.id, projectId), orgCondition(projects.organizationId, orgId, shouldFilter)));
     if (!project) {
       res.status(400).json({ error: "Project not found in your organization" });
       return;
     }
 
+    const contractOrgId = orgId || project.organizationId;
+
     const [newContract] = await db.insert(contracts).values({
-      organizationId: orgId,
+      organizationId: contractOrgId,
       projectId,
       bidId: bidId || null,
       contractNumber,
@@ -188,7 +212,7 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
     await db.insert(domainEvents).values({
       type: "contract.created",
       version: 1,
-      orgId,
+      orgId: contractOrgId,
       actorId: req.user!.id,
       payload: { contractId: newContract.id, projectId, contractNumber },
       status: "PENDING",
@@ -207,11 +231,12 @@ router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Re
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
 
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
@@ -269,14 +294,15 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const { newStatus } = req.body;
     if (!newStatus) { res.status(400).json({ error: "newStatus is required" }); return; }
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
 
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
@@ -310,7 +336,7 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
       if (existing.contractValue) {
         await db.update(projects)
           .set({ contractAmount: existing.contractValue, updatedAt: new Date() })
-          .where(and(eq(projects.id, existing.projectId), eq(projects.organizationId, orgId)));
+          .where(and(eq(projects.id, existing.projectId), orgCondition(projects.organizationId, orgId, shouldFilter)));
       }
     }
 
@@ -338,7 +364,7 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
     await db.insert(domainEvents).values({
       type: eventType,
       version: 1,
-      orgId,
+      orgId: orgId || existing.organizationId,
       actorId: req.user!.id,
       payload: { contractId: updated.id, previousStatus: existing.status, newStatus },
       status: "PENDING",
@@ -357,11 +383,12 @@ router.post("/api/contracts/:id/redlines", requireAuth, async (req: AuthRequest,
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const { description, section } = req.body;
@@ -390,11 +417,12 @@ router.patch("/api/contracts/:id/redlines/:redlineId", requireAuth, async (req: 
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const { status, resolution } = req.body;
@@ -429,11 +457,12 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const APPROVAL_ELIGIBLE_STATUSES = ["IN_REVIEW", "REDLINED"];
@@ -459,7 +488,7 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
     const ELIGIBLE_REVIEWER_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
     const reviewerUsers = await db.select({ id: users.id, organizationId: users.organizationId, role: users.role })
       .from(users)
-      .where(and(inArray(users.id, uniqueReviewerIds), eq(users.organizationId, orgId)));
+      .where(and(inArray(users.id, uniqueReviewerIds), orgCondition(users.organizationId, orgId, shouldFilter)));
 
     if (reviewerUsers.length !== uniqueReviewerIds.length) {
       res.status(400).json({ error: "One or more reviewers not found in your organization." });
@@ -508,11 +537,12 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
 
 router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const [approval] = await db.select().from(contractApprovals)
@@ -540,7 +570,7 @@ router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, 
       await db.insert(domainEvents).values({
         type: "contract.approved",
         version: 1,
-        orgId,
+        orgId: orgId || existing.organizationId,
         actorId: req.user!.id,
         payload: { contractId: existing.id },
         status: "PENDING",
@@ -556,11 +586,12 @@ router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, 
 
 router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const [approval] = await db.select().from(contractApprovals)
@@ -595,11 +626,12 @@ router.get("/api/contracts/:id/versions", requireAuth, async (req: AuthRequest, 
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const versions = await db.select().from(contractVersions)
@@ -619,11 +651,12 @@ router.get("/api/contracts/:id/versions/compare", requireAuth, async (req: AuthR
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const v1 = parseInt(req.query.v1 as string);
@@ -666,16 +699,17 @@ router.post("/api/contracts/:id/attachments/upload-url", requireAuth, async (req
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
-    const { uploadURL, objectKey } = await objectStorageService.getObjectEntityUploadURL(orgId);
+    const { uploadURL, objectKey } = await objectStorageService.getObjectEntityUploadURL(orgId || contract.organizationId);
 
     res.json({ uploadURL, objectKey });
   } catch (err) {
@@ -690,11 +724,12 @@ router.post("/api/contracts/:id/attachments", requireAuth, async (req: AuthReque
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const { fileName, objectKey, fileType, fileSize } = req.body;
@@ -737,11 +772,12 @@ router.get("/api/contracts/:id/attachments", requireAuth, async (req: AuthReques
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const attachments = JSON.parse(contract.attachmentsJson || "[]");
@@ -758,11 +794,12 @@ router.delete("/api/contracts/:id/attachments/:attachmentId", requireAuth, async
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const existingAttachments: ContractAttachment[] = JSON.parse(contract.attachmentsJson || "[]");
@@ -789,11 +826,12 @@ router.delete("/api/contracts/:id/attachments/:attachmentId", requireAuth, async
 
 router.delete("/api/contracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [existing] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!existing) { res.status(404).json({ error: "Contract not found" }); return; }
 
     if (existing.status === "EXECUTED") {
@@ -815,11 +853,12 @@ router.post("/api/contracts/:id/link-change-order", requireAuth, async (req: Aut
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const { changeOrderId } = req.body;
@@ -848,11 +887,12 @@ router.get("/api/contracts/:id/change-orders", requireAuth, async (req: AuthRequ
       res.status(403).json({ error: "Access denied" });
       return;
     }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const linkedCOs = await db.select().from(changeOrders)
@@ -879,11 +919,12 @@ interface Signer {
 router.post("/api/contracts/:id/signature-request", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManageContracts(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     if (contract.status !== "APPROVED") {
@@ -914,9 +955,11 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
 
     const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000) : null;
 
+    const sigOrgId = orgId || contract.organizationId;
+
     const [sigReq] = await db.insert(signatureRequests).values({
       contractId: req.params.id,
-      organizationId: orgId,
+      organizationId: sigOrgId,
       status: "SENT",
       signersJson: JSON.stringify(signersWithStatus),
       message: message || null,
@@ -927,7 +970,7 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
     await db.insert(domainEvents).values({
       type: "contract.signature_requested",
       version: 1,
-      orgId,
+      orgId: sigOrgId,
       actorId: req.user!.id,
       payload: { contractId: req.params.id, signatureRequestId: sigReq.id, signerCount: signersWithStatus.length },
       status: "PENDING",
@@ -935,11 +978,11 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
 
     for (const signer of signersWithStatus) {
       const orgUsers = await db.select().from(users)
-        .where(and(eq(users.organizationId, orgId), eq(users.email, signer.email)));
+        .where(and(eq(users.organizationId, sigOrgId), eq(users.email, signer.email)));
       if (orgUsers.length > 0) {
         await insertNotification({
           userId: orgUsers[0].id,
-          organizationId: orgId,
+          organizationId: sigOrgId,
           title: `Signature requested: ${contract.contractNumber}`,
           message: `You have been requested to sign contract ${contract.contractNumber} as ${signer.role}. ${message || ""}`,
           type: "action_required",
@@ -959,15 +1002,16 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
 router.get("/api/contracts/:id/signature-requests", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canViewContracts(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [contract] = await db.select().from(contracts)
-      .where(and(eq(contracts.id, req.params.id), eq(contracts.organizationId, orgId)));
+      .where(and(eq(contracts.id, req.params.id), orgCondition(contracts.organizationId, orgId, shouldFilter)));
     if (!contract) { res.status(404).json({ error: "Contract not found" }); return; }
 
     const reqs = await db.select().from(signatureRequests)
-      .where(and(eq(signatureRequests.contractId, req.params.id), eq(signatureRequests.organizationId, orgId)))
+      .where(and(eq(signatureRequests.contractId, req.params.id), orgCondition(signatureRequests.organizationId, orgId, shouldFilter)))
       .orderBy(desc(signatureRequests.createdAt));
 
     const enriched = reqs.map(r => ({
@@ -984,11 +1028,12 @@ router.get("/api/contracts/:id/signature-requests", requireAuth, async (req: Aut
 
 router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const orgId = getOrgIdForFilter(req);
-    if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
+    const org = resolveOrgFilter(req, res);
+    if (!org) return;
+    const { orgId, shouldFilter } = org;
 
     const [sigReq] = await db.select().from(signatureRequests)
-      .where(and(eq(signatureRequests.id, req.params.reqId), eq(signatureRequests.organizationId, orgId)));
+      .where(and(eq(signatureRequests.id, req.params.reqId), orgCondition(signatureRequests.organizationId, orgId, shouldFilter)));
     if (!sigReq) { res.status(404).json({ error: "Signature request not found" }); return; }
 
     if (sigReq.contractId !== req.params.contractId) {
@@ -1088,7 +1133,7 @@ router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", require
         await db.insert(domainEvents).values({
           type: "contract.executed",
           version: 1,
-          orgId,
+          orgId: orgId || sigReq.organizationId,
           actorId: req.user!.id,
           payload: { contractId: sigReq.contractId, method: "e-signature", signers: signers.map(s => ({ name: s.name, role: s.role })) },
           status: "PENDING",
@@ -1192,7 +1237,7 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
       missingProtections: Array<{ category: string; title: string; severity: string; description: string }>;
       recommendations: Array<{ priority: number; title: string; description: string; impact: string }>;
     }>({
-      orgId,
+      orgId: effectiveOrgId,
       userId: req.user!.id,
       actionType: "contract_risk_analysis",
       inputRefs: { contractId: contract.id, contractNumber: contract.contractNumber },
