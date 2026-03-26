@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { format, formatDistanceToNow, isPast } from "date-fns";
+import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns";
 import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent, Settings } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -884,6 +884,12 @@ export function ChangeOrderDialog({
     </div>
   );
 
+  const MARKUP_PRESETS: Record<string, number[]> = {
+    sectionF: [5, 10, 15, 20],
+    sectionH: [5, 8, 10, 15],
+    sectionJ: [5, 10, 15],
+  };
+
   const renderCalculatedSection = (label: string, sectionKey: string, total: number, pctLabel: string, pctValue: string, onPctChange: (v: string) => void, formula: string) => (
     <div className="space-y-2" data-testid={`section-${sectionKey}`}>
       <div className="flex items-center justify-between py-2 px-3 bg-muted/50 rounded-md">
@@ -894,6 +900,19 @@ export function ChangeOrderDialog({
         <div className="flex items-center gap-2">
           {canEdit ? (
             <div className="flex items-center gap-1">
+              {MARKUP_PRESETS[sectionKey]?.map(preset => (
+                <Button
+                  key={preset}
+                  type="button"
+                  size="sm"
+                  variant={pctValue === String(preset) ? "default" : "ghost"}
+                  className="h-6 px-1.5 text-xs"
+                  onClick={() => onPctChange(String(preset))}
+                  data-testid={`button-preset-${sectionKey}-${preset}`}
+                >
+                  {preset}%
+                </Button>
+              ))}
               <Input type="number" step="0.1" value={pctValue} onChange={(e) => onPctChange(e.target.value)} className="h-7 w-16 text-xs text-right" data-testid={`input-${sectionKey}-pct`} />
               <Percent className="w-3 h-3 text-muted-foreground" />
             </div>
@@ -955,6 +974,40 @@ export function ChangeOrderDialog({
                 {format(new Date(changeOrder.clientResponseDueDate), "MMMM d, yyyy")}
                 {" "}<span className="text-muted-foreground">({formatDistanceToNow(new Date(changeOrder.clientResponseDueDate), { addSuffix: true })})</span>
               </p>
+            </div>
+          )}
+
+          {revisions && revisions.length > 0 && (
+            <div className="p-3 bg-muted/20 rounded-md border" data-testid="panel-status-timeline">
+              <div className="flex items-center gap-2 mb-2">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Status Timeline</span>
+                <Badge variant="outline" className="text-xs ml-auto">
+                  {(() => {
+                    const sorted = [...revisions].sort((a, b) => b.revision.revisionNumber - a.revision.revisionNumber);
+                    const lastChange = sorted[0]?.revision.createdAt;
+                    return lastChange ? `${differenceInDays(new Date(), new Date(lastChange))}d in current status` : "—";
+                  })()}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {(() => {
+                  const sortedRevs = [...revisions].sort((a, b) => a.revision.revisionNumber - b.revision.revisionNumber);
+                  const steps = [
+                    { status: "PCO", date: changeOrder.createdAt },
+                    ...sortedRevs.map(r => ({ status: r.revision.newStatus, date: r.revision.createdAt })),
+                  ];
+                  return steps.map((step, idx) => (
+                    <div key={idx} className="flex items-center gap-1">
+                      {idx > 0 && <ArrowRight className="w-3 h-3 text-muted-foreground shrink-0" />}
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-muted text-xs">
+                        <span className="font-medium">{step.status.replace(/_/g, " ")}</span>
+                        <span className="text-muted-foreground">{format(new Date(step.date), "M/d")}</span>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
             </div>
           )}
 

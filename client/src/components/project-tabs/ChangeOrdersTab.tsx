@@ -1,16 +1,17 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban, AlertTriangle, Calendar, FileText } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, CheckCircle, XCircle, Eye, Ruler, Flag, ClipboardCheck, Ban, AlertTriangle, Calendar, FileText, Clock, Download, Send, RotateCcw } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { format, isPast } from "date-fns";
+import { format, isPast, differenceInDays } from "date-fns";
 import type { ChangeOrder } from "@shared/schema";
 import { useCreateChangeOrder, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder } from "@/hooks/use-data";
 import { ChangeOrderFiles } from "@/components/ChangeOrderFiles";
@@ -30,25 +31,45 @@ interface ChangeOrdersTabProps {
   userRole: string;
 }
 
+function statusDurationDays(co: ChangeOrder): number {
+  const updatedAt = co.updatedAt ? new Date(co.updatedAt) : new Date(co.createdAt);
+  return differenceInDays(new Date(), updatedAt);
+}
+
+function StatusDurationBadge({ co }: { co: ChangeOrder }) {
+  const days = statusDurationDays(co);
+  if (days < 1) return null;
+  const isLong = days > 7;
+  return (
+    <Badge variant="outline" className={`text-xs ${isLong ? "border-amber-400 text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} data-testid={`badge-duration-${co.id}`}>
+      <Clock className="w-3 h-3 mr-1" />{days}d
+    </Badge>
+  );
+}
+
 export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, projectName, clientName, isLoading, userRole }: ChangeOrdersTabProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedChangeOrder, setSelectedChangeOrder] = useState<ChangeOrder | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [selectedCostCodeId, setSelectedCostCodeId] = useState<string>("");
   const [scopeSelection, setScopeSelection] = useState<ScopeSelectionData | null>(null);
   const [scopeQuantity, setScopeQuantity] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  // Submit with deadline state (Task #70)
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [pendingSubmitId, setPendingSubmitId] = useState<string | null>(null);
   const [clientResponseDueDate, setClientResponseDueDate] = useState("");
   const [addedToSovIds, setAddedToSovIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const { toast } = useToast();
 
-  // Fetch persisted linked CO IDs from backend to accurately pre-disable "Add to SOV" buttons
   const { data: sovCoLinkedData } = useQuery<{ linkedCoIds: string[] }>({
     queryKey: ["/api/projects", projectCode, "sov-co-linked-ids"],
+  });
+
+  const { data: costCodes = [] } = useQuery<Array<{ id: number; code: string; description: string; division: string }>>({
+    queryKey: ["/api/cost-codes/org"],
   });
 
   useEffect(() => {
@@ -80,6 +101,22 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
   const rejectMutation = useRejectChangeOrder();
   const returnToDraftMutation = useReturnToDraftChangeOrder();
 
+  const bulkSubmitMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("POST", "/api/change-orders/bulk-submit", { ids });
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Bulk Submit Complete", description: `${data.summary?.succeeded || 0} of ${data.summary?.total || 0} submitted successfully` });
+      setSelectedIds(new Set());
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Bulk submit failed", variant: "destructive" });
+    },
+  });
+
   const handleCreate = async () => {
     if (!description || !amount) {
       toast({ title: "Error", description: "Description and amount are required", variant: "destructive" });
@@ -92,6 +129,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         projectCode,
         description,
         amount,
+        costCodeId: selectedCostCodeId && selectedCostCodeId !== "none" ? parseInt(selectedCostCodeId, 10) : undefined,
         workTypeId: scopeSelection?.workTypeId || undefined,
         workTypeCode: scopeSelection?.workTypeCode || undefined,
         workTypeName: scopeSelection?.workTypeName || undefined,
@@ -101,7 +139,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         canonicalName: scopeSelection?.canonicalName || undefined,
         scopeUnit: scopeSelection?.unit || undefined,
         scopeQuantity: scopeQuantity || undefined,
-      });
+      } as any);
       const generatedNumber = (result as any)?.changeOrderNumber || "";
       toast({
         title: "Change order created",
@@ -110,6 +148,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       setShowCreateDialog(false);
       setDescription("");
       setAmount("");
+      setSelectedCostCodeId("");
       setScopeSelection(null);
       setScopeQuantity("");
     } catch (error) {
@@ -192,114 +231,205 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     return co.status === "SUBMITTED" && coAny.clientResponseDueDate && isPast(new Date(coAny.clientResponseDueDate));
   };
 
+  const toggleSelection = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === filteredChangeOrders.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredChangeOrders.map(co => co.id)));
+    }
+  }, [filteredChangeOrders, selectedIds.size]);
+
+  const submittableSelected = useMemo(() => {
+    return filteredChangeOrders.filter(co => selectedIds.has(co.id) && (co.status === "PCO" || co.status === "DRAFT"));
+  }, [filteredChangeOrders, selectedIds]);
+
+  const handleBulkExportCsv = useCallback(() => {
+    const sanitizeCsvCell = (val: string) => {
+      let s = val.replace(/"/g, '""');
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return s;
+    };
+    const rows = filteredChangeOrders.filter(co => selectedIds.size === 0 || selectedIds.has(co.id));
+    const header = "CO Number,Status,Description,Amount,Created,Updated";
+    const csvRows = rows.map(co =>
+      `"${sanitizeCsvCell(co.changeOrderNumber)}","${sanitizeCsvCell(co.status)}","${sanitizeCsvCell(co.description)}","${co.amount}","${format(new Date(co.createdAt), "yyyy-MM-dd")}","${format(new Date(co.updatedAt), "yyyy-MM-dd")}"`
+    );
+    const csv = [header, ...csvRows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `change-orders-${projectCode}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: "Exported", description: `${rows.length} change orders exported to CSV` });
+  }, [filteredChangeOrders, selectedIds, projectCode, toast]);
+
+  const costCodeMap = useMemo(() => {
+    const map = new Map<number, { code: string; description: string }>();
+    costCodes.forEach(cc => map.set(cc.id, { code: cc.code, description: cc.description }));
+    return map;
+  }, [costCodes]);
+
   return (
     <>
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <CardTitle>Change Orders</CardTitle>
-            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-              <DialogTrigger asChild>
-                <Button size="sm" data-testid="button-new-change-order" className="w-full sm:w-auto">
-                  <Plus className="w-4 h-4 mr-2" />
-                  New Change Order
-                </Button>
-              </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-change-order">
-              <DialogHeader>
-                <DialogTitle>Create Change Order</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <p className="text-xs text-muted-foreground">Creates a new Potential Change Order (PCO). A CO number will be auto-assigned.</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="co-amount">Amount ($)</Label>
-                    <Input
-                      id="co-amount"
-                      type="number"
-                      step="0.01"
-                      value={amount}
-                      onChange={(e) => setAmount(e.target.value)}
-                      placeholder="2500.00"
-                      data-testid="input-change-order-amount"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Enter positive for additions or negative for deductions
-                    </p>
-                  </div>
-                </div>
-
-                <Card className="p-4 bg-muted/30">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Ruler className="w-4 h-4 text-muted-foreground" />
-                    <Label className="text-sm font-medium">Scope of Work (for Production Rate Tracking)</Label>
-                  </div>
-                  <StandardizedScopeSelector
-                    value={scopeSelection || undefined}
-                    onChange={setScopeSelection}
-                    showDimensionInputs={false}
-                  />
-                  {scopeSelection && (
-                    <div className="mt-3 grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="co-scope-quantity">Quantity</Label>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            id="co-scope-quantity"
-                            type="number"
-                            step="0.01"
-                            value={scopeQuantity}
-                            onChange={(e) => setScopeQuantity(e.target.value)}
-                            placeholder="0"
-                            data-testid="input-co-scope-quantity"
-                          />
-                          <span className="text-sm text-muted-foreground whitespace-nowrap">{scopeSelection.unit}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-end">
-                        <div className="text-sm text-muted-foreground">
-                          <span className="font-medium">Selected:</span> {scopeSelection.canonicalName}
-                        </div>
-                      </div>
+            <div className="flex items-center gap-2">
+              {canManage && selectedIds.size > 0 && (
+                <>
+                  {submittableSelected.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={() => bulkSubmitMutation.mutate(submittableSelected.map(co => co.id))}
+                      disabled={bulkSubmitMutation.isPending}
+                      data-testid="button-bulk-submit"
+                    >
+                      <Send className="w-4 h-4 mr-1" />
+                      Submit {submittableSelected.length} Selected
+                    </Button>
+                  )}
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleBulkExportCsv}
+                data-testid="button-export-csv"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Export CSV
+              </Button>
+              <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+                <DialogTrigger asChild>
+                  <Button size="sm" data-testid="button-new-change-order" className="w-full sm:w-auto">
+                    <Plus className="w-4 h-4 mr-2" />
+                    New Change Order
+                  </Button>
+                </DialogTrigger>
+              <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-create-change-order">
+                <DialogHeader>
+                  <DialogTitle>Create Change Order</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">Creates a new Potential Change Order (PCO). A CO number will be auto-assigned.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="co-amount">Amount ($)</Label>
+                      <Input
+                        id="co-amount"
+                        type="number"
+                        step="0.01"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="2500.00"
+                        data-testid="input-change-order-amount"
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enter positive for additions or negative for deductions
+                      </p>
                     </div>
-                  )}
-                  {!scopeSelection && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Select a work type to enable production rate tracking for this change order.
-                    </p>
-                  )}
-                </Card>
+                    <div>
+                      <Label htmlFor="co-cost-code">Cost Code</Label>
+                      <Select value={selectedCostCodeId} onValueChange={setSelectedCostCodeId}>
+                        <SelectTrigger id="co-cost-code" data-testid="select-cost-code">
+                          <SelectValue placeholder="Select cost code (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">No Cost Code</SelectItem>
+                          {costCodes.map(cc => (
+                            <SelectItem key={cc.id} value={String(cc.id)}>
+                              {cc.code} — {cc.description}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
 
-                <div>
-                  <Label htmlFor="co-description">Description</Label>
-                  <Textarea
-                    id="co-description"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe the change..."
-                    data-testid="input-change-order-description"
-                  />
+                  <Card className="p-4 bg-muted/30">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Ruler className="w-4 h-4 text-muted-foreground" />
+                      <Label className="text-sm font-medium">Scope of Work (for Production Rate Tracking)</Label>
+                    </div>
+                    <StandardizedScopeSelector
+                      value={scopeSelection || undefined}
+                      onChange={setScopeSelection}
+                      showDimensionInputs={false}
+                    />
+                    {scopeSelection && (
+                      <div className="mt-3 grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="co-scope-quantity">Quantity</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              id="co-scope-quantity"
+                              type="number"
+                              step="0.01"
+                              value={scopeQuantity}
+                              onChange={(e) => setScopeQuantity(e.target.value)}
+                              placeholder="0"
+                              data-testid="input-co-scope-quantity"
+                            />
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">{scopeSelection.unit}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-end">
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium">Selected:</span> {scopeSelection.canonicalName}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {!scopeSelection && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Select a work type to enable production rate tracking for this change order.
+                      </p>
+                    )}
+                  </Card>
+
+                  <div>
+                    <Label htmlFor="co-description">Description</Label>
+                    <Textarea
+                      id="co-description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Describe the change..."
+                      data-testid="input-change-order-description"
+                    />
+                  </div>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleCreate}
-                  disabled={createMutation.isPending}
-                  data-testid="button-submit-change-order"
-                >
-                  {createMutation.isPending ? "Creating..." : "Create Change Order"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleCreate}
+                    disabled={createMutation.isPending}
+                    data-testid="button-submit-change-order"
+                  >
+                    {createMutation.isPending ? "Creating..." : "Create Change Order"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
           {!isLoading && changeOrders.length > 0 && (
-            <div className="flex items-center gap-2 mb-4">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="w-48" data-testid="select-status-filter">
                   <SelectValue placeholder="Filter by status" />
@@ -321,6 +451,17 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                   {filteredChangeOrders.length} of {changeOrders.length} shown
                 </span>
               )}
+              {canManage && filteredChangeOrders.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={toggleSelectAll}
+                  data-testid="button-select-all"
+                  className="ml-auto"
+                >
+                  {selectedIds.size === filteredChangeOrders.length ? "Deselect All" : "Select All"}
+                </Button>
+              )}
             </div>
           )}
           {isLoading ? (
@@ -332,11 +473,18 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
           ) : (
             <div className="space-y-3">
               {filteredChangeOrders.map((co) => (
-                <Card key={co.id} data-testid={`change-order-${co.id}`}>
+                <Card key={co.id} data-testid={`change-order-${co.id}`} className={selectedIds.has(co.id) ? "ring-2 ring-primary" : ""}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          {canManage && (
+                            <Checkbox
+                              checked={selectedIds.has(co.id)}
+                              onCheckedChange={() => toggleSelection(co.id)}
+                              data-testid={`checkbox-co-${co.id}`}
+                            />
+                          )}
                           <Badge variant="outline" className="font-mono">{co.changeOrderNumber}</Badge>
                           {co.status === "PCO" ? (
                             <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950 dark:text-amber-300" data-testid={`status-pco-${co.id}`}>
@@ -363,10 +511,16 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                               {co.status?.replace(/_/g, " ")}
                             </Badge>
                           )}
+                          <StatusDurationBadge co={co} />
                           {isResponseOverdue(co) && (
                             <Badge variant="destructive" className="flex items-center gap-1" data-testid={`badge-overdue-${co.id}`}>
                               <AlertTriangle className="w-3 h-3" />
                               Response Overdue
+                            </Badge>
+                          )}
+                          {(co as any).costCodeId && costCodeMap.has((co as any).costCodeId) && (
+                            <Badge variant="outline" className="text-xs" data-testid={`badge-cost-code-${co.id}`}>
+                              {costCodeMap.get((co as any).costCodeId)?.code}
                             </Badge>
                           )}
                           <Button
@@ -425,7 +579,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                           </div>
                         )}
                         {canManage && co.status === "SUBMITTED" && (
-                          <div className="flex gap-2 mt-2">
+                          <div className="flex gap-2 mt-2 flex-wrap justify-end">
                             <Button
                               size="sm"
                               variant="default"
@@ -445,6 +599,16 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                             >
                               <XCircle className="w-4 h-4 mr-1" />
                               Reject
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleReturnToDraft(co.id)}
+                              disabled={returnToDraftMutation.isPending}
+                              data-testid={`button-return-draft-${co.id}`}
+                            >
+                              <RotateCcw className="w-4 h-4 mr-1" />
+                              Return to Draft
                             </Button>
                           </div>
                         )}
@@ -510,7 +674,6 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         userRole={userRole}
       />
 
-      {/* Submit with deadline dialog */}
       <Dialog open={showSubmitDialog} onOpenChange={setShowSubmitDialog}>
         <DialogContent className="max-w-sm" data-testid="dialog-submit-co">
           <DialogHeader>

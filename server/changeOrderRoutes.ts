@@ -22,7 +22,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   // New PCO workflow
   PCO: ["PRICING_REVIEW"],                        // Issue priced, sent for internal review
   PRICING_REVIEW: ["SUBMITTED", "PCO"],           // Approved to client, or returned for revision
-  SUBMITTED: ["APPROVED", "REJECTED"],            // Client approves or rejects
+  SUBMITTED: ["APPROVED", "REJECTED", "PCO"],      // Client approves, rejects, or returned to draft
   APPROVED: ["VOIDED"],                           // Re-scope path
   REJECTED: ["PCO"],                              // Returned to re-price
   VOIDED: [],                                     // Terminal state
@@ -963,46 +963,44 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
       return;
     }
 
-    if (!isValidTransition(order.status, "DRAFT")) {
+    const targetStatus = isValidTransition(order.status, "PCO") ? "PCO" : 
+                         isValidTransition(order.status, "DRAFT") ? "DRAFT" : null;
+    if (!targetStatus) {
       res.status(400).json({ 
         error: `Cannot return to draft from ${order.status} status` 
       });
       return;
     }
 
-    // Return to draft - clear submittedAt so weekly alerts use fresh date on re-submission
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
-        status: "DRAFT",
+        status: targetStatus as any,
         submittedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(changeOrders.id, req.params.id))
       .returning();
 
-    // Guard: Check if update actually found a row (concurrent deletion protection)
     if (!updatedOrder) {
       res.status(404).json({ error: "Change order not found" });
       return;
     }
 
-    await createRevision(order.id, order.status, "DRAFT", req.user!.id, reason ? `Returned to draft: ${reason}` : "Returned to draft for revision", order.amount, reason ? { reason } : undefined);
+    await createRevision(order.id, order.status, targetStatus, req.user!.id, reason ? `Returned to draft: ${reason}` : "Returned to draft for revision", order.amount, reason ? { reason } : undefined);
 
-    // Audit log
     await logAudit({
       userId: req.user!.id,
       action: "UPDATE",
       entityType: "changeOrder",
       entityId: order.id,
       oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "DRAFT", reason }),
+      newValue: JSON.stringify({ status: targetStatus, reason }),
     }, req);
 
-    // Notify requester
     await notifyStatusChange(
       updatedOrder,
-      "DRAFT",
+      targetStatus,
       `Change order ${updatedOrder.changeOrderNumber} has been returned to draft${reason ? `: ${reason}` : ""}`,
       true
     );
@@ -1957,6 +1955,68 @@ router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFF
     res.json({ success: true, sovLineItemId: newLineItem.id, sovId: targetSovId });
   } catch (error: any) {
     console.error("Add CO to SOV error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      res.status(400).json({ error: "ids array is required" });
+      return;
+    }
+
+    const results: { id: string; success: boolean; error?: string }[] = [];
+
+    for (const id of ids) {
+      try {
+        const result = await getChangeOrderById(id);
+        if (!result?.order) {
+          results.push({ id, success: false, error: "Not found" });
+          continue;
+        }
+        const { order, project } = result;
+        const { allowed } = checkOrgAccess(req, project?.gcOrganizationId);
+        if (!allowed) {
+          results.push({ id, success: false, error: "Access denied" });
+          continue;
+        }
+        if (!isValidTransition(order.status, "SUBMITTED")) {
+          results.push({ id, success: false, error: `Cannot submit from ${order.status}` });
+          continue;
+        }
+
+        const now = new Date();
+        const [updatedOrder] = await db
+          .update(changeOrders)
+          .set({ status: "SUBMITTED", submittedAt: now, updatedAt: now })
+          .where(eq(changeOrders.id, id))
+          .returning();
+
+        if (updatedOrder) {
+          await createRevision(order.id, order.status, "SUBMITTED", req.user!.id, "Bulk submitted to client", order.amount);
+          await logAudit({
+            userId: req.user!.id,
+            action: "SUBMIT",
+            entityType: "changeOrder",
+            entityId: order.id,
+            oldValue: JSON.stringify({ status: order.status }),
+            newValue: JSON.stringify({ status: "SUBMITTED" }),
+          }, req);
+          results.push({ id, success: true });
+        } else {
+          results.push({ id, success: false, error: "Update failed" });
+        }
+      } catch (err) {
+        results.push({ id, success: false, error: "Internal error" });
+      }
+    }
+
+    const succeeded = results.filter(r => r.success).length;
+    res.json({ results, summary: { total: ids.length, succeeded, failed: ids.length - succeeded } });
+  } catch (error: any) {
+    console.error("Bulk submit error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

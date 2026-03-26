@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
+import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1127,14 +1127,30 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       canonicalName,
       scopeUnit,
       scopeQuantity,
+      costCodeId,
     } = req.body;
 
-    const [countResult] = await db
-      .select({ count: sql<number>`count(*)::int` })
+    if (costCodeId) {
+      const parsedCostCodeId = parseInt(costCodeId, 10);
+      if (isNaN(parsedCostCodeId)) {
+        res.status(400).json({ error: "Invalid cost code ID" });
+        return;
+      }
+      const [costCode] = await db.select().from(orgCostCodes)
+        .where(and(eq(orgCostCodes.id, parsedCostCodeId), eq(orgCostCodes.organizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!costCode) {
+        res.status(400).json({ error: "Cost code not found or does not belong to your organization" });
+        return;
+      }
+    }
+
+    const [maxResult] = await db
+      .select({ maxNum: sql<number>`COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(${changeOrders.changeOrderNumber}, '^CO-', ''), '') AS INTEGER)), 0)` })
       .from(changeOrders)
       .where(eq(changeOrders.projectId, validationResult.data.projectId));
 
-    const changeOrderNumber = `CO-${String((countResult?.count ?? 0) + 1).padStart(3, "0")}`;
+    const changeOrderNumber = `CO-${String((maxResult?.maxNum ?? 0) + 1).padStart(3, "0")}`;
 
     const insertData = { 
       ...validationResult.data,
@@ -1150,6 +1166,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       canonicalName: canonicalName || null,
       scopeUnit: scopeUnit || null,
       scopeQuantity: scopeQuantity || null,
+      costCodeId: costCodeId ? parseInt(costCodeId, 10) : null,
     };
     const [newOrder] = await db.insert(changeOrders).values([insertData]).returning();
     

@@ -792,6 +792,7 @@ export const changeOrders = pgTable("change_orders", {
   canonicalName: text("canonical_name"),
   scopeUnit: text("scope_unit"),
   scopeQuantity: text("scope_quantity"),
+  costCodeId: integer("cost_code_id"),
   costBreakdownJson: text("cost_breakdown_json"),
   overheadPercent: decimal("overhead_percent", { precision: 5, scale: 2 }).default("10"),
   profitPercent: decimal("profit_percent", { precision: 5, scale: 2 }).default("5"),
