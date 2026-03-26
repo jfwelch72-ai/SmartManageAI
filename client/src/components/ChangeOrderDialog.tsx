@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns";
 import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent, Settings } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -207,7 +207,7 @@ export function ChangeOrderDialog({
 
   const { data: orgDefaults } = useQuery<{ defaultOverheadPercent: number }>({
     queryKey: ["/api/overhead/summary"],
-    enabled: open && !changeOrder,
+    enabled: open,
   });
 
   const { data: approvals } = useQuery<Array<{
@@ -238,6 +238,8 @@ export function ChangeOrderDialog({
     enabled: (showContractPicker || !!changeOrder?.contractId) && !!changeOrder?.projectId,
   });
 
+  const orgDefaultsAppliedRef = useRef(false);
+
   useEffect(() => {
     if (changeOrder) {
       setEditedNumber(changeOrder.changeOrderNumber);
@@ -246,6 +248,7 @@ export function ChangeOrderDialog({
       setEditedCostCodeId(changeOrder.costCodeId ? String(changeOrder.costCodeId) : "");
       setIsEditing(false);
       setNewApprovalSteps([{ approverRole: "MANAGER" }]);
+      orgDefaultsAppliedRef.current = false;
     }
   }, [changeOrder]);
 
@@ -275,10 +278,14 @@ export function ChangeOrderDialog({
   }, [lineItemsData, orgDefaults]);
 
   useEffect(() => {
-    if (!changeOrder && orgDefaults?.defaultOverheadPercent && !lineItemsData) {
-      setOverheadPct(String(orgDefaults.defaultOverheadPercent));
+    if (orgDefaults?.defaultOverheadPercent && !orgDefaultsAppliedRef.current) {
+      const hasExplicitOverhead = lineItemsData?.overheadPercent && lineItemsData.overheadPercent !== "10";
+      if (!hasExplicitOverhead) {
+        setOverheadPct(String(orgDefaults.defaultOverheadPercent));
+        orgDefaultsAppliedRef.current = true;
+      }
     }
-  }, [changeOrder, orgDefaults, lineItemsData]);
+  }, [orgDefaults, lineItemsData]);
 
   useEffect(() => {
     setSectionVisibility(prev => {

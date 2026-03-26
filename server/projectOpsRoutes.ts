@@ -1191,7 +1191,16 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
       scopeQuantity: scopeQuantity || null,
       costCodeId: costCodeId ? parseInt(costCodeId, 10) : null,
     };
-    const [newOrder] = await db.insert(changeOrders).values([insertData]).returning();
+    let newOrder;
+    try {
+      [newOrder] = await db.insert(changeOrders).values([insertData]).returning();
+    } catch (err: unknown) {
+      const pgErr = err as { code?: string; constraint?: string };
+      if (pgErr.code === "23505" && pgErr.constraint?.includes("change_order_number")) {
+        return res.status(409).json({ message: `Change order number "${changeOrderNumber}" already exists for this project. Please use a different number.` });
+      }
+      throw err;
+    }
     
     const adminsAndManagers = await db
       .select()
