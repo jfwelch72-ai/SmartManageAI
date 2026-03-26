@@ -44,6 +44,7 @@ interface ProfitabilityData {
     equipment_actual_cost: number;
     equipment_cost_variance: number;
   };
+  projected_budget?: number;
 }
 
 interface HistorySnapshot {
@@ -185,6 +186,15 @@ export default function ProfitabilityTab({ projectCode }: { projectCode: string 
             <p className="text-2xl font-bold">{fmt(data.adjusted_budget)}</p>
             {data.approved_change_orders_value > 0 && (
               <p className="text-xs text-green-600 dark:text-green-400">+{fmt(data.approved_change_orders_value)} from approved COs</p>
+            )}
+            {data.key_metrics.pending_change_orders_value > 0 && (
+              <div className="pt-1 border-t border-border/50 mt-1">
+                <p className="text-xs text-muted-foreground">Projected Budget</p>
+                <p className="text-sm font-semibold text-amber-600 dark:text-amber-400" data-testid="text-projected-budget">
+                  {fmt(data.projected_budget ?? (data.adjusted_budget + data.key_metrics.pending_change_orders_value))}
+                </p>
+                <p className="text-[11px] text-muted-foreground">incl. {fmt(data.key_metrics.pending_change_orders_value)} pending COs</p>
+              </div>
             )}
           </CardContent>
         </Card>

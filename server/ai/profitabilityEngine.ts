@@ -26,6 +26,7 @@ export interface ProjectProfitability {
   approved_change_orders_value: number;
   approved_tm_value: number;
   adjusted_budget: number;
+  projected_budget: number;
   total_actual_cost: number;
   variance: number;
   variance_percent: number;
@@ -184,7 +185,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
 
   const approvedCOs = projectChangeOrders.filter(co => co.status === 'APPROVED');
   const pendingCOs = projectChangeOrders.filter(co => 
-    ['DRAFT', 'SUBMITTED'].includes(co.status)
+    !['APPROVED', 'REJECTED', 'VOIDED'].includes(co.status)
   );
 
   const approvedCOValue = approvedCOs.reduce((sum, co) => sum + Number(co.amount || 0), 0);
@@ -339,6 +340,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     approved_change_orders_value: Math.round(approvedCOValue * 100) / 100,
     approved_tm_value: Math.round(approvedTMValue * 100) / 100,
     adjusted_budget: Math.round(adjustedBudget * 100) / 100,
+    projected_budget: Math.round((adjustedBudget + pendingCOValue) * 100) / 100,
     total_actual_cost: Math.round(totalActualCost * 100) / 100,
     variance: Math.round(variance * 100) / 100,
     variance_percent: Math.round(variancePercent * 100) / 100,

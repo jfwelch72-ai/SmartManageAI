@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { FilePenLine, CheckCircle, RotateCcw, Clock, Send, MessageSquare, DollarSign, AlertTriangle } from "lucide-react";
+import { FilePenLine, CheckCircle, RotateCcw, Clock, Send, MessageSquare, DollarSign, AlertTriangle, Paperclip, Download } from "lucide-react";
 import { format, formatDistanceToNow, isPast } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,6 +17,14 @@ interface CostBreakdown {
   equipment: number;
   subcontractor: number;
   total: number;
+}
+
+interface COAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number | null;
+  mimeType: string | null;
+  storageKey: string;
 }
 
 interface ChangeOrderItem {
@@ -30,6 +38,7 @@ interface ChangeOrderItem {
   createdAt: string | null;
   clientResponseDueDate: string | null;
   costBreakdown: CostBreakdown | null;
+  attachments?: COAttachment[];
 }
 
 interface COComment {
@@ -344,6 +353,52 @@ export function PortalChangeOrdersTab({ changeOrders, projectId, email, onRefres
                           <span className="font-medium">{fmtCurrency(selectedCO.costBreakdown.subcontractor)}</span>
                         </div>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {selectedCO.attachments && selectedCO.attachments.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Paperclip className="w-4 h-4 text-muted-foreground" />
+                      <h4 className="text-sm font-medium">Attachments</h4>
+                    </div>
+                    <div className="space-y-1.5" data-testid="co-attachments-list">
+                      {selectedCO.attachments.map((att) => (
+                        <button
+                          key={att.id}
+                          onClick={async () => {
+                            try {
+                              const resp = await fetch(
+                                `/api/ai-features/client-portal/public/change-orders/${selectedCO.id}/attachments/${att.id}/download`,
+                                { headers: clientHeaders }
+                              );
+                              if (!resp.ok) throw new Error("Download failed");
+                              const blob = await resp.blob();
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement("a");
+                              a.href = url;
+                              a.download = att.fileName;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            } catch {
+                              toast({ title: "Download failed", description: "Could not download attachment", variant: "destructive" });
+                            }
+                          }}
+                          className="flex items-center gap-2 px-3 py-2 rounded bg-muted/30 hover:bg-muted/50 transition-colors text-sm w-full text-left"
+                          data-testid={`attachment-${att.id}`}
+                        >
+                          <Download className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate flex-1">{att.fileName}</span>
+                          {att.fileSize && (
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {att.fileSize > 1048576
+                                ? `${(att.fileSize / 1048576).toFixed(1)} MB`
+                                : `${Math.round(att.fileSize / 1024)} KB`}
+                            </span>
+                          )}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}

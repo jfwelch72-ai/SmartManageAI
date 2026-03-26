@@ -851,7 +851,7 @@ export const changeOrderRevisions = pgTable("change_order_revisions", {
   amount: decimal("amount", { precision: 12, scale: 2 }),
   description: text("description"),
   changedFields: text("changed_fields"),
-  revisedById: varchar("revised_by_id").notNull().references(() => users.id),
+  revisedById: varchar("revised_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   changeOrderIdIdx: index("change_order_revisions_co_id_idx").on(table.changeOrderId),

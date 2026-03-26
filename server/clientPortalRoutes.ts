@@ -12,10 +12,13 @@ import {
   planDocuments,
   changeOrders,
   changeOrderComments,
+  changeOrderRevisions,
+  changeOrderAttachments,
   tmInvoices,
 } from "@shared/schema";
-import { eq, and, desc, asc, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, ne, sql } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { ObjectStorageService } from "./objectStorage";
 import { z } from "zod";
 import crypto from "crypto";
 import { sendEmail } from "./email";
@@ -690,6 +693,35 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
         .orderBy(desc(changeOrders.createdAt))
         .limit(100);
 
+      const coIds = cos.map(co => co.id);
+      let attachmentsByCoId: Record<string, Array<{ id: string; fileName: string; fileSize: number | null; mimeType: string | null; storageKey: string }>> = {};
+      if (coIds.length > 0) {
+        const attachments = await db
+          .select({
+            id: changeOrderAttachments.id,
+            changeOrderId: changeOrderAttachments.changeOrderId,
+            fileName: changeOrderAttachments.fileName,
+            fileSize: changeOrderAttachments.fileSize,
+            mimeType: changeOrderAttachments.mimeType,
+            storageKey: changeOrderAttachments.storageKey,
+          })
+          .from(changeOrderAttachments)
+          .where(inArray(changeOrderAttachments.changeOrderId, coIds));
+
+        for (const att of attachments) {
+          if (!attachmentsByCoId[att.changeOrderId]) {
+            attachmentsByCoId[att.changeOrderId] = [];
+          }
+          attachmentsByCoId[att.changeOrderId].push({
+            id: att.id,
+            fileName: att.fileName,
+            fileSize: att.fileSize,
+            mimeType: att.mimeType,
+            storageKey: att.storageKey,
+          });
+        }
+      }
+
       result.changeOrders = cos.map((co) => {
         let costBreakdown = null;
         if (co.costBreakdownJson) {
@@ -715,6 +747,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
           createdAt: co.createdAt,
           clientResponseDueDate: co.clientResponseDueDate,
           costBreakdown,
+          attachments: attachmentsByCoId[co.id] || [],
         };
       });
     }
@@ -918,6 +951,21 @@ router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter
       isInternal: false,
     });
 
+    const [maxRev] = await db
+      .select({ maxNum: sql<number>`COALESCE(MAX(${changeOrderRevisions.revisionNumber}), 0)` })
+      .from(changeOrderRevisions)
+      .where(eq(changeOrderRevisions.changeOrderId, coId));
+
+    await db.insert(changeOrderRevisions).values({
+      changeOrderId: coId,
+      revisionNumber: (maxRev?.maxNum || 0) + 1,
+      previousStatus: "SUBMITTED",
+      newStatus: "APPROVED",
+      amount: co.amount,
+      description: `Client acknowledged via portal (${email})`,
+      revisedById: null,
+    });
+
     res.json(updated);
   } catch (error) {
     console.error("Error acknowledging CO:", error);
@@ -974,10 +1022,85 @@ router.post("/client-portal/public/change-orders/:coId/request-revision", authLi
       isInternal: false,
     });
 
+    const [maxRev] = await db
+      .select({ maxNum: sql<number>`COALESCE(MAX(${changeOrderRevisions.revisionNumber}), 0)` })
+      .from(changeOrderRevisions)
+      .where(eq(changeOrderRevisions.changeOrderId, coId));
+
+    await db.insert(changeOrderRevisions).values({
+      changeOrderId: coId,
+      revisionNumber: (maxRev?.maxNum || 0) + 1,
+      previousStatus: "SUBMITTED",
+      newStatus: "PCO",
+      amount: co.amount,
+      description: `Client requested revision via portal (${email}): ${reason.trim().substring(0, 500)}`,
+      revisedById: null,
+    });
+
     res.json(updated);
   } catch (error) {
     console.error("Error requesting CO revision:", error);
     res.status(500).json({ error: "Failed to request revision" });
+  }
+});
+
+router.get("/public/change-orders/:coId/attachments/:attachmentId/download", async (req, res) => {
+  try {
+    const email = req.headers["x-client-email"] as string;
+    const projectId = req.headers["x-client-project-id"] as string;
+    if (!email || !projectId) {
+      return res.status(401).json({ error: "Missing portal credentials" });
+    }
+
+    const verified = await verifyPortalAccess(email, projectId);
+    if (!verified) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    if (!verified.access.permissions?.viewChangeOrders) {
+      return res.status(403).json({ error: "No permission to view change orders" });
+    }
+
+    const coId = req.params.coId;
+    const attachmentId = req.params.attachmentId;
+
+    const [co] = await db
+      .select({ id: changeOrders.id })
+      .from(changeOrders)
+      .where(
+        and(
+          eq(changeOrders.id, coId),
+          eq(changeOrders.projectId, projectId)
+        )
+      );
+
+    if (!co) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    const [attachment] = await db
+      .select()
+      .from(changeOrderAttachments)
+      .where(
+        and(
+          eq(changeOrderAttachments.id, attachmentId),
+          eq(changeOrderAttachments.changeOrderId, coId)
+        )
+      );
+
+    if (!attachment) {
+      return res.status(404).json({ error: "Attachment not found" });
+    }
+
+    const objectStorageService = new ObjectStorageService();
+    const objectFile = await objectStorageService.getObjectEntityFile(attachment.storageKey);
+
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(attachment.fileName)}"`);
+
+    await objectStorageService.downloadObject(objectFile, res, 0);
+  } catch (error) {
+    console.error("Error downloading portal CO attachment:", error);
+    res.status(500).json({ error: "Failed to download attachment" });
   }
 });
 
