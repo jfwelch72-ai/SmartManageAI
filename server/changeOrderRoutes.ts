@@ -2070,4 +2070,228 @@ router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async 
   }
 });
 
+// ====================
+// PDF Export Routes
+// ====================
+
+router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      res.status(404).json({ error: "Change order not found" });
+      return;
+    }
+
+    const { order, project } = result;
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      res.status(mustDenyAccess ? 403 : 403).json({ error: "Access denied" });
+      return;
+    }
+
+    const allowedStatuses = ["SUBMITTED", "APPROVED", "VOIDED", "REJECTED", "PRICING_REVIEW"];
+    if (!allowedStatuses.includes(order.status)) {
+      res.status(400).json({ error: "PDF is only available for submitted, approved, or completed change orders" });
+      return;
+    }
+
+    const [projectData] = await db.select({
+      name: projects.name,
+      code: projects.code,
+      clientName: projects.clientName,
+      locationAddress: projects.locationAddress,
+    }).from(projects).where(eq(projects.id, order.projectId)).limit(1);
+
+    const [requestedBy] = await db.select({
+      firstName: users.firstName,
+      lastName: users.lastName,
+    }).from(users).where(eq(users.id, order.requestedById)).limit(1);
+
+    let approvedByName: string | undefined;
+    if (order.approvedById) {
+      const [approver] = await db.select({
+        firstName: users.firstName,
+        lastName: users.lastName,
+      }).from(users).where(eq(users.id, order.approvedById)).limit(1);
+      if (approver) approvedByName = `${approver.firstName} ${approver.lastName}`;
+    }
+
+    let lineItemsData = null;
+    try {
+      const [li] = await db.select().from(changeOrders).where(eq(changeOrders.id, order.id)).limit(1);
+      if (li?.lineItems) {
+        lineItemsData = typeof li.lineItems === 'string' ? JSON.parse(li.lineItems) : li.lineItems;
+      }
+    } catch (e) {}
+
+    const approvalRows = await db.select({
+      approval: {
+        approverRole: changeOrderApprovals.approverRole,
+        status: changeOrderApprovals.status,
+        stepOrder: changeOrderApprovals.stepOrder,
+        comments: changeOrderApprovals.comments,
+        decidedAt: changeOrderApprovals.decidedAt,
+      },
+    }).from(changeOrderApprovals).where(eq(changeOrderApprovals.changeOrderId, order.id)).orderBy(changeOrderApprovals.stepOrder);
+
+    const revisionRows = await db.select({
+      revision: {
+        revisionNumber: changeOrderRevisions.revisionNumber,
+        previousStatus: changeOrderRevisions.previousStatus,
+        newStatus: changeOrderRevisions.newStatus,
+        description: changeOrderRevisions.description,
+        createdAt: changeOrderRevisions.createdAt,
+      },
+    }).from(changeOrderRevisions).where(eq(changeOrderRevisions.changeOrderId, order.id)).orderBy(changeOrderRevisions.revisionNumber);
+
+    let costCodeLabel: string | null = null;
+    if (order.costCodeId) {
+      const [cc] = await db.select({ code: orgCostCodes.code, description: orgCostCodes.description }).from(orgCostCodes).where(eq(orgCostCodes.id, order.costCodeId)).limit(1);
+      if (cc) costCodeLabel = `${cc.code} — ${cc.description}`;
+    }
+
+    let linkedRfiNumber: string | null = null;
+    if (order.linkedRfiId) {
+      const [rfi] = await db.select({ rfiNumber: rfis.rfiNumber }).from(rfis).where(eq(rfis.id, order.linkedRfiId)).limit(1);
+      if (rfi) linkedRfiNumber = rfi.rfiNumber;
+    }
+
+    let linkedTmTicketNumber: string | null = null;
+    if (order.linkedTmTicketId) {
+      const [tm] = await db.select({ ticketNumber: tmTickets.ticketNumber }).from(tmTickets).where(eq(tmTickets.id, order.linkedTmTicketId)).limit(1);
+      if (tm) linkedTmTicketNumber = tm.ticketNumber;
+    }
+
+    let orgBranding: { organizationName: string; primaryColor?: string } | undefined;
+    if (project?.gcOrganizationId) {
+      const { organizations } = await import("@shared/schema");
+      const [org] = await db.select({ name: organizations.name, primaryColor: organizations.primaryColor }).from(organizations).where(eq(organizations.id, project.gcOrganizationId)).limit(1);
+      if (org) orgBranding = { organizationName: org.name, primaryColor: org.primaryColor || undefined };
+    }
+
+    const { generateChangeOrderPDF } = await import("./co-pdf-service");
+
+    const stream = generateChangeOrderPDF({
+      changeOrder: {
+        ...order,
+        costCodeLabel,
+        linkedTmTicketNumber,
+        linkedRfiNumber,
+        requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
+        approvedByName,
+      },
+      project: projectData || { name: 'Unknown', code: '' },
+      lineItems: lineItemsData,
+      approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
+      revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
+      branding: orgBranding,
+    });
+
+    const safeNumber = order.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="ChangeOrder_${safeNumber}.pdf"`);
+    stream.pipe(res);
+  } catch (error: any) {
+    console.error("PDF generation error:", error);
+    res.status(500).json({ error: "Failed to generate PDF" });
+  }
+});
+
+router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const projectId = req.params.projectId;
+
+    const [projectData] = await db.select({
+      id: projects.id,
+      name: projects.name,
+      code: projects.code,
+      clientName: projects.clientName,
+      locationAddress: projects.locationAddress,
+      gcOrganizationId: projects.gcOrganizationId,
+    }).from(projects).where(eq(projects.id, projectId)).limit(1);
+
+    if (!projectData) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, projectData.gcOrganizationId);
+    if (!allowed) {
+      res.status(mustDenyAccess ? 403 : 403).json({ error: "Access denied" });
+      return;
+    }
+
+    const selectedIdsParam = req.query.ids as string | undefined;
+    let coQuery = db.select().from(changeOrders).where(eq(changeOrders.projectId, projectId));
+    const allCOs = await coQuery;
+
+    const exportStatuses = ["SUBMITTED", "APPROVED", "VOIDED", "REJECTED", "PRICING_REVIEW"];
+    let eligibleCOs = allCOs.filter(co => exportStatuses.includes(co.status));
+
+    if (selectedIdsParam) {
+      const selectedIds = new Set(selectedIdsParam.split(','));
+      eligibleCOs = eligibleCOs.filter(co => selectedIds.has(co.id));
+    }
+
+    if (eligibleCOs.length === 0) {
+      res.status(400).json({ error: "No eligible change orders to export" });
+      return;
+    }
+
+    let orgBranding: { organizationName: string; primaryColor?: string } | undefined;
+    if (projectData.gcOrganizationId) {
+      const { organizations } = await import("@shared/schema");
+      const [org] = await db.select({ name: organizations.name, primaryColor: organizations.primaryColor }).from(organizations).where(eq(organizations.id, projectData.gcOrganizationId)).limit(1);
+      if (org) orgBranding = { organizationName: org.name, primaryColor: org.primaryColor || undefined };
+    }
+
+    const { generateChangeOrderPDF } = await import("./co-pdf-service");
+    const archiver = (await import("archiver")).default;
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    const safeProjectCode = projectData.code.replace(/[^a-zA-Z0-9-]/g, '_');
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="ChangeOrders_${safeProjectCode}.zip"`);
+    archive.pipe(res);
+
+    for (const co of eligibleCOs) {
+      try {
+        let lineItemsData = null;
+        try {
+          if (co.lineItems) {
+            lineItemsData = typeof co.lineItems === 'string' ? JSON.parse(co.lineItems as string) : co.lineItems;
+          }
+        } catch (parseErr) {
+          console.warn(`Skipping malformed lineItems for CO ${co.changeOrderNumber}`);
+        }
+
+        let costCodeLabel: string | null = null;
+        if (co.costCodeId) {
+          const [cc] = await db.select({ code: orgCostCodes.code, description: orgCostCodes.description }).from(orgCostCodes).where(eq(orgCostCodes.id, co.costCodeId)).limit(1);
+          if (cc) costCodeLabel = `${cc.code} — ${cc.description}`;
+        }
+
+        const stream = generateChangeOrderPDF({
+          changeOrder: { ...co, costCodeLabel },
+          project: { name: projectData.name, code: projectData.code, clientName: projectData.clientName || undefined, locationAddress: projectData.locationAddress },
+          lineItems: lineItemsData,
+          branding: orgBranding,
+        });
+
+        const safeNumber = co.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
+        archive.append(stream, { name: `${safeNumber}.pdf` });
+      } catch (coErr) {
+        console.error(`Failed to generate PDF for CO ${co.changeOrderNumber}:`, coErr);
+      }
+    }
+
+    await archive.finalize();
+  } catch (error: any) {
+    console.error("Bulk PDF export error:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to generate bulk PDF export" });
+    }
+  }
+});
+
 export default router;

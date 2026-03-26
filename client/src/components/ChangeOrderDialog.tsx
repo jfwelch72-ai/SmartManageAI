@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { format, formatDistanceToNow, isPast, differenceInDays } from "date-fns";
-import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent, Settings } from "lucide-react";
+import { FileText, Calendar, CheckCircle, XCircle, Clock, Edit, Ruler, Plus, Trash2, ChevronDown, ChevronRight, History, ArrowRight, Shield, Flag, ClipboardCheck, Ban, Send, Link, AlertTriangle, Calculator, DollarSign, Percent, Settings, Download, Printer } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -500,6 +500,45 @@ export function ChangeOrderDialog({
     voidMutation.mutate(voidReason);
   };
 
+  const pdfAllowedStatuses = ["SUBMITTED", "APPROVED", "VOIDED", "REJECTED", "PRICING_REVIEW"];
+  const canExportPdf = changeOrder && pdfAllowedStatuses.includes(changeOrder.status);
+
+  const handleDownloadPdf = async () => {
+    if (!changeOrder) return;
+    try {
+      const res = await fetch(`/api/change-orders/${changeOrder.id}/pdf`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to download PDF");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ChangeOrder_${changeOrder.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Error", description: "Failed to download PDF", variant: "destructive" });
+    }
+  };
+
+  const handlePrint = async () => {
+    if (!changeOrder) return;
+    try {
+      const res = await fetch(`/api/change-orders/${changeOrder.id}/pdf`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to generate PDF for printing");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const printWindow = window.open(url, '_blank');
+      if (printWindow) {
+        printWindow.addEventListener('load', () => {
+          printWindow.print();
+        });
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch {
+      toast({ title: "Error", description: "Failed to prepare print view", variant: "destructive" });
+    }
+  };
+
   const setupApprovalChainMutation = useMutation({
     mutationFn: async (steps: Array<{ approverRole: string }>) => apiRequest("POST", `/api/change-orders/${changeOrder?.id}/setup-approval-chain`, { steps }),
     onSuccess: () => {
@@ -974,6 +1013,16 @@ export function ChangeOrderDialog({
                 <Badge variant="destructive" className="flex items-center gap-1" data-testid="badge-response-overdue">
                   <AlertTriangle className="w-3 h-3" />Response Overdue
                 </Badge>
+              )}
+              {canExportPdf && (
+                <Button variant="outline" size="sm" onClick={handleDownloadPdf} data-testid="button-download-co-pdf">
+                  <Download className="w-3.5 h-3.5 mr-1" />PDF
+                </Button>
+              )}
+              {canExportPdf && (
+                <Button variant="outline" size="sm" onClick={handlePrint} data-testid="button-print-co">
+                  <Printer className="w-3.5 h-3.5 mr-1" />Print
+                </Button>
               )}
               {getStatusBadge(changeOrder.status)}
             </div>

@@ -276,6 +276,31 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     toast({ title: "Exported", description: `${rows.length} change orders exported to CSV` });
   }, [filteredChangeOrders, selectedIds, projectCode, toast]);
 
+  const [bulkPdfLoading, setBulkPdfLoading] = useState(false);
+  const handleBulkExportPdf = useCallback(async () => {
+    setBulkPdfLoading(true);
+    try {
+      const idsParam = selectedIds.size > 0 ? `?ids=${Array.from(selectedIds).join(',')}` : '';
+      const res = await fetch(`/api/change-orders/project/${projectId}/bulk-pdf${idsParam}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to export PDFs");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ChangeOrders_${projectCode}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Exported", description: "Change orders exported as PDF ZIP" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "Failed to export PDFs", variant: "destructive" });
+    } finally {
+      setBulkPdfLoading(false);
+    }
+  }, [selectedIds, projectId, projectCode, toast]);
+
   const costCodeMap = useMemo(() => {
     const map = new Map<number, { code: string; description: string }>();
     costCodes.forEach(cc => map.set(cc.id, { code: cc.code, description: cc.description }));
@@ -325,6 +350,18 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                 >
                   <Download className="w-4 h-4 mr-1" />
                   Export All CSV
+                </Button>
+              )}
+              {(userRole === "ADMIN" || userRole === "MANAGER") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleBulkExportPdf}
+                  disabled={bulkPdfLoading}
+                  data-testid="button-export-pdf-zip"
+                >
+                  <FileText className="w-4 h-4 mr-1" />
+                  {bulkPdfLoading ? "Exporting..." : selectedIds.size > 0 ? `Export ${selectedIds.size} PDFs` : "Export All PDFs"}
                 </Button>
               )}
               <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
