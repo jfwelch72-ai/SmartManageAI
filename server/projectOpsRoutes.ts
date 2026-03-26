@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
+import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -1063,7 +1063,28 @@ router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthReq
       .where(eq(changeOrders.projectId, project.id))
       .orderBy(desc(changeOrders.createdAt));
 
-    res.json(orders);
+    const orderIds = orders.map(o => o.id);
+    let lastStatusChanges = new Map<string, Date>();
+    if (orderIds.length > 0) {
+      const revRows = await db
+        .select({
+          changeOrderId: changeOrderRevisions.changeOrderId,
+          maxCreatedAt: sql<string>`MAX(${changeOrderRevisions.createdAt})`,
+        })
+        .from(changeOrderRevisions)
+        .where(sql`${changeOrderRevisions.changeOrderId} IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})`)
+        .groupBy(changeOrderRevisions.changeOrderId);
+      for (const row of revRows) {
+        lastStatusChanges.set(row.changeOrderId, new Date(row.maxCreatedAt));
+      }
+    }
+
+    const enrichedOrders = orders.map(o => ({
+      ...o,
+      lastStatusChangeAt: lastStatusChanges.get(o.id)?.toISOString() || null,
+    }));
+
+    res.json(enrichedOrders);
   } catch (error) {
     console.error("Get change orders error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1221,7 +1242,17 @@ router.patch("/api/change-orders/:id", requireAuth, requireRole("ADMIN", "MANAGE
       }
     }
 
-    const updateData: any = { ...validationResult.data, updatedAt: new Date() };
+    if (validationResult.data.costCodeId !== undefined && validationResult.data.costCodeId !== null) {
+      const [costCode] = await db.select().from(orgCostCodes)
+        .where(and(eq(orgCostCodes.id, validationResult.data.costCodeId), eq(orgCostCodes.organizationId, req.user!.organizationId)))
+        .limit(1);
+      if (!costCode) {
+        res.status(400).json({ error: "Cost code not found or does not belong to your organization" });
+        return;
+      }
+    }
+
+    const updateData: Record<string, unknown> = { ...validationResult.data, updatedAt: new Date() };
     
     const [updatedOrder] = await db
       .update(changeOrders)

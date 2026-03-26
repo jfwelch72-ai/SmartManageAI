@@ -31,9 +31,9 @@ interface ChangeOrdersTabProps {
   userRole: string;
 }
 
-function statusDurationDays(co: ChangeOrder): number {
-  const updatedAt = co.updatedAt ? new Date(co.updatedAt) : new Date(co.createdAt);
-  return differenceInDays(new Date(), updatedAt);
+function statusDurationDays(co: ChangeOrder & { lastStatusChangeAt?: string | null }): number {
+  const refDate = co.lastStatusChangeAt ? new Date(co.lastStatusChangeAt) : (co.updatedAt ? new Date(co.updatedAt) : new Date(co.createdAt));
+  return differenceInDays(new Date(), refDate);
 }
 
 function StatusDurationBadge({ co }: { co: ChangeOrder }) {

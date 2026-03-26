@@ -162,6 +162,7 @@ export function ChangeOrderDialog({
   const [editedNumber, setEditedNumber] = useState("");
   const [editedDescription, setEditedDescription] = useState("");
   const [editedAmount, setEditedAmount] = useState("");
+  const [editedCostCodeId, setEditedCostCodeId] = useState<string>("");
   const [lineItemsOpen, setLineItemsOpen] = useState(true);
   const [showVoidDialog, setShowVoidDialog] = useState(false);
   const [voidReason, setVoidReason] = useState("");
@@ -199,6 +200,11 @@ export function ChangeOrderDialog({
     enabled: !!changeOrder?.id && open,
   });
 
+  const { data: costCodes = [] } = useQuery<Array<{ id: number; code: string; description: string; division: string; isActive: boolean }>>({
+    queryKey: ["/api/cost-codes/org"],
+    enabled: open && isEditing,
+  });
+
   const { data: approvals } = useQuery<Array<{
     approval: { id: string; approverRole: string; status: string; stepOrder: number; comments: string | null; decidedAt: string | null; createdAt: string; };
     approver: { id: string; firstName: string; lastName: string; email: string; } | null;
@@ -232,6 +238,7 @@ export function ChangeOrderDialog({
       setEditedNumber(changeOrder.changeOrderNumber);
       setEditedDescription(changeOrder.description);
       setEditedAmount(changeOrder.amount);
+      setEditedCostCodeId(changeOrder.costCodeId ? String(changeOrder.costCodeId) : "");
       setIsEditing(false);
       setNewApprovalSteps([{ approverRole: "MANAGER" }]);
     }
@@ -344,7 +351,7 @@ export function ChangeOrderDialog({
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { changeOrderNumber: string; description: string; amount: string }) => {
+    mutationFn: async (data: { changeOrderNumber: string; description: string; amount: string; costCodeId?: number | null }) => {
       return apiRequest("PATCH", `/api/change-orders/${changeOrder?.id}`, data);
     },
     onSuccess: () => {
@@ -519,7 +526,12 @@ export function ChangeOrderDialog({
       toast({ title: "Validation Error", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-    updateMutation.mutate({ changeOrderNumber: editedNumber, description: editedDescription, amount: editedAmount });
+    updateMutation.mutate({
+      changeOrderNumber: editedNumber,
+      description: editedDescription,
+      amount: editedAmount,
+      costCodeId: editedCostCodeId && editedCostCodeId !== "none" ? parseInt(editedCostCodeId, 10) : null,
+    });
   };
 
   if (!changeOrder) return null;
@@ -1059,6 +1071,22 @@ export function ChangeOrderDialog({
                 <p className="text-sm mt-1" data-testid="text-co-description">{changeOrder.description}</p>
               )}
             </div>
+            {isEditing && (
+              <div className="mt-3">
+                <Label className="text-xs text-muted-foreground">Cost Code</Label>
+                <Select value={editedCostCodeId || "none"} onValueChange={setEditedCostCodeId}>
+                  <SelectTrigger className="h-8 text-xs mt-1" data-testid="select-edit-cost-code">
+                    <SelectValue placeholder="Select cost code (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Cost Code</SelectItem>
+                    {costCodes.filter(cc => cc.isActive).map(cc => (
+                      <SelectItem key={cc.id} value={String(cc.id)}>{cc.code} — {cc.description}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </Card>
 
           {changeOrder.canonicalName && (
