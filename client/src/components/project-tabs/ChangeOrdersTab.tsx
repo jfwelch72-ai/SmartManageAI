@@ -294,8 +294,9 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       a.click();
       URL.revokeObjectURL(url);
       toast({ title: "Exported", description: "Change orders exported as PDF ZIP" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message || "Failed to export PDFs", variant: "destructive" });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to export PDFs";
+      toast({ title: "Error", description: msg, variant: "destructive" });
     } finally {
       setBulkPdfLoading(false);
     }
