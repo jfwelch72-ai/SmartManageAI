@@ -19,6 +19,12 @@ interface TrainingAssignment {
   notes: string | null;
 }
 
+interface TimeEntry {
+  id: string;
+  employeeId: string;
+  projectId: string;
+}
+
 interface SafetyTrainingTabProps {
   projectId: string;
   projectCode: string;
@@ -31,13 +37,34 @@ function fmtDate(d: string | null | undefined) {
 }
 
 export default function SafetyTrainingTab({ projectId, projectCode, userRole }: SafetyTrainingTabProps) {
-  const { data: assignments = [], isLoading } = useQuery<TrainingAssignment[]>({
-    queryKey: ["/api/safety-training/assignments", "project", projectId],
+  const { data: timeEntries = [] } = useQuery<TimeEntry[]>({
+    queryKey: ["/api/time-entries/pending-approvals"],
     queryFn: async () => {
-      const all = await fetch("/api/safety-training/assignments", { credentials: "include" }).then(r => r.json());
-      return Array.isArray(all) ? all : [];
+      const res = await fetch(`/api/time-entries/pending-approvals?projectId=${encodeURIComponent(projectId)}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
     },
   });
+
+  const { data: allShifts = [] } = useQuery<Array<{ employeeId: string; projectId: string }>>({
+    queryKey: ["/api/time-clock/shifts", "project-crew", projectId],
+    queryFn: async () => {
+      const res = await fetch("/api/time-clock/shifts", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data.filter((s: { projectId: string }) => s.projectId === projectId) : [];
+    },
+  });
+
+  const projectCrewIds = new Set<string>();
+  timeEntries.forEach(e => { if (e.projectId === projectId) projectCrewIds.add(e.employeeId); });
+  allShifts.forEach(s => projectCrewIds.add(s.employeeId));
+
+  const { data: allAssignments = [], isLoading } = useQuery<TrainingAssignment[]>({
+    queryKey: ["/api/safety-training/assignments"],
+  });
+
+  const assignments = allAssignments.filter(a => projectCrewIds.has(a.employeeId));
 
   const completed = assignments.filter(a => a.status === "COMPLETED").length;
   const pending = assignments.filter(a => a.status === "PENDING").length;
@@ -62,10 +89,16 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
         </div>
       </div>
 
-      {assignments.length === 0 ? (
+      {projectCrewIds.size === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border rounded-lg" data-testid="empty-project-crew">
+          <ShieldCheck className="h-10 w-10 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No crew members found for this project</p>
+          <p className="text-xs mt-1">Safety training records will appear once workers log time on this project.</p>
+        </div>
+      ) : assignments.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground border rounded-lg" data-testid="empty-project-training">
           <ShieldCheck className="h-10 w-10 mx-auto mb-2 opacity-30" />
-          <p className="font-medium text-sm">No safety training assignments</p>
+          <p className="font-medium text-sm">No safety training assignments for project crew</p>
           <p className="text-xs mt-1">Assign training from the Safety Training module.</p>
         </div>
       ) : (
