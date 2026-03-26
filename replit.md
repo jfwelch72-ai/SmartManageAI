@@ -19,22 +19,21 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Multi-Tenancy & Customization**: Supports distinct organizations with AI-driven onboarding and dynamic features tailored to specific trade types.
 *   **AI Integration**: Features AI for generation, analysis, scheduling, and automation across various modules, governed by an AI Governance System.
 *   **Project Lifecycle Management**: Comprehensive workflows covering Bids, Projects, Estimates, Procurement, Change Orders, and Time & Material Tracking, including a Unified SOW Tracking System.
-*   **Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, material calculation, hierarchical line item builder, 6-step bid workflow, full takeoff workspace, 3-Layer Modifier Selector system, takeoff import duplicate detection, and vendor pricebook match confidence indicators (EXACT/FUZZY/NO_MATCH).
+*   **Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, material calculation, hierarchical line item builder, 6-step bid workflow, full takeoff workspace, 3-Layer Modifier Selector system, and vendor pricebook match confidence indicators.
 *   **Custom Cost Code Management**: Organization-level cost code management with CSI division grouping and custom code support.
-*   **CRM System**: Manages organizational entities, vendor pricing, rental equipment catalogs, insurance/compliance tracking, a 7-stage Sales Pipeline module, and CRM Opportunity→Bid creation path with auto-stage advancement.
-*   **Workforce Management**: Native time-clock with GPS/geofence validation, shift management, labor hour tracking, Manager Approval Workflow, Overtime Request System, KPI dashboards, crew scheduling, employee deductions, pay stub generation, and Certified Payroll Reports (WH-347) generation. Includes a Unified Performance System.
+*   **CRM System**: Manages organizational entities, vendor pricing, rental equipment catalogs, insurance/compliance tracking, and a 7-stage Sales Pipeline module.
+*   **Workforce Management**: Native time-clock with GPS/geofence validation, shift management, labor hour tracking, Manager Approval Workflow, Overtime Request System, KPI dashboards, crew scheduling, employee deductions, pay stub generation, and Certified Payroll Reports (WH-347) generation.
 *   **Compliance & Audit**: Comprehensive audit logging, document management with versioning, expiration tracking, an Approval Workflows Framework, and an Addenda Tracking System.
-*   **Safety Training Management**: Full in-house safety training lifecycle, including program creation, assignment, tracking, digital acknowledgments, and PDF export for compliance.
+*   **Safety Training Management**: Full in-house safety training lifecycle, including program creation, assignment, tracking, and digital acknowledgments.
 *   **Budget vs Actual Cost Engine**: Per-project cost code budget with real-time cost ledger aggregating committed and actual costs, grouped by CSI division, with variance alerts and an editable budget editor.
 *   **Live Project Profitability Tracking**: Automated real-time cost monitoring via a background cron job, recalculating costs vs adjusted budget, saving snapshots, and firing in-app notifications.
 *   **Procurement Module**: Full procure-to-pay lifecycle covering Purchase Requests, Purchase Orders, Delivery Receipts, Vendor Invoices, and automated 3-Way Match, with RBAC-controlled approvals.
 *   **Production Rate Tracking**: Analytics for crew productivity, labor cost, material cost, and profitability per Unit of Measure (UOM).
-*   **Communication & Collaboration**: Unified Messaging System with Slack-style channels, file attachments, voice messages, task @mentions, and a grouped sidebar. Includes Client Portal Chat and Subcontractor Portal System.
-*   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets, featuring live cursor tracking, real-time measurement sync, presence indicators, and optional per-sheet soft locks.
+*   **Communication & Collaboration**: Unified Messaging System with Slack-style channels, file attachments, voice messages, task @mentions. Includes Client Portal Chat and Subcontractor Portal System.
+*   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets, featuring live cursor tracking, real-time measurement sync, and presence indicators.
 *   **Website Builder System**: White-label website management with an AI Website Wizard, page builder, publishing controls, and full SEO support.
-*   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, GDPR compliance, feature flags, and a 4-tier subscription model, including Super Admin tools.
-*   **HTTP Security**: Helmet middleware for security headers and API log redaction.
-*   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling, with security hardened via AES-256-GCM token encryption.
+*   **Enterprise Features**: SSO/SAML 2.0 support, advanced session security, audit log export, configurable data retention, GDPR compliance, feature flags, and a 4-tier subscription model.
+*   **Integration Hub**: Provider-agnostic framework for centralized connection management and event handling.
 *   **Multi-Source Document Upload**: Supports local files, direct links, and integrated cloud storage services.
 *   **Document Control & Revisioning**: Manages document revisions with sequential numbering, status tracking, UI for history and comparison, and in-app notifications.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs with snapshot trending.
@@ -43,31 +42,31 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher.
 *   **Libraries System**: Provides reusable library management for custom items, assemblies, and saved takeoffs, with API for CRUD, bulk import, and trade-aware seeding.
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
-*   **Dashboard Customization**: WYSIWYG editor with section-based layout, configurable widgets, and tiered default layouts based on user permissions. Includes organization-wide color scheme settings and 28 registered widget types.
+*   **Dashboard Customization**: WYSIWYG editor with section-based layout, configurable widgets, and tiered default layouts based on user permissions.
 *   **Performance Indexes**: Database indexes are optimized for frequently queried fields across key tables.
 *   **Feature Permissions System**: Granular per-user feature access control enforced via backend middleware and frontend hooks.
 *   **WCAG Compliance**: Theme picker colors meet WCAG AA 4.5:1 contrast ratio.
 *   **Contractor Onboarding Library**: A hard-coded, normalized reference data system for trades, scopes, materials, formulas, and grammar, powering AI onboarding and dynamic UI components.
 *   **Social Media Management System**: Comprehensive content management with scheduling, AI generation, multi-platform support, rich media picker, and approval workflow.
-*   **BIM Quantity Extraction**: Client-side IFC file parsing using web-ifc to extract building element quantities, generating BIM takeoff sheets. Supports re-extraction diff view and category mapping.
+*   **BIM Quantity Extraction**: Client-side IFC file parsing using web-ifc to extract building element quantities, generating BIM takeoff sheets.
 *   **Reports System**: Provides various report types across Takeoff and Estimate categories, with CSV export, browser print, and snapshot creation.
-*   **Contract Management Lifecycle**: Full contract lifecycle (Award → Draft → Review → Redlines → Approval → Execution → Versioning) with status pipeline, version history, redline tracking, approval workflow, execution recording, document attachments, version comparison, bid conversion auto-draft, and change order linkage with financial sync. Includes E-Signature Integration for digital signing workflow with multi-signer support, signature tracking, and auto-execution on completion. Includes AI-Powered Contract Risk Analysis with clause-by-clause scoring, missing protection detection, and prioritized recommendations via GPT-4o.
-*   **Clause Library & Template Builder**: Organization-scoped reusable contract clause management with 15 categories, required/default flags, and sort ordering. Template builder assembles clauses with default terms, and templates can be applied to draft contracts to auto-populate fields and clause content.
-*   **CPM Schedule Management Engine**: Full Critical Path Method (CPM) scheduling with forward/backward pass, total/free float calculation, dynamic critical path identification, baseline schedule locking, schedule update ripple (automatic successor date cascading), resource loading with over-allocation detection, SPI forecasting with trend snapshots, delay-to-change-order bridge for critical path impacts, and upgraded Gantt chart with dependency arrows, baseline bars, float indicators, and critical path highlighting. Backend: `server/cpmEngine.ts`, `server/scheduleRoutes.ts`. Schema: `schedule_forecast_snapshots` table, CPM columns on `project_schedule_tasks`.
+*   **Contract Management Lifecycle**: Full contract lifecycle (Award → Draft → Review → Redlines → Approval → Execution → Versioning) with status pipeline, version history, redline tracking, approval workflow, execution recording, and E-Signature Integration. Includes AI-Powered Contract Risk Analysis.
+*   **Clause Library & Template Builder**: Organization-scoped reusable contract clause management with categories, flags, and sort ordering. Template builder assembles clauses with default terms.
+*   **CPM Schedule Management Engine**: Full Critical Path Method (CPM) scheduling with forward/backward pass, total/free float calculation, dynamic critical path identification, baseline schedule locking, schedule update ripple, resource loading, SPI forecasting, delay-to-change-order bridge, and upgraded Gantt chart.
 *   **Change Order Workflow Enhancement**: Includes revision history tracking and a multi-level approval chain.
 *   **Approval Workflow Notifications**: In-app notifications across 6 approval workflows.
 *   **Submittal Items & Attachments**: Normalized tables for managing submittal items and attachments with status tracking.
 *   **Vendor & Sub RFQ Flow**: Enables sending RFQ emails to subcontractors and material suppliers directly from bid steps, with tracking of RFQ status and in-app notifications.
-*   **Hiring Module (ATS)**: Full Applicant Tracking System with job posting lifecycle, candidate pipeline, interview scheduling, hiring task management, ATS provider abstraction, AI candidate scoring, analytics dashboard, and customizable per-organization pipeline stages with drag-to-reorder settings UI.
-*   **Talent Pool & Connected Hiring-Marketplace**: Self-service talent profiles with bio, trade, availability, pay range, and location. Searchable talent directory at `/talent-pool` with filters. AI-powered skill match scoring against job postings. Recruit-to-hiring cross-link to add talent pool members as hiring candidates. Marketplace↔talent cross-links with team members section on contractor profiles and org links on talent profiles.
+*   **Hiring Module (ATS)**: Full Applicant Tracking System with job posting lifecycle, candidate pipeline, interview scheduling, hiring task management, AI candidate scoring, analytics dashboard, and customizable per-organization pipeline stages.
+*   **Talent Pool & Connected Hiring-Marketplace**: Self-service talent profiles with searchability, AI-powered skill match scoring, and integration with job postings.
 *   **Punch List Module**: Dedicated project tab for tracking deficiency items during project closeout, supporting CRUD operations, attachments, and PDF export.
 *   **Warranty / Post-Construction Module**: Project tab for tracking defects, warranty claims, callbacks, and recalls, with task management, cost tracking, and audit trail.
 *   **Company Overhead & Fixed Costs Manager**: Administration module for tracking fixed overhead costs, with CRUD functionality, summary cards, and suggested overhead percentages.
-*   **BIM Viewer**: IFC file upload and 3D viewer in the Plans & Takeoff tab, with orbit/pan/zoom controls, element tree, properties panel, interactive multi-select, measurement tools, selection-to-takeoff actions, 2D/3D storey association, and split-view mode.
+*   **BIM Viewer**: IFC file upload and 3D viewer in the Plans & Takeoff tab, with orbit/pan/zoom controls, element tree, properties panel, interactive multi-select, measurement tools, 2D/3D storey association, and split-view mode.
 *   **Contractor Marketplace Directory**: Searchable, filterable public directory of organizations with profile pages, specialties, service areas, certifications, portfolio, and reviews.
 *   **Custom Line Styles & Measurement Grouping**: Measurements support custom line styles and variable line width. Measurement grouping allows organizing measurements into named, collapsible groups with color coding and aggregated totals.
-*   **Leave Management Module**: Dedicated leave management under Workforce & Labor with employee self-service (balance cards, request form, request history) and manager/HR views (pending request queue with approve/deny, team leave calendar). Configurable leave types with annual allowances in company settings. In-app notifications on approval/denial. Approved leave creates TIME_OFF_APPROVED calendar events for backward compatibility.
-*   **AIA Progress Billing Engine**: Full AIA G702/G703 progress billing system built on the SOV module. Features: pay application CRUD with auto-calculated financial fields, AIA G702/G703 PDF generation, period-to-period roll-forward with linked pay application creation, stored materials workflow (on-site/off-site/incorporated) with sovLineItemId-to-sovId integrity validation, cross-module integration (Change Orders, T&M ticket import with cost-code grouping, Purchase Orders with committed-cost-by-cost-code rollup), retention tracking with release workflow and final-release guard (requires all SOVs paid/archived), client approval workflow with org-scoped notifications, payment posting (dual-writes to pay_applications and sov_payments for consistent aging), overpayment validation, payment aging reports, and a standalone billing hub page at `/progress-billing`. Backend routes at `/api/aia-billing/`. Schema tables: `pay_applications` (with payment tracking columns: paid_amount, paid_at, payment_reference, payment_method), `stored_materials`, `retention_releases`.
+*   **Leave Management Module**: Dedicated leave management under Workforce & Labor with employee self-service and manager/HR views. Configurable leave types with annual allowances.
+*   **AIA Progress Billing Engine**: Full AIA G702/G703 progress billing system built on the SOV module. Features: pay application CRUD, PDF generation, period-to-period roll-forward, stored materials workflow, cross-module integration, retention tracking, client approval workflow, payment posting, overpayment validation, and payment aging reports.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**: Primary database service.
@@ -79,7 +78,7 @@ The platform is built on a modern web stack featuring a multi-tenant architectur
 *   **Uppy**: For enhanced file uploads.
 *   **node-cron**: For scheduling backend tasks.
 *   **react-konva, konva, pdfjs-dist, xlsx**: For interactive drawing, PDF rendering, and document processing.
-*   **three, web-ifc**: For BIM/IFC 3D model viewing and client-side IFC parsing via WebAssembly.
+*   **three, web-ifc**: For BIM/IFC 3D model viewing and client-side IFC parsing.
 *   **Recharts**: For data visualization charts.
 *   **react-grid-layout**: For dashboard editor layout.
 *   **QuickBooks Online**: For accounting integrations.
