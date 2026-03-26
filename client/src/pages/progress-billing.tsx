@@ -250,9 +250,10 @@ export default function ProgressBillingPage() {
     queryKey: ["/api/sov"],
   });
 
-  const { data: projectsList = [] } = useQuery<ProjectItem[]>({
+  const { data: projectsResponse } = useQuery<{ data: ProjectItem[] }>({
     queryKey: ["/api/projects"],
   });
+  const projectsList = projectsResponse?.data ?? [];
 
   const updatePayAppStatus = useMutation({
     mutationFn: async ({ id, status, rejectionReason }: { id: string; status: string; rejectionReason?: string }) => {
