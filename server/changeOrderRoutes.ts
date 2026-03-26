@@ -20,7 +20,7 @@ const router = Router();
 // Full PCO workflow: PCO → PRICING_REVIEW → SUBMITTED → APPROVED/REJECTED
 const VALID_TRANSITIONS: Record<string, string[]> = {
   // New PCO workflow
-  PCO: ["PRICING_REVIEW"],                        // Issue priced, sent for internal review
+  PCO: ["PRICING_REVIEW", "SUBMITTED"],             // Issue priced, sent for internal review or directly submitted
   PRICING_REVIEW: ["SUBMITTED", "PCO"],           // Approved to client, or returned for revision
   SUBMITTED: ["APPROVED", "REJECTED", "PCO"],      // Client approves, rejects, or returned to draft
   APPROVED: ["VOIDED"],                           // Re-scope path
