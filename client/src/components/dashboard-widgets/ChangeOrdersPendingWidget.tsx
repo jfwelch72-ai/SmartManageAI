@@ -27,6 +27,8 @@ interface ChangeOrdersPendingData {
   pcoCount?: number;
   pricingReviewCount?: number;
   submittedCount?: number;
+  approvedCount?: number;
+  approvedValue?: number;
 }
 
 function formatCurrency(value: number): string {
@@ -156,6 +158,19 @@ export function ChangeOrdersPendingWidget({ config }: WidgetComponentProps) {
                 <p className="text-[11px] text-muted-foreground mt-0.5">pending action</p>
               </div>
             </div>
+
+            {(d.approvedCount || 0) > 0 && (
+              <div className="rounded-lg bg-emerald-500/10 p-3" data-testid="metric-co-approved">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Approved</span>
+                </div>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(d.approvedValue || 0)}</p>
+                  <span className="text-[11px] text-muted-foreground">{d.approvedCount} COs</span>
+                </div>
+              </div>
+            )}
 
             {/* Breakdown by stage */}
             {(d.pcoCount || d.pricingReviewCount || d.submittedCount) && (

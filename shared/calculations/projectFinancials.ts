@@ -21,13 +21,15 @@ export interface ProjectCosts {
 
 export interface ChangeOrderData {
   amount: number;
-  status: 'APPROVED' | 'PENDING' | 'REJECTED' | 'DRAFT';
+  status: string;
 }
 
 export interface BudgetAnalysis {
   baseBudget: number;
   approvedChangeOrders: number;
+  pendingChangeOrders: number;
   adjustedBudget: number;
+  projectedBudget: number;
   totalActualCost: number;
   variance: number;
   variancePercent: number;
@@ -123,7 +125,7 @@ export function calculateTotalCosts(costs: ProjectCosts): number {
  */
 export function calculateChangeOrderValue(
   changeOrders: ChangeOrderData[],
-  filterStatus?: 'APPROVED' | 'PENDING' | 'REJECTED' | 'DRAFT'
+  filterStatus?: string
 ): number {
   const filtered = filterStatus 
     ? changeOrders.filter(co => co.status === filterStatus)
@@ -197,7 +199,12 @@ export function analyzeBudget(
   costs: ProjectCosts
 ): BudgetAnalysis {
   const approvedCOValue = calculateChangeOrderValue(changeOrders, 'APPROVED');
+  const TERMINAL_STATUSES = ['APPROVED', 'REJECTED', 'VOIDED'];
+  const pendingCOValue = calculateChangeOrderValue(
+    changeOrders.filter(co => !TERMINAL_STATUSES.includes(co.status)),
+  );
   const adjustedBudget = calculateAdjustedBudget(baseBudget, approvedCOValue);
+  const projectedBudget = Math.round((adjustedBudget + pendingCOValue) * 100) / 100;
   const totalActualCost = calculateTotalCosts(costs);
   const variance = calculateVariance(adjustedBudget, totalActualCost);
   const variancePercent = calculateVariancePercent(adjustedBudget, totalActualCost);
@@ -206,7 +213,9 @@ export function analyzeBudget(
   return {
     baseBudget: Math.round(baseBudget * 100) / 100,
     approvedChangeOrders: approvedCOValue,
+    pendingChangeOrders: pendingCOValue,
     adjustedBudget,
+    projectedBudget,
     totalActualCost,
     variance,
     variancePercent,

@@ -3635,14 +3635,16 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
 
     const summaryResult = await db.execute(sql`
       SELECT
-        COUNT(*)::int as count,
-        COALESCE(SUM(co."amount"::numeric), 0) as total_value,
+        COUNT(*) FILTER (WHERE co."status"::text IN ('PCO', 'PRICING_REVIEW', 'SUBMITTED'))::int as count,
+        COALESCE(SUM(co."amount"::numeric) FILTER (WHERE co."status"::text IN ('PCO', 'PRICING_REVIEW', 'SUBMITTED')), 0) as total_value,
         COUNT(*) FILTER (WHERE co."status"::text = 'PCO')::int as pco_count,
         COUNT(*) FILTER (WHERE co."status"::text = 'PRICING_REVIEW')::int as pricing_review_count,
-        COUNT(*) FILTER (WHERE co."status"::text = 'SUBMITTED')::int as submitted_count
+        COUNT(*) FILTER (WHERE co."status"::text = 'SUBMITTED')::int as submitted_count,
+        COUNT(*) FILTER (WHERE co."status"::text = 'APPROVED')::int as approved_count,
+        COALESCE(SUM(co."amount"::numeric) FILTER (WHERE co."status"::text = 'APPROVED'), 0) as approved_value
       FROM "change_orders" co
       JOIN "projects" p ON co."project_id" = p."id"
-      WHERE co."status"::text IN ('PCO', 'PRICING_REVIEW', 'SUBMITTED')
+      WHERE co."status"::text IN ('PCO', 'PRICING_REVIEW', 'SUBMITTED', 'APPROVED')
         ${orgCond}
         ${projectCond}
     `);
@@ -3651,6 +3653,8 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
     const pcoCount = (summaryResult.rows[0] as any)?.pco_count || 0;
     const pricingReviewCount = (summaryResult.rows[0] as any)?.pricing_review_count || 0;
     const submittedCount = (summaryResult.rows[0] as any)?.submitted_count || 0;
+    const approvedCount = (summaryResult.rows[0] as any)?.approved_count || 0;
+    const approvedValue = parseFloat((summaryResult.rows[0] as any)?.approved_value || "0");
 
     const itemsResult = await db.execute(sql`
       SELECT
@@ -3683,7 +3687,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
       daysPending: Math.floor((now.getTime() - new Date(r.created_at).getTime()) / (1000 * 60 * 60 * 24)),
     }));
 
-    return { count, totalValue, items, pcoCount, pricingReviewCount, submittedCount };
+    return { count, totalValue, items, pcoCount, pricingReviewCount, submittedCount, approvedCount, approvedValue };
     });
 
     res.json(coResult);

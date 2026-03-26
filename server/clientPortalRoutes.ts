@@ -11,9 +11,10 @@ import {
   projectScheduleTasks,
   planDocuments,
   changeOrders,
+  changeOrderComments,
   tmInvoices,
 } from "@shared/schema";
-import { eq, and, desc, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, ne } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { z } from "zod";
 import crypto from "crypto";
@@ -683,22 +684,39 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
         .where(
           and(
             eq(changeOrders.projectId, projectId),
-            inArray(changeOrders.status, ["PENDING_APPROVAL", "APPROVED"])
+            inArray(changeOrders.status, ["PENDING_APPROVAL", "SUBMITTED", "APPROVED", "REJECTED"])
           )
         )
         .orderBy(desc(changeOrders.createdAt))
         .limit(100);
 
-      result.changeOrders = cos.map((co) => ({
-        id: co.id,
-        changeOrderNumber: co.changeOrderNumber,
-        description: co.description,
-        amount: co.amount,
-        status: co.status,
-        submittedAt: co.submittedAt,
-        approvedAt: co.approvedAt,
-        clientResponseDueDate: co.clientResponseDueDate,
-      }));
+      result.changeOrders = cos.map((co) => {
+        let costBreakdown = null;
+        if (co.costBreakdownJson) {
+          try {
+            const raw = JSON.parse(co.costBreakdownJson);
+            costBreakdown = {
+              labor: raw.labor || 0,
+              material: raw.material || 0,
+              equipment: raw.equipment || 0,
+              subcontractor: raw.subcontractor || 0,
+              total: raw.total || Number(co.amount) || 0,
+            };
+          } catch {}
+        }
+        return {
+          id: co.id,
+          changeOrderNumber: co.changeOrderNumber,
+          description: co.description,
+          amount: co.amount,
+          status: co.status,
+          submittedAt: co.submittedAt,
+          approvedAt: co.approvedAt,
+          createdAt: co.createdAt,
+          clientResponseDueDate: co.clientResponseDueDate,
+          costBreakdown,
+        };
+      });
     }
 
     if (permissions.viewInvoices) {
@@ -733,6 +751,233 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
   } catch (error) {
     console.error("Error fetching portal data:", error);
     res.status(500).json({ error: "Failed to fetch portal data" });
+  }
+});
+
+async function verifyPortalAccess(projectId: string, email: string) {
+  const [access] = await db
+    .select()
+    .from(clientPortalAccess)
+    .where(
+      and(
+        eq(clientPortalAccess.projectId, projectId),
+        eq(clientPortalAccess.email, email.trim().toLowerCase()),
+        eq(clientPortalAccess.isActive, true)
+      )
+    )
+    .limit(1);
+
+  if (!access) return null;
+
+  let permissions = {
+    viewProgress: true,
+    viewPhotos: true,
+    viewSchedule: true,
+    viewDocuments: false,
+    viewChangeOrders: false,
+    viewInvoices: false,
+    submitRequests: false,
+  };
+  try {
+    if (access.permissionsJson) {
+      permissions = { ...permissions, ...JSON.parse(access.permissionsJson) };
+    }
+  } catch {}
+
+  return { access, permissions };
+}
+
+router.get("/client-portal/public/change-orders/:coId/comments", authLimiter, async (req, res) => {
+  try {
+    const { coId } = req.params;
+    const projectId = req.headers["x-client-project-id"] as string;
+    const email = req.headers["x-client-email"] as string;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "Missing portal credentials" });
+    }
+
+    const verified = await verifyPortalAccess(projectId, email);
+    if (!verified || !verified.permissions.viewChangeOrders) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [co] = await db
+      .select({ id: changeOrders.id })
+      .from(changeOrders)
+      .where(and(eq(changeOrders.id, coId), eq(changeOrders.projectId, projectId)))
+      .limit(1);
+
+    if (!co) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    const comments = await db
+      .select()
+      .from(changeOrderComments)
+      .where(and(eq(changeOrderComments.changeOrderId, coId), eq(changeOrderComments.isInternal, false)))
+      .orderBy(asc(changeOrderComments.createdAt));
+
+    res.json(comments);
+  } catch (error) {
+    console.error("Error fetching CO comments:", error);
+    res.status(500).json({ error: "Failed to fetch comments" });
+  }
+});
+
+router.post("/client-portal/public/change-orders/:coId/comments", authLimiter, async (req, res) => {
+  try {
+    const { coId } = req.params;
+    const projectId = req.headers["x-client-project-id"] as string;
+    const email = req.headers["x-client-email"] as string;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "Missing portal credentials" });
+    }
+
+    const verified = await verifyPortalAccess(projectId, email);
+    if (!verified || !verified.permissions.viewChangeOrders) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { message } = req.body;
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    const [co] = await db
+      .select({ id: changeOrders.id })
+      .from(changeOrders)
+      .where(and(eq(changeOrders.id, coId), eq(changeOrders.projectId, projectId)))
+      .limit(1);
+
+    if (!co) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    const [comment] = await db
+      .insert(changeOrderComments)
+      .values({
+        changeOrderId: coId,
+        authorName: verified.access.name || email.split("@")[0],
+        authorEmail: email,
+        authorType: "CLIENT",
+        message: message.trim().substring(0, 2000),
+        isInternal: false,
+      })
+      .returning();
+
+    res.json(comment);
+  } catch (error) {
+    console.error("Error posting CO comment:", error);
+    res.status(500).json({ error: "Failed to post comment" });
+  }
+});
+
+router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter, async (req, res) => {
+  try {
+    const { coId } = req.params;
+    const projectId = req.headers["x-client-project-id"] as string;
+    const email = req.headers["x-client-email"] as string;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "Missing portal credentials" });
+    }
+
+    const verified = await verifyPortalAccess(projectId, email);
+    if (!verified || !verified.permissions.viewChangeOrders || !verified.permissions.submitRequests) {
+      return res.status(403).json({ error: "Access denied — you do not have permission to respond to change orders" });
+    }
+
+    const [co] = await db
+      .select()
+      .from(changeOrders)
+      .where(and(eq(changeOrders.id, coId), eq(changeOrders.projectId, projectId)))
+      .limit(1);
+
+    if (!co) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    if (co.status !== "SUBMITTED") {
+      return res.status(400).json({ error: "Only submitted change orders can be acknowledged" });
+    }
+
+    const [updated] = await db
+      .update(changeOrders)
+      .set({ status: "APPROVED", approvedAt: new Date(), updatedAt: new Date() })
+      .where(eq(changeOrders.id, coId))
+      .returning();
+
+    await db.insert(changeOrderComments).values({
+      changeOrderId: coId,
+      authorName: verified.access.name || email.split("@")[0],
+      authorEmail: email,
+      authorType: "CLIENT",
+      message: "Change order acknowledged and approved by client.",
+      isInternal: false,
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error acknowledging CO:", error);
+    res.status(500).json({ error: "Failed to acknowledge change order" });
+  }
+});
+
+router.post("/client-portal/public/change-orders/:coId/request-revision", authLimiter, async (req, res) => {
+  try {
+    const { coId } = req.params;
+    const projectId = req.headers["x-client-project-id"] as string;
+    const email = req.headers["x-client-email"] as string;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "Missing portal credentials" });
+    }
+
+    const verified = await verifyPortalAccess(projectId, email);
+    if (!verified || !verified.permissions.viewChangeOrders || !verified.permissions.submitRequests) {
+      return res.status(403).json({ error: "Access denied — you do not have permission to respond to change orders" });
+    }
+
+    const { reason } = req.body;
+    if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+      return res.status(400).json({ error: "Reason is required" });
+    }
+
+    const [co] = await db
+      .select()
+      .from(changeOrders)
+      .where(and(eq(changeOrders.id, coId), eq(changeOrders.projectId, projectId)))
+      .limit(1);
+
+    if (!co) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    if (co.status !== "SUBMITTED") {
+      return res.status(400).json({ error: "Only submitted change orders can be revised" });
+    }
+
+    const [updated] = await db
+      .update(changeOrders)
+      .set({ status: "PCO", updatedAt: new Date() })
+      .where(eq(changeOrders.id, coId))
+      .returning();
+
+    await db.insert(changeOrderComments).values({
+      changeOrderId: coId,
+      authorName: verified.access.name || email.split("@")[0],
+      authorEmail: email,
+      authorType: "CLIENT",
+      message: `Revision requested: ${reason.trim().substring(0, 2000)}`,
+      isInternal: false,
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error("Error requesting CO revision:", error);
+    res.status(500).json({ error: "Failed to request revision" });
   }
 });
 

@@ -163,23 +163,29 @@ export default function ClientPortalPublic() {
       setAccessInfo(data);
       setVerifying(false);
 
-      setLoadingData(true);
-      const dataRes = await fetch("/api/ai-features/client-portal/public/data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, email: email.trim() }),
-      });
-
-      if (dataRes.ok) {
-        const portalDataResult: PortalData = await dataRes.json();
-        setPortalData(portalDataResult);
-      }
-      setLoadingData(false);
+      await refreshPortalData();
     } catch {
       setVerifyError("Something went wrong. Please try again.");
       setVerifying(false);
       setLoadingData(false);
     }
+  };
+
+  const refreshPortalData = async () => {
+    if (!projectId || !email) return;
+    setLoadingData(true);
+    try {
+      const dataRes = await fetch("/api/ai-features/client-portal/public/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, email: email.trim() }),
+      });
+      if (dataRes.ok) {
+        const portalDataResult: PortalData = await dataRes.json();
+        setPortalData(portalDataResult);
+      }
+    } catch {}
+    setLoadingData(false);
   };
 
   if (!accessInfo) {
@@ -293,7 +299,7 @@ export default function ClientPortalPublic() {
 
             {permissions.viewChangeOrders && (
               <TabsContent value="change-orders">
-                <PortalChangeOrdersTab changeOrders={portalData?.changeOrders} />
+                <PortalChangeOrdersTab changeOrders={portalData?.changeOrders} projectId={projectId} email={email} onRefresh={refreshPortalData} />
               </TabsContent>
             )}
 

@@ -895,6 +895,23 @@ export const insertChangeOrderAttachmentSchema = createInsertSchema(changeOrderA
 export type InsertChangeOrderAttachment = z.infer<typeof insertChangeOrderAttachmentSchema>;
 export type ChangeOrderAttachment = typeof changeOrderAttachments.$inferSelect;
 
+export const changeOrderComments = pgTable("change_order_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  changeOrderId: varchar("change_order_id").notNull().references(() => changeOrders.id, { onDelete: "cascade" }),
+  authorName: text("author_name").notNull(),
+  authorEmail: text("author_email"),
+  authorType: text("author_type").notNull().default("INTERNAL"),
+  message: text("message").notNull(),
+  isInternal: boolean("is_internal").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  changeOrderIdIdx: index("co_comments_co_id_idx").on(table.changeOrderId),
+}));
+
+export const insertChangeOrderCommentSchema = createInsertSchema(changeOrderComments).omit({ id: true, createdAt: true });
+export type InsertChangeOrderComment = z.infer<typeof insertChangeOrderCommentSchema>;
+export type ChangeOrderComment = typeof changeOrderComments.$inferSelect;
+
 // Project Delays table - tracks schedule delays with change order integration
 export const projectDelays = pgTable("project_delays", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

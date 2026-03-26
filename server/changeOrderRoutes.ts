@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import { eventBus } from "./events";
 import { db } from "./db";
-import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, tmTickets, rfis, scheduleOfValues, sovLineItems, budgetLineItems, orgCostCodes } from "@shared/schema";
+import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, changeOrderComments, tmTickets, rfis, scheduleOfValues, sovLineItems, budgetLineItems, orgCostCodes } from "@shared/schema";
 import { eq, and, desc, sql, max } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
@@ -2354,6 +2354,73 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
     if (!res.headersSent) {
       res.status(500).json({ error: "Failed to generate bulk PDF export" });
     }
+  }
+});
+
+router.get("/:id/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    const { order, project } = result;
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      return res.status(mustDenyAccess ? 403 : 403).json({ error: "Access denied" });
+    }
+
+    const comments = await db
+      .select()
+      .from(changeOrderComments)
+      .where(eq(changeOrderComments.changeOrderId, req.params.id))
+      .orderBy(changeOrderComments.createdAt);
+
+    res.json(comments);
+  } catch (error) {
+    console.error("Error fetching CO comments:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/:id/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await getChangeOrderById(req.params.id);
+    if (!result?.order) {
+      return res.status(404).json({ error: "Change order not found" });
+    }
+
+    const { order, project } = result;
+    const { allowed, mustDenyAccess } = checkOrgAccess(req, project?.gcOrganizationId);
+    if (!allowed) {
+      return res.status(mustDenyAccess ? 403 : 403).json({ error: "Access denied" });
+    }
+
+    const { message } = req.body;
+    if (!message || typeof message !== "string" || message.trim().length === 0) {
+      return res.status(400).json({ error: "Message is required" });
+    }
+
+    const userName = req.user!.firstName && req.user!.lastName
+      ? `${req.user!.firstName} ${req.user!.lastName}`
+      : req.user!.email || "Team Member";
+
+    const [comment] = await db
+      .insert(changeOrderComments)
+      .values({
+        changeOrderId: req.params.id,
+        authorName: userName,
+        authorEmail: req.user!.email || null,
+        authorType: "INTERNAL",
+        message: message.trim().substring(0, 2000),
+        isInternal: false,
+      })
+      .returning();
+
+    res.json(comment);
+  } catch (error) {
+    console.error("Error posting CO comment:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
