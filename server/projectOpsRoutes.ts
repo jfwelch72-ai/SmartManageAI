@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { projects, receipts, planDocuments, filePermissions, changeOrders, changeOrderRevisions, changeOrderLaborEntries, changeOrderEquipmentEntries, changeOrderMaterialEntries, calendarEvents, notifications, users, orgCostCodes, insertReceiptSchema, insertPlanDocumentSchema, insertFilePermissionSchema, insertChangeOrderSchema, insertCalendarEventSchema, changeOrderStatusEnum } from "@shared/schema";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, type AuthRequest, type UserRole } from "./auth";
 import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logDelete } from "./auditLogger";
@@ -1760,6 +1760,559 @@ router.get("/api/project-health/:projectId/history", requireAuth, async (req, re
     res.json(history);
   } catch (err) {
     res.status(500).json({ error: "Failed to get health history" });
+  }
+});
+
+// ====================
+// Project Vault - Aggregated Documents
+// ====================
+
+const VAULT_MANAGEMENT_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HUSTLER", "SAFETY_MANAGER", "HR_MANAGER", "EQUIPMENT_MANAGER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER"];
+const VAULT_CONTRACT_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"];
+const VAULT_CHANGE_ORDER_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HUSTLER", "PROJECT_ENGINEER"];
+
+interface VaultDocument {
+  id: string;
+  name: string;
+  category: string;
+  sourceTab: string;
+  uploadDate: string;
+  uploadedBy: string;
+  fileSize: number | null;
+  fileUrl: string | null;
+  fileName: string | null;
+  mimeType: string | null;
+  objectKey: string | null;
+}
+
+async function buildVaultDocuments(projectId: string, projectCode: string, userId: string, userRole: string): Promise<VaultDocument[]> {
+  const { filterFilesByPermissions } = await import("./fileAccessHelpers");
+  const hasManagement = VAULT_MANAGEMENT_ROLES.includes(userRole);
+  const vaultDocs: VaultDocument[] = [];
+
+  const allPlanDocs = await db.select().from(planDocuments).where(eq(planDocuments.projectId, projectId));
+  const filteredPlanDocs = await filterFilesByPermissions(allPlanDocs, userId, userRole, "DOCUMENT");
+  for (const doc of filteredPlanDocs) {
+    vaultDocs.push({
+      id: `plan-${doc.id}`,
+      name: doc.title || doc.fileName,
+      category: doc.type === "PLANS" ? "Plans/Specs" : doc.type === "SPECS" ? "Plans/Specs" : "Other",
+      sourceTab: "Plans & Takeoff",
+      uploadDate: doc.uploadedAt?.toISOString() || new Date().toISOString(),
+      uploadedBy: "",
+      fileSize: doc.fileSize,
+      fileUrl: null,
+      fileName: doc.fileName,
+      mimeType: doc.mimeType,
+      objectKey: doc.objectKey || doc.fileUrl,
+    });
+  }
+
+  const allReceipts = await db.select().from(receipts).where(eq(receipts.projectId, projectId));
+  const filteredReceipts = await filterFilesByPermissions(allReceipts, userId, userRole, "RECEIPT");
+  for (const r of filteredReceipts) {
+    vaultDocs.push({
+      id: `receipt-${r.id}`,
+      name: r.fileName || `Receipt - ${r.vendor}`,
+      category: "Receipts",
+      sourceTab: "Receipts",
+      uploadDate: r.createdAt?.toISOString() || new Date().toISOString(),
+      uploadedBy: "",
+      fileSize: r.fileSize,
+      fileUrl: null,
+      fileName: r.fileName,
+      mimeType: r.mimeType,
+      objectKey: r.objectKey || r.fileUrl,
+    });
+  }
+
+  const { media: mediaTable } = await import("@shared/schema");
+  const allMedia = await db.select().from(mediaTable).where(eq(mediaTable.projectId, projectId));
+  const filteredMedia = await filterFilesByPermissions(allMedia, userId, userRole, "MEDIA");
+  for (const m of filteredMedia) {
+    const isPhoto = m.type === "IMAGE";
+    vaultDocs.push({
+      id: `media-${m.id}`,
+      name: m.caption || m.fileName,
+      category: isPhoto ? "Photos" : "Videos",
+      sourceTab: "Photos & Videos",
+      uploadDate: m.uploadedAt?.toISOString() || new Date().toISOString(),
+      uploadedBy: "",
+      fileSize: m.fileSize,
+      fileUrl: null,
+      fileName: m.fileName,
+      mimeType: m.mimeType,
+      objectKey: m.objectKey || m.fileUrl,
+    });
+  }
+
+  if (hasManagement) {
+    const { rfis: rfisTable, submittals: submittalsTable, documentTransmittals: transmittalsTable, contracts: contractsTable } = await import("@shared/schema");
+
+    const allRfis = await db.select().from(rfisTable).where(eq(rfisTable.projectId, projectId));
+    for (const rfi of allRfis) {
+      if (rfi.attachmentsJson) {
+        try {
+          const attachments = JSON.parse(rfi.attachmentsJson);
+          if (Array.isArray(attachments)) {
+            for (let i = 0; i < attachments.length; i++) {
+              const att = attachments[i];
+              const storageKey = att.storageKey || att.objectKey || att.fileUrl || null;
+              if (!storageKey) continue;
+              vaultDocs.push({
+                id: `rfi-att-${rfi.id}-${i}`,
+                name: att.fileName || `RFI ${rfi.rfiNumber} Attachment`,
+                category: "RFIs",
+                sourceTab: "RFIs",
+                uploadDate: rfi.createdAt?.toISOString() || new Date().toISOString(),
+                uploadedBy: rfi.submittedByName || "",
+                fileSize: att.fileSize || null,
+                fileUrl: null,
+                fileName: att.fileName || null,
+                mimeType: att.mimeType || null,
+                objectKey: storageKey,
+              });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    const allSubmittals = await db.select().from(submittalsTable).where(eq(submittalsTable.projectId, projectId));
+    for (const sub of allSubmittals) {
+      if (sub.attachmentsJson) {
+        try {
+          const attachments = JSON.parse(sub.attachmentsJson);
+          if (Array.isArray(attachments)) {
+            for (let i = 0; i < attachments.length; i++) {
+              const att = attachments[i];
+              const storageKey = att.storageKey || att.objectKey || att.fileUrl || null;
+              if (!storageKey) continue;
+              vaultDocs.push({
+                id: `submittal-att-${sub.id}-${i}`,
+                name: att.fileName || `Submittal ${sub.submittalNumber} Attachment`,
+                category: "Submittals",
+                sourceTab: "Submittals",
+                uploadDate: sub.createdAt?.toISOString() || new Date().toISOString(),
+                uploadedBy: sub.submittedByName || "",
+                fileSize: att.fileSize || null,
+                fileUrl: null,
+                fileName: att.fileName || null,
+                mimeType: att.mimeType || null,
+                objectKey: storageKey,
+              });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    const allTransmittals = await db.select().from(transmittalsTable).where(eq(transmittalsTable.projectId, projectId));
+    for (const tx of allTransmittals) {
+      if (tx.attachmentsJson) {
+        try {
+          const attachments = JSON.parse(tx.attachmentsJson);
+          if (Array.isArray(attachments)) {
+            for (let i = 0; i < attachments.length; i++) {
+              const att = attachments[i];
+              const storageKey = att.storageKey || att.objectKey || att.fileUrl || null;
+              if (!storageKey) continue;
+              vaultDocs.push({
+                id: `transmittal-att-${tx.id}-${i}`,
+                name: att.fileName || `TX ${tx.transmittalNumber} Attachment`,
+                category: "Transmittals",
+                sourceTab: "Transmittals",
+                uploadDate: tx.createdAt?.toISOString() || new Date().toISOString(),
+                uploadedBy: tx.sentByName || "",
+                fileSize: att.fileSize || null,
+                fileUrl: null,
+                fileName: att.fileName || null,
+                mimeType: att.mimeType || null,
+                objectKey: storageKey,
+              });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (VAULT_CONTRACT_ROLES.includes(userRole)) {
+      const allContracts = await db.select().from(contractsTable).where(eq(contractsTable.projectId, projectId));
+      for (const c of allContracts) {
+        if (c.executedDocumentUrl) {
+          vaultDocs.push({
+            id: `contract-${c.id}`,
+            name: `Contract #${c.contractNumber}`,
+            category: "Contracts",
+            sourceTab: "Contracts",
+            uploadDate: c.createdAt?.toISOString() || new Date().toISOString(),
+            uploadedBy: "",
+            fileSize: null,
+            fileUrl: null,
+            fileName: null,
+            mimeType: null,
+            objectKey: c.executedDocumentUrl,
+          });
+        }
+      }
+    }
+
+    const { purchaseOrders: purchaseOrdersTable, vendorInvoices: vendorInvoicesTable, tmInvoices: tmInvoicesTable } = await import("@shared/schema");
+
+    const allPOs = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.projectId, projectId));
+    const poIds = allPOs.map(po => po.id);
+
+    if (poIds.length > 0) {
+      const allVendorInvoices = await db.select().from(vendorInvoicesTable).where(
+        sql`${vendorInvoicesTable.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`
+      );
+      for (const vi of allVendorInvoices) {
+        if (vi.fileUrl) {
+          vaultDocs.push({
+            id: `vendor-invoice-${vi.id}`,
+            name: `Vendor Invoice #${vi.invoiceNumber}`,
+            category: "Invoices",
+            sourceTab: "Purchase Orders",
+            uploadDate: vi.createdAt?.toISOString() || new Date().toISOString(),
+            uploadedBy: "",
+            fileSize: null,
+            fileUrl: null,
+            fileName: null,
+            mimeType: "application/pdf",
+            objectKey: vi.fileUrl,
+          });
+        }
+      }
+    }
+
+    const allTmInvoices = await db.select().from(tmInvoicesTable).where(eq(tmInvoicesTable.projectId, projectId));
+    for (const inv of allTmInvoices) {
+      const storageKey = inv.pdfObjectKey || inv.pdfUrl;
+      if (storageKey) {
+        vaultDocs.push({
+          id: `tm-invoice-${inv.id}`,
+          name: `T&M Invoice #${inv.invoiceNumber}`,
+          category: "Invoices",
+          sourceTab: "T&M Billing",
+          uploadDate: inv.createdAt?.toISOString() || new Date().toISOString(),
+          uploadedBy: "",
+          fileSize: null,
+          fileUrl: null,
+          fileName: `Invoice_${inv.invoiceNumber}.pdf`,
+          mimeType: "application/pdf",
+          objectKey: storageKey,
+        });
+      }
+    }
+  }
+
+  if (VAULT_CHANGE_ORDER_ROLES.includes(userRole)) {
+    const allChangeOrders = await db.select().from(changeOrders).where(eq(changeOrders.projectId, projectId));
+    for (const co of allChangeOrders) {
+      if (co.attachmentsJson) {
+        try {
+          const attachments = JSON.parse(co.attachmentsJson);
+          if (Array.isArray(attachments)) {
+            for (let i = 0; i < attachments.length; i++) {
+              const att = attachments[i];
+              const storageKey = att.storageKey || att.objectKey || att.fileUrl || null;
+              if (!storageKey) continue;
+              vaultDocs.push({
+                id: `co-att-${co.id}-${i}`,
+                name: att.fileName || `CO ${co.changeOrderNumber} Attachment`,
+                category: "Change Orders",
+                sourceTab: "Change Orders",
+                uploadDate: co.createdAt?.toISOString() || new Date().toISOString(),
+                uploadedBy: "",
+                fileSize: att.fileSize || null,
+                fileUrl: null,
+                fileName: att.fileName || null,
+                mimeType: att.mimeType || null,
+                objectKey: storageKey,
+              });
+            }
+          }
+        } catch {}
+      }
+    }
+  }
+
+  return vaultDocs;
+}
+
+router.get("/api/projects/:code/vault", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const typeFilter = req.query.type as string | undefined;
+    const dateFrom = req.query.dateFrom as string | undefined;
+    const dateTo = req.query.dateTo as string | undefined;
+
+    const vaultDocs = await buildVaultDocuments(project.id, project.code, req.user!.id, req.user!.role);
+
+    let filtered = vaultDocs;
+    if (typeFilter && typeFilter !== "all") {
+      filtered = filtered.filter(d => d.category === typeFilter);
+    }
+    if (dateFrom) {
+      const from = new Date(dateFrom);
+      filtered = filtered.filter(d => new Date(d.uploadDate) >= from);
+    }
+    if (dateTo) {
+      const to = new Date(dateTo);
+      to.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(d => new Date(d.uploadDate) <= to);
+    }
+
+    filtered.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+
+    res.json(filtered);
+  } catch (error) {
+    console.error("Project vault error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const allVaultDocs = await buildVaultDocuments(project.id, project.code, req.user!.id, req.user!.role);
+    const doc = allVaultDocs.find(d => d.id === req.params.docId);
+    if (!doc) {
+      res.status(404).json({ error: "Document not found or access denied" });
+      return;
+    }
+
+    const storageKey = doc.objectKey;
+    if (!storageKey) {
+      res.status(404).json({ error: "No file associated with this document" });
+      return;
+    }
+
+    if (storageKey.startsWith("http://") || storageKey.startsWith("https://")) {
+      try {
+        const url = new URL(storageKey);
+        const allowedHosts = ["storage.googleapis.com", "storage.cloud.google.com"];
+        if (!allowedHosts.some(h => url.hostname === h || url.hostname.endsWith(`.${h}`))) {
+          res.status(403).json({ error: "File URL is not from a trusted storage provider" });
+          return;
+        }
+      } catch {
+        res.status(400).json({ error: "Invalid file URL" });
+        return;
+      }
+      res.json({ url: storageKey, fileName: doc.fileName, mimeType: doc.mimeType });
+      return;
+    }
+
+    const { ObjectStorageService } = await import("./objectStorage");
+    const objectStorageService = new ObjectStorageService();
+    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    const [signedUrl] = await objectFile.getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 15 * 60 * 1000 });
+
+    res.json({ url: signedUrl, fileName: doc.fileName, mimeType: doc.mimeType });
+  } catch (error) {
+    console.error("Vault signed URL error:", error);
+    res.status(500).json({ error: "Failed to generate signed URL" });
+  }
+});
+
+const vaultExportSchema = z.object({
+  documentIds: z.array(z.string()).min(1, "At least one document ID is required").max(500),
+});
+
+router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...VAULT_MANAGEMENT_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
+    const parsed = vaultExportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.errors[0]?.message || "Invalid request" });
+      return;
+    }
+
+    const { documentIds } = parsed.data;
+    const allVaultDocs = await buildVaultDocuments(project.id, project.code, req.user!.id, req.user!.role);
+    const vaultMap = new Map(allVaultDocs.map(d => [d.id, d]));
+    const selectedDocs = documentIds.map(id => vaultMap.get(id)).filter((d): d is VaultDocument => !!d);
+
+    if (selectedDocs.length === 0) {
+      res.status(400).json({ error: "No accessible documents found for the given IDs" });
+      return;
+    }
+
+    const PDFDocument = (await import("pdfkit")).default;
+    const { PassThrough } = await import("stream");
+    const stream = new PassThrough();
+
+    const doc = new PDFDocument({ size: "LETTER", margin: 50 });
+    doc.pipe(stream);
+
+    doc.fontSize(24).font("Helvetica-Bold").text("Project Document Vault", { align: "center" });
+    doc.moveDown(0.5);
+    doc.fontSize(16).font("Helvetica").text(project.name, { align: "center" });
+    doc.moveDown(0.3);
+    doc.fontSize(11).fillColor("#666666").text(`Project Code: ${project.code}`, { align: "center" });
+    doc.text(`Export Date: ${new Date().toLocaleDateString()}`, { align: "center" });
+    doc.text(`Total Documents: ${selectedDocs.length}`, { align: "center" });
+    doc.moveDown(1.5);
+    doc.fillColor("#000000");
+
+    doc.fontSize(14).font("Helvetica-Bold").text("Table of Contents", { underline: true });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font("Helvetica");
+
+    const categories = new Map<string, VaultDocument[]>();
+    for (const d of selectedDocs) {
+      const cat = d.category || "Other";
+      if (!categories.has(cat)) categories.set(cat, []);
+      categories.get(cat)!.push(d);
+    }
+
+    let tocIdx = 1;
+    for (const [cat, docs] of categories) {
+      doc.font("Helvetica-Bold").text(`${cat} (${docs.length})`);
+      doc.font("Helvetica");
+      for (const d of docs) {
+        doc.text(`  ${tocIdx}. ${d.name}`, { indent: 10 });
+        tocIdx++;
+      }
+      doc.moveDown(0.3);
+    }
+
+    const resolveStorageBuffer = async (key: string): Promise<Buffer | null> => {
+      try {
+        if (key.startsWith("http://") || key.startsWith("https://")) {
+          return null;
+        }
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        const objectFile = await objectStorageService.getObjectEntityFile(key);
+        const [signedUrl] = await objectFile.getSignedUrl({ version: 'v4', action: 'read', expires: Date.now() + 10 * 60 * 1000 });
+        const resp = await fetch(signedUrl);
+        if (resp.ok) return Buffer.from(await resp.arrayBuffer());
+        return null;
+      } catch {
+        return null;
+      }
+    };
+
+    const pdfDocsToMerge: { name: string; key: string }[] = [];
+
+    let docIdx = 1;
+    for (const d of selectedDocs) {
+      doc.addPage();
+      doc.fontSize(12).font("Helvetica-Bold").text(`${docIdx}. ${d.name}`);
+      doc.moveDown(0.3);
+      doc.fontSize(10).font("Helvetica")
+        .text(`Category: ${d.category}`)
+        .text(`Source: ${d.sourceTab}`)
+        .text(`Date: ${d.uploadDate ? new Date(d.uploadDate).toLocaleDateString() : "N/A"}`);
+
+      const storageKey = d.objectKey;
+      if (storageKey) {
+        doc.moveDown(0.5);
+        if (d.mimeType?.startsWith("image/")) {
+          try {
+            const imgBuf = await resolveStorageBuffer(storageKey);
+            if (imgBuf) {
+              doc.image(imgBuf, { fit: [500, 600], align: "center" });
+            } else {
+              doc.text("[Image could not be embedded]");
+            }
+          } catch {
+            doc.text("[Image could not be embedded]");
+          }
+          if (d.name) {
+            doc.moveDown(0.3);
+            doc.fontSize(9).fillColor("#666666").text(d.name, { align: "center" });
+            doc.fillColor("#000000");
+          }
+        } else if (d.mimeType === "application/pdf") {
+          doc.moveDown(0.3);
+          doc.fontSize(10).font("Helvetica").text(`[PDF document — merged below if available]`);
+          pdfDocsToMerge.push({ name: d.fileName || d.name, key: storageKey });
+        } else {
+          doc.fontSize(10).font("Helvetica")
+            .text(`File Type: ${d.mimeType || "Unknown"}`)
+            .text(`File Name: ${d.fileName || d.name}`);
+          if (d.fileSize) {
+            const sizeKB = (d.fileSize / 1024).toFixed(1);
+            doc.text(`File Size: ${sizeKB} KB`);
+          }
+          doc.moveDown(0.5);
+          doc.fontSize(9).fillColor("#666666").text("Download this file individually from the Project Vault.", { align: "center" });
+          doc.fillColor("#000000");
+        }
+      }
+
+      doc.moveDown(1);
+      doc.fontSize(8).fillColor("#999999").text(`— End of document ${docIdx} —`, { align: "center" });
+      doc.fillColor("#000000");
+      docIdx++;
+    }
+
+    doc.end();
+
+    const coverPdfBytes = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("end", () => resolve(Buffer.concat(chunks)));
+      stream.on("error", reject);
+    });
+
+    const { PDFDocument: PDFLibDocument } = await import("pdf-lib");
+    const mergedPdf = await PDFLibDocument.create();
+
+    try {
+      const coverDoc = await PDFLibDocument.load(coverPdfBytes);
+      const coverPages = await mergedPdf.copyPages(coverDoc, coverDoc.getPageIndices());
+      for (const page of coverPages) {
+        mergedPdf.addPage(page);
+      }
+    } catch {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="Project_Vault_${project.code}_${new Date().toISOString().slice(0, 10)}.pdf"`);
+      res.send(coverPdfBytes);
+      return;
+    }
+
+    for (const pdfEntry of pdfDocsToMerge) {
+      try {
+        const pdfBuf = await resolveStorageBuffer(pdfEntry.key);
+        if (pdfBuf) {
+          const externalDoc = await PDFLibDocument.load(pdfBuf, { ignoreEncryption: true });
+          const pages = await mergedPdf.copyPages(externalDoc, externalDoc.getPageIndices());
+          for (const page of pages) {
+            mergedPdf.addPage(page);
+          }
+        }
+      } catch {}
+    }
+
+    const finalPdfBytes = await mergedPdf.save();
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="Project_Vault_${project.code}_${new Date().toISOString().slice(0, 10)}.pdf"`);
+    res.send(Buffer.from(finalPdfBytes));
+  } catch (error) {
+    console.error("Project vault PDF export error:", error);
+    res.status(500).json({ error: "Failed to generate PDF" });
   }
 });
 

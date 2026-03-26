@@ -49,6 +49,7 @@ import {
   CheckCircle2,
   XCircle,
   FileText,
+  Archive,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -93,6 +94,7 @@ import WarrantyTab from "@/components/WarrantyTab";
 import ContractsTab from "@/components/project-tabs/ContractsTab";
 import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
+import ProjectVaultTab from "@/components/project-tabs/ProjectVaultTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { LucideIcon } from "lucide-react";
 
@@ -295,6 +297,13 @@ function buildTabConfigs(
       label: "Photos & Videos",
       icon: Camera,
       visible: true,
+      group: "Documents & Communication",
+    },
+    {
+      value: "project-vault",
+      label: "Project Vault",
+      icon: Archive,
+      visible: hasManagementAccess(userRole),
       group: "Documents & Communication",
     },
     {
@@ -893,6 +902,14 @@ export default function ProjectDetailPage() {
             <ProjectSubmittals
               projectId={project.id}
               projectCode={project.code}
+              userRole={user?.role || ""}
+            />
+          </TabsContent>
+
+          <TabsContent value="project-vault">
+            <ProjectVaultTab
+              projectCode={project.code}
+              projectId={project.id}
               userRole={user?.role || ""}
             />
           </TabsContent>
