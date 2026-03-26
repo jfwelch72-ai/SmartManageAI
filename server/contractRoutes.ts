@@ -173,13 +173,17 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
     }
 
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.id, projectId), orgCondition(projects.organizationId, orgId, shouldFilter)));
+      .where(and(eq(projects.id, projectId), orgCondition(projects.gcOrganizationId, orgId, shouldFilter)));
     if (!project) {
       res.status(400).json({ error: "Project not found in your organization" });
       return;
     }
 
-    const contractOrgId = orgId || project.organizationId;
+    const contractOrgId = orgId || project.gcOrganizationId;
+    if (!contractOrgId) {
+      res.status(400).json({ error: "Cannot determine organization for this project" });
+      return;
+    }
 
     const [newContract] = await db.insert(contracts).values({
       organizationId: contractOrgId,
@@ -187,13 +191,13 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
       bidId: bidId || null,
       contractNumber,
       contractType: contractType || "PRIME",
-      status: "DRAFT",
+      status: "DRAFT" as const,
       parties: parties || null,
-      contractValue: contractValue || null,
+      contractValue: contractValue ? String(contractValue) : null,
       effectiveDate: effectiveDate ? new Date(effectiveDate) : null,
       expirationDate: expirationDate ? new Date(expirationDate) : null,
-      paymentTerms: paymentTerms || null,
-      retentionPercent: retentionPercent || null,
+      paymentTerms: paymentTerms ? String(paymentTerms) : null,
+      retentionPercent: retentionPercent ? String(retentionPercent) : null,
       insuranceRequirements: insuranceRequirements || null,
       scopeSummary: scopeSummary || null,
       keyDates: keyDates || null,
@@ -336,7 +340,7 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
       if (existing.contractValue) {
         await db.update(projects)
           .set({ contractAmount: existing.contractValue, updatedAt: new Date() })
-          .where(and(eq(projects.id, existing.projectId), orgCondition(projects.organizationId, orgId, shouldFilter)));
+          .where(and(eq(projects.id, existing.projectId), orgCondition(projects.gcOrganizationId, orgId, shouldFilter)));
       }
     }
 
