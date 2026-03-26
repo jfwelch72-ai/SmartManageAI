@@ -1,19 +1,8 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ShieldCheck, Download } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ShieldCheck } from "lucide-react";
 
 interface TrainingAssignment {
   id: string;
@@ -42,13 +31,6 @@ function fmtDate(d: string | null | undefined) {
 }
 
 export default function SafetyTrainingTab({ projectId, projectCode, userRole }: SafetyTrainingTabProps) {
-  const { toast } = useToast();
-  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
-  const [completing, setCompleting] = useState<TrainingAssignment | null>(null);
-  const [completedByName, setCompletedByName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [ack, setAck] = useState(false);
-
   const { data: assignments = [], isLoading } = useQuery<TrainingAssignment[]>({
     queryKey: ["/api/safety-training/assignments", "project", projectId],
     queryFn: async () => {
@@ -57,22 +39,9 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
     },
   });
 
-  const completeMutation = useMutation({
-    mutationFn: ({ id, ...body }: { id: string; status: string; completedByName: string; notes: string; acknowledgment: string }) =>
-      apiRequest("PATCH", `/api/safety-training/assignments/${id}`, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/safety-training/assignments", "project", projectId] });
-      setShowCompleteDialog(false);
-      setCompleting(null);
-      setCompletedByName("");
-      setNotes("");
-      setAck(false);
-      toast({ title: "Training marked complete" });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
-  });
-
   const completed = assignments.filter(a => a.status === "COMPLETED").length;
+  const pending = assignments.filter(a => a.status === "PENDING").length;
+  const overdue = assignments.filter(a => a.status === "OVERDUE").length;
   const total = assignments.length;
 
   if (isLoading) {
@@ -86,17 +55,10 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
           <ShieldCheck className="h-5 w-5 text-primary" />
           <h3 className="font-semibold text-lg">Safety Training</h3>
         </div>
-        <div className="flex gap-3 items-center">
-          <span className="text-sm text-muted-foreground">{completed}/{total} completed</span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open(`/api/safety-training/export/pdf`, "_blank")}
-            data-testid="button-export-training-pdf"
-          >
-            <Download className="h-3.5 w-3.5 mr-1" />
-            Export PDF
-          </Button>
+        <div className="flex gap-3 items-center text-sm text-muted-foreground">
+          <span>{completed}/{total} completed</span>
+          {pending > 0 && <Badge className="bg-amber-500/15 text-amber-700 border-transparent text-xs">{pending} pending</Badge>}
+          {overdue > 0 && <Badge className="bg-red-500/15 text-red-700 border-transparent text-xs">{overdue} overdue</Badge>}
         </div>
       </div>
 
@@ -127,54 +89,11 @@ export default function SafetyTrainingTab({ projectId, projectCode, userRole }: 
                     {a.completedAt && <span className="text-green-700">Completed {fmtDate(a.completedAt)}{a.completedByName ? ` by ${a.completedByName}` : ""}</span>}
                   </div>
                 </div>
-                {a.status !== "COMPLETED" && ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole) && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => { setCompleting(a); setShowCompleteDialog(true); }}
-                    data-testid={`button-complete-training-${a.id}`}
-                  >
-                    Complete
-                  </Button>
-                )}
               </div>
             </Card>
           ))}
         </div>
       )}
-
-      <Dialog open={showCompleteDialog} onOpenChange={(open) => { if (!open) { setShowCompleteDialog(false); setCompleting(null); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Complete Training</DialogTitle>
-            <DialogDescription>Mark "{completing?.trainingTitle}" as completed for {completing?.employeeName}.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Completed By</Label>
-              <Input value={completedByName} onChange={e => setCompletedByName(e.target.value)} placeholder="Name of trainer/supervisor" data-testid="input-completed-by" />
-            </div>
-            <div>
-              <Label>Notes</Label>
-              <Textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional notes" data-testid="input-training-notes" />
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox id="ack" checked={ack} onCheckedChange={(v) => setAck(v === true)} data-testid="checkbox-acknowledge" />
-              <Label htmlFor="ack" className="text-sm">I confirm this training has been completed satisfactorily.</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowCompleteDialog(false); setCompleting(null); }} data-testid="button-cancel-complete">Cancel</Button>
-            <Button
-              disabled={!ack || !completedByName || completeMutation.isPending}
-              onClick={() => completing && completeMutation.mutate({ id: completing.id, status: "COMPLETED", completedByName, notes, acknowledgment: "confirmed" })}
-              data-testid="button-confirm-complete-training"
-            >
-              {completeMutation.isPending ? "Saving..." : "Mark Complete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

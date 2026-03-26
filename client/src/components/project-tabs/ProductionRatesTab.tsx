@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Activity, BarChart3, Search, TrendingUp, Target, ExternalLink } from "lucide-react";
-import type { ProductionRatesResponse, ProductionRate } from "@/components/production-rates/types";
+import type { ProductionRatesResponse } from "@/components/production-rates/types";
 
 interface ProductionRatesTabProps {
   projectId: string;
@@ -17,7 +17,12 @@ export default function ProductionRatesTab({ projectId, projectCode }: Productio
   const [searchTerm, setSearchTerm] = useState("");
 
   const { data, isLoading, error } = useQuery<ProductionRatesResponse>({
-    queryKey: ["/api/production-rates"],
+    queryKey: ["/api/production-rates", projectCode],
+    queryFn: async () => {
+      const res = await fetch(`/api/production-rates?projectCode=${encodeURIComponent(projectCode)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch production rates");
+      return res.json();
+    },
   });
 
   const filteredRates = (data?.rates || [])
@@ -101,7 +106,7 @@ export default function ProductionRatesTab({ projectId, projectCode }: Productio
           ) : filteredRates.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground" data-testid="empty-production-rates">
               <Target className="w-10 h-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No production data found</p>
+              <p className="text-sm">No production data found for this project</p>
               <p className="text-xs mt-1">Daily progress entries from field workers will appear here.</p>
             </div>
           ) : (

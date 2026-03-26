@@ -1,12 +1,9 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { DollarSign, FileText, Shield, Loader2, Package, Plus } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { DollarSign, FileText, Shield, Loader2, Package } from "lucide-react";
 
 interface PayApp {
   id: string;
@@ -27,6 +24,7 @@ interface PayApp {
 
 interface StoredMaterial {
   id: string;
+  projectId: string;
   description: string;
   storageStatus: string;
   amount: string;
@@ -35,6 +33,7 @@ interface StoredMaterial {
 
 interface RetentionRelease {
   id: string;
+  projectId: string;
   releaseType: string;
   status: string;
   amount: string;
@@ -78,8 +77,6 @@ interface BillingTabProps {
 }
 
 export default function BillingTab({ projectId, projectCode }: BillingTabProps) {
-  const { toast } = useToast();
-
   const { data: payApps = [], isLoading: payAppsLoading } = useQuery<PayApp[]>({
     queryKey: ["/api/aia-billing/pay-applications", "project", projectId],
     queryFn: async () => {
@@ -92,7 +89,7 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
     queryKey: ["/api/aia-billing/stored-materials", "project", projectId],
     queryFn: async () => {
       const all = await fetch("/api/aia-billing/stored-materials", { credentials: "include" }).then(r => r.json());
-      return Array.isArray(all) ? all.filter((m: { projectId: string }) => m.projectId === projectId) : [];
+      return Array.isArray(all) ? all.filter((m: StoredMaterial) => m.projectId === projectId) : [];
     },
   });
 
@@ -100,12 +97,13 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
     queryKey: ["/api/aia-billing/retention-releases", "project", projectId],
     queryFn: async () => {
       const all = await fetch("/api/aia-billing/retention-releases", { credentials: "include" }).then(r => r.json());
-      return Array.isArray(all) ? all.filter((r: { projectId: string }) => r.projectId === projectId) : [];
+      return Array.isArray(all) ? all.filter((r: RetentionRelease) => r.projectId === projectId) : [];
     },
   });
 
   const totalBilled = payApps.reduce((sum, p) => sum + parseFloat(p.currentPaymentDue || "0"), 0);
   const totalRetained = payApps.reduce((sum, p) => sum + parseFloat(p.totalRetained || "0"), 0);
+  const isLoading = payAppsLoading || materialsLoading || releasesLoading;
 
   return (
     <div className="space-y-6" data-testid="project-billing-tab">
@@ -131,7 +129,7 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{payAppsLoading ? "..." : payApps.length}</div>
+            <div className="text-2xl font-bold">{isLoading ? "..." : payApps.length}</div>
             <p className="text-xs text-muted-foreground">{payApps.filter(a => a.status === "DRAFT").length} drafts</p>
           </CardContent>
         </Card>
@@ -142,7 +140,7 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{payAppsLoading ? "..." : fmt(totalBilled)}</div>
+            <div className="text-2xl font-bold">{isLoading ? "..." : fmt(totalBilled)}</div>
             <p className="text-xs text-muted-foreground">Current payment due</p>
           </CardContent>
         </Card>
@@ -153,7 +151,7 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
             <Shield className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{payAppsLoading ? "..." : fmt(totalRetained)}</div>
+            <div className="text-2xl font-bold">{isLoading ? "..." : fmt(totalRetained)}</div>
             <p className="text-xs text-muted-foreground">{retentionReleases.length} release requests</p>
           </CardContent>
         </Card>
@@ -201,15 +199,22 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
         </CardContent>
       </Card>
 
-      {storedMaterials.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Package className="h-4 w-4" />
-              Stored Materials ({storedMaterials.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            Stored Materials
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {materialsLoading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : storedMaterials.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="empty-billing-materials">
+              <Package className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No stored materials for this project.</p>
+            </div>
+          ) : (
             <Table data-testid="table-project-stored-materials">
               <TableHeader>
                 <TableRow>
@@ -230,9 +235,51 @@ export default function BillingTab({ projectId, projectCode }: BillingTabProps) 
                 ))}
               </TableBody>
             </Table>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            Retention Releases
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {releasesLoading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : retentionReleases.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="empty-billing-releases">
+              <Shield className="h-10 w-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No retention releases for this project.</p>
+            </div>
+          ) : (
+            <Table data-testid="table-project-retention-releases">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {retentionReleases.map(r => (
+                  <TableRow key={r.id} data-testid={`row-release-${r.id}`}>
+                    <TableCell className="font-medium capitalize">{r.releaseType.toLowerCase()}</TableCell>
+                    <TableCell className="text-right">{fmt(r.amount)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{r.reason || "—"}</TableCell>
+                    <TableCell>{fmtDate(r.createdAt)}</TableCell>
+                    <TableCell>{statusBadge(r.status)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
