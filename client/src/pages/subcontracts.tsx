@@ -34,12 +34,17 @@ import {
   Users,
   Loader2,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Shield,
+  BarChart3
 } from "lucide-react";
 import { PayablesKPICards } from "@/components/payables/PayablesKPICards";
 import { PayablesTable } from "@/components/payables/PayablesTable";
 import { PayableApprovalDialogs } from "@/components/payables/PayableApprovalDialogs";
 import type { Payable, PayableSummary } from "@/components/payables/types";
+import { ContractDetailView } from "@/components/subcontracts/ContractDetailView";
+import { RetentionDashboardTab } from "@/components/subcontracts/RetentionDashboardTab";
+import { PerformanceSummaryTab } from "@/components/subcontracts/PerformanceSummaryTab";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -73,6 +78,10 @@ interface SubcontractorContract {
   retentionPercent: string | null;
   notes: string | null;
   costCode: string | null;
+  billingFrequency: string | null;
+  paymentDueDays: number | null;
+  earlyPayDiscount: string | null;
+  lienWaiverRequired: boolean;
   createdAt: string;
   updatedAt: string | null;
   createdByName: string | null;
@@ -114,6 +123,10 @@ export default function SubcontractsPage() {
     retentionPercent: "",
     notes: "",
     costCode: "",
+    billingFrequency: "",
+    paymentDueDays: "",
+    earlyPayDiscount: "",
+    lienWaiverRequired: false,
   });
 
   const { data: projects = [], isLoading: loadingProjects } = useQuery<Project[]>({
@@ -132,7 +145,7 @@ export default function SubcontractsPage() {
   });
 
   const createContractMutation = useMutation({
-    mutationFn: async (data: typeof createForm) => {
+    mutationFn: async (data: Record<string, unknown>) => {
       return await apiRequest("POST", "/api/subcontracts", data);
     },
     onSuccess: () => {
@@ -151,7 +164,7 @@ export default function SubcontractsPage() {
   });
 
   const updateContractMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<typeof createForm> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
       return await apiRequest("PATCH", `/api/subcontracts/${id}`, data);
     },
     onSuccess: () => {
@@ -277,6 +290,10 @@ export default function SubcontractsPage() {
       retentionPercent: "",
       notes: "",
       costCode: "",
+      billingFrequency: "",
+      paymentDueDays: "",
+      earlyPayDiscount: "",
+      lienWaiverRequired: false,
     });
   };
 
@@ -326,6 +343,10 @@ export default function SubcontractsPage() {
       retentionPercent: contract.retentionPercent || "",
       notes: contract.notes || "",
       costCode: contract.costCode || "",
+      billingFrequency: contract.billingFrequency || "",
+      paymentDueDays: contract.paymentDueDays ? String(contract.paymentDueDays) : "",
+      earlyPayDiscount: contract.earlyPayDiscount || "",
+      lienWaiverRequired: contract.lienWaiverRequired ?? false,
     });
     setShowEditDialog(true);
   };
@@ -414,6 +435,14 @@ export default function SubcontractsPage() {
           <TabsTrigger value="payables" data-testid="tab-section-payables">
             <DollarSign className="h-4 w-4 mr-2" />
             Payables {payables.length > 0 && `(${payables.length})`}
+          </TabsTrigger>
+          <TabsTrigger value="retention" data-testid="tab-section-retention">
+            <Shield className="h-4 w-4 mr-2" />
+            Retention
+          </TabsTrigger>
+          <TabsTrigger value="performance" data-testid="tab-section-performance">
+            <BarChart3 className="h-4 w-4 mr-2" />
+            Performance
           </TabsTrigger>
         </TabsList>
 
@@ -603,6 +632,14 @@ export default function SubcontractsPage() {
             getStatusBadge={getPayableStatusBadge}
           />
         </TabsContent>
+
+        <TabsContent value="retention" className="mt-6">
+          <RetentionDashboardTab />
+        </TabsContent>
+
+        <TabsContent value="performance" className="mt-6">
+          <PerformanceSummaryTab />
+        </TabsContent>
       </Tabs>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
@@ -761,6 +798,60 @@ export default function SubcontractsPage() {
             </div>
 
             <div className="space-y-2">
+              <Label>Billing Frequency</Label>
+              <Select
+                value={createForm.billingFrequency}
+                onValueChange={(value) => setCreateForm({...createForm, billingFrequency: value})}
+              >
+                <SelectTrigger data-testid="select-billing-frequency-create">
+                  <SelectValue placeholder="Select billing frequency..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MONTHLY">Monthly</SelectItem>
+                  <SelectItem value="BIWEEKLY">Bi-Weekly</SelectItem>
+                  <SelectItem value="WEEKLY">Weekly</SelectItem>
+                  <SelectItem value="MILESTONE">Milestone-Based</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Payment Due Days</Label>
+                <Input
+                  type="number"
+                  value={createForm.paymentDueDays}
+                  onChange={(e) => setCreateForm({...createForm, paymentDueDays: e.target.value})}
+                  placeholder="e.g., 30"
+                  data-testid="input-payment-due-days-create"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Early Pay Discount (%)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={createForm.earlyPayDiscount}
+                  onChange={(e) => setCreateForm({...createForm, earlyPayDiscount: e.target.value})}
+                  placeholder="e.g., 2.00"
+                  data-testid="input-early-pay-discount-create"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="lienWaiverRequired-create"
+                checked={createForm.lienWaiverRequired}
+                onChange={(e) => setCreateForm({...createForm, lienWaiverRequired: e.target.checked})}
+                className="h-4 w-4 rounded border-gray-300"
+                data-testid="input-lien-waiver-create"
+              />
+              <Label htmlFor="lienWaiverRequired-create">Lien Waiver Required</Label>
+            </div>
+
+            <div className="space-y-2">
               <Label>Notes (Optional)</Label>
               <Textarea
                 value={createForm.notes}
@@ -777,7 +868,16 @@ export default function SubcontractsPage() {
               Cancel
             </Button>
             <Button 
-              onClick={() => createContractMutation.mutate(createForm)}
+              onClick={() => {
+                const payload = {
+                  ...createForm,
+                  paymentDueDays: createForm.paymentDueDays ? parseInt(createForm.paymentDueDays) : null,
+                  billingFrequency: createForm.billingFrequency || null,
+                  earlyPayDiscount: createForm.earlyPayDiscount || null,
+                  lienWaiverRequired: createForm.lienWaiverRequired,
+                };
+                createContractMutation.mutate(payload);
+              }}
               disabled={!createForm.projectId || !createForm.subcontractorId || !createForm.scopeOfWork || !createForm.contractAmount || createContractMutation.isPending}
               data-testid="button-submit-subcontract"
             >
@@ -787,181 +887,25 @@ export default function SubcontractsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedContract?.contractNumber}
-              {selectedContract && getStatusBadge(selectedContract.status)}
-            </DialogTitle>
-            <DialogDescription>
-              {selectedContract?.project.code} - {selectedContract?.project.name}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedContract && (
-            <div className="space-y-6 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-xs text-muted-foreground flex items-center gap-2">
-                      <Building2 className="h-4 w-4" />
-                      Subcontractor
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="font-medium">{selectedContract.subcontractor?.name || "Unknown"}</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-xs text-muted-foreground flex items-center gap-2">
-                      <DollarSign className="h-4 w-4" />
-                      Contract Value
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-2xl font-bold">{formatCurrency(selectedContract.contractAmount)}</p>
-                    {selectedContract.retentionPercent && (
-                      <p className="text-sm text-muted-foreground">
-                        {selectedContract.retentionPercent}% retention
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Scope of Work
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm whitespace-pre-wrap">{selectedContract.scopeOfWork}</p>
-                </CardContent>
-              </Card>
-
-              <div className="grid grid-cols-2 gap-4">
-                {selectedContract.startDate && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Start:</span>
-                    <span>{format(new Date(selectedContract.startDate), "MMM d, yyyy")}</span>
-                  </div>
-                )}
-                {selectedContract.completionDate && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">Completion:</span>
-                    <span>{format(new Date(selectedContract.completionDate), "MMM d, yyyy")}</span>
-                  </div>
-                )}
-              </div>
-
-              {selectedContract.costCode && (
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Cost Code:</span>{" "}
-                  <span className="font-medium">{selectedContract.costCode}</span>
-                </div>
-              )}
-
-              {selectedContract.paymentTerms && (
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Payment Terms:</span>{" "}
-                  <span>{selectedContract.paymentTerms}</span>
-                </div>
-              )}
-
-              {selectedContract.notes && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">Notes</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-muted-foreground">{selectedContract.notes}</p>
-                  </CardContent>
-                </Card>
-              )}
-
-              <div className="flex items-center justify-between gap-4 pt-4 border-t flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {canEdit && selectedContract.status === "PENDING" && (
-                    <Button 
-                      onClick={() => updateStatusMutation.mutate({ id: selectedContract.id, status: "ACTIVE" })}
-                      disabled={updateStatusMutation.isPending}
-                      data-testid="button-activate-contract"
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Activate
-                    </Button>
-                  )}
-                  {canEdit && selectedContract.status === "ACTIVE" && (
-                    <Button 
-                      onClick={() => updateStatusMutation.mutate({ id: selectedContract.id, status: "COMPLETED" })}
-                      disabled={updateStatusMutation.isPending}
-                      data-testid="button-complete-contract"
-                    >
-                      <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Mark Complete
-                    </Button>
-                  )}
-                  {canEdit && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => { setShowDetailDialog(false); openEditDialog(selectedContract); }}
-                      data-testid="button-edit-contract"
-                    >
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
-                  )}
-                  {canDelete && (
-                    <Button 
-                      variant="destructive"
-                      onClick={() => {
-                        if (confirm("Are you sure you want to delete this subcontract?")) {
-                          deleteContractMutation.mutate(selectedContract.id);
-                        }
-                      }}
-                      disabled={deleteContractMutation.isPending}
-                      data-testid="button-delete-contract"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </Button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline"
-                    onClick={() => downloadPDF(selectedContract.id, false)}
-                    data-testid="button-download-pdf-no-sig"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    PDF (No Signatures)
-                  </Button>
-                  <Button 
-                    onClick={() => downloadPDF(selectedContract.id, true)}
-                    data-testid="button-download-pdf"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download PDF
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    onClick={() => setShowDetailDialog(false)}
-                    data-testid="button-close-contract-detail"
-                  >
-                    Close
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {selectedContract && (
+        <ContractDetailView
+          contract={selectedContract}
+          open={showDetailDialog}
+          onOpenChange={setShowDetailDialog}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          onEdit={() => { setShowDetailDialog(false); openEditDialog(selectedContract); }}
+          onDelete={() => {
+            if (confirm("Are you sure you want to delete this subcontract?")) {
+              deleteContractMutation.mutate(selectedContract.id);
+            }
+          }}
+          onStatusChange={(status) => updateStatusMutation.mutate({ id: selectedContract.id, status })}
+          onDownloadPDF={(withSig) => downloadPDF(selectedContract.id, withSig)}
+          isUpdating={updateStatusMutation.isPending}
+          isDeleting={deleteContractMutation.isPending}
+        />
+      )}
 
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="max-w-lg">
@@ -1073,6 +1017,56 @@ export default function SubcontractsPage() {
               />
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Billing Frequency</Label>
+                <Select value={createForm.billingFrequency || "MONTHLY"} onValueChange={(v) => setCreateForm({...createForm, billingFrequency: v})}>
+                  <SelectTrigger data-testid="select-edit-billing-freq"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="WEEKLY">Weekly</SelectItem>
+                    <SelectItem value="BIWEEKLY">Bi-Weekly</SelectItem>
+                    <SelectItem value="MONTHLY">Monthly</SelectItem>
+                    <SelectItem value="MILESTONE">Milestone</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Payment Due (days)</Label>
+                <Input
+                  type="number"
+                  value={createForm.paymentDueDays}
+                  onChange={(e) => setCreateForm({...createForm, paymentDueDays: e.target.value})}
+                  placeholder="30"
+                  data-testid="input-edit-due-days"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Early Pay Discount (%)</Label>
+                <Input
+                  type="number"
+                  value={createForm.earlyPayDiscount}
+                  onChange={(e) => setCreateForm({...createForm, earlyPayDiscount: e.target.value})}
+                  placeholder="e.g. 2"
+                  data-testid="input-edit-early-discount"
+                />
+              </div>
+              <div className="space-y-2 flex items-end">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={createForm.lienWaiverRequired}
+                    onChange={(e) => setCreateForm({...createForm, lienWaiverRequired: e.target.checked})}
+                    className="w-4 h-4"
+                    data-testid="input-edit-lien-waiver"
+                  />
+                  <span className="text-sm">Lien Waiver Required</span>
+                </label>
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label>Notes</Label>
               <Textarea
@@ -1099,7 +1093,11 @@ export default function SubcontractsPage() {
                   paymentTerms: createForm.paymentTerms || undefined,
                   retentionPercent: createForm.retentionPercent || undefined,
                   notes: createForm.notes || undefined,
-                  costCode: createForm.costCode || null
+                  costCode: createForm.costCode || null,
+                  billingFrequency: createForm.billingFrequency || null,
+                  paymentDueDays: createForm.paymentDueDays ? parseInt(createForm.paymentDueDays) : null,
+                  earlyPayDiscount: createForm.earlyPayDiscount || null,
+                  lienWaiverRequired: createForm.lienWaiverRequired,
                 }
               })}
               disabled={updateContractMutation.isPending}

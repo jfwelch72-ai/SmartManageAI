@@ -44,6 +44,13 @@ interface SubcontractData {
     startDate: Date | null;
     targetCompletionDate: Date | null;
   };
+  sovItems?: {
+    itemNumber: number;
+    description: string;
+    scheduledValue: string;
+    originalValue: string | null;
+    changeOrderRef: string | null;
+  }[];
   branding?: SubcontractBranding;
   includeSignaturePages?: boolean;
 }
@@ -196,6 +203,59 @@ export function generateSubcontractPDF(data: SubcontractData): PassThrough {
   if (data.subcontractor.specialties && data.subcontractor.specialties.length > 0) {
     doc.font('Helvetica-Oblique').text(`Subcontractor Specialties: ${data.subcontractor.specialties.join(', ')}`, marginLeft + 20, doc.y, { width: pageWidth - 20 });
     doc.font('Helvetica');
+    doc.moveDown(1);
+  }
+
+  if (data.sovItems && data.sovItems.length > 0) {
+    drawArticleHeader('SCHEDULE OF VALUES');
+    doc.text('The following Schedule of Values itemizes the Work covered by this Agreement:', marginLeft + 20, doc.y, { width: pageWidth - 20 });
+    doc.moveDown(0.5);
+
+    const colX = [marginLeft + 20, marginLeft + 60, marginLeft + 300, marginLeft + 400];
+    const colW = [35, 235, 95, 95];
+    const sovHeaders = ['Item #', 'Description', 'Scheduled Value', 'Original Value'];
+
+    doc.font('Helvetica-Bold').fontSize(8);
+    const headerY = doc.y;
+    sovHeaders.forEach((header, i) => {
+      doc.text(header, colX[i], headerY, { width: colW[i], align: i >= 2 ? 'right' : 'left' });
+    });
+    doc.moveDown(0.5);
+
+    doc.strokeColor(borderColor).lineWidth(0.5)
+      .moveTo(marginLeft + 20, doc.y)
+      .lineTo(marginLeft + 500, doc.y)
+      .stroke();
+    doc.moveDown(0.3);
+
+    doc.font('Helvetica').fontSize(8).fillColor(textColor);
+    let sovTotal = 0;
+    data.sovItems.forEach(item => {
+      if (doc.y > 680) {
+        doc.addPage();
+      }
+      const rowY = doc.y;
+      doc.text(String(item.itemNumber), colX[0], rowY, { width: colW[0] });
+      doc.text(item.description.substring(0, 55), colX[1], rowY, { width: colW[1] });
+      doc.text(formatCurrency(item.scheduledValue), colX[2], rowY, { width: colW[2], align: 'right' });
+      doc.text(item.originalValue ? formatCurrency(item.originalValue) : '-', colX[3], rowY, { width: colW[3], align: 'right' });
+      doc.moveDown(0.3);
+      sovTotal += parseFloat(item.scheduledValue) || 0;
+
+      if (item.changeOrderRef) {
+        doc.font('Helvetica-Oblique').fontSize(7).fillColor('#6b7280')
+          .text(`  CO Ref: ${item.changeOrderRef}`, colX[1], doc.y, { width: 300 });
+        doc.font('Helvetica').fontSize(8).fillColor(textColor);
+        doc.moveDown(0.2);
+      }
+    });
+
+    doc.moveDown(0.3);
+    doc.font('Helvetica-Bold').fontSize(8);
+    const totalY = doc.y;
+    doc.text('TOTAL:', colX[0], totalY, { width: colW[0] + colW[1] });
+    doc.text(formatCurrency(sovTotal), colX[2], totalY, { width: colW[2], align: 'right' });
+    doc.font('Helvetica').fontSize(10).fillColor(textColor);
     doc.moveDown(1);
   }
 

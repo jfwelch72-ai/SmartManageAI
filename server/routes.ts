@@ -88,6 +88,7 @@ import sovRoutes from "./sovRoutes";
 import aiaBillingRoutes from "./aiaBillingRoutes";
 import subcontractRoutes from "./subcontractRoutes";
 import subcontractorPayablesRoutes from "./subcontractorPayablesRoutes";
+import subcontractManagementRoutes from "./subcontractManagementRoutes";
 import websiteRoutes from "./websiteRoutes";
 import websiteAiRoutes from "./websiteAiRoutes";
 import socialRoutes from "./socialRoutes";
@@ -249,6 +250,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Subcontractor Payables routes
   app.use("/api", subcontractorPayablesRoutes);
+
+  // Register Subcontract Management routes (SOV, Pay Apps, Retention, Performance)
+  app.use("/api", subcontractManagementRoutes);
 
   // Register Procurement Module routes
   app.use(procurementModuleRoutes);

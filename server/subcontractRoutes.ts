@@ -3,13 +3,13 @@ import { z } from "zod";
 import { db } from "./db";
 import { 
   subcontractorContracts, 
-  subcontractors, 
   projects,
   organizations,
   crmOrganisations,
-  insertSubcontractorContractSchema
+  insertSubcontractorContractSchema,
+  subcontractSovLineItems,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { generateSubcontractPDF } from "./subcontract-pdf-service";
@@ -180,16 +180,19 @@ router.get("/subcontracts/project/:projectId", requireAuth, requireRoleOrFeature
     const contracts = await db
       .select({
         contract: subcontractorContracts,
-        subcontractor: subcontractors
+        subcontractor: {
+          id: crmOrganisations.id,
+          name: crmOrganisations.name,
+        },
       })
       .from(subcontractorContracts)
-      .innerJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+      .leftJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
       .where(eq(subcontractorContracts.projectId, projectId))
       .orderBy(desc(subcontractorContracts.createdAt));
 
     res.json(contracts.map(c => ({
       ...c.contract,
-      subcontractor: c.subcontractor
+      subcontractor: c.subcontractor,
     })));
   } catch (error) {
     console.error("Get subcontracts error:", error);
@@ -212,9 +215,9 @@ router.get("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN"
     }
 
     const [subcontractor] = await db
-      .select()
-      .from(subcontractors)
-      .where(eq(subcontractors.id, contract.subcontractorId))
+      .select({ id: crmOrganisations.id, name: crmOrganisations.name })
+      .from(crmOrganisations)
+      .where(eq(crmOrganisations.id, contract.subcontractorId))
       .limit(1);
 
     const [project] = await db
@@ -252,6 +255,10 @@ const createSubcontractSchema = z.object({
   retentionPercent: z.string().or(z.number()).optional().nullable(),
   notes: z.string().optional().nullable(),
   costCode: z.string().optional().nullable(),
+  billingFrequency: z.string().optional().nullable(),
+  paymentDueDays: z.number().int().min(0).optional().nullable(),
+  earlyPayDiscount: z.string().or(z.number()).optional().nullable(),
+  lienWaiverRequired: z.boolean().optional(),
 });
 
 router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
@@ -311,6 +318,10 @@ router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "
         retentionPercent: data.retentionPercent ? String(data.retentionPercent) : null,
         notes: data.notes,
         costCode: data.costCode || null,
+        billingFrequency: data.billingFrequency || null,
+        paymentDueDays: data.paymentDueDays ?? null,
+        earlyPayDiscount: data.earlyPayDiscount ? String(data.earlyPayDiscount) : null,
+        lienWaiverRequired: data.lienWaiverRequired ?? false,
         status: "PENDING",
         createdById: req.user!.id
       })
@@ -335,6 +346,10 @@ const updateSubcontractSchema = z.object({
   retentionPercent: z.string().or(z.number()).optional().nullable(),
   notes: z.string().optional().nullable(),
   costCode: z.string().optional().nullable(),
+  billingFrequency: z.string().optional().nullable(),
+  paymentDueDays: z.number().int().min(0).optional().nullable(),
+  earlyPayDiscount: z.string().or(z.number()).optional().nullable(),
+  lienWaiverRequired: z.boolean().optional(),
   status: z.enum(["PENDING", "ACTIVE", "COMPLETED", "TERMINATED"]).optional()
 });
 
@@ -371,6 +386,10 @@ router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMI
     if (data.retentionPercent !== undefined) updates.retentionPercent = data.retentionPercent ? String(data.retentionPercent) : null;
     if (data.notes !== undefined) updates.notes = data.notes;
     if (data.costCode !== undefined) updates.costCode = data.costCode || null;
+    if (data.billingFrequency !== undefined) updates.billingFrequency = data.billingFrequency || null;
+    if (data.paymentDueDays !== undefined) updates.paymentDueDays = data.paymentDueDays ?? null;
+    if (data.earlyPayDiscount !== undefined) updates.earlyPayDiscount = data.earlyPayDiscount ? String(data.earlyPayDiscount) : null;
+    if (data.lienWaiverRequired !== undefined) updates.lienWaiverRequired = data.lienWaiverRequired;
     if (data.status !== undefined) updates.status = data.status;
 
     const oldStatus = contract.status;
@@ -382,9 +401,9 @@ router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMI
       .returning();
 
     const [subcontractor] = await db
-      .select()
-      .from(subcontractors)
-      .where(eq(subcontractors.id, updated.subcontractorId))
+      .select({ id: crmOrganisations.id, name: crmOrganisations.name })
+      .from(crmOrganisations)
+      .where(eq(crmOrganisations.id, updated.subcontractorId))
       .limit(1);
 
     // Auto-create payable when contract status changes to COMPLETED
@@ -508,6 +527,12 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_AD
       }
     }
 
+    const sovItems = await db
+      .select()
+      .from(subcontractSovLineItems)
+      .where(eq(subcontractSovLineItems.contractId, id))
+      .orderBy(asc(subcontractSovLineItems.itemNumber));
+
     const pdfData = {
       contract: {
         contractNumber: contract.contractNumber,
@@ -539,6 +564,13 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_AD
         startDate: project.startDate,
         targetCompletionDate: project.estimatedCompletionDate
       },
+      sovItems: sovItems.map(item => ({
+        itemNumber: item.itemNumber,
+        description: item.description,
+        scheduledValue: item.scheduledValue,
+        originalValue: item.originalValue,
+        changeOrderRef: item.changeOrderRef,
+      })),
       branding,
       includeSignaturePages: includeSignatures
     };

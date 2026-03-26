@@ -939,6 +939,10 @@ export const subcontractorContracts = pgTable("subcontractor_contracts", {
   retentionPercent: decimal("retention_percent", { precision: 5, scale: 2 }),
   notes: text("notes"),
   costCode: text("cost_code"),
+  billingFrequency: text("billing_frequency").default("MONTHLY"),
+  paymentDueDays: integer("payment_due_days").default(30),
+  earlyPayDiscount: decimal("early_pay_discount", { precision: 5, scale: 2 }),
+  lienWaiverRequired: boolean("lien_waiver_required").default(false),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1006,6 +1010,154 @@ export const subcontractorBillingSchedule = pgTable("subcontractor_billing_sched
 export const insertSubcontractorBillingScheduleSchema = createInsertSchema(subcontractorBillingSchedule).omit({ id: true, createdAt: true });
 export type InsertSubcontractorBillingSchedule = z.infer<typeof insertSubcontractorBillingScheduleSchema>;
 export type SubcontractorBillingSchedule = typeof subcontractorBillingSchedule.$inferSelect;
+
+export const subcontractSovLineItems = pgTable("subcontract_sov_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  itemNumber: integer("item_number").notNull(),
+  description: text("description").notNull(),
+  scheduledValue: decimal("scheduled_value", { precision: 12, scale: 2 }).notNull(),
+  originalValue: decimal("original_value", { precision: 12, scale: 2 }),
+  changeOrderRef: text("change_order_ref"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("sub_sov_contract_idx").on(table.contractId),
+}));
+
+export const insertSubcontractSovLineItemSchema = createInsertSchema(subcontractSovLineItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubcontractSovLineItem = z.infer<typeof insertSubcontractSovLineItemSchema>;
+export type SubcontractSovLineItem = typeof subcontractSovLineItems.$inferSelect;
+
+export const subPayApplications = pgTable("sub_pay_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  applicationNumber: integer("application_number").notNull(),
+  periodTo: text("period_to"),
+  status: text("status").notNull().default("DRAFT"),
+  totalScheduledValue: decimal("total_scheduled_value", { precision: 12, scale: 2 }),
+  totalCompletedPrevious: decimal("total_completed_previous", { precision: 12, scale: 2 }),
+  totalCompletedThisPeriod: decimal("total_completed_this_period", { precision: 12, scale: 2 }),
+  totalMaterialsStored: decimal("total_materials_stored", { precision: 12, scale: 2 }),
+  totalCompletedToDate: decimal("total_completed_to_date", { precision: 12, scale: 2 }),
+  totalRetentionHeld: decimal("total_retention_held", { precision: 12, scale: 2 }),
+  netAmountDue: decimal("net_amount_due", { precision: 12, scale: 2 }),
+  submittedAt: timestamp("submitted_at"),
+  reviewedAt: timestamp("reviewed_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  paidAt: timestamp("paid_at"),
+  rejectionReason: text("rejection_reason"),
+  createdById: varchar("created_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("sub_pay_app_contract_idx").on(table.contractId),
+  statusIdx: index("sub_pay_app_status_idx").on(table.status),
+}));
+
+export const insertSubPayApplicationSchema = createInsertSchema(subPayApplications).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubPayApplication = z.infer<typeof insertSubPayApplicationSchema>;
+export type SubPayApplication = typeof subPayApplications.$inferSelect;
+
+export const subPayAppLineItems = pgTable("sub_pay_app_line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  payAppId: varchar("pay_app_id").notNull().references(() => subPayApplications.id, { onDelete: "cascade" }),
+  sovLineItemId: varchar("sov_line_item_id").notNull().references(() => subcontractSovLineItems.id, { onDelete: "cascade" }),
+  previouslyCompleted: decimal("previously_completed", { precision: 12, scale: 2 }).default("0"),
+  completedThisPeriod: decimal("completed_this_period", { precision: 12, scale: 2 }).default("0"),
+  materialsStored: decimal("materials_stored", { precision: 12, scale: 2 }).default("0"),
+  totalCompleted: decimal("total_completed", { precision: 12, scale: 2 }).default("0"),
+  percentComplete: decimal("percent_complete", { precision: 5, scale: 2 }).default("0"),
+  retentionHeld: decimal("retention_held", { precision: 12, scale: 2 }).default("0"),
+}, (table) => ({
+  payAppIdx: index("sub_pay_app_line_pay_app_idx").on(table.payAppId),
+}));
+
+export const insertSubPayAppLineItemSchema = createInsertSchema(subPayAppLineItems).omit({ id: true });
+export type InsertSubPayAppLineItem = z.infer<typeof insertSubPayAppLineItemSchema>;
+export type SubPayAppLineItem = typeof subPayAppLineItems.$inferSelect;
+
+export const subRetentionReleases = pgTable("sub_retention_releases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  releaseType: text("release_type").notNull().default("PARTIAL"),
+  status: text("status").notNull().default("PENDING"),
+  reason: text("reason"),
+  approvedById: varchar("approved_by_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  rejectedById: varchar("rejected_by_id").references(() => users.id),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
+  requestedById: varchar("requested_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("sub_retention_release_contract_idx").on(table.contractId),
+}));
+
+export const insertSubRetentionReleaseSchema = createInsertSchema(subRetentionReleases).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSubRetentionRelease = z.infer<typeof insertSubRetentionReleaseSchema>;
+export type SubRetentionRelease = typeof subRetentionReleases.$inferSelect;
+
+export const subPerformanceScores = pgTable("sub_performance_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  periodDate: timestamp("period_date").notNull(),
+  scheduleAdherence: integer("schedule_adherence"),
+  workCompletionPercent: integer("work_completion_percent"),
+  qualityScore: integer("quality_score"),
+  safetyIncidents: integer("safety_incidents").default(0),
+  punchListItems: integer("punch_list_items").default(0),
+  overallRating: decimal("overall_rating", { precision: 3, scale: 1 }),
+  notes: text("notes"),
+  scoredById: varchar("scored_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("sub_perf_contract_idx").on(table.contractId),
+}));
+
+export const insertSubPerformanceScoreSchema = createInsertSchema(subPerformanceScores).omit({ id: true, createdAt: true });
+export type InsertSubPerformanceScore = z.infer<typeof insertSubPerformanceScoreSchema>;
+export type SubPerformanceScore = typeof subPerformanceScores.$inferSelect;
+
+export const subcontractAttachments = pgTable("subcontract_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  fileType: text("file_type"),
+  category: text("category").default("GENERAL"),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("sub_attach_contract_idx").on(table.contractId),
+}));
+
+export const insertSubcontractAttachmentSchema = createInsertSchema(subcontractAttachments).omit({ id: true, createdAt: true });
+export type InsertSubcontractAttachment = z.infer<typeof insertSubcontractAttachmentSchema>;
+export type SubcontractAttachment = typeof subcontractAttachments.$inferSelect;
+
+export const sovRevisionHistory = pgTable("sov_revision_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sovLineItemId: varchar("sov_line_item_id").references(() => subcontractSovLineItems.id, { onDelete: "set null" }),
+  contractId: varchar("contract_id").notNull().references(() => subcontractorContracts.id, { onDelete: "cascade" }),
+  revisionType: text("revision_type").notNull(),
+  previousValue: text("previous_value"),
+  newValue: text("new_value"),
+  changeOrderRef: text("change_order_ref"),
+  changedById: varchar("changed_by_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  contractIdx: index("sov_rev_contract_idx").on(table.contractId),
+  sovIdx: index("sov_rev_sov_idx").on(table.sovLineItemId),
+}));
+
+export const insertSovRevisionHistorySchema = createInsertSchema(sovRevisionHistory).omit({ id: true, createdAt: true });
+export type InsertSovRevisionHistory = z.infer<typeof insertSovRevisionHistorySchema>;
+export type SovRevisionHistory = typeof sovRevisionHistory.$inferSelect;
 
 // ===================
 // CRM System Tables
