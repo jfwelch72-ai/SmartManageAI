@@ -2700,7 +2700,12 @@ router.post("/api/historical-costs", requireAuth, async (req: AuthRequest, res) 
     if (!hasManagementAccess(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
 
     const { historicalCosts, insertHistoricalCostSchema } = await import("@shared/schema");
-    const data = insertHistoricalCostSchema.parse({ ...req.body, organizationId: orgId });
+    const body = { ...req.body, organizationId: orgId };
+    const decimalFields = ["quantity", "unitCost", "totalCost", "materialCost", "laborCost", "equipmentCost", "subcontractCost"] as const;
+    for (const f of decimalFields) {
+      if (body[f] !== undefined && body[f] !== null) body[f] = String(body[f]);
+    }
+    const data = insertHistoricalCostSchema.parse(body);
     const [result] = await db.insert(historicalCosts).values(data).returning();
     res.json(result);
   } catch (error) {
