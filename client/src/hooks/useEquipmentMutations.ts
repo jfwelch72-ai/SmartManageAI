@@ -21,6 +21,10 @@ export const editEquipmentSchema = z.object({
   currentLocation: z.string().optional(),
   description: z.string().optional(),
   notes: z.string().optional(),
+  depreciationMethod: z.string().optional(),
+  usefulLifeYears: z.coerce.number().optional(),
+  salvageValue: z.string().optional(),
+  inServiceDate: z.string().optional(),
 });
 
 export const assignmentSchema = z.object({
@@ -51,6 +55,16 @@ export const hourLogSchema = z.object({
   endingHours: z.string().min(1, "Ending hours is required"),
   notes: z.string().optional(),
   fuelUsed: z.string().optional(),
+});
+
+export const fuelLogSchema = z.object({
+  date: z.string().min(1, "Date is required"),
+  gallons: z.string().min(1, "Gallons is required"),
+  pricePerGallon: z.string().min(1, "Price per gallon is required"),
+  fuelType: z.string().optional(),
+  meterReading: z.string().optional(),
+  projectId: z.string().optional(),
+  notes: z.string().optional(),
 });
 
 export const rateProfileSchema = z.object({
@@ -100,6 +114,10 @@ export type EditEquipmentInput = {
   currentLocation?: string;
   description?: string;
   notes?: string;
+  depreciationMethod?: string;
+  usefulLifeYears?: number;
+  salvageValue?: string;
+  inServiceDate?: string;
 };
 
 export type AssignmentInput = {
@@ -130,6 +148,16 @@ export type HourLogInput = {
   endingHours: string;
   notes?: string;
   fuelUsed?: string;
+};
+
+export type FuelLogInput = {
+  date: string;
+  gallons: string;
+  pricePerGallon: string;
+  fuelType?: string;
+  meterReading?: string;
+  projectId?: string;
+  notes?: string;
 };
 
 export type RateProfileInput = {
@@ -270,6 +298,20 @@ export function useEquipmentMutations(equipment: Equipment | undefined) {
     },
   });
 
+  const submitFuelLog = useMutation({
+    mutationFn: async (data: FuelLogInput) => {
+      return apiRequest("POST", `/api/equipment/${equipment?.id}/fuel-logs`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "fuel-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment?.id, "fuel-summary"] });
+      toast({ title: "Success", description: "Fuel log submitted" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to submit fuel log", variant: "destructive" });
+    },
+  });
+
   const createRateMutation = useMutation({
     mutationFn: async (data: RateProfileInput) => {
       return apiRequest("POST", `/api/equipment/${equipment?.id}/rate-profiles`, data);
@@ -335,6 +377,7 @@ export function useEquipmentMutations(equipment: Equipment | undefined) {
     returnEquipment,
     createRepair,
     submitHourLog,
+    submitFuelLog,
     updateRepairStatus,
     generateSchedule,
     completeMaintenance,

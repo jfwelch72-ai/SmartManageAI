@@ -735,6 +735,14 @@ export function LineItemFormDialog({
                 initialSource={form.getValues("equipmentSource") as "OWNED" | "RENTAL" | "MANUAL" | undefined}
               />
               
+              {form.watch("equipmentRateUsed") > 0 && form.watch("equipmentSource") !== "MANUAL" && (
+                <div className="text-xs text-muted-foreground bg-background rounded px-2 py-1 border" data-testid="text-equipment-rate-info">
+                  Rate: ${form.watch("equipmentRateUsed")?.toFixed(2)}/hr
+                  {form.watch("equipmentSource") === "OWNED" ? " (owned)" : " (rental)"}
+                  {form.watch("equipmentHours") > 0 && ` × ${form.watch("equipmentHours")} hrs`}
+                </div>
+              )}
+
               <FormField
                 control={form.control}
                 name="equipmentCost"
@@ -743,7 +751,7 @@ export function LineItemFormDialog({
                     <FormLabel>
                       Equipment Cost ($)
                       <span className="text-xs text-muted-foreground ml-1">
-                        (or enter manually)
+                        {form.watch("selectedEquipmentId") ? "(auto-calculated, override below)" : "(or enter manually)"}
                       </span>
                     </FormLabel>
                     <FormControl>

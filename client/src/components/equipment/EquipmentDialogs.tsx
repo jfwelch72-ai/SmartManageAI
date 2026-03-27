@@ -18,7 +18,8 @@ import {
 } from "lucide-react";
 import type {
   EditEquipmentInput, AssignmentInput, ReturnEquipmentInput,
-  RepairInput, HourLogInput, RateProfileInput, AIRecommendation
+  RepairInput, HourLogInput, RateProfileInput, AIRecommendation,
+  FuelLogInput
 } from "@/hooks/useEquipmentMutations";
 import type { MaintenanceSchedule, RateProfile } from "./EquipmentTabs";
 
@@ -164,6 +165,49 @@ export function EditEquipmentDialog({ open, onOpenChange, form, onSubmit, isPend
                   <FormMessage />
                 </FormItem>
               )} />
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium mb-3">Depreciation Settings</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="depreciationMethod" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Depreciation Method</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value || ""}>
+                      <FormControl><SelectTrigger data-testid="select-depreciation-method"><SelectValue placeholder="Select method" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="STRAIGHT_LINE">Straight-Line</SelectItem>
+                        <SelectItem value="DECLINING_BALANCE">Declining Balance</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="usefulLifeYears" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Useful Life (years)</FormLabel>
+                    <FormControl><Input type="number" min="1" max="100" {...field} data-testid="input-useful-life" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="salvageValue" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Salvage Value ($)</FormLabel>
+                    <FormControl><Input type="number" step="0.01" min="0" {...field} data-testid="input-salvage-value" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="inServiceDate" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>In-Service Date</FormLabel>
+                    <FormControl><Input type="date" {...field} data-testid="input-in-service-date" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
             </div>
 
             <DialogFooter>
@@ -935,6 +979,121 @@ export function RateProfileDialog({ open, onOpenChange, form, editingRate, onSub
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={isPending} data-testid="button-save-rate">
                 {isPending ? "Saving..." : editingRate ? "Update Rate" : "Create Rate"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface ProjectOption {
+  id: string;
+  code: string;
+  name: string;
+}
+
+interface FuelLogDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  form: UseFormReturn<FuelLogInput>;
+  availableProjects: ProjectOption[];
+  onSubmit: (data: FuelLogInput) => void;
+  isPending: boolean;
+}
+
+export function FuelLogDialog({ open, onOpenChange, form, availableProjects, onSubmit, isPending }: FuelLogDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Log Fuel Fill-Up</DialogTitle>
+          <DialogDescription>Record fuel usage for this equipment.</DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField control={form.control} name="date" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Date *</FormLabel>
+                <FormControl><Input type="date" {...field} data-testid="input-fuel-date" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="gallons" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Gallons *</FormLabel>
+                  <FormControl><Input type="number" step="0.01" min="0" {...field} data-testid="input-fuel-gallons" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <FormField control={form.control} name="pricePerGallon" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Price/Gallon *</FormLabel>
+                  <FormControl><Input type="number" step="0.01" min="0" {...field} data-testid="input-fuel-price" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            <FormField control={form.control} name="fuelType" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Fuel Type</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value || "DIESEL"}>
+                  <FormControl><SelectTrigger data-testid="select-fuel-type"><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="DIESEL">Diesel</SelectItem>
+                    <SelectItem value="GASOLINE">Gasoline</SelectItem>
+                    <SelectItem value="PROPANE">Propane</SelectItem>
+                    <SelectItem value="ELECTRIC">Electric</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="meterReading" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Meter/Odometer Reading</FormLabel>
+                <FormControl><Input type="number" step="0.1" min="0" {...field} data-testid="input-fuel-meter" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="projectId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Project (optional)</FormLabel>
+                <Select onValueChange={(val) => field.onChange(val === "none" ? "" : val)} value={field.value || "none"}>
+                  <FormControl><SelectTrigger data-testid="select-fuel-project"><SelectValue placeholder="No project" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">No project</SelectItem>
+                    {availableProjects.map((project) => (
+                      <SelectItem key={project.id} value={project.id}>
+                        {project.code} - {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="notes" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Notes</FormLabel>
+                <FormControl><Textarea {...field} placeholder="Optional notes..." data-testid="input-fuel-notes" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button type="submit" disabled={isPending} data-testid="button-save-fuel">
+                {isPending ? "Saving..." : "Log Fuel"}
               </Button>
             </DialogFooter>
           </form>

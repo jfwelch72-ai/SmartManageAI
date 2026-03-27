@@ -8,9 +8,13 @@ import { format } from "date-fns";
 import {
   Truck, Wrench, Clock, MapPin, Calendar, DollarSign,
   AlertTriangle, CheckCircle, Edit, History,
-  Plus, Loader2, Sparkles, Check, AlertCircle, CalendarClock
+  Plus, Loader2, Sparkles, Check, AlertCircle, CalendarClock,
+  TrendingDown, Fuel, Trash2
 } from "lucide-react";
 import type { Equipment } from "@shared/schema";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const REPAIR_STATUS_OPTIONS = [
   { value: "PENDING", label: "Pending" },
@@ -677,6 +681,400 @@ interface RatesTabProps {
   onEditRate: (profile: RateProfile) => void;
   onActivateRate: (id: string) => void;
   isActivating: boolean;
+}
+
+interface DepreciationScheduleItem {
+  year: number;
+  beginningValue: number;
+  depreciation: number;
+  endingValue: number;
+  accumulatedDepreciation: number;
+}
+
+interface DepreciationData {
+  configured: boolean;
+  currentBookValue: number;
+  accumulatedDepreciation: number;
+  remainingUsefulLife: number;
+  depreciationMethod?: string;
+  purchasePrice?: number;
+  salvageValue?: number;
+  usefulLifeYears?: number;
+  inServiceDate?: string;
+  schedule: DepreciationScheduleItem[];
+}
+
+interface DepreciationTabProps {
+  equipment: Equipment;
+}
+
+export function DepreciationTab({ equipment }: DepreciationTabProps) {
+  const { data: depreciation, isLoading } = useQuery<DepreciationData>({
+    queryKey: ["/api/equipment", equipment.id, "depreciation"],
+    queryFn: async () => {
+      const res = await fetch(`/api/equipment/${equipment.id}/depreciation`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch depreciation");
+      return res.json();
+    },
+    enabled: !!equipment.id,
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center">
+          <Loader2 className="h-6 w-6 animate-spin mx-auto text-muted-foreground" />
+          <p className="text-muted-foreground mt-2">Loading depreciation data...</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!depreciation?.configured) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Depreciation</CardTitle>
+        </CardHeader>
+        <CardContent className="text-center py-8">
+          <TrendingDown className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+          <p className="text-muted-foreground">Depreciation tracking not configured</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            Set purchase price, useful life, salvage value, and in-service date to enable depreciation tracking.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const currentYear = new Date().getFullYear();
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Current Book Value</p>
+            <p className="text-2xl font-bold text-primary" data-testid="text-book-value">
+              ${depreciation.currentBookValue.toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Accumulated Depreciation</p>
+            <p className="text-2xl font-bold text-orange-600" data-testid="text-accumulated-depreciation">
+              ${depreciation.accumulatedDepreciation.toLocaleString()}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Remaining Useful Life</p>
+            <p className="text-2xl font-bold" data-testid="text-remaining-life">
+              {depreciation.remainingUsefulLife} {depreciation.remainingUsefulLife === 1 ? "year" : "years"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <p className="text-sm text-muted-foreground">Method</p>
+            <p className="text-lg font-semibold" data-testid="text-depreciation-method">
+              {depreciation.depreciationMethod === "DECLINING_BALANCE" ? "Declining Balance" : "Straight-Line"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Depreciation Schedule</CardTitle>
+          <CardDescription>
+            Year-by-year depreciation from {depreciation.inServiceDate ? format(new Date(depreciation.inServiceDate + "T00:00:00"), "MMM d, yyyy") : "in-service date"}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Year</TableHead>
+                <TableHead className="text-right">Beginning Value</TableHead>
+                <TableHead className="text-right">Depreciation</TableHead>
+                <TableHead className="text-right">Ending Value</TableHead>
+                <TableHead className="text-right">Accumulated</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {depreciation.schedule.map((item) => (
+                <TableRow
+                  key={item.year}
+                  className={item.year === currentYear ? "bg-primary/5 font-medium" : ""}
+                  data-testid={`row-depreciation-${item.year}`}
+                >
+                  <TableCell>
+                    {item.year}
+                    {item.year === currentYear && (
+                      <Badge variant="secondary" className="ml-2 text-xs">Current</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">${item.beginningValue.toLocaleString()}</TableCell>
+                  <TableCell className="text-right text-orange-600">${item.depreciation.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">${item.endingValue.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">${item.accumulatedDepreciation.toLocaleString()}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+interface FuelLog {
+  id: string;
+  equipmentId: string;
+  projectId: string | null;
+  date: string;
+  gallons: string;
+  pricePerGallon: string;
+  totalCost: string;
+  fuelType: string;
+  meterReading: string | null;
+  notes: string | null;
+  projectName: string | null;
+  submittedByName: string | null;
+}
+
+interface FuelSummary {
+  totalGallons: number;
+  totalCost: number;
+  avgPricePerGallon: number;
+  costPerHour: number;
+  logCount: number;
+  projectBreakdown: {
+    projectId: string;
+    projectName: string | null;
+    totalGallons: number;
+    totalCost: number;
+    logCount: number;
+  }[];
+}
+
+interface FuelTabProps {
+  equipment: Equipment;
+  canEdit: boolean;
+  onOpenFuelLog: () => void;
+}
+
+export function FuelTab({ equipment, canEdit, onOpenFuelLog }: FuelTabProps) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: fuelLogs = [], isLoading: isLoadingLogs } = useQuery<FuelLog[]>({
+    queryKey: ["/api/equipment", equipment.id, "fuel-logs"],
+    queryFn: async () => {
+      const res = await fetch(`/api/equipment/${equipment.id}/fuel-logs`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch fuel logs");
+      return res.json();
+    },
+    enabled: !!equipment.id,
+  });
+
+  const { data: fuelSummary } = useQuery<FuelSummary>({
+    queryKey: ["/api/equipment", equipment.id, "fuel-summary"],
+    queryFn: async () => {
+      const res = await fetch(`/api/equipment/${equipment.id}/fuel-summary`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch fuel summary");
+      return res.json();
+    },
+    enabled: !!equipment.id,
+  });
+
+  const deleteFuelLog = useMutation({
+    mutationFn: async (logId: string) => {
+      return apiRequest("DELETE", `/api/equipment/fuel-logs/${logId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment.id, "fuel-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/equipment", equipment.id, "fuel-summary"] });
+      toast({ title: "Success", description: "Fuel log deleted" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to delete fuel log", variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="space-y-6">
+      {fuelSummary && fuelSummary.logCount > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Total Gallons</p>
+              <p className="text-2xl font-bold" data-testid="text-total-gallons">
+                {fuelSummary.totalGallons.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Total Fuel Cost</p>
+              <p className="text-2xl font-bold text-primary" data-testid="text-total-fuel-cost">
+                ${fuelSummary.totalCost.toLocaleString()}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Avg Cost/Gallon</p>
+              <p className="text-2xl font-bold" data-testid="text-avg-cost-gallon">
+                ${fuelSummary.avgPricePerGallon.toFixed(2)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground">Cost/Hour</p>
+              <p className="text-2xl font-bold" data-testid="text-fuel-cost-per-hour">
+                ${fuelSummary.costPerHour.toFixed(2)}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-lg">Fuel History</CardTitle>
+            <CardDescription>
+              {fuelLogs.length} fuel log{fuelLogs.length !== 1 ? "s" : ""} recorded
+            </CardDescription>
+          </div>
+          {canEdit && (
+            <Button onClick={onOpenFuelLog} data-testid="button-add-fuel-log">
+              <Plus className="h-4 w-4 mr-2" />
+              Log Fuel
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {isLoadingLogs ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : fuelLogs.length === 0 ? (
+            <div className="text-center py-8">
+              <Fuel className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
+              <p className="text-muted-foreground">No fuel logs recorded</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Fuel Type</TableHead>
+                  <TableHead className="text-right">Gallons</TableHead>
+                  <TableHead className="text-right">$/Gallon</TableHead>
+                  <TableHead className="text-right">Total Cost</TableHead>
+                  <TableHead className="text-right">Running Avg $/Gal</TableHead>
+                  <TableHead className="text-right">Cumulative Cost</TableHead>
+                  <TableHead>Meter</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(() => {
+                  let runningGallons = 0;
+                  let runningCost = 0;
+                  const sortedLogs = [...fuelLogs].reverse();
+                  const runningData = sortedLogs.map((log) => {
+                    runningGallons += parseFloat(log.gallons);
+                    runningCost += parseFloat(log.totalCost);
+                    return { id: log.id, runningAvg: runningCost / runningGallons, cumulativeCost: runningCost };
+                  });
+                  const runningMap = new Map(runningData.map(d => [d.id, d]));
+
+                  return fuelLogs.map((log) => {
+                    const running = runningMap.get(log.id);
+                    return (
+                  <TableRow key={log.id} data-testid={`row-fuel-${log.id}`}>
+                    <TableCell>{format(new Date(log.date + "T00:00:00"), "MMM d, yyyy")}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{log.fuelType}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {parseFloat(log.gallons).toFixed(1)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      ${parseFloat(log.pricePerGallon).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      ${parseFloat(log.totalCost).toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground" data-testid={`text-running-avg-${log.id}`}>
+                      ${running?.runningAvg.toFixed(2) || "0.00"}
+                    </TableCell>
+                    <TableCell className="text-right text-muted-foreground" data-testid={`text-cumulative-cost-${log.id}`}>
+                      ${running?.cumulativeCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || "0.00"}
+                    </TableCell>
+                    <TableCell>{log.meterReading ? `${parseFloat(log.meterReading).toFixed(1)} hrs` : "-"}</TableCell>
+                    <TableCell className="text-sm">{log.projectName || "-"}</TableCell>
+                    <TableCell>
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteFuelLog.mutate(log.id)}
+                          data-testid={`button-delete-fuel-${log.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                    );
+                  });
+                })()}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {fuelSummary && fuelSummary.projectBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Fuel Cost by Project</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead className="text-right">Gallons</TableHead>
+                  <TableHead className="text-right">Total Cost</TableHead>
+                  <TableHead className="text-right">Entries</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {fuelSummary.projectBreakdown.map((p) => (
+                  <TableRow key={p.projectId} data-testid={`row-fuel-project-${p.projectId}`}>
+                    <TableCell className="font-medium">{p.projectName || "Unknown Project"}</TableCell>
+                    <TableCell className="text-right">{p.totalGallons.toFixed(1)}</TableCell>
+                    <TableCell className="text-right font-medium">${p.totalCost.toFixed(2)}</TableCell>
+                    <TableCell className="text-right">{p.logCount}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }
 
 export function RatesTab({ rateProfiles, isLoadingRates, canEdit, onAddRate, onEditRate, onActivateRate, isActivating }: RatesTabProps) {

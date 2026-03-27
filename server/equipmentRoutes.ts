@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { equipment, equipmentAssignments, equipmentMaintenanceSchedules, equipmentMaintenanceHistory, equipmentRateProfiles, insertEquipmentRateProfileSchema, validatedEquipmentSchema, projects, users, auditLog, rentalVendors, insertRentalVendorSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, equipmentHourLogs, equipmentRepairs, bidEquipmentSelections, projectEquipmentPlans, bids, notifications } from "@shared/schema";
+import { equipment, equipmentAssignments, equipmentMaintenanceSchedules, equipmentMaintenanceHistory, equipmentRateProfiles, insertEquipmentRateProfileSchema, validatedEquipmentSchema, projects, users, auditLog, rentalVendors, insertRentalVendorSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, equipmentHourLogs, equipmentRepairs, bidEquipmentSelections, projectEquipmentPlans, bids, notifications, equipmentFuelLogs } from "@shared/schema";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, or, ne } from "drizzle-orm";
 import { z } from "zod";
@@ -10,6 +10,115 @@ import { insertNotification } from "./services/notificationService";
 import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
+
+interface DepreciationScheduleEntry {
+  year: number;
+  beginningValue: number;
+  depreciation: number;
+  endingValue: number;
+  accumulatedDepreciation: number;
+}
+
+interface DepreciationResult {
+  purchasePrice: number;
+  currentBookValue: number;
+  totalDepreciation: number;
+  depreciationMethod: string;
+  remainingUsefulLife: number;
+  salvageValue: number;
+  usefulLifeYears: number;
+  inServiceDate: string;
+  schedule: DepreciationScheduleEntry[];
+}
+
+function calculateDepreciation(params: {
+  purchasePrice: number;
+  salvageValue: number;
+  usefulLifeYears: number;
+  depreciationMethod: string;
+  inServiceDate: string;
+}): DepreciationResult {
+  const { purchasePrice, salvageValue, usefulLifeYears, depreciationMethod, inServiceDate } = params;
+
+  if (!purchasePrice || !usefulLifeYears || !inServiceDate) {
+    return {
+      purchasePrice,
+      currentBookValue: purchasePrice,
+      totalDepreciation: 0,
+      depreciationMethod,
+      remainingUsefulLife: usefulLifeYears,
+      salvageValue,
+      usefulLifeYears,
+      inServiceDate: inServiceDate || "",
+      schedule: [],
+    };
+  }
+
+  const startDate = new Date(inServiceDate);
+  const now = new Date();
+  const yearsElapsed = (now.getTime() - startDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  const depreciableAmount = purchasePrice - salvageValue;
+
+  const schedule: DepreciationScheduleEntry[] = [];
+  let currentValue = purchasePrice;
+  let accumulatedDep = 0;
+
+  const startYear = startDate.getFullYear();
+
+  if (depreciationMethod === "DECLINING_BALANCE") {
+    const rate = 2 / usefulLifeYears;
+    for (let i = 0; i < usefulLifeYears; i++) {
+      const yearStart = currentValue;
+      let dep = currentValue * rate;
+      if (currentValue - dep < salvageValue) {
+        dep = currentValue - salvageValue;
+      }
+      currentValue -= dep;
+      accumulatedDep += dep;
+      schedule.push({
+        year: startYear + i,
+        beginningValue: Math.round(yearStart * 100) / 100,
+        depreciation: Math.round(dep * 100) / 100,
+        endingValue: Math.round(currentValue * 100) / 100,
+        accumulatedDepreciation: Math.round(accumulatedDep * 100) / 100,
+      });
+    }
+  } else {
+    const annualDep = depreciableAmount / usefulLifeYears;
+    for (let i = 0; i < usefulLifeYears; i++) {
+      const yearStart = currentValue;
+      const dep = Math.min(annualDep, currentValue - salvageValue);
+      currentValue -= dep;
+      accumulatedDep += dep;
+      schedule.push({
+        year: startYear + i,
+        beginningValue: Math.round(yearStart * 100) / 100,
+        depreciation: Math.round(dep * 100) / 100,
+        endingValue: Math.round(currentValue * 100) / 100,
+        accumulatedDepreciation: Math.round(accumulatedDep * 100) / 100,
+      });
+    }
+  }
+
+  const completedYears = Math.min(Math.floor(yearsElapsed), usefulLifeYears);
+  const bookValue = completedYears < schedule.length
+    ? schedule[completedYears]?.beginningValue ?? salvageValue
+    : salvageValue;
+  const totalDep = purchasePrice - bookValue;
+  const remainingLife = Math.max(0, usefulLifeYears - Math.floor(yearsElapsed));
+
+  return {
+    purchasePrice,
+    currentBookValue: Math.round(bookValue * 100) / 100,
+    totalDepreciation: Math.round(totalDep * 100) / 100,
+    depreciationMethod,
+    remainingUsefulLife: remainingLife,
+    salvageValue,
+    usefulLifeYears,
+    inServiceDate,
+    schedule,
+  };
+}
 
 // ========================================
 // Routes from equipmentMgmtRoutes.ts
@@ -2584,6 +2693,372 @@ Please provide:
     } catch (error) {
       console.error("Notify maintenance error:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ============================================================
+  // DEPRECIATION ENDPOINTS
+  // ============================================================
+
+  router.get("/api/equipment/:equipmentId/depreciation", async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+      const eq_item = await db.query.equipment.findFirst({
+        where: and(eq(equipment.id, equipmentId), eq(equipment.organizationId, orgId)),
+      });
+      if (!eq_item) return res.status(404).json({ error: "Equipment not found" });
+
+      const purchasePrice = parseFloat(eq_item.purchasePrice || "0");
+      const salvageVal = parseFloat(eq_item.salvageValue || "0");
+      const usefulLife = eq_item.usefulLifeYears || 0;
+      const depMethod = eq_item.depreciationMethod || "STRAIGHT_LINE";
+      const serviceDate = eq_item.inServiceDate || (eq_item.purchaseDate ? new Date(eq_item.purchaseDate).toISOString().slice(0, 10) : "");
+
+      const result = calculateDepreciation({
+        purchasePrice,
+        salvageValue: salvageVal,
+        usefulLifeYears: usefulLife,
+        depreciationMethod: depMethod,
+        inServiceDate: serviceDate,
+      });
+
+      res.json({
+        configured: result.schedule.length > 0,
+        ...result,
+        accumulatedDepreciation: result.totalDepreciation,
+      });
+    } catch (error) {
+      console.error("Depreciation error:", error);
+      res.status(500).json({ error: "Failed to calculate depreciation" });
+    }
+  });
+
+  // ============================================================
+  // FUEL LOG ENDPOINTS
+  // ============================================================
+
+  router.get("/api/equipment/:equipmentId/fuel-logs", async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+      const eqCheck = await db.query.equipment.findFirst({
+        where: and(eq(equipment.id, equipmentId), eq(equipment.organizationId, orgId)),
+      });
+      if (!eqCheck) return res.status(404).json({ error: "Equipment not found" });
+
+      const logs = await db
+        .select({
+          id: equipmentFuelLogs.id,
+          equipmentId: equipmentFuelLogs.equipmentId,
+          projectId: equipmentFuelLogs.projectId,
+          date: equipmentFuelLogs.date,
+          gallons: equipmentFuelLogs.gallons,
+          pricePerGallon: equipmentFuelLogs.pricePerGallon,
+          totalCost: equipmentFuelLogs.totalCost,
+          fuelType: equipmentFuelLogs.fuelType,
+          meterReading: equipmentFuelLogs.meterReading,
+          submittedById: equipmentFuelLogs.submittedById,
+          notes: equipmentFuelLogs.notes,
+          createdAt: equipmentFuelLogs.createdAt,
+          projectName: projects.name,
+          submittedByName: users.fullName,
+        })
+        .from(equipmentFuelLogs)
+        .leftJoin(projects, eq(equipmentFuelLogs.projectId, projects.id))
+        .leftJoin(users, eq(equipmentFuelLogs.submittedById, users.id))
+        .where(eq(equipmentFuelLogs.equipmentId, equipmentId))
+        .orderBy(desc(equipmentFuelLogs.date));
+
+      res.json(logs);
+    } catch (error) {
+      console.error("Fuel logs fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch fuel logs" });
+    }
+  });
+
+  router.post("/api/equipment/:equipmentId/fuel-logs", async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const userId = req.user!.id;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const eq_item = await db.query.equipment.findFirst({
+        where: and(eq(equipment.id, equipmentId), eq(equipment.organizationId, orgId)),
+      });
+      if (!eq_item) return res.status(404).json({ error: "Equipment not found" });
+
+      const fuelLogCreateSchema = z.object({
+        date: z.string().min(1, "Date is required"),
+        gallons: z.preprocess((v) => Number(v), z.number().positive("Gallons must be positive")),
+        pricePerGallon: z.preprocess((v) => Number(v), z.number().positive("Price per gallon must be positive")),
+        totalCost: z.preprocess((v) => v != null ? Number(v) : undefined, z.number().optional()),
+        fuelType: z.enum(["DIESEL", "GASOLINE", "PROPANE", "ELECTRIC", "OTHER"]).default("DIESEL"),
+        meterReading: z.preprocess((v) => v != null ? Number(v) : null, z.number().nullable().optional()),
+        projectId: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      });
+
+      const parsed = fuelLogCreateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      }
+      const { date, gallons, pricePerGallon, totalCost, fuelType, meterReading, projectId, notes } = parsed.data;
+
+      if (projectId) {
+        const projectCheck = await db.query.projects.findFirst({
+          where: and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)),
+        });
+        if (!projectCheck) return res.status(400).json({ error: "Invalid project" });
+      }
+
+      const computedTotal = totalCost || gallons * pricePerGallon;
+
+      const [newLog] = await db.insert(equipmentFuelLogs).values({
+        equipmentId,
+        projectId: projectId || null,
+        date,
+        gallons: String(gallons),
+        pricePerGallon: String(pricePerGallon),
+        totalCost: String(computedTotal),
+        fuelType,
+        meterReading: meterReading ? String(meterReading) : null,
+        submittedById: userId,
+        notes: notes || null,
+      }).returning();
+
+      res.status(201).json(newLog);
+    } catch (error) {
+      console.error("Fuel log create error:", error);
+      res.status(500).json({ error: "Failed to create fuel log" });
+    }
+  });
+
+  router.patch("/api/equipment/fuel-logs/:logId", async (req: AuthRequest, res) => {
+    try {
+      const { logId } = req.params;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const log = await db.query.equipmentFuelLogs.findFirst({
+        where: eq(equipmentFuelLogs.id, logId),
+      });
+      if (!log) return res.status(404).json({ error: "Fuel log not found" });
+
+      const eqCheck = await db.query.equipment.findFirst({
+        where: and(eq(equipment.id, log.equipmentId), eq(equipment.organizationId, orgId)),
+      });
+      if (!eqCheck) return res.status(403).json({ error: "Access denied" });
+
+      const fuelLogUpdateSchema = z.object({
+        date: z.string().min(1).optional(),
+        gallons: z.preprocess((v) => v != null ? Number(v) : undefined, z.number().positive("Gallons must be positive").optional()),
+        pricePerGallon: z.preprocess((v) => v != null ? Number(v) : undefined, z.number().positive("Price must be positive").optional()),
+        fuelType: z.enum(["DIESEL", "GASOLINE", "PROPANE", "ELECTRIC", "OTHER"]).optional(),
+        meterReading: z.preprocess((v) => v != null ? Number(v) : null, z.number().nullable().optional()),
+        projectId: z.string().nullable().optional(),
+        notes: z.string().nullable().optional(),
+      });
+
+      const parsed = fuelLogUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten().fieldErrors });
+      }
+      const { date, gallons, pricePerGallon, fuelType, meterReading, projectId, notes } = parsed.data;
+
+      if (projectId) {
+        const projectCheck = await db.query.projects.findFirst({
+          where: and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)),
+        });
+        if (!projectCheck) return res.status(400).json({ error: "Invalid project" });
+      }
+
+      const updates: Partial<{
+        date: string;
+        gallons: string;
+        pricePerGallon: string;
+        totalCost: string;
+        fuelType: string;
+        meterReading: string | null;
+        projectId: string | null;
+        notes: string | null;
+      }> = {};
+      if (date !== undefined) updates.date = date;
+      if (gallons !== undefined) updates.gallons = String(gallons);
+      if (pricePerGallon !== undefined) updates.pricePerGallon = String(pricePerGallon);
+      if (fuelType !== undefined) updates.fuelType = fuelType;
+      if (meterReading !== undefined) updates.meterReading = meterReading ? String(meterReading) : null;
+      if (projectId !== undefined) updates.projectId = projectId || null;
+      if (notes !== undefined) updates.notes = notes || null;
+
+      if (updates.gallons || updates.pricePerGallon) {
+        const g = parseFloat(updates.gallons || log.gallons || "0");
+        const p = parseFloat(updates.pricePerGallon || log.pricePerGallon || "0");
+        updates.totalCost = String(g * p);
+      }
+
+      const [updated] = await db.update(equipmentFuelLogs)
+        .set(updates)
+        .where(eq(equipmentFuelLogs.id, logId))
+        .returning();
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Fuel log update error:", error);
+      res.status(500).json({ error: "Failed to update fuel log" });
+    }
+  });
+
+  router.delete("/api/equipment/fuel-logs/:logId", async (req: AuthRequest, res) => {
+    try {
+      const { logId } = req.params;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const log = await db.query.equipmentFuelLogs.findFirst({
+        where: eq(equipmentFuelLogs.id, logId),
+      });
+      if (!log) return res.status(404).json({ error: "Fuel log not found" });
+
+      const eqCheck = await db.query.equipment.findFirst({
+        where: and(eq(equipment.id, log.equipmentId), eq(equipment.organizationId, orgId)),
+      });
+      if (!eqCheck) return res.status(403).json({ error: "Access denied" });
+
+      await db.delete(equipmentFuelLogs).where(eq(equipmentFuelLogs.id, logId));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Fuel log delete error:", error);
+      res.status(500).json({ error: "Failed to delete fuel log" });
+    }
+  });
+
+  router.get("/api/equipment/:equipmentId/fuel-summary", async (req: AuthRequest, res) => {
+    try {
+      const { equipmentId } = req.params;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+      const eqCheck = await db.query.equipment.findFirst({
+        where: and(eq(equipment.id, equipmentId), eq(equipment.organizationId, orgId)),
+      });
+      if (!eqCheck) return res.status(404).json({ error: "Equipment not found" });
+
+      const summaryResult = await db
+        .select({
+          totalGallons: sql<string>`COALESCE(SUM(${equipmentFuelLogs.gallons}::numeric), 0)`,
+          totalCost: sql<string>`COALESCE(SUM(${equipmentFuelLogs.totalCost}::numeric), 0)`,
+          avgPricePerGallon: sql<string>`CASE WHEN SUM(${equipmentFuelLogs.gallons}::numeric) > 0 THEN SUM(${equipmentFuelLogs.totalCost}::numeric) / SUM(${equipmentFuelLogs.gallons}::numeric) ELSE 0 END`,
+          logCount: sql<string>`COUNT(*)`,
+        })
+        .from(equipmentFuelLogs)
+        .where(eq(equipmentFuelLogs.equipmentId, equipmentId));
+
+      const currentHoursResult = await db
+        .select({ currentHours: equipment.currentHours })
+        .from(equipment)
+        .where(eq(equipment.id, equipmentId));
+
+      const currentHours = parseFloat(currentHoursResult[0]?.currentHours || "0");
+      const totalGallons = parseFloat(summaryResult[0]?.totalGallons || "0");
+      const totalCost = parseFloat(summaryResult[0]?.totalCost || "0");
+      const costPerHour = currentHours > 0 ? totalCost / currentHours : 0;
+
+      const projectSummary = await db
+        .select({
+          projectId: equipmentFuelLogs.projectId,
+          projectName: projects.name,
+          totalGallons: sql<string>`SUM(${equipmentFuelLogs.gallons}::numeric)`,
+          totalCost: sql<string>`SUM(${equipmentFuelLogs.totalCost}::numeric)`,
+          logCount: sql<string>`COUNT(*)`,
+        })
+        .from(equipmentFuelLogs)
+        .leftJoin(projects, eq(equipmentFuelLogs.projectId, projects.id))
+        .where(and(
+          eq(equipmentFuelLogs.equipmentId, equipmentId),
+          sql`${equipmentFuelLogs.projectId} IS NOT NULL`
+        ))
+        .groupBy(equipmentFuelLogs.projectId, projects.name);
+
+      res.json({
+        totalGallons: Math.round(totalGallons * 100) / 100,
+        totalCost: Math.round(totalCost * 100) / 100,
+        avgPricePerGallon: Math.round(parseFloat(summaryResult[0]?.avgPricePerGallon || "0") * 10000) / 10000,
+        costPerHour: Math.round(costPerHour * 100) / 100,
+        logCount: parseInt(summaryResult[0]?.logCount || "0"),
+        projectBreakdown: projectSummary.map(p => ({
+          projectId: p.projectId,
+          projectName: p.projectName,
+          totalGallons: Math.round(parseFloat(p.totalGallons || "0") * 100) / 100,
+          totalCost: Math.round(parseFloat(p.totalCost || "0") * 100) / 100,
+          logCount: parseInt(p.logCount || "0"),
+        })),
+      });
+    } catch (error) {
+      console.error("Fuel summary error:", error);
+      res.status(500).json({ error: "Failed to fetch fuel summary" });
+    }
+  });
+
+  router.get("/api/projects/:projectId/fuel-summary", requireAuth, requireFeaturePermission('canManageEquipment'), async (req: AuthRequest, res) => {
+    try {
+      const { projectId } = req.params;
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Access denied - no organization" });
+
+      const projectCheck = await db.query.projects.findFirst({
+        where: and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)),
+      });
+      if (!projectCheck) return res.status(404).json({ error: "Project not found" });
+
+      const summaryResult = await db
+        .select({
+          totalGallons: sql<string>`COALESCE(SUM(${equipmentFuelLogs.gallons}::numeric), 0)`,
+          totalCost: sql<string>`COALESCE(SUM(${equipmentFuelLogs.totalCost}::numeric), 0)`,
+          avgPricePerGallon: sql<string>`CASE WHEN SUM(${equipmentFuelLogs.gallons}::numeric) > 0 THEN SUM(${equipmentFuelLogs.totalCost}::numeric) / SUM(${equipmentFuelLogs.gallons}::numeric) ELSE 0 END`,
+          logCount: sql<string>`COUNT(*)`,
+        })
+        .from(equipmentFuelLogs)
+        .where(eq(equipmentFuelLogs.projectId, projectId));
+
+      const equipmentBreakdown = await db
+        .select({
+          equipmentId: equipmentFuelLogs.equipmentId,
+          equipmentName: equipment.name,
+          equipmentCode: equipment.equipmentCode,
+          totalGallons: sql<string>`SUM(${equipmentFuelLogs.gallons}::numeric)`,
+          totalCost: sql<string>`SUM(${equipmentFuelLogs.totalCost}::numeric)`,
+          logCount: sql<string>`COUNT(*)`,
+        })
+        .from(equipmentFuelLogs)
+        .innerJoin(equipment, eq(equipmentFuelLogs.equipmentId, equipment.id))
+        .where(eq(equipmentFuelLogs.projectId, projectId))
+        .groupBy(equipmentFuelLogs.equipmentId, equipment.name, equipment.equipmentCode);
+
+      const totalGallons = parseFloat(summaryResult[0]?.totalGallons || "0");
+      const totalCost = parseFloat(summaryResult[0]?.totalCost || "0");
+
+      res.json({
+        projectId,
+        projectName: projectCheck.name,
+        totalGallons: Math.round(totalGallons * 100) / 100,
+        totalCost: Math.round(totalCost * 100) / 100,
+        avgPricePerGallon: Math.round(parseFloat(summaryResult[0]?.avgPricePerGallon || "0") * 10000) / 10000,
+        logCount: parseInt(summaryResult[0]?.logCount || "0"),
+        equipmentBreakdown: equipmentBreakdown.map(e => ({
+          equipmentId: e.equipmentId,
+          equipmentName: e.equipmentName,
+          equipmentCode: e.equipmentCode,
+          totalGallons: Math.round(parseFloat(e.totalGallons || "0") * 100) / 100,
+          totalCost: Math.round(parseFloat(e.totalCost || "0") * 100) / 100,
+          logCount: parseInt(e.logCount || "0"),
+        })),
+      });
+    } catch (error) {
+      console.error("Project fuel summary error:", error);
+      res.status(500).json({ error: "Failed to fetch project fuel summary" });
     }
   });
 

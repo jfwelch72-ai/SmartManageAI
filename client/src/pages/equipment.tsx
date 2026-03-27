@@ -157,6 +157,10 @@ const createEquipmentSchema = z.object({
   homeLocation: z.string().optional(),
   description: z.string().optional(),
   notes: z.string().optional(),
+  depreciationMethod: z.string().optional(),
+  usefulLifeYears: z.coerce.number().optional(),
+  salvageValue: z.string().optional(),
+  inServiceDate: z.string().optional(),
 });
 
 type CreateEquipmentInput = z.infer<typeof createEquipmentSchema>;
@@ -289,6 +293,10 @@ export default function EquipmentPage() {
       homeLocation: "",
       description: "",
       notes: "",
+      depreciationMethod: "",
+      usefulLifeYears: undefined,
+      salvageValue: "",
+      inServiceDate: "",
     },
   });
 
@@ -456,6 +464,31 @@ export default function EquipmentPage() {
     available: equipmentList.filter((e) => e.status === "AVAILABLE").length,
     assigned: equipmentList.filter((e) => e.status === "ASSIGNED").length,
     inRepair: equipmentList.filter((e) => e.status === "IN_REPAIR").length,
+    totalPurchaseValue: equipmentList.reduce((sum, eq) => sum + (eq.purchasePrice ? parseFloat(eq.purchasePrice) : 0), 0),
+    totalBookValue: equipmentList.reduce((sum, eq) => {
+      const purchase = eq.purchasePrice ? parseFloat(eq.purchasePrice) : 0;
+      if (!purchase) return sum;
+      const salvage = eq.salvageValue ? parseFloat(eq.salvageValue) : 0;
+      const usefulLife = eq.usefulLifeYears || 0;
+      const inService = eq.inServiceDate ? new Date(eq.inServiceDate + "T00:00:00") : null;
+      if (!usefulLife || !inService) return sum + purchase;
+      const yearsElapsed = (Date.now() - inService.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+      if (yearsElapsed <= 0) return sum + purchase;
+      const completedYears = Math.min(Math.floor(yearsElapsed), usefulLife);
+      const method = eq.depreciationMethod || "STRAIGHT_LINE";
+      if (method === "DECLINING_BALANCE") {
+        const rate = 2 / usefulLife;
+        let bookVal = purchase;
+        for (let y = 0; y < completedYears; y++) {
+          const dep = bookVal * rate;
+          bookVal = Math.max(bookVal - dep, salvage);
+        }
+        return sum + bookVal;
+      }
+      const annualDep = (purchase - salvage) / usefulLife;
+      const accumulated = Math.min(annualDep * completedYears, purchase - salvage);
+      return sum + Math.max(purchase - accumulated, salvage);
+    }, 0),
   };
 
   return (
@@ -503,7 +536,7 @@ export default function EquipmentPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <Card data-testid="card-stat-total">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -557,6 +590,22 @@ export default function EquipmentPage() {
                 <div>
                   <p className="text-2xl font-bold">{stats.inRepair}</p>
                   <p className="text-sm text-muted-foreground">In Repair</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-stat-book-value">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-md bg-purple-100 dark:bg-purple-900">
+                  <DollarSign className="h-5 w-5 text-purple-700 dark:text-purple-300" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold" data-testid="text-fleet-book-value">
+                    ${stats.totalBookValue.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Fleet Book Value</p>
                 </div>
               </div>
             </CardContent>
@@ -1032,6 +1081,75 @@ export default function EquipmentPage() {
                     </FormItem>
                   )}
                 />
+
+                <div className="col-span-2 border-t pt-3 mt-2">
+                  <h4 className="text-sm font-medium mb-3">Depreciation Settings</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="depreciationMethod"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Depreciation Method</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-depreciation-method">
+                                <SelectValue placeholder="Select method" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="STRAIGHT_LINE">Straight Line</SelectItem>
+                              <SelectItem value="DECLINING_BALANCE">Declining Balance</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="usefulLifeYears"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Useful Life (Years)</FormLabel>
+                          <FormControl>
+                            <Input type="number" min="1" placeholder="e.g., 10" {...field} data-testid="input-useful-life" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="salvageValue"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Salvage Value ($)</FormLabel>
+                          <FormControl>
+                            <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-salvage-value" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="inServiceDate"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>In-Service Date</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} data-testid="input-in-service-date" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
 
                 <FormField
                   control={form.control}

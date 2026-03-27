@@ -16,6 +16,8 @@ import {
   MapPin,
   DollarSign,
   CalendarClock,
+  TrendingDown,
+  Fuel,
 } from "lucide-react";
 import { format, startOfWeek, endOfWeek } from "date-fns";
 import type { Equipment } from "@shared/schema";
@@ -27,6 +29,7 @@ import {
   repairSchema,
   hourLogSchema,
   rateProfileSchema,
+  fuelLogSchema,
 } from "@/hooks/useEquipmentMutations";
 import type {
   EditEquipmentInput,
@@ -35,6 +38,7 @@ import type {
   RepairInput,
   HourLogInput,
   RateProfileInput,
+  FuelLogInput,
 } from "@/hooks/useEquipmentMutations";
 import {
   OverviewTab,
@@ -43,6 +47,8 @@ import {
   HoursTab,
   MaintenanceTab,
   RatesTab,
+  DepreciationTab,
+  FuelTab,
 } from "@/components/equipment/EquipmentTabs";
 import type {
   MaintenanceSchedule,
@@ -57,6 +63,7 @@ import {
   HourLogDialog,
   CompleteMaintenanceDialog,
   RateProfileDialog,
+  FuelLogDialog,
 } from "@/components/equipment/EquipmentDialogs";
 
 const STATUS_OPTIONS = [
@@ -100,6 +107,7 @@ export default function EquipmentDetailPage() {
   const [showCompleteMaintenanceDialog, setShowCompleteMaintenanceDialog] =
     useState(false);
   const [showRateDialog, setShowRateDialog] = useState(false);
+  const [showFuelLogDialog, setShowFuelLogDialog] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [selectedSchedule, setSelectedSchedule] =
     useState<MaintenanceSchedule | null>(null);
@@ -287,6 +295,19 @@ export default function EquipmentDetailPage() {
     },
   });
 
+  const fuelLogForm = useForm<FuelLogInput>({
+    resolver: zodResolver(fuelLogSchema),
+    defaultValues: {
+      date: format(new Date(), "yyyy-MM-dd"),
+      gallons: "",
+      pricePerGallon: "",
+      fuelType: "DIESEL",
+      meterReading: "",
+      projectId: "",
+      notes: "",
+    },
+  });
+
   const rateForm = useForm<RateProfileInput>({
     resolver: zodResolver(rateProfileSchema),
     defaultValues: {
@@ -330,6 +351,10 @@ export default function EquipmentDetailPage() {
         currentLocation: equipment.currentLocation || "",
         description: equipment.description || "",
         notes: equipment.notes || "",
+        depreciationMethod: equipment.depreciationMethod || "",
+        usefulLifeYears: equipment.usefulLifeYears || undefined,
+        salvageValue: equipment.salvageValue || "",
+        inServiceDate: equipment.inServiceDate || "",
       });
       setShowEditDialog(true);
     }
@@ -585,6 +610,14 @@ export default function EquipmentDetailPage() {
               <CalendarClock className="h-4 w-4 mr-1" />
               Preventative Maintenance
             </TabsTrigger>
+            <TabsTrigger value="depreciation" data-testid="tab-depreciation">
+              <TrendingDown className="h-4 w-4 mr-1" />
+              Depreciation
+            </TabsTrigger>
+            <TabsTrigger value="fuel" data-testid="tab-fuel">
+              <Fuel className="h-4 w-4 mr-1" />
+              Fuel
+            </TabsTrigger>
             <TabsTrigger value="rates" data-testid="tab-rates">
               <DollarSign className="h-4 w-4 mr-1" />
               Rates
@@ -635,6 +668,18 @@ export default function EquipmentDetailPage() {
                 setSelectedSchedule(schedule);
                 setShowCompleteMaintenanceDialog(true);
               }}
+            />
+          </TabsContent>
+
+          <TabsContent value="depreciation">
+            <DepreciationTab equipment={equipment} />
+          </TabsContent>
+
+          <TabsContent value="fuel">
+            <FuelTab
+              equipment={equipment}
+              canEdit={canEdit}
+              onOpenFuelLog={() => setShowFuelLogDialog(true)}
             />
           </TabsContent>
 
@@ -766,6 +811,30 @@ export default function EquipmentDetailPage() {
           mutations.createRateMutation.isPending ||
           mutations.updateRateMutation.isPending
         }
+      />
+
+      <FuelLogDialog
+        open={showFuelLogDialog}
+        onOpenChange={setShowFuelLogDialog}
+        form={fuelLogForm}
+        availableProjects={availableProjects}
+        onSubmit={(data) => {
+          mutations.submitFuelLog.mutate(data, {
+            onSuccess: () => {
+              setShowFuelLogDialog(false);
+              fuelLogForm.reset({
+                date: format(new Date(), "yyyy-MM-dd"),
+                gallons: "",
+                pricePerGallon: "",
+                fuelType: "DIESEL",
+                meterReading: "",
+                projectId: "",
+                notes: "",
+              });
+            },
+          });
+        }}
+        isPending={mutations.submitFuelLog.isPending}
       />
     </div>
   );

@@ -822,6 +822,12 @@ export const equipment = pgTable("equipment", {
   imageUrl: text("image_url"),
   manualUrl: text("manual_url"),
   
+  // Depreciation Tracking
+  depreciationMethod: text("depreciation_method"), // STRAIGHT_LINE or DECLINING_BALANCE
+  usefulLifeYears: integer("useful_life_years"),
+  salvageValue: decimal("salvage_value", { precision: 12, scale: 2 }),
+  inServiceDate: date("in_service_date"),
+  
   // Tracking
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -864,6 +870,30 @@ export const validatedEquipmentSchema = createInsertSchema(equipment).omit({ id:
       const parsed = typeof val === 'string' ? parseFloat(val) : val;
       return isNaN(parsed as number) ? null : String(parsed);
     },
+    z.string().nullable().optional()
+  ),
+  usefulLifeYears: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const parsed = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(parsed as number) ? null : parsed;
+    },
+    z.number().int().min(1).max(100).nullable().optional()
+  ),
+  salvageValue: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return null;
+      const parsed = typeof val === 'string' ? parseFloat(val) : val;
+      return isNaN(parsed as number) ? null : String(parsed);
+    },
+    z.string().nullable().optional()
+  ),
+  depreciationMethod: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : val,
+    z.string().nullable().optional()
+  ),
+  inServiceDate: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined) ? null : val,
     z.string().nullable().optional()
   ),
 });
@@ -2074,6 +2104,34 @@ export type EquipmentHourLog = typeof equipmentHourLogs.$inferSelect;
 export const insertEquipmentHourReminderSchema = createInsertSchema(equipmentHourReminders).omit({ id: true, createdAt: true });
 export type InsertEquipmentHourReminder = z.infer<typeof insertEquipmentHourReminderSchema>;
 export type EquipmentHourReminder = typeof equipmentHourReminders.$inferSelect;
+
+// Equipment Fuel Logs - Dedicated fuel tracking per fill-up
+export const equipmentFuelLogs = pgTable("equipment_fuel_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  
+  date: date("date").notNull(),
+  gallons: decimal("gallons", { precision: 10, scale: 2 }).notNull(),
+  pricePerGallon: decimal("price_per_gallon", { precision: 10, scale: 4 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  fuelType: text("fuel_type").notNull().default("DIESEL"), // DIESEL, GASOLINE, PROPANE, ELECTRIC
+  meterReading: decimal("meter_reading", { precision: 10, scale: 1 }),
+  
+  submittedById: varchar("submitted_by_id").notNull().references(() => users.id),
+  notes: text("notes"),
+  
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  equipmentIdx: index("equipment_fuel_logs_equipment_idx").on(table.equipmentId),
+  projectIdx: index("equipment_fuel_logs_project_idx").on(table.projectId),
+  dateIdx: index("equipment_fuel_logs_date_idx").on(table.date),
+}));
+
+export const insertEquipmentFuelLogSchema = createInsertSchema(equipmentFuelLogs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEquipmentFuelLog = z.infer<typeof insertEquipmentFuelLogSchema>;
+export type EquipmentFuelLog = typeof equipmentFuelLogs.$inferSelect;
 
 // ============================================
 // EQUIPMENT RATES, RENTALS & BID/PROJECT INTEGRATION
