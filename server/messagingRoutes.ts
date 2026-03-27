@@ -954,6 +954,28 @@ const messagingSetup = (async () => {
   });
 
   // ── SERVE VOICE from object storage ──
+  async function serveVoiceStream(file: any, req: any, res: any) {
+    const [metadata] = await file.getMetadata();
+    const fileSize = Number(metadata.size || 0);
+    const rawContentType = metadata.contentType || "audio/webm";
+    const contentType = rawContentType === "video/webm" ? "audio/webm" : rawContentType;
+    console.log(`[Voice] Serving file: size=${fileSize}, contentType=${contentType} (raw: ${rawContentType}), range=${req.headers.range || "none"}`);
+
+    res.set("Accept-Ranges", "bytes");
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "private, max-age=86400");
+
+    if (fileSize > 0) {
+      res.set("Content-Length", String(fileSize));
+    }
+    const stream = file.createReadStream();
+    stream.on("error", (err: Error) => {
+      console.error("Voice stream error:", err);
+      if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+    });
+    stream.pipe(res);
+  }
+
   router.get("/api/conversations/:id/voice/:filename", requireAuth, async (req: AuthRequest, res) => {
     try {
       const orgId = req.user!.organizationId;
@@ -971,47 +993,17 @@ const messagingSetup = (async () => {
       const publicPaths = objectStorage.getPublicObjectSearchPaths();
       if (publicPaths.length === 0) return res.status(500).json({ error: "Storage not configured" });
 
-      const filePath = `messaging/${orgId}/${conversationId}/${filename}`;
-      const file = await objectStorage.searchPublicObject(filePath);
+      const primaryPath = `messaging/${orgId}/${conversationId}/voice-${filename}`;
+      let file = await objectStorage.searchPublicObject(primaryPath);
+      if (!file) {
+        console.log(`[Voice] Primary path not found: ${primaryPath}, trying fallback`);
+        const fallbackPath = `messaging/${orgId}/${conversationId}/${filename}`;
+        file = await objectStorage.searchPublicObject(fallbackPath);
+        if (!file) console.log(`[Voice] Fallback path also not found: ${fallbackPath}`);
+      }
       if (!file) return res.status(404).json({ error: "Voice file not found" });
 
-      const [metadata] = await file.getMetadata();
-      const fileSize = Number(metadata.size || 0);
-      const contentType = metadata.contentType || "audio/webm";
-
-      res.set("Accept-Ranges", "bytes");
-      res.set("Content-Type", contentType);
-      res.set("Cache-Control", "private, max-age=86400");
-
-      const rangeHeader = req.headers.range;
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-        if (match) {
-          const start = parseInt(match[1], 10);
-          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
-          const chunkSize = end - start + 1;
-
-          res.status(206);
-          res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
-          res.set("Content-Length", String(chunkSize));
-
-          const stream = file.createReadStream({ start, end });
-          stream.on("error", (err: Error) => {
-            console.error("Voice stream error:", err);
-            if (!res.headersSent) res.status(500).json({ error: "Stream error" });
-          });
-          stream.pipe(res);
-          return;
-        }
-      }
-
-      res.set("Content-Length", String(fileSize));
-      const stream = file.createReadStream();
-      stream.on("error", (err: Error) => {
-        console.error("Voice stream error:", err);
-        if (!res.headersSent) res.status(500).json({ error: "Stream error" });
-      });
-      stream.pipe(res);
+      await serveVoiceStream(file, req, res);
     } catch (error: any) {
       console.error("Serve voice error:", error);
       if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
