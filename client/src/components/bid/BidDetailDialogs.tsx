@@ -397,6 +397,34 @@ export function SubcontractorQuoteDialog({
                 </FormItem>
               )}
             />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="inclusions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Inclusions</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="What is included in this quote..." rows={2} data-testid="input-inclusions" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="exclusions"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Exclusions</FormLabel>
+                    <FormControl>
+                      <Textarea {...field} value={field.value || ""} placeholder="What is excluded from this quote..." rows={2} data-testid="input-exclusions" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
             <div className="space-y-2">
               <Label>Quote Document</Label>
               {uploadedFileData ? (

@@ -536,6 +536,12 @@ export const NavigationConfig = {
       testId: "nav-bid-network",
       visible: (role?: string) => canAccessBidNetworkAsGC(role),
     },
+    {
+      href: "/historical-costs",
+      label: "Historical Costs",
+      testId: "nav-historical-costs",
+      visible: (role?: string) => canAccessBids(role),
+    },
   ],
 
   operationsMenu: [

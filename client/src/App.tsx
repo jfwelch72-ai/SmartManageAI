@@ -41,6 +41,7 @@ const ProfilePage = lazy(() => import("@/pages/profile"));
 const BidsPage = lazy(() => import("@/pages/bids"));
 const BidDetailPage = lazy(() => import("@/pages/bid-detail"));
 const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
+const HistoricalCostsPage = lazy(() => import("@/pages/historical-costs"));
 const ProjectsPage = lazy(() => import("@/pages/projects"));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
 const TimeEntryPage = lazy(() => import("@/pages/time-entry"));
@@ -256,6 +257,7 @@ function Router() {
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/historical-costs" component={() => <ProtectedRoute component={HistoricalCostsPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bids/:code/estimate" component={() => <ProtectedRoute component={BidEstimate} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} />} />

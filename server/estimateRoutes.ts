@@ -2598,4 +2598,234 @@ Provide comprehensive financial analysis and recommendations.`
     }
   });
 
+router.get("/api/historical-costs", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hasManagementAccess(req.user!.role) && !hasEstimateAccess(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
+
+    const { historicalCosts } = await import("@shared/schema");
+    const { ilike, gte, lte } = await import("drizzle-orm");
+
+    const conditions: any[] = [eq(historicalCosts.organizationId, orgId)];
+    const { search, trade, costCode, scopeCategory, startDate, endDate, projectType } = req.query;
+
+    if (search) conditions.push(ilike(historicalCosts.description, `%${search}%`));
+    if (trade) conditions.push(eq(historicalCosts.trade, trade as string));
+    if (costCode) conditions.push(eq(historicalCosts.costCode, costCode as string));
+    if (scopeCategory) conditions.push(eq(historicalCosts.scopeCategory, scopeCategory as string));
+    if (projectType) conditions.push(eq(historicalCosts.projectType, projectType as string));
+    if (startDate) conditions.push(gte(historicalCosts.completedDate, startDate as string));
+    if (endDate) conditions.push(lte(historicalCosts.completedDate, endDate as string));
+
+    const results = await db.select().from(historicalCosts)
+      .where(and(...conditions))
+      .orderBy(desc(historicalCosts.createdAt))
+      .limit(500);
+
+    res.json(results);
+  } catch (error) {
+    console.error("Historical costs fetch error:", error);
+    res.status(500).json({ error: "Failed to fetch historical costs" });
+  }
+});
+
+router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hasManagementAccess(req.user!.role) && !hasEstimateAccess(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
+
+    const { historicalCosts } = await import("@shared/schema");
+    const { ilike, gte, lte } = await import("drizzle-orm");
+
+    const conditions: any[] = [eq(historicalCosts.organizationId, orgId)];
+    const { trade, costCode, scopeCategory, startDate, endDate, projectType } = req.query;
+
+    if (trade) conditions.push(eq(historicalCosts.trade, trade as string));
+    if (costCode) conditions.push(eq(historicalCosts.costCode, costCode as string));
+    if (scopeCategory) conditions.push(eq(historicalCosts.scopeCategory, scopeCategory as string));
+    if (projectType) conditions.push(eq(historicalCosts.projectType, projectType as string));
+    if (startDate) conditions.push(gte(historicalCosts.completedDate, startDate as string));
+    if (endDate) conditions.push(lte(historicalCosts.completedDate, endDate as string));
+
+    const aggregated = await db.select({
+      scopeCategory: historicalCosts.scopeCategory,
+      trade: historicalCosts.trade,
+      unit: historicalCosts.unit,
+      costCode: historicalCosts.costCode,
+      recordCount: sql<number>`count(*)::int`,
+      avgUnitCost: sql<string>`round(avg(${historicalCosts.unitCost}::numeric), 4)::text`,
+      minUnitCost: sql<string>`round(min(${historicalCosts.unitCost}::numeric), 4)::text`,
+      maxUnitCost: sql<string>`round(max(${historicalCosts.unitCost}::numeric), 4)::text`,
+      totalQuantity: sql<string>`round(sum(${historicalCosts.quantity}::numeric), 2)::text`,
+      totalCost: sql<string>`round(sum(${historicalCosts.totalCost}::numeric), 2)::text`,
+      latestDate: sql<string>`max(${historicalCosts.completedDate})`,
+      earliestDate: sql<string>`min(${historicalCosts.completedDate})`,
+    })
+      .from(historicalCosts)
+      .where(and(...conditions))
+      .groupBy(historicalCosts.scopeCategory, historicalCosts.trade, historicalCosts.unit, historicalCosts.costCode);
+
+    const trades = await db.selectDistinct({ trade: historicalCosts.trade })
+      .from(historicalCosts)
+      .where(eq(historicalCosts.organizationId, orgId));
+
+    const scopeCategories = await db.selectDistinct({ scopeCategory: historicalCosts.scopeCategory })
+      .from(historicalCosts)
+      .where(eq(historicalCosts.organizationId, orgId));
+
+    const costCodes = await db.selectDistinct({ costCode: historicalCosts.costCode })
+      .from(historicalCosts)
+      .where(and(eq(historicalCosts.organizationId, orgId), sql`${historicalCosts.costCode} IS NOT NULL`));
+
+    res.json({
+      aggregated,
+      filters: {
+        trades: trades.map(t => t.trade).filter(Boolean),
+        scopeCategories: scopeCategories.map(s => s.scopeCategory).filter(Boolean),
+        costCodes: costCodes.map(c => c.costCode).filter(Boolean),
+      },
+    });
+  } catch (error) {
+    console.error("Historical costs aggregation error:", error);
+    res.status(500).json({ error: "Failed to aggregate historical costs" });
+  }
+});
+
+router.post("/api/historical-costs", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hasManagementAccess(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
+
+    const { historicalCosts, insertHistoricalCostSchema } = await import("@shared/schema");
+    const data = insertHistoricalCostSchema.parse({ ...req.body, organizationId: orgId });
+    const [result] = await db.insert(historicalCosts).values(data).returning();
+    res.json(result);
+  } catch (error) {
+    console.error("Historical cost create error:", error);
+    res.status(500).json({ error: "Failed to create historical cost record" });
+  }
+});
+
+router.delete("/api/historical-costs/:id", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+    if (!hasManagementAccess(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
+
+    const { historicalCosts } = await import("@shared/schema");
+    await db.delete(historicalCosts)
+      .where(and(eq(historicalCosts.id, req.params.id), eq(historicalCosts.organizationId, orgId)));
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Historical cost delete error:", error);
+    res.status(500).json({ error: "Failed to delete historical cost record" });
+  }
+});
+
+router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { estimateId } = req.params;
+    const { assemblyId, quantity: baseQuantity } = req.body;
+
+    if (!assemblyId) return res.status(400).json({ error: "assemblyId is required" });
+
+    const [estimate] = await db.select().from(estimates).where(eq(estimates.id, estimateId));
+    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+    if (!hasEstimateAccess(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const { bids } = await import("@shared/schema");
+    const [bid] = await db.select().from(bids).where(eq(bids.id, estimate.bidId));
+    if (!bid || bid.gcOrganizationId !== req.user!.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const { libraryAssemblies, libraryAssemblyItems } = await import("@shared/schema");
+
+    const [assembly] = await db.select().from(libraryAssemblies)
+      .where(and(eq(libraryAssemblies.id, assemblyId), eq(libraryAssemblies.organizationId, req.user!.organizationId)));
+    if (!assembly) return res.status(404).json({ error: "Assembly not found" });
+
+    const items = await db.select().from(libraryAssemblyItems)
+      .where(eq(libraryAssemblyItems.assemblyId, assemblyId))
+      .orderBy(libraryAssemblyItems.displayOrder);
+
+    if (items.length === 0) return res.status(400).json({ error: "Assembly has no items" });
+
+    const qty = baseQuantity || 1;
+    const createdLineItems: any[] = [];
+
+    for (const item of items) {
+      let computedQty = qty;
+      try {
+        const formula = (item.formula || "1").replace(/quantity/gi, String(qty))
+          .replace(/area/gi, String(qty))
+          .replace(/volume/gi, String(qty))
+          .replace(/perimeter/gi, String(qty * 4))
+          .replace(/ridge_length/gi, String(qty * 0.3));
+        if (!/^[\d\s+\-*/().]+$/.test(formula)) {
+          computedQty = qty;
+        } else {
+          computedQty = Function(`"use strict"; return (${formula})`)();
+        }
+        if (isNaN(computedQty) || !isFinite(computedQty)) computedQty = qty;
+      } catch {
+        computedQty = qty;
+      }
+
+      const wasteFactor = item.wasteFactor || 0;
+      const adjustedQty = computedQty * (1 + wasteFactor / 100);
+      const unitCost = Number(item.unitCost || 0);
+      const totalMaterialCost = adjustedQty * unitCost;
+
+      const [lineItem] = await db.insert(estimateLineItems).values({
+        estimateId,
+        category: "GENERAL",
+        description: `${item.name} (from ${assembly.name})`,
+        quantity: String(Math.round(adjustedQty * 100) / 100),
+        unit: item.unit || assembly.unitOfMeasure || "EA",
+        source: "ASSEMBLY",
+        materialCost: String(Math.round(totalMaterialCost * 100) / 100),
+        laborCost: "0",
+        laborHours: "0",
+        equipmentCost: "0",
+        consumablesCost: "0",
+        subcontractCost: "0",
+        overheadAllocation: "0",
+        profitAllocation: "0",
+        totalCost: String(Math.round(totalMaterialCost * 100) / 100),
+        metadata: JSON.stringify({
+          assemblyId: assembly.id,
+          assemblyName: assembly.name,
+          originalFormula: item.formula,
+          wasteFactor: wasteFactor,
+          baseQuantity: qty,
+        }),
+      }).returning();
+
+      createdLineItems.push(lineItem);
+    }
+
+    try {
+      await createEstimateSnapshot(estimateId, req.user!.id);
+    } catch (snapshotErr) {
+      console.error("[Snapshot] Failed after assembly insertion:", snapshotErr);
+    }
+
+    res.json({
+      success: true,
+      assemblyName: assembly.name,
+      lineItemsCreated: createdLineItems.length,
+      lineItems: createdLineItems,
+    });
+  } catch (error) {
+    console.error("Assembly insertion error:", error);
+    res.status(500).json({ error: "Failed to insert assembly into estimate" });
+  }
+});
+
 export default router;

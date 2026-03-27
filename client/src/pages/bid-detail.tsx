@@ -51,6 +51,7 @@ import BidEquipmentStep from "@/components/bid/BidEquipmentStep";
 import BidSubcontractorsStep from "@/components/bid/BidSubcontractorsStep";
 import BidSummaryStep from "@/components/bid/BidSummaryStep";
 import CostBuilderSidebar from "@/components/bid/CostBuilderSidebar";
+import BidLevelingSection from "@/components/bid/BidLevelingSection";
 import {
   BidEditDialog,
   SubcontractorQuoteDialog,
@@ -175,6 +176,8 @@ export default function BidDetailPage() {
       contactEmail: "",
       contactPhone: "",
       notes: "",
+      inclusions: "",
+      exclusions: "",
     },
   });
   const bidEditForm = useForm({
@@ -344,6 +347,8 @@ export default function BidDetailPage() {
       contactEmail: quote.contactEmail || "",
       contactPhone: quote.contactPhone || "",
       notes: quote.notes || "",
+      inclusions: quote.inclusions || "",
+      exclusions: quote.exclusions || "",
     });
     setShowQuoteDialog(true);
   };
@@ -1041,6 +1046,9 @@ export default function BidDetailPage() {
                 onPrevStep={() => setCurrentStep(4)}
                 onNextStep={() => setCurrentStep(6)}
               />
+              <div className="mt-6">
+                <BidLevelingSection bidCode={bidCode} canEdit={canEdit} />
+              </div>
             )}
             {currentStep === 6 && (
               <BidSummaryStep

@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useBid } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle, AlertTriangle } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle, Layers } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -48,6 +48,7 @@ import { EstimateSummaryCards } from "@/components/estimate/EstimateSummaryCards
 import { MarkupCalculatorCard } from "@/components/estimate/MarkupCalculator";
 import { LineItemFormDialog } from "@/components/estimate/LineItemForm";
 import { LineItemsTable } from "@/components/estimate/LineItemsTable";
+import { AssemblyInsertDialog } from "@/components/estimate/AssemblyInsertDialog";
 
 export default function BidEstimate() {
   const [, params] = useRoute("/bids/:code/estimate");
@@ -60,6 +61,7 @@ export default function BidEstimate() {
 
   const { toast } = useToast();
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
+  const [assemblyInsertOpen, setAssemblyInsertOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
   const [equipmentSelectorKey, setEquipmentSelectorKey] = useState(0);
   const [editingLineItem, setEditingLineItem] =
@@ -750,7 +752,16 @@ export default function BidEstimate() {
         )}
 
         {hasEstimateAccess && (
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
+            <Button
+              variant="outline"
+              onClick={() => setAssemblyInsertOpen(true)}
+              disabled={!estimate}
+              data-testid="button-insert-assembly"
+            >
+              <Layers className="w-4 h-4 mr-2" />
+              Insert Assembly
+            </Button>
             <LineItemFormDialog
               mode="add"
               open={addLineItemOpen}
@@ -816,6 +827,15 @@ export default function BidEstimate() {
           isDeleting={deleteLineItemMutation.isPending}
         />
       </main>
+
+      {estimate && (
+        <AssemblyInsertDialog
+          estimateId={estimate.id}
+          bidId={bidId}
+          open={assemblyInsertOpen}
+          onOpenChange={setAssemblyInsertOpen}
+        />
+      )}
 
       <AlertDialog
         open={!!deleteConfirmId}

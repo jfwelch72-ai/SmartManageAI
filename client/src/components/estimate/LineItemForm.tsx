@@ -22,7 +22,9 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store } from "lucide-react";
+import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
 import ModifierSelector from "@/components/ModifierSelector";
@@ -212,6 +214,119 @@ interface LineItemFormDialogProps {
   onHierarchicalUnitChange?: (u: string) => void;
 }
 
+interface HistoricalCostRecord {
+  id: string;
+  description: string;
+  scopeCategory: string;
+  trade: string | null;
+  costCode: string | null;
+  quantity: string;
+  unit: string;
+  unitCost: string;
+  totalCost: string;
+  projectName: string | null;
+}
+
+function HistoricalCostImportButton({ form }: { form: UseFormReturn<LineItemFormValues> }) {
+  const [importOpen, setImportOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const { data: records = [], isLoading } = useQuery<HistoricalCostRecord[]>({
+    queryKey: ["/api/historical-costs", searchTerm],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (searchTerm) params.set("search", searchTerm);
+      params.set("limit", "20");
+      const res = await fetch(`/api/historical-costs?${params.toString()}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: importOpen,
+  });
+
+  const handleSelect = (record: HistoricalCostRecord) => {
+    form.setValue("description", record.description);
+    form.setValue("unit", record.unit);
+    form.setValue("quantity", Number(record.quantity) || 0);
+    form.setValue("materialCost", Number(record.unitCost) || 0);
+    setImportOpen(false);
+    setSearchTerm("");
+  };
+
+  return (
+    <Dialog open={importOpen} onOpenChange={setImportOpen}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" data-testid="button-import-from-history">
+          <Database className="h-4 w-4 mr-2" />
+          Import from History
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Import from Historical Costs</DialogTitle>
+          <DialogDescription>Select a historical cost record to populate line item fields</DialogDescription>
+        </DialogHeader>
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search historical costs..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-9"
+            data-testid="input-search-history-import"
+          />
+        </div>
+        {isLoading ? (
+          <div className="text-center py-6 text-muted-foreground">Loading...</div>
+        ) : records.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground">
+            <Database className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No historical cost records found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto border rounded-lg">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Scope</TableHead>
+                  <TableHead className="text-right">$/Unit</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead>Project</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {records.map((record) => (
+                  <TableRow key={record.id} data-testid={`row-history-import-${record.id}`}>
+                    <TableCell className="font-medium text-sm max-w-[200px] truncate">{record.description}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{record.scopeCategory}</TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      ${Number(record.unitCost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </TableCell>
+                    <TableCell className="text-xs">{record.unit}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-[100px] truncate">{record.projectName || "—"}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleSelect(record)}
+                        data-testid={`button-use-history-${record.id}`}
+                      >
+                        Use
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function LineItemFormDialog({
   mode,
   open,
@@ -280,6 +395,9 @@ export function LineItemFormDialog({
             <FileText className="h-4 w-4 mr-2" />
             Manual Entry
           </Button>
+          <div className="ml-auto">
+            <HistoricalCostImportButton form={form} />
+          </div>
         </div>
       )}
       

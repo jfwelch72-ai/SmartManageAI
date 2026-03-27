@@ -18,6 +18,8 @@ export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   contactName: text("contact_name"),
   contactEmail: text("contact_email"),
   contactPhone: text("contact_phone"),
+  inclusions: text("inclusions"),
+  exclusions: text("exclusions"),
   notes: text("notes"),
   isSelected: boolean("is_selected").notNull().default(false),
   fileUrl: text("file_url"),
@@ -2755,4 +2757,42 @@ export const insertMaintenanceRecurringScheduleSchema = createInsertSchema(maint
 });
 export type InsertMaintenanceRecurringSchedule = z.infer<typeof insertMaintenanceRecurringScheduleSchema>;
 export type MaintenanceRecurringSchedule = typeof maintenanceRecurringSchedules.$inferSelect;
+
+// ─── HISTORICAL COSTS ────────────────────────────────────────────────────────
+
+export const historicalCosts = pgTable("historical_costs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  projectName: text("project_name"),
+  projectType: text("project_type"),
+  costCode: text("cost_code"),
+  scopeCategory: text("scope_category").notNull(),
+  trade: text("trade"),
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
+  unit: text("unit").notNull(),
+  unitCost: decimal("unit_cost", { precision: 12, scale: 4 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 14, scale: 2 }).notNull(),
+  materialCost: decimal("material_cost", { precision: 12, scale: 2 }),
+  laborCost: decimal("labor_cost", { precision: 12, scale: 2 }),
+  equipmentCost: decimal("equipment_cost", { precision: 12, scale: 2 }),
+  subcontractCost: decimal("subcontract_cost", { precision: 12, scale: 2 }),
+  completedDate: date("completed_date"),
+  source: text("source").default("MANUAL"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("historical_costs_org_idx").on(table.organizationId),
+  scopeCategoryIdx: index("historical_costs_scope_category_idx").on(table.scopeCategory),
+  tradeIdx: index("historical_costs_trade_idx").on(table.trade),
+  costCodeIdx: index("historical_costs_cost_code_idx").on(table.costCode),
+  completedDateIdx: index("historical_costs_completed_date_idx").on(table.completedDate),
+}));
+
+export const insertHistoricalCostSchema = createInsertSchema(historicalCosts).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertHistoricalCost = z.infer<typeof insertHistoricalCostSchema>;
+export type HistoricalCost = typeof historicalCosts.$inferSelect;
 

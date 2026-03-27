@@ -1355,6 +1355,8 @@ router.patch("/api/bids/:code/quotes/:quoteId", requireAuth, requireRole("ADMIN"
       quoteAmount: req.body.quoteAmount !== undefined ? req.body.quoteAmount : undefined,
       fileUrl: req.body.fileUrl !== undefined ? req.body.fileUrl : undefined,
       fileName: req.body.fileName !== undefined ? req.body.fileName : undefined,
+      inclusions: req.body.inclusions !== undefined ? sanitizeText(req.body.inclusions) : undefined,
+      exclusions: req.body.exclusions !== undefined ? sanitizeText(req.body.exclusions) : undefined,
     };
     
     if (typeof req.body.isSelected === 'boolean') {
@@ -2769,6 +2771,98 @@ router.post("/api/public/rfq-response/:token", async (req, res) => {
     res.json({ success: true, message: "Quote submitted successfully" });
   } catch (error) {
     console.error("Public RFQ response submit error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/bids/:code/bid-leveling", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const { bidSubcontractorQuotes } = await import("@shared/schema");
+    const quotes = await db
+      .select()
+      .from(bidSubcontractorQuotes)
+      .where(eq(bidSubcontractorQuotes.bidId, bid.id))
+      .orderBy(bidSubcontractorQuotes.scopeOfWork, bidSubcontractorQuotes.quoteAmount);
+
+    const scopeGroups: Record<string, any[]> = {};
+    for (const q of quotes) {
+      const scope = q.scopeOfWork || "Unspecified";
+      if (!scopeGroups[scope]) scopeGroups[scope] = [];
+      scopeGroups[scope].push(q);
+    }
+
+    const leveling = Object.entries(scopeGroups).map(([scope, scopeQuotes]) => {
+      const amounts = scopeQuotes.map(q => Number(q.quoteAmount));
+      const minAmount = Math.min(...amounts);
+      const maxAmount = Math.max(...amounts);
+      const avgAmount = amounts.reduce((a, b) => a + b, 0) / amounts.length;
+      const stdDev = Math.sqrt(amounts.reduce((sum, val) => sum + Math.pow(val - avgAmount, 2), 0) / amounts.length);
+      const outlierThreshold = avgAmount + 1.5 * stdDev;
+
+      return {
+        scope,
+        quotes: scopeQuotes.map(q => ({
+          ...q,
+          isLowBid: Number(q.quoteAmount) === minAmount,
+          isOutlier: Number(q.quoteAmount) > outlierThreshold,
+          variance: avgAmount > 0 ? ((Number(q.quoteAmount) - avgAmount) / avgAmount * 100).toFixed(1) : "0",
+        })),
+        summary: {
+          count: scopeQuotes.length,
+          lowBid: minAmount,
+          highBid: maxAmount,
+          average: Math.round(avgAmount * 100) / 100,
+          spread: maxAmount - minAmount,
+          selectedQuote: scopeQuotes.find(q => q.isSelected)?.id || null,
+        },
+      };
+    });
+
+    res.json({ bidId: bid.id, bidCode: bid.code, leveling });
+  } catch (error) {
+    console.error("Bid leveling error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/bids/:code/quotes/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+  try {
+    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
+
+    const { bidSubcontractorQuotes } = await import("@shared/schema");
+    const { quoteId } = req.params;
+
+    const [quote] = await db.select().from(bidSubcontractorQuotes)
+      .where(and(eq(bidSubcontractorQuotes.id, quoteId), eq(bidSubcontractorQuotes.bidId, bid.id)));
+    if (!quote) {
+      res.status(404).json({ error: "Quote not found" });
+      return;
+    }
+
+    const sameScope = await db.select().from(bidSubcontractorQuotes)
+      .where(and(eq(bidSubcontractorQuotes.bidId, bid.id), eq(bidSubcontractorQuotes.scopeOfWork, quote.scopeOfWork)));
+
+    for (const sq of sameScope) {
+      await db.update(bidSubcontractorQuotes)
+        .set({ isSelected: sq.id === quoteId, updatedAt: new Date() })
+        .where(eq(bidSubcontractorQuotes.id, sq.id));
+    }
+
+    res.json({ success: true, selectedQuoteId: quoteId });
+  } catch (error) {
+    console.error("Quote selection error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
