@@ -381,6 +381,7 @@ export const bids = pgTable("bids", {
   status: bidStatusEnum("status").notNull().default("DRAFT"),
   convertedToProjectId: varchar("converted_to_project_id"),
   crmOpportunityId: varchar("crm_opportunity_id"),
+  aiWinProbability: integer("ai_win_probability"),
   awardedAt: timestamp("awarded_at"),
   submittedAt: timestamp("submitted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

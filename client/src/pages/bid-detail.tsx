@@ -12,6 +12,7 @@ import {
   Upload,
   Send,
   ExternalLink,
+  Brain,
 } from "lucide-react";
 import {
   Select,
@@ -897,9 +898,27 @@ export default function BidDetailPage() {
             <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1 sm:mb-2">
               {bid.name}
             </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              {bid.clientName} • {locationString}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-xs sm:text-sm text-muted-foreground">
+                {bid.clientName} • {locationString}
+              </p>
+              {bid.aiWinProbability != null && (
+                <Badge
+                  variant="outline"
+                  className={`text-xs gap-1 ${
+                    bid.aiWinProbability >= 60
+                      ? "border-green-300 text-green-700 dark:border-green-700 dark:text-green-400"
+                      : bid.aiWinProbability >= 30
+                        ? "border-yellow-300 text-yellow-700 dark:border-yellow-700 dark:text-yellow-400"
+                        : "border-red-300 text-red-700 dark:border-red-700 dark:text-red-400"
+                  }`}
+                  data-testid="badge-bid-ai-win-prob"
+                >
+                  <Brain className="w-3 h-3" />
+                  Win Prob: {bid.aiWinProbability}%
+                </Badge>
+              )}
+            </div>
           </div>
           {canEdit && (
             <div className="flex gap-2 w-full sm:w-auto">
@@ -1023,32 +1042,34 @@ export default function BidDetailPage() {
               />
             )}
             {currentStep === 5 && (
-              <BidSubcontractorsStep
-                quotes={quotes}
-                quotesLoading={quotesLoading}
-                totalSubcontractorCost={totalSubcontractorCost}
-                derivedSubRequirements={derivedSubRequirements}
-                canEdit={canEdit}
-                toggleSelectionPending={
-                  mutations.toggleQuoteSelection.isPending
-                }
-                onAddQuote={handleAddQuote}
-                onEditQuote={handleEditQuote}
-                onDeleteQuote={handleDeleteQuote}
-                onToggleSelection={(qId, sel) =>
-                  mutations.toggleQuoteSelection.mutate({
-                    quoteId: qId,
-                    isSelected: sel,
-                  })
-                }
-                onSendRfq={(quoteId, overrideEmail) => mutations.sendSubRfq.mutate({ quoteId, overrideEmail })}
-                sendRfqPending={mutations.sendSubRfq.isPending}
-                onPrevStep={() => setCurrentStep(4)}
-                onNextStep={() => setCurrentStep(6)}
-              />
-              <div className="mt-6">
-                <BidLevelingSection bidCode={bidCode} canEdit={canEdit} />
-              </div>
+              <>
+                <BidSubcontractorsStep
+                  quotes={quotes}
+                  quotesLoading={quotesLoading}
+                  totalSubcontractorCost={totalSubcontractorCost}
+                  derivedSubRequirements={derivedSubRequirements}
+                  canEdit={canEdit}
+                  toggleSelectionPending={
+                    mutations.toggleQuoteSelection.isPending
+                  }
+                  onAddQuote={handleAddQuote}
+                  onEditQuote={handleEditQuote}
+                  onDeleteQuote={handleDeleteQuote}
+                  onToggleSelection={(qId, sel) =>
+                    mutations.toggleQuoteSelection.mutate({
+                      quoteId: qId,
+                      isSelected: sel,
+                    })
+                  }
+                  onSendRfq={(quoteId, overrideEmail) => mutations.sendSubRfq.mutate({ quoteId, overrideEmail })}
+                  sendRfqPending={mutations.sendSubRfq.isPending}
+                  onPrevStep={() => setCurrentStep(4)}
+                  onNextStep={() => setCurrentStep(6)}
+                />
+                <div className="mt-6">
+                  <BidLevelingSection bidCode={bidCode} canEdit={canEdit} />
+                </div>
+              </>
             )}
             {currentStep === 6 && (
               <BidSummaryStep

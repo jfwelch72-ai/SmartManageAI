@@ -1281,6 +1281,8 @@ export const crmOpportunities = pgTable("crm_opportunities", {
   source: text("source"),
   notes: text("notes"),
   lostReason: text("lost_reason"),
+  aiWinProbability: integer("ai_win_probability"),
+  aiWinProbabilityRationale: text("ai_win_probability_rationale"),
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1290,7 +1292,7 @@ export const crmOpportunities = pgTable("crm_opportunities", {
   assignedIdx: index("crm_opportunities_assigned_idx").on(table.assignedToId),
 }));
 
-export const insertCrmOpportunitySchema = createInsertSchema(crmOpportunities).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertCrmOpportunitySchema = createInsertSchema(crmOpportunities).omit({ id: true, createdAt: true, updatedAt: true, aiWinProbability: true, aiWinProbabilityRationale: true });
 export type InsertCrmOpportunity = z.infer<typeof insertCrmOpportunitySchema>;
 export type CrmOpportunity = typeof crmOpportunities.$inferSelect;
 

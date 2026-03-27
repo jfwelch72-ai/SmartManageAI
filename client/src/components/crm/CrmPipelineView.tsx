@@ -55,7 +55,15 @@ import {
   Folder,
   AlertCircle,
   GitBranch,
+  Brain,
+  RefreshCw,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { format } from "date-fns";
 
 type PipelineStage = "LEAD" | "QUALIFIED" | "ESTIMATING" | "BID_SUBMITTED" | "NEGOTIATION" | "WON" | "LOST";
@@ -67,6 +75,8 @@ interface Opportunity {
   stage: PipelineStage;
   dealValue: string | null;
   probability: number | null;
+  aiWinProbability: number | null;
+  aiWinProbabilityRationale: string | null;
   crmOrganisationId: string | null;
   contactId: string | null;
   assignedToId: string | null;
@@ -428,6 +438,15 @@ export default function CrmPipelineView() {
       toast({ title: "Bid created from opportunity" });
     },
     onError: () => toast({ title: "Failed to create bid", variant: "destructive" }),
+  });
+
+  const rescoreMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/crm/opportunities/${id}/rescore`),
+    onSuccess: () => {
+      invalidateAll();
+      toast({ title: "Win probability re-scored" });
+    },
+    onError: () => toast({ title: "Failed to re-score", variant: "destructive" }),
   });
 
   const openDetail = (opp: Opportunity) => {
@@ -800,7 +819,33 @@ export default function CrmPipelineView() {
                           {opp.crmOrgName && <p className="text-xs text-muted-foreground truncate">{opp.crmOrgName}</p>}
                           {opp.dealValue && <p className="text-sm font-semibold text-primary">{formatCurrency(opp.dealValue)}</p>}
                           <div className="flex items-center justify-between">
-                            <Badge variant="outline" className="text-xs">{opp.probability ?? 10}%</Badge>
+                            {opp.aiWinProbability != null ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs gap-1 ${
+                                        opp.aiWinProbability >= 60
+                                          ? "border-green-300 text-green-700 dark:border-green-700 dark:text-green-400"
+                                          : opp.aiWinProbability >= 30
+                                            ? "border-yellow-300 text-yellow-700 dark:border-yellow-700 dark:text-yellow-400"
+                                            : "border-red-300 text-red-700 dark:border-red-700 dark:text-red-400"
+                                      }`}
+                                      data-testid={`badge-ai-prob-${opp.id}`}
+                                    >
+                                      <Brain className="w-3 h-3" />
+                                      {opp.aiWinProbability}%
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-[220px]">
+                                    <p className="text-xs">{opp.aiWinProbabilityRationale || "AI-scored win probability"}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">{opp.probability ?? 10}%</Badge>
+                            )}
                             {opp.expectedCloseDate && (
                               <span className="text-xs text-muted-foreground flex items-center gap-1">
                                 <Calendar className="w-3 h-3" />
@@ -897,7 +942,25 @@ export default function CrmPipelineView() {
                         <Badge className={`${si.bgColor} ${si.color} border-0 text-xs`}>{si.label}</Badge>
                       </div>
                       <div className="col-span-2 text-sm font-medium">{formatCurrency(opp.dealValue)}</div>
-                      <div className="col-span-2 text-sm">{opp.probability ?? 10}%</div>
+                      <div className="col-span-2 text-sm">
+                        {opp.aiWinProbability != null ? (
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-1 cursor-default">
+                                  <Brain className="w-3 h-3 text-primary" />
+                                  {opp.aiWinProbability}%
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px]">
+                                <p className="text-xs">{opp.aiWinProbabilityRationale || "AI-scored"}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ) : (
+                          <span>{opp.probability ?? 10}%</span>
+                        )}
+                      </div>
                       <div className="col-span-2 text-xs text-muted-foreground">
                         {opp.expectedCloseDate ? format(new Date(opp.expectedCloseDate), "MMM d, yyyy") : "—"}
                       </div>
@@ -922,7 +985,10 @@ export default function CrmPipelineView() {
                       </div>
                       <div className="flex items-center gap-3 text-sm">
                         <span className="font-medium">{formatCurrency(opp.dealValue)}</span>
-                        <span className="text-muted-foreground">{opp.probability ?? 10}%</span>
+                        <span className="text-muted-foreground inline-flex items-center gap-1">
+                          {opp.aiWinProbability != null && <Brain className="w-3 h-3" />}
+                          {opp.aiWinProbability ?? opp.probability ?? 10}%
+                        </span>
                         {opp.expectedCloseDate && (
                           <span className="text-xs text-muted-foreground ml-auto">
                             {format(new Date(opp.expectedCloseDate), "MMM d, yyyy")}
@@ -1112,6 +1178,27 @@ export default function CrmPipelineView() {
                 )}
               </div>
 
+              {selectedOpp.aiWinProbability != null && (
+                <div className={`rounded-md p-3 border ${
+                  selectedOpp.aiWinProbability >= 60
+                    ? "bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800"
+                    : selectedOpp.aiWinProbability >= 30
+                      ? "bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800"
+                      : "bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800"
+                }`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <Brain className="w-4 h-4 text-primary" />
+                      <span className="text-xs font-medium uppercase tracking-wide">AI Win Probability</span>
+                    </div>
+                    <span className="text-lg font-bold" data-testid="text-ai-win-prob">{selectedOpp.aiWinProbability}%</span>
+                  </div>
+                  {selectedOpp.aiWinProbabilityRationale && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-ai-rationale">{selectedOpp.aiWinProbabilityRationale}</p>
+                  )}
+                </div>
+              )}
+
               {/* Key fields */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div>
@@ -1182,6 +1269,18 @@ export default function CrmPipelineView() {
 
               {/* Actions */}
               <div className="flex gap-2 flex-wrap">
+                {canEdit && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => rescoreMutation.mutate(selectedOpp.id)}
+                    disabled={rescoreMutation.isPending}
+                    data-testid="button-rescore-opp"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${rescoreMutation.isPending ? "animate-spin" : ""}`} />
+                    {rescoreMutation.isPending ? "Scoring..." : "Re-score"}
+                  </Button>
+                )}
                 {canEdit && (
                   <Button size="sm" variant="outline" onClick={() => openEdit(selectedOpp)} data-testid="button-edit-opp">
                     Edit Details

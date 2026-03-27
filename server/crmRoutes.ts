@@ -5,6 +5,8 @@ import { eq, and, sql, desc, or, lte, gte, isNotNull, inArray, ilike, ne, type S
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
+import { eventBus } from "./events";
+import { scoreWinProbability } from "./ai/winProbabilityService";
 
 const router = Router();
 
@@ -1373,6 +1375,8 @@ const oppSelectFields = {
   source: crmOpportunities.source,
   notes: crmOpportunities.notes,
   lostReason: crmOpportunities.lostReason,
+  aiWinProbability: crmOpportunities.aiWinProbability,
+  aiWinProbabilityRationale: crmOpportunities.aiWinProbabilityRationale,
   createdById: crmOpportunities.createdById,
   createdAt: crmOpportunities.createdAt,
   updatedAt: crmOpportunities.updatedAt,
@@ -1485,6 +1489,15 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
       newValue: JSON.stringify({ name: created.name, stage: created.stage }),
     });
 
+    await eventBus.emit({
+      type: "crm.opportunity_created",
+      version: 1,
+      orgId,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: { opportunityId: created.id, name: created.name, stage: created.stage },
+    });
+
     res.status(201).json(created);
   } catch (error) {
     console.error("Create opportunity error:", error);
@@ -1541,6 +1554,20 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
           });
         }
       }
+
+      await eventBus.emit({
+        type: "crm.opportunity_stage_changed",
+        version: 1,
+        orgId: updated.organizationId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        payload: {
+          opportunityId: updated.id,
+          name: updated.name,
+          oldStage: existing.stage,
+          newStage: safeData.stage,
+        },
+      });
     }
 
     await db.insert(auditLog).values({
@@ -1673,6 +1700,15 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
       .leftJoin(createdByAlias, eq(createdByAlias.id, crmOpportunityActivities.createdById))
       .where(eq(crmOpportunityActivities.id, created.id));
 
+    await eventBus.emit({
+      type: "crm.activity_created",
+      version: 1,
+      orgId,
+      actorId: req.user!.id,
+      timestamp: new Date(),
+      payload: { opportunityId: req.params.id, activityType: created.activityType },
+    });
+
     res.status(201).json(withUser);
   } catch (error) {
     console.error("Create activity error:", error);
@@ -1780,6 +1816,7 @@ router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("A
       locationAddress: opp.projectLocation || null,
       description: description || opp.notes || null,
       crmOpportunityId: opp.id,
+      aiWinProbability: opp.aiWinProbability,
     }).returning();
 
     await db.insert(crmOpportunityActivities).values({
@@ -2027,6 +2064,87 @@ router.get("/api/crm/reports/rep-performance", requireAuth, requireRole(...PIPEL
     res.json({ days, reps });
   } catch (error) {
     console.error("Rep performance report error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const PIPELINE_OPEN_STAGES = ["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION"];
+
+router.post("/api/crm/opportunities/:id/rescore", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const conditions: SQL[] = [eq(crmOpportunities.id, req.params.id)];
+    if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    const [opp] = await db.select().from(crmOpportunities).where(and(...conditions)).limit(1);
+    if (!opp) return res.status(404).json({ error: "Opportunity not found" });
+
+    const result = await scoreWinProbability(opp.id);
+    res.json({ opportunityId: opp.id, aiWinProbability: result.score, aiWinProbabilityRationale: result.rationale });
+  } catch (error) {
+    console.error("Re-score opportunity error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/crm/reports/revenue-forecast", requireAuth, requireRole(...PIPELINE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const conditions: SQL[] = [
+      sql`${crmOpportunities.stage} IN ('LEAD','QUALIFIED','ESTIMATING','BID_SUBMITTED','NEGOTIATION')`,
+    ];
+    if (shouldFilter && orgId) conditions.push(eq(crmOpportunities.organizationId, orgId));
+
+    const opps = await db
+      .select({
+        id: crmOpportunities.id,
+        name: crmOpportunities.name,
+        stage: crmOpportunities.stage,
+        dealValue: crmOpportunities.dealValue,
+        probability: crmOpportunities.probability,
+        aiWinProbability: crmOpportunities.aiWinProbability,
+        expectedCloseDate: crmOpportunities.expectedCloseDate,
+      })
+      .from(crmOpportunities)
+      .where(and(...conditions));
+
+    let totalWeightedValue = 0;
+    const monthlyMap = new Map<string, number>();
+
+    for (const opp of opps) {
+      const dealVal = parseFloat(opp.dealValue ?? "0") || 0;
+      const prob = (opp.aiWinProbability ?? opp.probability ?? 10) / 100;
+      const weighted = dealVal * prob;
+      totalWeightedValue += weighted;
+
+      if (opp.expectedCloseDate) {
+        const d = new Date(opp.expectedCloseDate);
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        monthlyMap.set(monthKey, (monthlyMap.get(monthKey) ?? 0) + weighted);
+      }
+    }
+
+    const now = new Date();
+    const monthlyProjections: { month: string; label: string; value: number }[] = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      monthlyProjections.push({ month: key, label, value: Math.round((monthlyMap.get(key) ?? 0) * 100) / 100 });
+    }
+
+    res.json({
+      totalWeightedValue: Math.round(totalWeightedValue * 100) / 100,
+      openDealsCount: opps.length,
+      totalUnweightedValue: Math.round(opps.reduce((s, o) => s + (parseFloat(o.dealValue ?? "0") || 0), 0) * 100) / 100,
+      monthlyProjections,
+    });
+  } catch (error) {
+    console.error("Revenue forecast report error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

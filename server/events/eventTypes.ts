@@ -206,7 +206,10 @@ export type DomainEvent =
   | BidStatusChangedEvent
   | BidAssignedEvent
   | BidDueDateApproachingEvent
-  | BudgetAlertTriggeredEvent;
+  | BudgetAlertTriggeredEvent
+  | CrmOpportunityCreatedEvent
+  | CrmOpportunityStageChangedEvent
+  | CrmActivityCreatedEvent;
 
 export interface BudgetAlertTriggeredEvent extends EventEnvelope {
   type: "budget.alert_triggered";
@@ -217,6 +220,33 @@ export interface BudgetAlertTriggeredEvent extends EventEnvelope {
     alertLevel: string;
     thresholdPercent: number;
     currentPercent: number;
+  };
+}
+
+export interface CrmOpportunityCreatedEvent extends EventEnvelope {
+  type: "crm.opportunity_created";
+  payload: {
+    opportunityId: string;
+    name: string;
+    stage: string;
+  };
+}
+
+export interface CrmOpportunityStageChangedEvent extends EventEnvelope {
+  type: "crm.opportunity_stage_changed";
+  payload: {
+    opportunityId: string;
+    name: string;
+    oldStage: string;
+    newStage: string;
+  };
+}
+
+export interface CrmActivityCreatedEvent extends EventEnvelope {
+  type: "crm.activity_created";
+  payload: {
+    opportunityId: string;
+    activityType: string;
   };
 }
 
@@ -242,4 +272,7 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "hiring.interview_scheduled",
   "hiring.integration_connected",
   "budget.alert_triggered",
+  "crm.opportunity_created",
+  "crm.opportunity_stage_changed",
+  "crm.activity_created",
 ];

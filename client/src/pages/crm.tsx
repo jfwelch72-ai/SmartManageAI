@@ -46,6 +46,8 @@ import {
   BarChart2,
   Download,
   ChevronRight,
+  DollarSign,
+  Brain,
 } from "lucide-react";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import type {
@@ -428,16 +430,88 @@ function RepPerformanceSection({ days }: { days: number }) {
   );
 }
 
+function RevenueForecastSection() {
+  const { data, isLoading } = useQuery<{
+    totalWeightedValue: number;
+    openDealsCount: number;
+    totalUnweightedValue: number;
+    monthlyProjections: { month: string; label: string; value: number }[];
+  }>({
+    queryKey: ["/api/crm/reports/revenue-forecast"],
+  });
+
+  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (!data) return <p className="text-sm text-muted-foreground">No data available</p>;
+
+  const maxValue = Math.max(...data.monthlyProjections.map(m => m.value), 1);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-lg border p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <Brain className="w-4 h-4 text-primary" />
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Weighted Pipeline</p>
+          </div>
+          <p className="text-xl font-bold text-primary" data-testid="text-weighted-pipeline">
+            ${data.totalWeightedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </p>
+        </div>
+        <div className="rounded-lg border p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <DollarSign className="w-4 h-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Pipeline</p>
+          </div>
+          <p className="text-xl font-bold" data-testid="text-total-pipeline">
+            ${data.totalUnweightedValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+          </p>
+        </div>
+        <div className="rounded-lg border p-3">
+          <div className="flex items-center gap-2 mb-1">
+            <TrendingUp className="w-4 h-4 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Open Deals</p>
+          </div>
+          <p className="text-xl font-bold" data-testid="text-open-deals-count">{data.openDealsCount}</p>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Monthly Projected Revenue (Next 6 Months)</p>
+        <div className="h-[220px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.monthlyProjections} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => v >= 1000 ? `$${(v/1000).toFixed(0)}K` : `$${v}`} />
+              <Tooltip
+                formatter={(value: number) => [`$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, "Projected Revenue"]}
+              />
+              <Bar dataKey="value" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]}>
+                <LabelList
+                  dataKey="value"
+                  position="top"
+                  formatter={(v: number) => v > 0 ? `$${v >= 1000 ? `${(v/1000).toFixed(0)}K` : v.toFixed(0)}` : ""}
+                  style={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CrmPipelineReports() {
   const [days, setDays] = useState<30 | 90 | 365>(30);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    winLoss: true, timeInStage: true, repPerf: true,
+    revForecast: true, winLoss: true, timeInStage: true, repPerf: true,
   });
 
   const toggleSection = (key: string) =>
     setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
 
   const sections = [
+    { key: "revForecast", title: "Revenue Forecast", content: <RevenueForecastSection /> },
     { key: "winLoss", title: "Win / Loss Summary", content: <WinLossSection days={days} /> },
     { key: "timeInStage", title: "Time in Stage", content: <TimeInStageSection days={days} /> },
     { key: "repPerf", title: "Rep Performance", content: <RepPerformanceSection days={days} /> },
