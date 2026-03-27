@@ -528,6 +528,7 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
 
 router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
     const pendingShifts = await db
       .select({
         shift: timeClockShifts,
@@ -535,11 +536,12 @@ router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN"
         project: projects,
       })
       .from(timeClockShifts)
-      .leftJoin(users, eq(timeClockShifts.userId, users.id))
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
       .where(and(
         eq(timeClockShifts.approvalStatus, "PENDING"),
-        sql`${timeClockShifts.clockOut} IS NOT NULL`
+        sql`${timeClockShifts.clockOut} IS NOT NULL`,
+        eq(users.organizationId, orgId)
       ))
       .orderBy(desc(timeClockShifts.clockOut));
 
@@ -572,6 +574,7 @@ router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN"
 
 router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
     const activeShifts = await db
       .select({
         shift: timeClockShifts,
@@ -579,9 +582,12 @@ router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "M
         project: projects,
       })
       .from(timeClockShifts)
-      .leftJoin(users, eq(timeClockShifts.userId, users.id))
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
-      .where(sql`${timeClockShifts.clockOut} IS NULL`)
+      .where(and(
+        sql`${timeClockShifts.clockOut} IS NULL`,
+        eq(users.organizationId, orgId)
+      ))
       .orderBy(desc(timeClockShifts.clockIn));
 
     const formattedShifts = activeShifts.map(({ shift, user, project }) => ({
@@ -618,6 +624,12 @@ router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("
     const pageNum = parseInt(page as string);
     const pageSizeNum = parseInt(pageSize as string);
     const offset = (pageNum - 1) * pageSizeNum;
+
+    const [targetUser] = await db.select({ id: users.id, organizationId: users.organizationId })
+      .from(users).where(eq(users.id, req.params.userId)).limit(1);
+    if (!targetUser || targetUser.organizationId !== req.user!.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
 
     const conditions = [eq(timeClockShifts.userId, req.params.userId)];
     
@@ -662,14 +674,22 @@ router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN
 
     const data = schema.parse(sanitizedBody);
 
-    const [shift] = await db
-      .select()
+    const [shiftWithUser] = await db
+      .select({ shift: timeClockShifts, userOrgId: users.organizationId })
       .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .where(eq(timeClockShifts.id, req.params.id))
       .limit(1);
 
-    if (!shift) {
+    if (!shiftWithUser) {
       res.status(404).json({ error: "Shift not found" });
+      return;
+    }
+
+    const shift = shiftWithUser.shift;
+
+    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -749,17 +769,25 @@ router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRol
 
     const data = schema.parse(sanitizedBody);
 
-    const [shift] = await db
-      .select()
+    const [shiftWithUser] = await db
+      .select({ shift: timeClockShifts, userOrgId: users.organizationId })
       .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .where(and(
         eq(timeClockShifts.id, req.params.id),
         isNull(timeClockShifts.clockOut)
       ))
       .limit(1);
 
-    if (!shift) {
+    if (!shiftWithUser) {
       res.status(404).json({ error: "Active shift not found" });
+      return;
+    }
+
+    const shift = shiftWithUser.shift;
+
+    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+      res.status(403).json({ error: "Access denied" });
       return;
     }
 
@@ -811,14 +839,27 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
 
     const data = schema.parse(req.body);
 
-    const [shift] = await db
-      .select()
+    const [shiftWithUser] = await db
+      .select({ shift: timeClockShifts, userOrgId: users.organizationId })
       .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .where(eq(timeClockShifts.id, req.params.id))
       .limit(1);
 
-    if (!shift) {
+    if (!shiftWithUser) {
       res.status(404).json({ error: "Shift not found" });
+      return;
+    }
+
+    const shift = shiftWithUser.shift;
+
+    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (shift.approvalStatus !== "PENDING") {
+      res.status(400).json({ error: `Shift has already been ${shift.approvalStatus.toLowerCase()}` });
       return;
     }
 
@@ -915,14 +956,27 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
 
     const data = schema.parse(sanitizedBody);
 
-    const [shift] = await db
-      .select()
+    const [shiftWithUser] = await db
+      .select({ shift: timeClockShifts, userOrgId: users.organizationId })
       .from(timeClockShifts)
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .where(eq(timeClockShifts.id, req.params.id))
       .limit(1);
 
-    if (!shift) {
+    if (!shiftWithUser) {
       res.status(404).json({ error: "Shift not found" });
+      return;
+    }
+
+    const shift = shiftWithUser.shift;
+
+    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    if (shift.approvalStatus !== "PENDING") {
+      res.status(400).json({ error: `Shift has already been ${shift.approvalStatus.toLowerCase()}` });
       return;
     }
 
@@ -956,6 +1010,7 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
 
 router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
+    const orgId = req.user!.organizationId;
     const activeShifts = await db
       .select({
         shift: timeClockShifts,
@@ -973,9 +1028,9 @@ router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"),
         },
       })
       .from(timeClockShifts)
-      .leftJoin(users, eq(timeClockShifts.userId, users.id))
+      .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .leftJoin(projects, eq(timeClockShifts.projectId, projects.id))
-      .where(isNull(timeClockShifts.clockOut))
+      .where(and(isNull(timeClockShifts.clockOut), eq(users.organizationId, orgId)))
       .orderBy(desc(timeClockShifts.clockIn));
 
     res.json(activeShifts);

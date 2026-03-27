@@ -1077,10 +1077,25 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
     }
   });
 
-  // Get active rate profile for equipment (most recent active)
   router.get("/api/equipment/:equipmentId/active-rate", async (req: AuthRequest, res) => {
     try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      
       const { equipmentId } = req.params;
+      
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+      
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
       
       const [activeProfile] = await db
         .select()

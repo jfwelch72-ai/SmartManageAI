@@ -218,6 +218,14 @@ router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "M
       }
     }
 
+    if (entry.entry.approvalStatus === "REJECTED") {
+      return res.status(400).json({ error: "Time entry has already been rejected" });
+    }
+
+    if (entry.entry.approvalStatus === "APPROVED") {
+      return res.status(400).json({ error: "Cannot reject an already approved time entry" });
+    }
+
     const [updatedEntry] = await db
       .update(timeEntries)
       .set({
