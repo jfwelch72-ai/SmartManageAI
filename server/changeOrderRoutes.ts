@@ -1072,7 +1072,7 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
-        status: targetStatus as "PCO" | "PRICING_REVIEW" | "SUBMITTED" | "APPROVED" | "REJECTED" | "VOID",
+        status: targetStatus as "DRAFT" | "PCO" | "PRICING_REVIEW" | "SUBMITTED" | "APPROVED" | "REJECTED" | "VOIDED",
         submittedAt: null,
         updatedAt: new Date(),
       })
@@ -1358,10 +1358,12 @@ router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), as
       })
       .where(eq(changeOrderApprovals.id, currentStep.id));
 
+    const revertStatus = isValidTransition(order.status, "PCO") ? "PCO" : "DRAFT";
+
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
-        status: "DRAFT",
+        status: revertStatus,
         rejectionReason,
         submittedAt: null,
         updatedAt: new Date(),
@@ -1378,7 +1380,7 @@ router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), as
       ));
 
     await createRevision(
-      order.id, order.status, "DRAFT", req.user!.id,
+      order.id, order.status, revertStatus, req.user!.id,
       `Rejected at step ${currentStep.stepOrder} (${currentStep.approverRole}): ${rejectionReason}`,
       order.amount, { rejectionReason, rejectedStep: currentStep.stepOrder }
     );
@@ -1389,12 +1391,12 @@ router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), as
       entityType: "changeOrder",
       entityId: order.id,
       oldValue: JSON.stringify({ status: order.status }),
-      newValue: JSON.stringify({ status: "DRAFT", rejectionReason }),
+      newValue: JSON.stringify({ status: revertStatus, rejectionReason }),
     }, req);
 
     await notifyStatusChange(
       updatedOrder || order,
-      "DRAFT",
+      revertStatus,
       `Change order ${order.changeOrderNumber} rejected at approval step: ${rejectionReason}`,
       true
     );
