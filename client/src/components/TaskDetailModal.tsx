@@ -17,7 +17,6 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  X,
   ChevronDown,
   ChevronRight,
   Plus,
@@ -230,6 +229,33 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
     const file = e.target.files?.[0];
     if (!file) return;
     uploadFileMutation.mutate(file);
+    e.target.value = "";
+  };
+
+  const handleCommentFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("file", file);
+    const fileName = file.name;
+    fetch(`/api/tasks/${task.id}/attachments/upload`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Upload failed");
+        return res.json();
+      })
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/tasks", task.id, "attachments"] });
+        setAttachmentsOpen(true);
+        setNewComment(prev => prev ? `${prev}\n[Attached: ${fileName}]` : `[Attached: ${fileName}]`);
+        toast({ title: "File attached", description: `"${fileName}" added to task attachments` });
+      })
+      .catch(() => {
+        toast({ title: "Error", description: "Failed to upload file", variant: "destructive" });
+      });
     e.target.value = "";
   };
 
@@ -482,7 +508,7 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
                 />
                 <div className="flex items-center justify-between mt-4">
                   <div>
-                    <input type="file" ref={commentFileRef} className="hidden" onChange={handleFileUpload} data-testid="input-comment-attachment" />
+                    <input type="file" ref={commentFileRef} className="hidden" onChange={handleCommentFileUpload} data-testid="input-comment-attachment" />
                     <Button
                       size="sm"
                       variant="outline"
@@ -509,15 +535,6 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
           </div>
 
           <div className="w-full md:w-[260px] flex-shrink-0 p-6 overflow-y-auto bg-muted/20" data-testid="task-detail-sidebar">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute top-3 right-3 h-6 w-6 p-0 rounded-full"
-              onClick={() => onOpenChange(false)}
-              data-testid="button-close-modal"
-            >
-              <X className="h-4 w-4" />
-            </Button>
 
             <div className="space-y-5">
               <div>
