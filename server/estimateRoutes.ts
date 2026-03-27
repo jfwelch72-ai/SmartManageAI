@@ -1926,6 +1926,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(400).json({ error: "Estimate already approved" });
       }
 
+      const APPROVABLE_STATUSES = ["DRAFT", "SUBMITTED", "PENDING_APPROVAL"]; // DRAFT included for fast-track approval of small estimates
+      if (!APPROVABLE_STATUSES.includes(estimate.status)) {
+        return res.status(422).json({
+          error: `Cannot approve an estimate with status "${estimate.status}". Estimate must be in DRAFT, SUBMITTED, or PENDING_APPROVAL status.`,
+        });
+      }
+
       // Get line items
       const lineItems = await db.query.estimateLineItems.findMany({
         where: eq(estimateLineItems.estimateId, estimateId),

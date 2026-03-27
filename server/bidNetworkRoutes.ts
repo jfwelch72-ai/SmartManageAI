@@ -285,7 +285,23 @@ router.patch("/requests/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTI
       return res.status(404).json({ error: "Bid request not found" });
     }
     
-    // Handle status changes
+    if (data.status && data.status !== existing.status) {
+      const BID_REQUEST_STATUS_TRANSITIONS: Record<string, string[]> = {
+        DRAFT: ["OPEN", "CANCELLED"],
+        OPEN: ["CLOSED", "AWARDED", "CANCELLED"],
+        CLOSED: ["AWARDED", "CANCELLED"],
+        AWARDED: [],
+        CANCELLED: [],
+      };
+
+      const allowed = BID_REQUEST_STATUS_TRANSITIONS[existing.status] || [];
+      if (!allowed.includes(data.status)) {
+        return res.status(422).json({
+          error: `Invalid status transition from ${existing.status} to ${data.status}. Allowed transitions: ${allowed.join(", ") || "none (terminal state)"}.`,
+        });
+      }
+    }
+
     const updates: any = { ...data, updatedAt: new Date() };
     
     if (data.status === "OPEN" && existing.status === "DRAFT") {
