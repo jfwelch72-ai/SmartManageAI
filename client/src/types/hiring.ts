@@ -1,5 +1,5 @@
 export type HiringJobStatus = "DRAFT" | "PUBLISHED" | "PAUSED" | "ARCHIVED";
-export type HiringEmploymentType = "FULL_TIME" | "PART_TIME" | "CONTRACT" | "TEMP" | "SEASONAL";
+export type HiringEmploymentType = "FULL_TIME" | "PART_TIME" | "SEASONAL" | "SUBCONTRACTOR" | "INTERN" | "TEMPORARY";
 export type HiringCompensationType = "HOURLY" | "SALARY" | "PREVAILING_WAGE" | "PIECE_RATE";
 export type HiringCandidateStage =
   | "APPLIED"

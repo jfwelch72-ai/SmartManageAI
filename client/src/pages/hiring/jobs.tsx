@@ -39,9 +39,10 @@ const JOB_STATUS_CONFIG: Record<string, { label: string; variant: "default" | "s
 const EMPLOYMENT_TYPE_LABELS: Record<string, string> = {
   FULL_TIME: "Full Time",
   PART_TIME: "Part Time",
-  CONTRACT: "Contract",
-  TEMP: "Temporary",
+  SUBCONTRACTOR: "Subcontractor",
+  TEMPORARY: "Temporary",
   SEASONAL: "Seasonal",
+  INTERN: "Intern",
 };
 
 type Step = 1 | 2 | 3 | 4;
