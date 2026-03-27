@@ -244,6 +244,19 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
     const userId = req.user!.id;
     const userName = `${req.user!.firstName} ${req.user!.lastName}`.trim() || userId;
 
+    const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
+    if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
+      const clientUpdatedAt = new Date(req.body.lastKnownUpdatedAt).getTime();
+      const serverUpdatedAt = item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+      if (serverUpdatedAt > clientUpdatedAt) {
+        return res.status(409).json({
+          error: "Conflict: server version is newer",
+          serverUpdatedAt: item.updatedAt,
+          serverData: item,
+        });
+      }
+    }
+
     const update: Partial<PunchListItem> & { updatedAt: Date } = { updatedAt: new Date() };
 
     // Field edits — require management role

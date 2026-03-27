@@ -1,8 +1,9 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { voiceLogs, issueCaptures, offlineSyncQueue, insertVoiceLogSchema, insertIssueCaptureSchema, insertOfflineSyncQueueSchema } from "@shared/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { voiceLogs, issueCaptures, offlineSyncQueue, media, projects, insertVoiceLogSchema, insertIssueCaptureSchema, insertOfflineSyncQueueSchema } from "@shared/schema";
+import { eq, and, desc, sql, inArray, ilike, or } from "drizzle-orm";
 import { z } from "zod";
+import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
 
 const router = Router();
 
@@ -123,7 +124,21 @@ router.patch("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, r
     }
 
     const validated = voiceLogUpdateSchema.parse(req.body);
-    const updates: any = {
+    const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
+
+    if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
+      const clientUpdatedAt = new Date(req.body.lastKnownUpdatedAt).getTime();
+      const serverUpdatedAt = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      if (serverUpdatedAt > clientUpdatedAt) {
+        return res.status(409).json({
+          error: "Conflict: server version is newer",
+          serverUpdatedAt: existing.updatedAt,
+          serverData: existing,
+        });
+      }
+    }
+
+    const updates: Record<string, unknown> = {
       ...validated,
       updatedAt: new Date(),
     };
@@ -286,7 +301,21 @@ router.patch("/issue-captures/:id", requireAuth, async (req: AuthenticatedReques
     }
 
     const validated = issueCaptureUpdateSchema.parse(req.body);
-    const updates: any = {
+    const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
+
+    if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
+      const clientUpdatedAt = new Date(req.body.lastKnownUpdatedAt).getTime();
+      const serverUpdatedAt = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      if (serverUpdatedAt > clientUpdatedAt) {
+        return res.status(409).json({
+          error: "Conflict: server version is newer",
+          serverUpdatedAt: existing.updatedAt,
+          serverData: existing,
+        });
+      }
+    }
+
+    const updates: Record<string, unknown> = {
       ...validated,
       updatedAt: new Date(),
     };
@@ -485,7 +514,21 @@ router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest,
     }
 
     const validated = offlineSyncUpdateSchema.parse(req.body);
-    const updates: any = {
+    const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
+
+    if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
+      const clientUpdatedAt = new Date(req.body.lastKnownUpdatedAt).getTime();
+      const serverUpdatedAt = existing.updatedAt ? new Date(existing.updatedAt).getTime() : 0;
+      if (serverUpdatedAt > clientUpdatedAt) {
+        return res.status(409).json({
+          error: "Conflict: server version is newer",
+          serverUpdatedAt: existing.updatedAt,
+          serverData: existing,
+        });
+      }
+    }
+
+    const updates: Record<string, unknown> = {
       ...validated,
       updatedAt: new Date(),
     };
@@ -592,6 +635,147 @@ router.get("/offline-sync/stats", requireAuth, async (req: AuthenticatedRequest,
   } catch (error) {
     console.error("Error fetching offline sync stats:", error);
     res.status(500).json({ error: "Failed to fetch offline sync stats" });
+  }
+});
+
+// ==========================================
+// VOICE LOG AI PARSING
+// ==========================================
+
+const voiceLogParseSchema = z.object({
+  transcription: z.string().min(1),
+  outputType: z.enum(["daily_report", "rfi"]).default("daily_report"),
+  projectId: z.string().optional(),
+});
+
+router.post("/voice-logs/parse", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { transcription, outputType } = voiceLogParseSchema.parse(req.body);
+
+    const systemPrompt = outputType === "daily_report"
+      ? `You are a construction field assistant. Parse the following voice dictation from a field worker into structured daily report data. Extract:
+- summary: A concise summary of the report (1-2 sentences)
+- workPerformed: Description of work completed
+- crewCount: Number of workers mentioned (number or null)
+- weather: Weather conditions mentioned (string or null)
+- issues: Array of issues or problems mentioned
+- tags: Array of relevant tags (trade, activity type, location, etc.)
+- hoursWorked: Hours mentioned (number or null)
+
+Respond with valid JSON only.`
+      : `You are a construction field assistant. Parse the following voice dictation into a structured RFI (Request for Information) draft. Extract:
+- summary: Brief description of the question/issue
+- question: The formal RFI question
+- context: Background context for the question
+- suggestedResponse: A suggested approach if mentioned
+- tags: Array of relevant tags (trade, discipline, location, etc.)
+- priority: "LOW", "MEDIUM", "HIGH", or "CRITICAL"
+
+Respond with valid JSON only.`;
+
+    const completion = await openai.chat.completions.create({
+      model: AI_MODEL_GPT4O,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: transcription },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 1024,
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      return res.status(500).json({ error: "No response from AI" });
+    }
+
+    const parsed = JSON.parse(content);
+    res.json(parsed);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid data", details: error.errors });
+    }
+    console.error("Error parsing voice log:", error);
+    res.status(500).json({ error: "Failed to parse voice log" });
+  }
+});
+
+// ==========================================
+// PHOTO AUTO-TAGGING
+// ==========================================
+
+router.post("/photo-auto-tag", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { mediaId, imageUrl } = req.body;
+
+    if (!mediaId || !imageUrl) {
+      return res.status(400).json({ error: "mediaId and imageUrl are required" });
+    }
+
+    const [mediaItem] = await db
+      .select({ id: media.id, projectId: media.projectId })
+      .from(media)
+      .innerJoin(projects, eq(media.projectId, projects.id))
+      .where(and(
+        eq(media.id, mediaId),
+        eq(projects.organizationId, req.user!.organizationId)
+      ));
+
+    if (!mediaItem) {
+      return res.status(404).json({ error: "Media not found" });
+    }
+
+    const systemPrompt = `You are a construction jobsite photo analyzer. Analyze the uploaded construction/jobsite photo and provide:
+- tags: Array of descriptive tags including:
+  - Trade (e.g., "electrical", "plumbing", "framing", "concrete", "roofing")
+  - Location (e.g., "interior", "exterior", "foundation", "roof", "basement")
+  - Progress stage (e.g., "rough-in", "finish", "demolition", "excavation", "inspection-ready")
+  - Safety status (e.g., "ppe-compliant", "safety-concern", "hazard-present")
+  - Any other relevant descriptors
+- description: A brief 1-2 sentence description of what the photo shows
+
+Respond with valid JSON only: { "tags": [...], "description": "..." }`;
+
+    const completion = await openai.chat.completions.create({
+      model: AI_MODEL_GPT4O,
+      messages: [
+        { role: "system", content: systemPrompt },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Analyze this construction jobsite photo and provide tags and description." },
+            { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+          ],
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 512,
+    });
+
+    const content = completion.choices[0]?.message?.content;
+    if (!content) {
+      return res.status(500).json({ error: "No response from AI" });
+    }
+
+    const parsed = JSON.parse(content);
+    const tags = parsed.tags || [];
+    const description = parsed.description || "";
+
+    const [updated] = await db
+      .update(media)
+      .set({
+        aiTags: tags,
+        aiDescription: description,
+        aiAnalyzedAt: new Date(),
+      })
+      .where(eq(media.id, mediaId))
+      .returning();
+
+    res.json({ tags, description, mediaId: updated?.id });
+  } catch (error) {
+    console.error("Error auto-tagging photo:", error);
+    res.status(500).json({ error: "Failed to auto-tag photo" });
   }
 });
 

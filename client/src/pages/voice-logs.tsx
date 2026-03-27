@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -13,8 +13,40 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Mic, MicOff, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, FileText, Tag, Brain, ChevronRight } from "lucide-react";
+import { Mic, MicOff, Play, Pause, Trash2, Clock, CheckCircle, XCircle, AlertTriangle, FileText, Tag, Brain, ChevronRight, Loader2, Send } from "lucide-react";
 import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface VoiceAIResult {
+  summary?: string;
+  tags?: string[];
+  category?: string;
+  priority?: number;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: Event & { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+}
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
+
+function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
+  if (typeof window === "undefined") return null;
+  const win = window as Window & { SpeechRecognition?: SpeechRecognitionCtor; webkitSpeechRecognition?: SpeechRecognitionCtor };
+  return win.SpeechRecognition || win.webkitSpeechRecognition || null;
+}
 
 export default function VoiceLogsPage() {
   const { toast } = useToast();
@@ -186,7 +218,7 @@ export default function VoiceLogsPage() {
                   )}
                 </div>
 
-                {selectedLog.audioUrl && (
+                {selectedLog.audioUrl && selectedLog.audioUrl !== "speech-recognition://local" && (
                   <div className="p-4 bg-muted rounded-lg">
                     <audio controls className="w-full" data-testid="audio-player">
                       <source src={selectedLog.audioUrl} type="audio/mpeg" />
@@ -271,67 +303,187 @@ export default function VoiceLogsPage() {
 function CreateVoiceLogDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const { toast } = useToast();
   const [transcription, setTranscription] = useState("");
-  const [audioUrl, setAudioUrl] = useState("");
+  const [interimTranscript, setInterimTranscript] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [aiResult, setAiResult] = useState<VoiceAIResult | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const SpeechRecognition = getSpeechRecognitionCtor();
+
+  const startRecording = useCallback(() => {
+    if (!SpeechRecognition) {
+      toast({ title: "Speech recognition not available", description: "Use Chrome or Edge", variant: "destructive" });
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let finalText = "";
+      let interimText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalText += event.results[i][0].transcript + " ";
+        } else {
+          interimText += event.results[i][0].transcript;
+        }
+      }
+      if (finalText) setTranscription(prev => prev + finalText);
+      setInterimTranscript(interimText);
+    };
+
+    recognition.onerror = (event: Event & { error?: string }) => {
+      if (event.error !== "no-speech") {
+        toast({ title: "Recognition error", description: event.error || "Unknown error", variant: "destructive" });
+      }
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+      setInterimTranscript("");
+    };
+
+    recognition.start();
+    recognitionRef.current = recognition;
+    setIsRecording(true);
+  }, [SpeechRecognition, toast]);
+
+  const stopRecording = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+    setInterimTranscript("");
+  }, []);
+
+  const parseMutation = useMutation({
+    mutationFn: async (text: string) => {
+      const response = await apiRequest("POST", "/api/field-productivity/voice-logs/parse", {
+        transcription: text,
+        outputType: "daily_report",
+      });
+      return response.json();
+    },
+    onSuccess: (data) => setAiResult(data),
+    onError: () => toast({ title: "Failed to analyze", variant: "destructive" }),
+  });
 
   const createMutation = useMutation({
-    mutationFn: (data: { transcription?: string; audioUrl?: string; status: string }) =>
+    mutationFn: (data: { transcription?: string; audioUrl?: string; status: string; aiSummary?: string; aiTags?: string[] }) =>
       apiRequest("POST", "/api/field-productivity/voice-logs", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/field-productivity/voice-logs"] });
       toast({ title: "Voice log created" });
-      onOpenChange(false);
-      setTranscription("");
-      setAudioUrl("");
+      handleClose();
     },
     onError: () => {
       toast({ title: "Failed to create voice log", variant: "destructive" });
     },
   });
 
+  const handleClose = () => {
+    stopRecording();
+    onOpenChange(false);
+    setTranscription("");
+    setInterimTranscript("");
+    setAiResult(null);
+  };
+
   const handleSubmit = () => {
     createMutation.mutate({
       transcription: transcription || undefined,
-      audioUrl: audioUrl || undefined,
+      audioUrl: "speech-recognition://local",
       status: transcription ? "TRANSCRIBED" : "PENDING",
+      aiSummary: aiResult?.summary,
+      aiTags: aiResult?.tags,
     });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>New Voice Log</DialogTitle>
           <DialogDescription>
-            Create a new voice log entry. In production, this would integrate with audio recording.
+            {SpeechRecognition
+              ? "Tap the microphone to start dictating, or type your notes directly."
+              : "Type your field notes below."
+            }
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
+          {SpeechRecognition && (
+            <div className="flex justify-center">
+              <Button
+                onClick={isRecording ? stopRecording : startRecording}
+                size="lg"
+                variant={isRecording ? "destructive" : "default"}
+                className={cn("h-16 w-16 rounded-full", isRecording && "animate-pulse")}
+                data-testid="button-record-voice"
+              >
+                {isRecording ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
+              </Button>
+            </div>
+          )}
+          {isRecording && (
+            <div className="text-center">
+              <Badge variant="destructive" className="animate-pulse">Recording...</Badge>
+            </div>
+          )}
           <div className="space-y-2">
-            <Label>Audio URL (optional)</Label>
-            <Input
-              value={audioUrl}
-              onChange={(e) => setAudioUrl(e.target.value)}
-              placeholder="https://example.com/audio.mp3"
-              data-testid="input-audio-url"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label>Transcription (optional)</Label>
+            <Label>Transcription</Label>
             <Textarea
-              value={transcription}
-              onChange={(e) => setTranscription(e.target.value)}
-              placeholder="Enter the transcription or notes..."
-              rows={4}
+              value={transcription + interimTranscript}
+              onChange={(e) => { setTranscription(e.target.value); setInterimTranscript(""); }}
+              placeholder={SpeechRecognition ? "Start speaking or type here..." : "Enter your notes..."}
+              rows={5}
               data-testid="input-transcription"
             />
           </div>
+
+          {aiResult && (
+            <div className="p-3 bg-primary/5 rounded-lg border border-primary/10 space-y-2">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">AI Analysis</span>
+              </div>
+              {aiResult.summary && <p className="text-sm">{aiResult.summary}</p>}
+              {aiResult.tags && aiResult.tags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {aiResult.tags.map((tag: string, i: number) => (
+                    <Badge key={i} variant="secondary" className="text-xs">{tag}</Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel">
+        <DialogFooter className="flex-wrap gap-2">
+          <Button variant="outline" onClick={handleClose} data-testid="button-cancel">
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={createMutation.isPending} data-testid="button-submit-voice-log">
-            Create Voice Log
+          {transcription.trim() && !aiResult && (
+            <Button
+              variant="secondary"
+              onClick={() => parseMutation.mutate(transcription.trim())}
+              disabled={parseMutation.isPending}
+              data-testid="button-analyze"
+            >
+              {parseMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Brain className="h-4 w-4 mr-2" />}
+              Analyze
+            </Button>
+          )}
+          <Button
+            onClick={handleSubmit}
+            disabled={createMutation.isPending || !transcription.trim()}
+            data-testid="button-submit-voice-log"
+          >
+            {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+            Save Voice Log
           </Button>
         </DialogFooter>
       </DialogContent>

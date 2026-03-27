@@ -812,6 +812,9 @@ export const media = pgTable("media", {
   caption: text("caption"),
   uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
+  aiTags: text("ai_tags").array(),
+  aiDescription: text("ai_description"),
+  aiAnalyzedAt: timestamp("ai_analyzed_at"),
 });
 
 // Change Orders table
