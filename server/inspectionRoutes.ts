@@ -368,6 +368,22 @@ router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER"
       newValue: JSON.stringify({ status: "PASSED" }),
     }, req);
 
+    try {
+      const { eventBus } = await import("./events");
+      await eventBus.emit({
+        type: "inspection.completed",
+        version: 1,
+        orgId: req.user!.organizationId || "",
+        actorId: userId,
+        timestamp: new Date(),
+        payload: {
+          projectId: updatedInspection.projectId,
+          inspectionId: updatedInspection.id,
+          status: "PASSED",
+        },
+      });
+    } catch {}
+
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
     console.error("Error passing inspection:", error);
@@ -413,6 +429,22 @@ router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER"
       entityId: updatedInspection.id,
       newValue: JSON.stringify({ status: "FAILED", reinspectionRequired: updatedInspection.reinspectionRequired }),
     }, req);
+
+    try {
+      const { eventBus } = await import("./events");
+      await eventBus.emit({
+        type: "inspection.completed",
+        version: 1,
+        orgId: req.user!.organizationId || "",
+        actorId: userId,
+        timestamp: new Date(),
+        payload: {
+          projectId: updatedInspection.projectId,
+          inspectionId: updatedInspection.id,
+          status: "FAILED",
+        },
+      });
+    } catch {}
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {

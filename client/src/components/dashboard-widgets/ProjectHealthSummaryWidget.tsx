@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { HeartPulse, CheckCircle2, AlertCircle } from "lucide-react";
+import { HeartPulse, CheckCircle2, AlertCircle, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -12,6 +12,10 @@ interface ProjectHealthEntry {
   overall_score: number;
   schedule_score: number;
   budget_score: number;
+  cost_score: number | null;
+  safety_score: number | null;
+  trend_direction: string | null;
+  ai_explanation: string | null;
   snapshot_date: string;
   project_name: string;
 }
@@ -38,6 +42,12 @@ function getScoreLabel(score: number, cfg: ProjectHealthSummaryConfig): string {
   if (score >= cfg.healthyThreshold) return "Healthy";
   if (score >= cfg.criticalThreshold) return "At Risk";
   return "Critical";
+}
+
+function TrendIcon({ direction }: { direction: string | null | undefined }) {
+  if (direction === "improving") return <TrendingUp className="w-3 h-3 text-green-500" />;
+  if (direction === "declining") return <TrendingDown className="w-3 h-3 text-red-500" />;
+  return <Minus className="w-3 h-3 text-muted-foreground" />;
 }
 
 export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
@@ -99,6 +109,7 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
   const green = allProjects.filter(p => (p.overall_score || 0) >= cfg.healthyThreshold);
   const yellow = allProjects.filter(p => (p.overall_score || 0) >= cfg.criticalThreshold && (p.overall_score || 0) < cfg.healthyThreshold);
   const red = allProjects.filter(p => (p.overall_score || 0) < cfg.criticalThreshold);
+  const declining = allProjects.filter(p => p.trend_direction === "declining");
   const avgScore = allProjects.length > 0
     ? Math.round(allProjects.reduce((sum, p) => sum + (p.overall_score || 0), 0) / allProjects.length)
     : 0;
@@ -109,7 +120,7 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <HeartPulse className="w-4 h-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-medium">Project Health</CardTitle>
+            <CardTitle className="text-sm font-medium">Portfolio Health</CardTitle>
           </div>
           {allProjects.length > 0 && (
             <span className={cn("text-xs font-semibold", getScoreColor(avgScore, cfg))} data-testid="avg-health-score">
@@ -140,6 +151,21 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
               ))}
             </div>
 
+            {declining.length > 0 && (
+              <div className="rounded-lg bg-red-500/5 border border-red-200 dark:border-red-800/50 p-2 mb-1" data-testid="declining-projects-alert">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <TrendingDown className="w-3 h-3 text-red-500" />
+                  <span className="text-[10px] font-semibold text-red-600 dark:text-red-400">
+                    {declining.length} project{declining.length > 1 ? "s" : ""} declining
+                  </span>
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {declining.slice(0, 3).map(p => p.project_name).join(", ")}
+                  {declining.length > 3 && ` +${declining.length - 3} more`}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2 max-h-[200px] overflow-y-auto">
               {projects
                 .slice()
@@ -154,7 +180,10 @@ export function ProjectHealthSummaryWidget({ config }: WidgetComponentProps) {
                       data-testid={`health-project-${p.project_id}`}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium truncate">{p.project_name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-medium truncate">{p.project_name}</p>
+                          <TrendIcon direction={p.trend_direction} />
+                        </div>
                         <div className="mt-1 w-full h-1.5 bg-muted/50 rounded-full overflow-hidden">
                           <div
                             className={cn("h-full rounded-full", getScoreBarColor(score, cfg))}

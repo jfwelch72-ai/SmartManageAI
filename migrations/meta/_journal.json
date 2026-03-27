@@ -22,6 +22,13 @@
       "when": 1774595470414,
       "tag": "0002_clumsy_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774620340824,
+      "tag": "0003_tricky_captain_flint",
+      "breakpoints": true
     }
   ]
 }

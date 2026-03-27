@@ -1734,7 +1734,22 @@ router.get("/api/project-health/overview", requireAuth, async (req, res) => {
 router.get("/api/project-health/:projectId", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
-    const snapshot = await healthService.getLatestSnapshot(user.organizationId, req.params.projectId);
+    const projectId = req.params.projectId;
+    const [project] = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    let snapshot = await healthService.getLatestSnapshot(user.organizationId, projectId);
+    if (!snapshot) {
+      try {
+        const breakdown = await healthService.computeProjectHealth(user.organizationId, projectId);
+        snapshot = await healthService.saveHealthSnapshot(user.organizationId, projectId, breakdown);
+      } catch (computeErr) {
+        logError("Auto-compute health score failed", { error: String(computeErr), projectId });
+      }
+    }
     res.json(snapshot);
   } catch (err) {
     res.status(500).json({ error: "Failed to get health score" });
@@ -1747,8 +1762,15 @@ router.post("/api/project-health/:projectId/compute", requireAuth, async (req, r
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    const breakdown = await healthService.computeProjectHealth(user.organizationId, req.params.projectId);
-    const snapshot = await healthService.saveHealthSnapshot(user.organizationId, req.params.projectId, breakdown);
+    const projectId = req.params.projectId;
+    const [project] = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const breakdown = await healthService.computeProjectHealth(user.organizationId, projectId);
+    const snapshot = await healthService.saveHealthSnapshot(user.organizationId, projectId, breakdown);
     res.json({ breakdown, snapshot });
   } catch (err) {
     logError("Failed to compute health score", { error: String(err) });
@@ -1759,11 +1781,29 @@ router.post("/api/project-health/:projectId/compute", requireAuth, async (req, r
 router.get("/api/project-health/:projectId/history", requireAuth, async (req, res) => {
   try {
     const user = (req as any).user;
+    const projectId = req.params.projectId;
+    const [project] = await db.select({ id: projects.id }).from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .limit(1);
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
     const limit = parseInt(req.query.limit as string) || 30;
-    const history = await healthService.getSnapshotHistory(user.organizationId, req.params.projectId, limit);
+    const history = await healthService.getSnapshotHistory(user.organizationId, projectId, limit);
     res.json(history);
   } catch (err) {
     res.status(500).json({ error: "Failed to get health history" });
+  }
+});
+
+router.get("/api/project-health-portfolio/summary", requireAuth, async (req, res) => {
+  try {
+    const user = (req as any).user;
+    const summary = await healthService.getPortfolioHealthSummary(user.organizationId);
+    res.json(summary);
+  } catch (err) {
+    logError("Failed to get portfolio health summary", { error: String(err) });
+    res.status(500).json({ error: "Failed to get portfolio health summary" });
   }
 });
 

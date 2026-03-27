@@ -2,39 +2,108 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Activity, TrendingUp, Shield, FileText, DollarSign, Clock, Loader2, RefreshCw } from "lucide-react";
+import {
+  Activity,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Shield,
+  DollarSign,
+  Calendar,
+  Loader2,
+  RefreshCw,
+  Sparkles,
+} from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 interface HealthSnapshot {
   id: string;
   overallScore: number;
   scheduleScore: number;
   budgetScore: number;
+  costScore: number | null;
   rfiSubmittalScore: number;
   changeOrderScore: number;
   safetyScore: number;
+  trendDirection: string | null;
+  aiExplanation: string | null;
   createdAt: string;
+  snapshotDate: string;
 }
 
-function ScoreBar({ label, score, icon: Icon }: { label: string; score: number; icon: any }) {
-  const color = score >= 80 ? "bg-green-500" : score >= 60 ? "bg-yellow-500" : "bg-red-500";
-  const textColor = score >= 80 ? "text-green-600" : score >= 60 ? "text-yellow-600" : "text-red-600";
+function getScoreColor(score: number): string {
+  if (score >= 80) return "text-green-600 dark:text-green-400";
+  if (score >= 60) return "text-amber-600 dark:text-amber-500";
+  return "text-red-600 dark:text-red-400";
+}
 
+function getScoreBarColor(score: number): string {
+  if (score >= 80) return "bg-green-500";
+  if (score >= 60) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function getScoreLabel(score: number): string {
+  if (score >= 80) return "Healthy";
+  if (score >= 60) return "At Risk";
+  return "Critical";
+}
+
+function ScoreBar({ label, score, icon: Icon, weight }: { label: string; score: number; icon: any; weight: string }) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3" data-testid={`subscore-${label.toLowerCase().replace(/[\s/]/g, "-")}`}>
       <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-muted-foreground">{label}</span>
-          <span className={`text-xs font-semibold ${textColor}`}>{score}</span>
+          <span className="text-xs text-muted-foreground">
+            {label} <span className="text-[10px]">({weight})</span>
+          </span>
+          <span className={cn("text-xs font-semibold", getScoreColor(score))}>{score}</span>
         </div>
         <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(score, 100)}%` }} />
+          <div
+            className={cn("h-full rounded-full transition-all", getScoreBarColor(score))}
+            style={{ width: `${Math.min(score, 100)}%` }}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+function SparklineChart({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+
+  const max = Math.max(...data, 100);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const width = 100;
+  const height = 28;
+  const padding = 2;
+
+  const points = data.map((val, i) => {
+    const x = padding + (i / (data.length - 1)) * (width - padding * 2);
+    const y = height - padding - ((val - min) / range) * (height - padding * 2);
+    return `${x},${y}`;
+  }).join(" ");
+
+  const lastScore = data[data.length - 1];
+  const strokeColor = lastScore >= 80 ? "#22c55e" : lastScore >= 60 ? "#f59e0b" : "#ef4444";
+
+  return (
+    <svg width={width} height={height} className="inline-block" data-testid="sparkline-health-trend">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -45,6 +114,13 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
     queryKey: ["/api/project-health", projectId],
   });
 
+  const { data: history = [] } = useQuery<HealthSnapshot[]>({
+    queryKey: ["/api/project-health", projectId, "history"],
+    queryFn: () =>
+      apiRequest("GET", `/api/project-health/${projectId}/history?limit=14`).then((r) => r.json()),
+    enabled: !!snapshot,
+  });
+
   const computeMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/project-health/${projectId}/compute`);
@@ -53,6 +129,8 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
     onSuccess: () => {
       toast({ title: "Health Score Updated", description: "Project health score has been recalculated." });
       queryClient.invalidateQueries({ queryKey: ["/api/project-health", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/project-health/overview"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/project-health-portfolio/summary"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -70,9 +148,20 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
   }
 
   const overallScore = snapshot?.overallScore ?? 0;
-  const scoreColor = overallScore >= 80 ? "text-green-600" : overallScore >= 60 ? "text-yellow-600" : "text-red-600";
-  const scoreBadge = overallScore >= 80 ? "default" : overallScore >= 60 ? "secondary" : "destructive";
-  const scoreLabel = overallScore >= 80 ? "Healthy" : overallScore >= 60 ? "At Risk" : "Critical";
+  const costScore = snapshot?.costScore ?? snapshot?.budgetScore ?? 0;
+  const scheduleScore = snapshot?.scheduleScore ?? 0;
+  const safetyScore = snapshot?.safetyScore ?? 0;
+  const trendDirection = snapshot?.trendDirection;
+  const sparklineData = [...history].reverse().map((s) => s.overallScore);
+
+  const trendIcon =
+    trendDirection === "improving" ? (
+      <TrendingUp className="w-4 h-4 text-green-500" />
+    ) : trendDirection === "declining" ? (
+      <TrendingDown className="w-4 h-4 text-red-500" />
+    ) : (
+      <Minus className="w-4 h-4 text-muted-foreground" />
+    );
 
   return (
     <Card data-testid="card-project-health">
@@ -88,7 +177,7 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
           disabled={computeMutation.isPending}
           data-testid="button-recompute-health"
         >
-          <RefreshCw className={`h-4 w-4 ${computeMutation.isPending ? "animate-spin" : ""}`} />
+          <RefreshCw className={cn("h-4 w-4", computeMutation.isPending && "animate-spin")} />
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -109,20 +198,53 @@ export default function ProjectHealthWidget({ projectId }: { projectId: string }
         ) : (
           <>
             <div className="flex items-center justify-between">
-              <div className="flex items-baseline gap-2">
-                <span className={`text-4xl font-bold ${scoreColor}`} data-testid="text-overall-health-score">{overallScore}</span>
-                <span className="text-sm text-muted-foreground">/ 100</span>
+              <div className="flex items-center gap-3">
+                <div className="flex items-baseline gap-2">
+                  <span className={cn("text-4xl font-bold", getScoreColor(overallScore))} data-testid="text-overall-health-score">
+                    {overallScore}
+                  </span>
+                  <span className="text-sm text-muted-foreground">/ 100</span>
+                </div>
+                <div>
+                  <Badge
+                    variant={overallScore >= 80 ? "default" : overallScore >= 60 ? "secondary" : "destructive"}
+                    data-testid="badge-health-status"
+                  >
+                    {getScoreLabel(overallScore)}
+                  </Badge>
+                  <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                    {trendIcon}
+                    <span className="capitalize">{trendDirection || "stable"}</span>
+                  </div>
+                </div>
               </div>
-              <Badge variant={scoreBadge as any} data-testid="badge-health-status">{scoreLabel}</Badge>
+              {sparklineData.length >= 2 && (
+                <div className="flex flex-col items-end">
+                  <SparklineChart data={sparklineData} />
+                  <span className="text-[10px] text-muted-foreground mt-0.5">
+                    Trend ({sparklineData.length} pts)
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
-              <ScoreBar label="Schedule (25%)" score={snapshot.scheduleScore} icon={Clock} />
-              <ScoreBar label="Budget (25%)" score={snapshot.budgetScore} icon={DollarSign} />
-              <ScoreBar label="RFI/Submittals (20%)" score={snapshot.rfiSubmittalScore} icon={FileText} />
-              <ScoreBar label="Change Orders (15%)" score={snapshot.changeOrderScore} icon={TrendingUp} />
-              <ScoreBar label="Safety (15%)" score={snapshot.safetyScore} icon={Shield} />
+              <ScoreBar label="Cost Risk" score={costScore} icon={DollarSign} weight="40%" />
+              <ScoreBar label="Schedule Risk" score={scheduleScore} icon={Calendar} weight="35%" />
+              <ScoreBar label="Safety Risk" score={safetyScore} icon={Shield} weight="25%" />
             </div>
+
+            {snapshot.aiExplanation && (
+              <div
+                className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground leading-relaxed"
+                data-testid="text-ai-explanation"
+              >
+                <div className="flex items-start gap-2">
+                  <Sparkles className="w-3.5 h-3.5 mt-0.5 text-primary shrink-0" />
+                  <span>{snapshot.aiExplanation}</span>
+                </div>
+              </div>
+            )}
 
             <p className="text-xs text-muted-foreground text-right" data-testid="text-health-updated">
               Updated {new Date(snapshot.createdAt).toLocaleString()}

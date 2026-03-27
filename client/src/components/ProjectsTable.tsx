@@ -10,8 +10,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import StatusBadge from "./StatusBadge";
+import HealthScoreBadge from "./HealthScoreBadge";
 import type { ProjectWithNames } from "@/hooks/use-data";
 import { Trash2, ChevronRight } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface ProjectsTableProps {
   projects: ProjectWithNames[];
@@ -21,6 +23,19 @@ interface ProjectsTableProps {
 }
 
 export default function ProjectsTable({ projects, onRowClick, canDelete, onDelete }: ProjectsTableProps) {
+  const { data: healthOverview = [] } = useQuery<Array<{
+    project_id: string;
+    overall_score: number;
+    trend_direction: string | null;
+  }>>({
+    queryKey: ["/api/project-health/overview"],
+    refetchInterval: 300000,
+  });
+
+  const healthMap = new Map(
+    healthOverview.map((h) => [h.project_id, h])
+  );
+
   return (
     <>
       <div className="hidden md:block rounded-md border">
@@ -31,13 +46,16 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
               <TableHead className="font-semibold">Project Name</TableHead>
               <TableHead className="font-semibold">Client</TableHead>
               <TableHead className="font-semibold">Status</TableHead>
+              <TableHead className="font-semibold">Health</TableHead>
               <TableHead className="font-semibold">Superintendent</TableHead>
               <TableHead className="font-semibold">Estimator</TableHead>
               {canDelete && <TableHead className="font-semibold w-16">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {projects.map((project) => (
+            {projects.map((project) => {
+              const health = healthMap.get(project.id);
+              return (
               <TableRow
                 key={project.id}
                 className="cursor-pointer hover-elevate"
@@ -53,6 +71,18 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
                 <TableCell>{project.clientName}</TableCell>
                 <TableCell>
                   <StatusBadge status={project.status} type="project" />
+                </TableCell>
+                <TableCell>
+                  {health ? (
+                    <HealthScoreBadge
+                      score={health.overall_score}
+                      trendDirection={health.trend_direction}
+                      size="sm"
+                      showTrend
+                    />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{"\u2014"}</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {project.superintendent || "\u2014"}
@@ -77,13 +107,16 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
                   </TableCell>
                 )}
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
       </div>
 
       <div className="md:hidden space-y-3">
-        {projects.map((project) => (
+        {projects.map((project) => {
+          const health = healthMap.get(project.id);
+          return (
           <Card
             key={project.id}
             className="cursor-pointer active:scale-[0.98] transition-transform"
@@ -98,6 +131,13 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
                       {project.code}
                     </Badge>
                     <StatusBadge status={project.status} type="project" />
+                    {health && (
+                      <HealthScoreBadge
+                        score={health.overall_score}
+                        trendDirection={health.trend_direction}
+                        size="sm"
+                      />
+                    )}
                   </div>
                   <h3 className="font-medium text-sm leading-tight mb-1 truncate" data-testid={`text-project-name-${project.code}`}>
                     {project.name}
@@ -138,7 +178,8 @@ export default function ProjectsTable({ projects, onRowClick, canDelete, onDelet
               )}
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </>
   );

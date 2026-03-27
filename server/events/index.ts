@@ -13,6 +13,7 @@ import { registerOutboxListener } from "./listeners/outboxListener";
 import { registerHiringEventListener } from "./listeners/hiringEventListener";
 import { registerAuditListener } from "./listeners/auditListener";
 import { registerCrmEventListener } from "./listeners/crmEventListener";
+import { registerHealthScoreListener } from "./listeners/healthScoreListener";
 import { logError, logInfo } from "../utils/logger";
 
 let initialized = false;
@@ -26,6 +27,7 @@ export function initializeEventBus(): void {
   registerHiringEventListener();
   registerAuditListener();
   registerCrmEventListener();
+  registerHealthScoreListener();
 
   // Startup health check: error if any event type has no listeners registered.
   for (const type of ALL_DOMAIN_EVENT_TYPES) {

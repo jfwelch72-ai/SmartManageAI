@@ -105,6 +105,7 @@ import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
 import ProjectVaultTab from "@/components/project-tabs/ProjectVaultTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -482,6 +483,19 @@ export default function ProjectDetailPage() {
     enabled: !!project?.id,
   });
 
+  const { data: healthSnapshot } = useQuery<{
+    overallScore: number;
+    trendDirection: string | null;
+    costScore: number | null;
+    budgetScore: number;
+    scheduleScore: number;
+    safetyScore: number;
+    aiExplanation: string | null;
+  }>({
+    queryKey: ["/api/project-health", project?.id],
+    enabled: !!project?.id,
+  });
+
   const { data: handoverSignoffs = [] } = useQuery<Array<{ id: string; role: string; signedByName: string; signedAt: string }>>({
     queryKey: ["/api/projects", projectCode, "handover", "signoffs"],
     queryFn: () => apiRequest("GET", `/api/projects/${projectCode}/handover/signoffs`).then(r => r.json()),
@@ -624,6 +638,13 @@ export default function ProjectDetailPage() {
                   {project.code}
                 </Badge>
                 <StatusBadge status={project.status} type="project" />
+                {healthSnapshot && healthSnapshot.overallScore > 0 && (
+                  <HealthScoreBadge
+                    score={healthSnapshot.overallScore}
+                    trendDirection={healthSnapshot.trendDirection}
+                    size="sm"
+                  />
+                )}
               </div>
               <h1 className="text-2xl font-bold text-foreground">
                 {project.name}

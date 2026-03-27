@@ -305,6 +305,28 @@ async function postCostLedger(payRunId: string, txDb?: typeof db) {
 
   if (postings.length > 0) {
     await queryDb.insert(costLedgerPostings).values(postings);
+    try {
+      const { eventBus } = await import("./events");
+      const projectIds = [...new Set(postings.map(p => p.projectId))];
+      for (const projectId of projectIds) {
+        const projectPostings = postings.filter(p => p.projectId === projectId);
+        const totalForProject = projectPostings.reduce((sum, p) => sum + parseFloat(p.totalAmount), 0);
+        const [proj] = await queryDb.select({ orgId: projects.gcOrganizationId }).from(projects).where(eq(projects.id, projectId)).limit(1);
+        if (proj?.orgId) {
+          await eventBus.emit({
+            type: "cost_ledger.posted",
+            version: 1,
+            orgId: proj.orgId,
+            actorId: "system",
+            timestamp: new Date(),
+            payload: {
+              projectId,
+              totalAmount: String(totalForProject),
+            },
+          });
+        }
+      }
+    } catch {}
   }
 }
 

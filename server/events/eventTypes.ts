@@ -210,7 +210,10 @@ export type DomainEvent =
   | CrmOpportunityCreatedEvent
   | CrmOpportunityStageChangedEvent
   | CrmActivityCreatedEvent
-  | DocumentRevisionCreatedEvent;
+  | DocumentRevisionCreatedEvent
+  | SafetyIncidentCreatedEvent
+  | CostLedgerPostedEvent
+  | InspectionCompletedEvent;
 
 export interface BudgetAlertTriggeredEvent extends EventEnvelope {
   type: "budget.alert_triggered";
@@ -266,6 +269,31 @@ export interface DocumentRevisionCreatedEvent extends EventEnvelope {
   };
 }
 
+export interface SafetyIncidentCreatedEvent extends EventEnvelope {
+  type: "safety.incident_created";
+  payload: {
+    incidentId: string;
+    severity: string;
+  };
+}
+
+export interface CostLedgerPostedEvent extends EventEnvelope {
+  type: "cost_ledger.posted";
+  payload: {
+    projectId: string;
+    totalAmount: string;
+  };
+}
+
+export interface InspectionCompletedEvent extends EventEnvelope {
+  type: "inspection.completed";
+  payload: {
+    projectId: string;
+    inspectionId: string;
+    status: string;
+  };
+}
+
 export type DomainEventType = DomainEvent["type"];
 
 export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
@@ -292,4 +320,7 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "crm.opportunity_stage_changed",
   "crm.activity_created",
   "document.revision_created",
+  "safety.incident_created",
+  "cost_ledger.posted",
+  "inspection.completed",
 ];

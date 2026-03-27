@@ -1362,6 +1362,20 @@ const upload = multer({
         if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
       }
       const [incident] = await db.insert(safetyIncidents).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      try {
+        const { eventBus } = await import("./events");
+        await eventBus.emit({
+          type: "safety.incident_created",
+          version: 1,
+          orgId: orgId || "",
+          actorId: userId,
+          timestamp: new Date(),
+          payload: {
+            incidentId: incident.id,
+            severity: parsed.data.severity,
+          },
+        });
+      } catch {}
       res.json(incident);
     } catch (error) {
       console.error("Error creating safety incident:", error);
