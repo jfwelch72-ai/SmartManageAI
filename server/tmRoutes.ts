@@ -995,91 +995,98 @@ export function registerTMTicketRoutes(app: Express) {
       } = req.body;
       
       const sowItemId = organizationSowItemId || workTypeId || null;
-      
-      const [newTicket] = await db.insert(tmTickets).values({
-        ...restTicketData,
-        projectId,
-        ticketNumber,
-        createdById: userId,
-        tfrRepresentativeId: restTicketData.tfrRepresentativeId || userId,
-        scopeDescription: description || restTicketData.scopeDescription || "Work performed",
-        organizationSowItemId: sowItemId,
-        workTypeId: null,
-        workTypeCode: workTypeCode || null,
-        workTypeName: workTypeName || null,
-        categoryName: categoryName || null,
-        scopeModifierIds: scopeModifierIds || null,
-        scopeModifierNames: scopeModifierNames || null,
-        canonicalName: canonicalName || null,
-        scopeUnit: scopeUnit || null,
-        scopeQuantity: scopeQuantity || null,
-        costCode: costCode || null,
-        status: "DRAFT",
-      }).returning();
-      
-      if (laborEntries && laborEntries.length > 0) {
-        await db.insert(tmTicketLaborEntries).values(
-          laborEntries.map((entry: any) => {
-            const regularHours = parseFloat(entry.regularHours || entry.hoursWorked || "0");
-            const overtimeHours = parseFloat(entry.overtimeHours || "0");
-            const regularRate = parseFloat(entry.rate || entry.hourlyRate || "0");
-            const overtimeRate = parseFloat(entry.overtimeRate || String(regularRate * 1.5));
-            const totalHours = regularHours + overtimeHours;
-            const totalCost = (regularHours * regularRate) + (overtimeHours * overtimeRate);
-            
-            return {
-              ticketId: newTicket.id,
-              employeeName: entry.employeeName,
-              position: entry.position || "General Labor",
-              crewMemberCount: entry.crewMemberCount || 1,
-              hoursWorked: String(regularHours),
-              totalHours: String(totalHours),
-              hourlyRate: String(regularRate),
-              totalCost: String(totalCost),
-            };
-          })
-        );
-      }
-      
-      if (equipmentEntries && equipmentEntries.length > 0) {
-        await db.insert(tmTicketEquipmentEntries).values(
-          equipmentEntries.map((entry: any) => {
-            const qty = parseFloat(entry.quantity || "1");
-            const hours = parseFloat(entry.hours || entry.hoursUsed || "0");
-            const rate = parseFloat(entry.rate || entry.hourlyRate || "0");
-            const totalCost = qty * hours * rate;
-            
-            return {
-              ticketId: newTicket.id,
-              equipmentType: entry.equipmentType,
-              quantity: qty,
-              hoursUsed: String(hours),
-              hourlyRate: String(rate),
-              totalCost: String(totalCost),
-            };
-          })
-        );
-      }
-      
-      if (materialEntries && materialEntries.length > 0) {
-        await db.insert(tmTicketMaterialEntries).values(
-          materialEntries.map((entry: any) => {
-            const qty = parseFloat(entry.quantity || "1");
-            const unitCost = parseFloat(entry.unitCost || "0");
-            const totalCost = qty * unitCost;
-            
-            return {
-              ticketId: newTicket.id,
-              materialDescription: entry.description || entry.materialDescription,
-              quantity: String(qty),
-              unit: entry.unit || "EA",
-              unitCost: String(unitCost),
-              totalCost: String(totalCost),
-            };
-          })
-        );
-      }
-      
+
+      const mapLaborEntries = (entries: any[], ticketId: string) => entries.map((entry: any) => {
+        const name = entry.employeeName || entry.workerName || entry.name;
+        if (!name) throw new Error("Labor entry missing employee name");
+        const regularHours = parseFloat(entry.regularHours || entry.hoursWorked || "0");
+        if (!isFinite(regularHours)) throw new Error("Labor entry has invalid hours");
+        const overtimeHours = parseFloat(entry.overtimeHours || "0");
+        const regularRate = parseFloat(entry.rate || entry.hourlyRate || "0");
+        if (!isFinite(regularRate)) throw new Error("Labor entry has invalid rate");
+        const overtimeRate = parseFloat(entry.overtimeRate || String(regularRate * 1.5));
+        const totalHours = regularHours + overtimeHours;
+        const totalCost = (regularHours * regularRate) + (overtimeHours * overtimeRate);
+        return {
+          ticketId,
+          employeeName: name,
+          position: entry.position || entry.role || "General Labor",
+          crewMemberCount: entry.crewMemberCount || 1,
+          hoursWorked: String(regularHours),
+          totalHours: String(totalHours),
+          hourlyRate: String(regularRate),
+          totalCost: String(totalCost),
+        };
+      });
+
+      const mapEquipmentEntries = (entries: any[], ticketId: string) => entries.map((entry: any) => {
+        const type = entry.equipmentType || entry.equipmentName || entry.name;
+        if (!type) throw new Error("Equipment entry missing equipment type");
+        const qty = parseFloat(entry.quantity || "1");
+        const hours = parseFloat(entry.hours || entry.hoursUsed || "0");
+        const rate = parseFloat(entry.rate || entry.hourlyRate || "0");
+        const totalCost = qty * hours * rate;
+        return {
+          ticketId,
+          equipmentType: type,
+          quantity: qty,
+          hoursUsed: String(hours),
+          hourlyRate: String(rate),
+          totalCost: String(totalCost),
+        };
+      });
+
+      const mapMaterialEntries = (entries: any[], ticketId: string) => entries.map((entry: any) => {
+        const desc = entry.description || entry.materialDescription || entry.materialName || entry.name;
+        if (!desc) throw new Error("Material entry missing description");
+        const qty = parseFloat(entry.quantity || "1");
+        const unitCost = parseFloat(entry.unitCost || "0");
+        const totalCost = qty * unitCost;
+        return {
+          ticketId,
+          materialDescription: desc,
+          quantity: String(qty),
+          unit: entry.unit || "EA",
+          unitCost: String(unitCost),
+          totalCost: String(totalCost),
+        };
+      });
+
+      const newTicket = await db.transaction(async (tx) => {
+        const [ticket] = await tx.insert(tmTickets).values({
+          ...restTicketData,
+          projectId,
+          ticketNumber,
+          createdById: userId,
+          tfrRepresentativeId: restTicketData.tfrRepresentativeId || userId,
+          scopeDescription: description || restTicketData.scopeDescription || "Work performed",
+          organizationSowItemId: sowItemId,
+          workTypeId: null,
+          workTypeCode: workTypeCode || null,
+          workTypeName: workTypeName || null,
+          categoryName: categoryName || null,
+          scopeModifierIds: scopeModifierIds || null,
+          scopeModifierNames: scopeModifierNames || null,
+          canonicalName: canonicalName || null,
+          scopeUnit: scopeUnit || null,
+          scopeQuantity: scopeQuantity || null,
+          costCode: costCode || null,
+          status: "DRAFT",
+        }).returning();
+
+        if (laborEntries && laborEntries.length > 0) {
+          await tx.insert(tmTicketLaborEntries).values(mapLaborEntries(laborEntries, ticket.id));
+        }
+        if (equipmentEntries && equipmentEntries.length > 0) {
+          await tx.insert(tmTicketEquipmentEntries).values(mapEquipmentEntries(equipmentEntries, ticket.id));
+        }
+        if (materialEntries && materialEntries.length > 0) {
+          await tx.insert(tmTicketMaterialEntries).values(mapMaterialEntries(materialEntries, ticket.id));
+        }
+
+        return ticket;
+      });
+
       await recalculateTicketTotals(newTicket.id);
       
       await db.insert(auditLog).values({
@@ -1091,8 +1098,11 @@ export function registerTMTicketRoutes(app: Express) {
       });
       
       res.status(201).json(newTicket);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating T&M ticket:", error);
+      if (error.message?.includes("missing")) {
+        return res.status(400).json({ error: error.message });
+      }
       res.status(500).json({ error: "Failed to create T&M ticket" });
     }
   });

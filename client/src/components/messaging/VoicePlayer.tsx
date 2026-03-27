@@ -13,6 +13,13 @@ export function VoicePlayer({ url, durationSeconds }: VoicePlayerProps) {
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setError(false);
+    setDuration(durationSeconds || 0);
+  }, [url, durationSeconds]);
+
+  useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -24,17 +31,23 @@ export function VoicePlayer({ url, durationSeconds }: VoicePlayerProps) {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onEnded = () => { setIsPlaying(false); setCurrentTime(0); };
     const onError = () => setError(true);
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
 
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("error", onError);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
 
     return () => {
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
     };
   }, [url]);
 
@@ -49,11 +62,10 @@ export function VoicePlayer({ url, durationSeconds }: VoicePlayerProps) {
     if (!audio) return;
     if (isPlaying) {
       audio.pause();
-      setIsPlaying(false);
     } else {
       try {
+        setError(false);
         await audio.play();
-        setIsPlaying(true);
       } catch {
         setError(true);
       }
