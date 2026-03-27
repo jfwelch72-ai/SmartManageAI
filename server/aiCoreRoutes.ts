@@ -1629,6 +1629,11 @@ router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "M
 
     const { projectId, date, analysisTypes, tradeType, notes } = parsed.data;
 
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied: project does not belong to your organization" });
+    }
+
     // Get organization trade type if not provided
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
     // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
@@ -1971,10 +1976,142 @@ router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: A
       .orderBy(desc(jobsiteAnalysisBatches.analysisDate))
       .limit(30);
 
-    res.json({ batches });
+    const batchIds = batches.map(b => b.id);
+    let photoCountMap: Record<string, number> = {};
+    if (batchIds.length > 0) {
+      const photoCounts = await db.select({
+        batchId: jobsiteAnalysisPhotos.batchId,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(jobsiteAnalysisPhotos)
+        .where(sql`${jobsiteAnalysisPhotos.batchId} IN (${sql.join(batchIds.map(id => sql`${id}`), sql`, `)})`)
+        .groupBy(jobsiteAnalysisPhotos.batchId);
+      for (const pc of photoCounts) {
+        photoCountMap[pc.batchId] = pc.count;
+      }
+    }
+
+    const batchesWithCounts = batches.map(b => ({
+      ...b,
+      photoCount: photoCountMap[b.id] || 0,
+      safetyScore: b.summaryJson ? (() => { try { return JSON.parse(b.summaryJson).overallSafetyScore; } catch { return undefined; } })() : undefined,
+    }));
+
+    res.json({ batches: batchesWithCounts });
   } catch (error) {
     console.error("Get jobsite history error:", error);
     res.status(500).json({ error: "Failed to get history" });
+  }
+});
+
+// GET /api/ai-features/jobsite/project-photos/:projectId - Get unanalyzed project photos
+router.get("/ai-features/jobsite/project-photos/:projectId", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const projectId = req.params.projectId;
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const allPhotos = await db.select()
+      .from(media)
+      .where(and(
+        eq(media.projectId, projectId),
+        eq(media.type, "IMAGE")
+      ))
+      .orderBy(desc(media.uploadedAt));
+
+    const alreadyUsed = await db.select({ fileUrl: jobsiteAnalysisPhotos.fileUrl })
+      .from(jobsiteAnalysisPhotos)
+      .innerJoin(jobsiteAnalysisBatches, eq(jobsiteAnalysisPhotos.batchId, jobsiteAnalysisBatches.id))
+      .where(eq(jobsiteAnalysisBatches.projectId, projectId));
+
+    const usedUrls = new Set(alreadyUsed.map(p => p.fileUrl));
+    const unanalyzed = allPhotos.filter(p => !usedUrls.has(p.fileUrl));
+
+    res.json({ photos: unanalyzed, total: allPhotos.length, unanalyzedCount: unanalyzed.length });
+  } catch (error) {
+    console.error("Get project photos error:", error);
+    res.status(500).json({ error: "Failed to get project photos" });
+  }
+});
+
+// POST /api/ai-features/jobsite/:batchId/attach-photos - Attach photos and trigger processing
+const attachPhotosSchema = z.object({
+  photos: z.array(z.object({
+    fileUrl: z.string().min(1),
+    fileKey: z.string().optional(),
+    originalFilename: z.string().optional(),
+  })).min(1, "At least one photo is required"),
+});
+
+router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    if (!organizationId || !userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const parsed = attachPhotosSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+
+    const { photos } = parsed.data;
+    const batchId = req.params.batchId;
+
+    const [batch] = await db.select()
+      .from(jobsiteAnalysisBatches)
+      .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+
+    if (batch.organizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, batch.projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const projectMedia = await db.select({ fileUrl: media.fileUrl })
+      .from(media)
+      .where(and(eq(media.projectId, batch.projectId), eq(media.type, "IMAGE")));
+    const validUrls = new Set(projectMedia.map(m => m.fileUrl));
+
+    const validatedPhotos = photos.filter(p => {
+      if (validUrls.has(p.fileUrl)) return true;
+      if (p.fileUrl.startsWith("/objects/") || p.fileUrl.startsWith("objects/")) return true;
+      return false;
+    });
+
+    if (validatedPhotos.length === 0) {
+      return res.status(400).json({ error: "No valid photos to attach" });
+    }
+
+    const photoRecords = validatedPhotos.map(p => ({
+      batchId,
+      fileKey: p.fileKey || p.fileUrl,
+      fileUrl: p.fileUrl,
+      originalFilename: p.originalFilename || null,
+    }));
+
+    await db.insert(jobsiteAnalysisPhotos).values(photoRecords);
+
+    res.json({ success: true, photosAttached: validatedPhotos.length });
+  } catch (error) {
+    console.error("Attach photos error:", error);
+    res.status(500).json({ error: "Failed to attach photos" });
   }
 });
 

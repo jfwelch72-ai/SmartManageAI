@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Sparkles, 
   Loader2, 
@@ -26,11 +27,14 @@ import {
   RefreshCw,
   TrendingUp,
   BarChart3,
-  ChevronRight
+  ChevronRight,
+  ImagePlus,
+  FolderOpen,
+  X
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { format, parseISO, differenceInHours } from "date-fns";
+import { format, parseISO } from "date-fns";
 
 interface AnalysisResult {
   id: string;
@@ -73,6 +77,26 @@ interface AnalysisBatch {
   completedAt?: string;
 }
 
+interface ProjectPhoto {
+  id: string;
+  fileName: string;
+  fileUrl: string;
+  type: string;
+  caption?: string;
+  uploadedAt: string;
+  objectKey?: string;
+}
+
+interface UploadedFile {
+  file: File;
+  preview: string;
+  fileUrl?: string;
+  objectKey?: string;
+  uploading: boolean;
+  uploaded: boolean;
+  error?: string;
+}
+
 interface AiJobsiteAnalysisProps {
   projectId: string;
   projectName: string;
@@ -97,6 +121,12 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
   const [selectedPhoto, setSelectedPhoto] = useState<AnalysisResult | null>(null);
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewNotes, setReviewNotes] = useState("");
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+  const [photoDialogTab, setPhotoDialogTab] = useState<"library" | "upload">("library");
+  const [selectedLibraryPhotos, setSelectedLibraryPhotos] = useState<Set<string>>(new Set());
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [analysisInProgress, setAnalysisInProgress] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { toast } = useToast();
 
@@ -114,8 +144,13 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
     queryKey: ["/api/ai-features/jobsite/history", projectId],
   });
 
-  const analyzeMutation = useMutation({
-    mutationFn: async (photoUrls: string[]) => {
+  const { data: projectPhotosData, isLoading: photosLoading } = useQuery<{ photos: ProjectPhoto[]; total: number; unanalyzedCount: number }>({
+    queryKey: ["/api/ai-features/jobsite/project-photos", projectId],
+    enabled: photoDialogOpen,
+  });
+
+  const createBatchMutation = useMutation({
+    mutationFn: async () => {
       const response = await apiRequest("POST", "/api/ai-features/jobsite/analyze", {
         projectId,
         date: new Date().toISOString().split("T")[0],
@@ -123,19 +158,19 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       });
       return response.json();
     },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
-      toast({
-        title: "Analysis Started",
-        description: `AI is analyzing ${data.batchId ? "your photos" : "the image"}`,
-      });
+  });
+
+  const attachPhotosMutation = useMutation({
+    mutationFn: async ({ batchId, photos }: { batchId: string; photos: Array<{ fileUrl: string; fileKey?: string; originalFilename?: string }> }) => {
+      const response = await apiRequest("POST", `/api/ai-features/jobsite/${batchId}/attach-photos`, { photos });
+      return response.json();
     },
-    onError: (error: any) => {
-      toast({
-        title: "Analysis Failed",
-        description: error.message || "Failed to start analysis",
-        variant: "destructive",
-      });
+  });
+
+  const processBatchMutation = useMutation({
+    mutationFn: async (batchId: string) => {
+      const response = await apiRequest("POST", `/api/ai-features/jobsite/${batchId}/process`, {});
+      return response.json();
     },
   });
 
@@ -180,6 +215,147 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
     });
   };
 
+  const handleOpenPhotoDialog = () => {
+    setSelectedLibraryPhotos(new Set());
+    setUploadedFiles([]);
+    setPhotoDialogTab("library");
+    setPhotoDialogOpen(true);
+  };
+
+  const toggleLibraryPhoto = (photoId: string) => {
+    setSelectedLibraryPhotos(prev => {
+      const next = new Set(prev);
+      if (next.has(photoId)) {
+        next.delete(photoId);
+      } else {
+        next.add(photoId);
+      }
+      return next;
+    });
+  };
+
+  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles: UploadedFile[] = Array.from(files).map(file => ({
+      file,
+      preview: URL.createObjectURL(file),
+      uploading: false,
+      uploaded: false,
+    }));
+    
+    setUploadedFiles(prev => [...prev, ...newFiles]);
+
+    for (const uf of newFiles) {
+      try {
+        setUploadedFiles(prev => prev.map(f => f.preview === uf.preview ? { ...f, uploading: true } : f));
+        
+        const uploadRes = await apiRequest("POST", "/api/objects/upload", {
+          contentType: uf.file.type,
+          fileSize: uf.file.size,
+          fileType: "MEDIA",
+        });
+        const { uploadURL, intentId, objectKey } = await uploadRes.json();
+
+        await fetch(uploadURL, {
+          method: "PUT",
+          headers: { "Content-Type": uf.file.type },
+          body: uf.file,
+        });
+
+        const confirmRes = await apiRequest("POST", "/api/objects/confirm", {
+          intentId,
+          aclPolicy: { visibility: "private" },
+        });
+        const { objectPath } = await confirmRes.json();
+
+        setUploadedFiles(prev => prev.map(f => 
+          f.preview === uf.preview 
+            ? { ...f, uploading: false, uploaded: true, fileUrl: objectPath, objectKey }
+            : f
+        ));
+      } catch (err: any) {
+        setUploadedFiles(prev => prev.map(f => 
+          f.preview === uf.preview 
+            ? { ...f, uploading: false, error: err.message || "Upload failed" }
+            : f
+        ));
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }, []);
+
+  const removeUploadedFile = (preview: string) => {
+    setUploadedFiles(prev => {
+      const removed = prev.find(f => f.preview === preview);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return prev.filter(f => f.preview !== preview);
+    });
+  };
+
+  const handleStartAnalysis = async () => {
+    const libraryPhotos = projectPhotosData?.photos.filter(p => selectedLibraryPhotos.has(p.id)) || [];
+    const successUploads = uploadedFiles.filter(f => f.uploaded && f.fileUrl);
+
+    if (libraryPhotos.length === 0 && successUploads.length === 0) {
+      toast({
+        title: "No Photos Selected",
+        description: "Please select photos from your library or upload new ones",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setAnalysisInProgress(true);
+
+    try {
+      const batchResult = await createBatchMutation.mutateAsync();
+      const batchId = batchResult.batchId;
+
+      const photosToAttach = [
+        ...libraryPhotos.map(p => ({
+          fileUrl: p.fileUrl,
+          fileKey: p.objectKey || p.fileUrl,
+          originalFilename: p.fileName,
+        })),
+        ...successUploads.map(f => ({
+          fileUrl: f.fileUrl!,
+          fileKey: f.objectKey || f.fileUrl!,
+          originalFilename: f.file.name,
+        })),
+      ];
+
+      await attachPhotosMutation.mutateAsync({ batchId, photos: photosToAttach });
+      await processBatchMutation.mutateAsync(batchId);
+
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/project-photos", projectId] });
+
+      setPhotoDialogOpen(false);
+      setUploadedFiles([]);
+      setSelectedLibraryPhotos(new Set());
+
+      toast({
+        title: "Analysis Complete",
+        description: `Analyzed ${photosToAttach.length} photo${photosToAttach.length > 1 ? "s" : ""} successfully`,
+      });
+
+      refetch();
+    } catch (err: any) {
+      toast({
+        title: "Analysis Failed",
+        description: err.message || "Failed to complete analysis",
+        variant: "destructive",
+      });
+    } finally {
+      setAnalysisInProgress(false);
+    }
+  };
+
   const batches = data?.batches || [];
   const results = data?.results || [];
   const stats = data?.stats || { totalPhotos: 0, safetyIssues: 0, avgConfidence: 0 };
@@ -189,6 +365,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
   );
   const criticalIssues = safetyIssues.filter(i => i.severity === "CRITICAL" || i.severity === "HIGH");
   const pendingReviews = results.filter(r => r.reviewStatus === "PENDING");
+  const totalPhotosAnalyzed = batches.reduce((sum, b) => sum + (b.photoCount || 0), 0);
 
   if (isLoading) {
     return (
@@ -197,6 +374,8 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       </div>
     );
   }
+
+  const selectedCount = selectedLibraryPhotos.size + uploadedFiles.filter(f => f.uploaded).length;
 
   return (
     <div className="space-y-6">
@@ -212,18 +391,9 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
             <RefreshCw className="w-4 h-4 mr-2" />
             Refresh
           </Button>
-          <Button className="w-full sm:w-auto" onClick={() => analyzeMutation.mutate([])} disabled={analyzeMutation.isPending} data-testid="button-analyze-photos">
-            {analyzeMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Analyzing...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 mr-2" />
-                Analyze New Photos
-              </>
-            )}
+          <Button className="w-full sm:w-auto" onClick={handleOpenPhotoDialog} data-testid="button-analyze-photos">
+            <Sparkles className="w-4 h-4 mr-2" />
+            Analyze New Photos
           </Button>
         </div>
       </div>
@@ -237,7 +407,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Photos Analyzed</p>
-                <p className="text-2xl font-bold">{stats.totalPhotos}</p>
+                <p className="text-2xl font-bold" data-testid="text-total-photos">{totalPhotosAnalyzed}</p>
               </div>
             </div>
           </CardContent>
@@ -278,8 +448,8 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                 <BarChart3 className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">AI Confidence</p>
-                <p className="text-2xl font-bold">{Math.round(stats.avgConfidence * 100)}%</p>
+                <p className="text-sm text-muted-foreground">Analysis Batches</p>
+                <p className="text-2xl font-bold">{batches.length}</p>
               </div>
             </div>
           </CardContent>
@@ -349,7 +519,11 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                   <div className="text-center py-8">
                     <Camera className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                     <p className="font-medium">No Analysis History</p>
-                    <p className="text-sm text-muted-foreground">Upload and analyze project photos to get started</p>
+                    <p className="text-sm text-muted-foreground mb-4">Upload and analyze project photos to get started</p>
+                    <Button variant="outline" onClick={handleOpenPhotoDialog} data-testid="button-start-first-analysis">
+                      <ImagePlus className="w-4 h-4 mr-2" />
+                      Start First Analysis
+                    </Button>
                   </div>
                 ) : (
                   <ScrollArea className="h-[200px]">
@@ -357,12 +531,23 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                       {batches.slice(0, 5).map(batch => (
                         <div key={batch.id} className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
                           <div>
-                            <p className="font-medium text-sm">{batch.photoCount || 0} photos analyzed</p>
+                            <p className="font-medium text-sm">{batch.photoCount || 0} photo{(batch.photoCount || 0) !== 1 ? "s" : ""} analyzed</p>
                             <p className="text-xs text-muted-foreground">
                               {format(parseISO(batch.analysisDate || batch.createdAt || new Date().toISOString()), "MMM d, yyyy")}
                             </p>
+                            {batch.safetyScore !== undefined && (
+                              <p className="text-xs font-medium mt-1">
+                                Safety Score: <span className={cn(
+                                  batch.safetyScore >= 80 ? "text-green-600" : 
+                                  batch.safetyScore >= 60 ? "text-yellow-600" : "text-red-600"
+                                )}>{batch.safetyScore}%</span>
+                              </p>
+                            )}
                           </div>
-                          <Badge variant={(batch.status || batch.analysisStatus) === "COMPLETE" ? "secondary" : "outline"}>
+                          <Badge variant={
+                            (batch.status || batch.analysisStatus) === "COMPLETE" ? "secondary" :
+                            (batch.status || batch.analysisStatus) === "PROCESSING" ? "default" : "outline"
+                          }>
                             {batch.status || batch.analysisStatus}
                           </Badge>
                         </div>
@@ -440,9 +625,9 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                   <Image className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
                   <h3 className="text-lg font-semibold mb-2">No Photos Yet</h3>
                   <p className="text-muted-foreground mb-4">Upload and analyze photos to track jobsite conditions</p>
-                  <Button onClick={() => analyzeMutation.mutate([])}>
+                  <Button onClick={handleOpenPhotoDialog} data-testid="button-upload-first-photos">
                     <Upload className="w-4 h-4 mr-2" />
-                    Start Analysis
+                    Select Photos to Analyze
                   </Button>
                 </div>
               ) : (
@@ -518,7 +703,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                             <Camera className="w-5 h-5 text-primary" />
                           </div>
                           <div>
-                            <p className="font-medium">{batch.photoCount || 0} photos</p>
+                            <p className="font-medium">{batch.photoCount || 0} photo{(batch.photoCount || 0) !== 1 ? "s" : ""}</p>
                             <p className="text-sm text-muted-foreground">
                               {format(parseISO(batch.analysisDate || batch.createdAt || new Date().toISOString()), "MMMM d, yyyy")}
                             </p>
@@ -528,7 +713,10 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                           {batch.safetyScore !== undefined && (
                             <div className="text-center">
                               <p className="text-xs text-muted-foreground">Safety</p>
-                              <p className="font-bold">{batch.safetyScore}%</p>
+                              <p className={cn("font-bold",
+                                batch.safetyScore >= 80 ? "text-green-600" : 
+                                batch.safetyScore >= 60 ? "text-yellow-600" : "text-red-600"
+                              )}>{batch.safetyScore}%</p>
                             </div>
                           )}
                           <Badge variant={
@@ -547,6 +735,195 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={photoDialogOpen} onOpenChange={(open) => { if (!analysisInProgress) setPhotoDialogOpen(open); }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Select Photos for Analysis</DialogTitle>
+            <DialogDescription>
+              Choose existing project photos or upload new ones for AI safety and progress analysis
+            </DialogDescription>
+          </DialogHeader>
+
+          <Tabs value={photoDialogTab} onValueChange={(v) => setPhotoDialogTab(v as "library" | "upload")} className="flex-1 flex flex-col min-h-0">
+            <TabsList className="w-full">
+              <TabsTrigger value="library" className="flex-1" data-testid="tab-photo-library">
+                <FolderOpen className="w-4 h-4 mr-2" />
+                Project Library
+                {projectPhotosData?.unanalyzedCount ? (
+                  <Badge variant="secondary" className="ml-2">{projectPhotosData.unanalyzedCount}</Badge>
+                ) : null}
+              </TabsTrigger>
+              <TabsTrigger value="upload" className="flex-1" data-testid="tab-photo-upload">
+                <Upload className="w-4 h-4 mr-2" />
+                Upload New
+                {uploadedFiles.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">{uploadedFiles.length}</Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="library" className="flex-1 min-h-0 mt-4">
+              {photosLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : !projectPhotosData?.photos.length ? (
+                <div className="text-center py-12">
+                  <Image className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-semibold mb-2">No Project Photos</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Upload photos to the project's Photos & Videos section first, or use the Upload tab to add new photos directly
+                  </p>
+                  <Button variant="outline" onClick={() => setPhotoDialogTab("upload")} data-testid="button-switch-to-upload">
+                    <Upload className="w-4 h-4 mr-2" />
+                    Upload Photos Instead
+                  </Button>
+                </div>
+              ) : (
+                <ScrollArea className="h-[350px]">
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    {projectPhotosData.photos.map(photo => {
+                      const isSelected = selectedLibraryPhotos.has(photo.id);
+                      return (
+                        <div
+                          key={photo.id}
+                          className={cn(
+                            "relative rounded-lg overflow-hidden border-2 cursor-pointer transition-all",
+                            isSelected ? "border-primary ring-2 ring-primary/20" : "border-transparent hover:border-muted-foreground/30"
+                          )}
+                          onClick={() => toggleLibraryPhoto(photo.id)}
+                          data-testid={`photo-library-${photo.id}`}
+                        >
+                          <div className="aspect-square bg-muted flex items-center justify-center">
+                            <img
+                              src={photo.fileUrl}
+                              alt={photo.caption || photo.fileName}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          </div>
+                          <div className="absolute top-2 right-2">
+                            <Checkbox
+                              checked={isSelected}
+                              className="bg-background/80"
+                              data-testid={`checkbox-photo-${photo.id}`}
+                            />
+                          </div>
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                            <p className="text-xs text-white truncate">{photo.fileName}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              )}
+            </TabsContent>
+
+            <TabsContent value="upload" className="flex-1 min-h-0 mt-4">
+              <div className="space-y-4">
+                <div
+                  className={cn(
+                    "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
+                    "hover:border-primary hover:bg-primary/5"
+                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                  data-testid="dropzone-upload"
+                >
+                  <ImagePlus className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                  <p className="font-medium">Click to select photos</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Supports JPG, PNG, WebP (max 10MB each)
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    data-testid="input-file-upload"
+                  />
+                </div>
+
+                {uploadedFiles.length > 0 && (
+                  <ScrollArea className="h-[250px]">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {uploadedFiles.map((uf, idx) => (
+                        <div key={uf.preview} className="relative rounded-lg overflow-hidden border" data-testid={`uploaded-photo-${idx}`}>
+                          <div className="aspect-square bg-muted">
+                            <img
+                              src={uf.preview}
+                              alt={uf.file.name}
+                              className={cn("w-full h-full object-cover", uf.uploading && "opacity-50")}
+                            />
+                          </div>
+                          {uf.uploading && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                              <Loader2 className="w-6 h-6 animate-spin text-white" />
+                            </div>
+                          )}
+                          {uf.uploaded && (
+                            <div className="absolute top-2 left-2">
+                              <CheckCircle2 className="w-5 h-5 text-green-500 drop-shadow" />
+                            </div>
+                          )}
+                          {uf.error && (
+                            <div className="absolute top-2 left-2">
+                              <AlertCircle className="w-5 h-5 text-red-500 drop-shadow" />
+                            </div>
+                          )}
+                          <button
+                            className="absolute top-2 right-2 p-1 rounded-full bg-background/80 hover:bg-background"
+                            onClick={(e) => { e.stopPropagation(); removeUploadedFile(uf.preview); }}
+                            data-testid={`button-remove-upload-${idx}`}
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                            <p className="text-xs text-white truncate">{uf.file.name}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
+
+          <Separator />
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <div className="flex items-center gap-2 mr-auto text-sm text-muted-foreground">
+              {selectedCount > 0 && (
+                <span data-testid="text-selected-count">{selectedCount} photo{selectedCount !== 1 ? "s" : ""} selected</span>
+              )}
+            </div>
+            <Button variant="outline" onClick={() => setPhotoDialogOpen(false)} disabled={analysisInProgress} data-testid="button-cancel-analysis">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleStartAnalysis}
+              disabled={analysisInProgress || selectedCount === 0}
+              data-testid="button-start-analysis"
+            >
+              {analysisInProgress ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Start Analysis{selectedCount > 0 ? ` (${selectedCount})` : ""}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
         <DialogContent className="max-w-2xl">
