@@ -3487,6 +3487,8 @@ export const organizationWebsites = pgTable("organization_websites", {
   galleryEnabled: boolean("gallery_enabled").default(true),
   contactFormEnabled: boolean("contact_form_enabled").default(true),
   analyticsEnabled: boolean("analytics_enabled").default(true),
+  careersEnabled: boolean("careers_enabled").default(false),
+  careersIntroText: text("careers_intro_text"),
   
   // Publishing
   lastPublishedAt: timestamp("last_published_at"),

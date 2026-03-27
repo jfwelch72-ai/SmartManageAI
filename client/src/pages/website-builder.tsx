@@ -131,6 +131,8 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
     footerPadding: 40,
     footerSectionSettings: null,
     headerSectionSettings: null as Record<string, any> | null,
+    careersEnabled: false,
+    careersIntroText: "",
   });
 
   const [headerComponentsConfig, setHeaderComponentsConfig] = useState<HeaderComponentsConfig>(getDefaultHeaderConfig());
@@ -319,6 +321,8 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
         footerPadding: websiteRef.footerPadding ?? prev.footerPadding,
         footerSectionSettings: (websiteRef as any).footerSectionSettings ?? prev.footerSectionSettings,
         headerSectionSettings: (websiteRef as any).headerSectionSettings ?? prev.headerSectionSettings,
+        careersEnabled: websiteRef.careersEnabled ?? prev.careersEnabled,
+        careersIntroText: websiteRef.careersIntroText ?? prev.careersIntroText,
       }));
       if (websiteRef.headerComponentsConfig) {
         setHeaderComponentsConfig(websiteRef.headerComponentsConfig as HeaderComponentsConfig);

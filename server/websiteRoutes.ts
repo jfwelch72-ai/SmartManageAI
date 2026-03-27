@@ -1,8 +1,8 @@
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
-import { organizationWebsites, organizationWebsitePages, organizationSocialLinks, organizations, OrganizationWebsite, websiteDeployments, websiteProjects, websiteProjectImages, socialPostHistory, websiteContactSubmissions, crmOrganisations, crmContacts, pagePreviewLinks, pageVersions, websiteBlogPosts } from "@shared/schema";
+import { eq, and, desc, asc, sql, ilike } from "drizzle-orm";
+import { organizationWebsites, organizationWebsitePages, organizationSocialLinks, organizations, OrganizationWebsite, websiteDeployments, websiteProjects, websiteProjectImages, socialPostHistory, websiteContactSubmissions, crmOrganisations, crmContacts, pagePreviewLinks, pageVersions, websiteBlogPosts, hiringJobs, hiringCandidates, hiringCandidateDocuments, users } from "@shared/schema";
 import { requireAuth, AuthRequest, requireFeaturePermission } from "./auth";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageClient } from "./objectStorage";
@@ -10,6 +10,7 @@ import multer from "multer";
 import { openai } from "./ai/openaiClient";
 import { sendEmail } from "./services/emailService";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
+import { insertNotification } from "./services/notificationService";
 
 const router = Router();
 
@@ -312,6 +313,8 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
         footerColumns: website.footerColumns || 3,
         sectionSettings: website.footerSectionSettings || null,
       },
+      careersEnabled: website.careersEnabled || false,
+      careersIntroText: website.careersIntroText || null,
     });
   } catch (error) {
     console.error("Error fetching public website:", error);
@@ -575,6 +578,8 @@ router.get("/staging/:subdomain", async (req: Request, res: Response) => {
         footerColumns: website.footerColumns || 3,
         sectionSettings: website.footerSectionSettings || null,
       },
+      careersEnabled: website.careersEnabled || false,
+      careersIntroText: website.careersIntroText || null,
       isStaging: true,
     });
   } catch (error) {
@@ -3350,6 +3355,277 @@ router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: R
       return res.status(501).json({ error: "AI image generation is not available with your current configuration. Please upload an image manually." });
     }
     res.status(500).json({ error: error?.message || "Failed to generate blog featured image" });
+  }
+});
+
+// ============================================
+// PUBLIC CAREERS PAGE ENDPOINTS
+// ============================================
+
+const careersApplicationRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+const careersResumeUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF and Word documents are allowed'));
+    }
+  },
+});
+
+router.get("/public/:subdomain/careers", async (req: Request, res: Response) => {
+  try {
+    const { subdomain } = req.params;
+    if (!subdomain) return res.status(400).json({ error: "Subdomain is required" });
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: and(
+        eq(organizationWebsites.subdomain, subdomain),
+        eq(organizationWebsites.status, "PUBLISHED")
+      ),
+    });
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+    if (!website.careersEnabled) return res.status(404).json({ error: "Careers page is not enabled" });
+
+    const orgId = website.organizationId;
+
+    const jobs = await db
+      .select({
+        id: hiringJobs.id,
+        title: hiringJobs.title,
+        department: hiringJobs.department,
+        trade: hiringJobs.trade,
+        employmentType: hiringJobs.employmentType,
+        location: hiringJobs.location,
+        compensationType: hiringJobs.compensationType,
+        compensationMin: hiringJobs.compensationMin,
+        compensationMax: hiringJobs.compensationMax,
+        description: hiringJobs.description,
+        publishedAt: hiringJobs.publishedAt,
+      })
+      .from(hiringJobs)
+      .where(and(
+        eq(hiringJobs.organizationId, orgId),
+        eq(hiringJobs.status, "PUBLISHED")
+      ))
+      .orderBy(desc(hiringJobs.publishedAt));
+
+    const org = await db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { name: true },
+    });
+
+    res.json({
+      jobs,
+      organizationName: org?.name || "",
+      introText: website.careersIntroText || null,
+    });
+  } catch (error) {
+    console.error("Error fetching public careers:", error);
+    res.status(500).json({ error: "Failed to fetch careers" });
+  }
+});
+
+router.get("/public/:subdomain/careers/:jobId", async (req: Request, res: Response) => {
+  try {
+    const { subdomain, jobId } = req.params;
+    if (!subdomain || !jobId) return res.status(400).json({ error: "Subdomain and job ID are required" });
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: and(
+        eq(organizationWebsites.subdomain, subdomain),
+        eq(organizationWebsites.status, "PUBLISHED")
+      ),
+    });
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+    if (!website.careersEnabled) return res.status(404).json({ error: "Careers page is not enabled" });
+
+    const [job] = await db
+      .select()
+      .from(hiringJobs)
+      .where(and(
+        eq(hiringJobs.id, jobId),
+        eq(hiringJobs.organizationId, website.organizationId),
+        eq(hiringJobs.status, "PUBLISHED")
+      ))
+      .limit(1);
+
+    if (!job) return res.status(404).json({ error: "Job not found" });
+
+    res.json({
+      id: job.id,
+      title: job.title,
+      department: job.department,
+      trade: job.trade,
+      employmentType: job.employmentType,
+      location: job.location,
+      compensationType: job.compensationType,
+      compensationMin: job.compensationMin,
+      compensationMax: job.compensationMax,
+      description: job.description,
+      requirements: job.requirements,
+      preferredQualifications: job.preferredQualifications,
+      certificationsRequired: job.certificationsRequired,
+      screeningQuestionsJson: job.screeningQuestionsJson,
+      publishedAt: job.publishedAt,
+    });
+  } catch (error) {
+    console.error("Error fetching public job detail:", error);
+    res.status(500).json({ error: "Failed to fetch job details" });
+  }
+});
+
+router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.single("resume"), async (req: Request, res: Response) => {
+  try {
+    const { subdomain, jobId } = req.params;
+    if (!subdomain || !jobId) return res.status(400).json({ error: "Subdomain and job ID are required" });
+
+    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const rateEntry = careersApplicationRateLimit.get(ipAddress);
+    if (rateEntry) {
+      if (now < rateEntry.resetAt) {
+        if (rateEntry.count >= 10) {
+          return res.status(429).json({ error: "Too many applications submitted. Please try again later." });
+        }
+        rateEntry.count++;
+      } else {
+        careersApplicationRateLimit.set(ipAddress, { count: 1, resetAt: now + 3600000 });
+      }
+    } else {
+      careersApplicationRateLimit.set(ipAddress, { count: 1, resetAt: now + 3600000 });
+    }
+
+    if (careersApplicationRateLimit.size > 5000) {
+      const keys = Array.from(careersApplicationRateLimit.keys());
+      for (const key of keys) {
+        const val = careersApplicationRateLimit.get(key);
+        if (val && now > val.resetAt) careersApplicationRateLimit.delete(key);
+      }
+    }
+
+    const { firstName, lastName, email, phone, screeningAnswers } = req.body;
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: "First name, last name, and email are required" });
+    }
+
+    if (firstName.length > 100 || lastName.length > 100 || email.length > 255 || (phone && phone.length > 30)) {
+      return res.status(400).json({ error: "Field length exceeds maximum allowed" });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ error: "Invalid email address" });
+    }
+
+    if (screeningAnswers && screeningAnswers.length > 10000) {
+      return res.status(400).json({ error: "Screening answers too long" });
+    }
+
+    const website = await db.query.organizationWebsites.findFirst({
+      where: and(
+        eq(organizationWebsites.subdomain, subdomain),
+        eq(organizationWebsites.status, "PUBLISHED")
+      ),
+    });
+
+    if (!website) return res.status(404).json({ error: "Website not found" });
+    if (!website.careersEnabled) return res.status(404).json({ error: "Careers page is not enabled" });
+
+    const orgId = website.organizationId;
+
+    const [job] = await db
+      .select()
+      .from(hiringJobs)
+      .where(and(
+        eq(hiringJobs.id, jobId),
+        eq(hiringJobs.organizationId, orgId),
+        eq(hiringJobs.status, "PUBLISHED")
+      ))
+      .limit(1);
+
+    if (!job) return res.status(404).json({ error: "Job not found or no longer accepting applications" });
+
+    let resumeStorageKey: string | null = null;
+    if (req.file) {
+      try {
+        const objectStorageService = new ObjectStorageService();
+        const privateDir = objectStorageService.getPrivateObjectDir();
+        const uniqueId = randomUUID();
+        const ext = req.file.originalname.split('.').pop() || 'pdf';
+        const fileName = `careers-resumes/${orgId}/${uniqueId}.${ext}`;
+        const fullPath = `${privateDir}/${fileName}`;
+        const pathParts = fullPath.split('/').filter(p => p.length > 0);
+        const bucketName = pathParts[0];
+        const objectName = pathParts.slice(1).join('/');
+        const bucket = objectStorageClient.bucket(bucketName);
+        const blob = bucket.file(objectName);
+        await blob.save(req.file.buffer, {
+          metadata: {
+            contentType: req.file.mimetype,
+            metadata: { originalName: req.file.originalname },
+          },
+        });
+        resumeStorageKey = fullPath;
+      } catch (uploadErr) {
+        console.error("Resume upload failed:", uploadErr);
+        return res.status(500).json({ error: "Failed to upload resume. Please try again." });
+      }
+    }
+
+    let parsedAnswers: string | null = null;
+    if (screeningAnswers) {
+      try {
+        parsedAnswers = typeof screeningAnswers === 'string' ? screeningAnswers : JSON.stringify(screeningAnswers);
+      } catch { /* ignore */ }
+    }
+
+    const [candidate] = await db.insert(hiringCandidates).values({
+      organizationId: orgId,
+      jobId: job.id,
+      firstName,
+      lastName,
+      fullName: `${firstName} ${lastName}`.trim(),
+      email,
+      phone: phone || null,
+      source: "CAREERS_PAGE",
+      currentStage: "APPLIED",
+      resumeStorageKey,
+      applicationAnswersJson: parsedAnswers,
+    }).returning();
+
+    const adminUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, orgId),
+        sql`${users.role} IN ('ADMIN', 'HUSTLER', 'HR_MANAGER')`
+      ));
+
+    for (const admin of adminUsers) {
+      try {
+        await insertNotification({
+          userId: admin.id,
+          type: "GENERAL",
+          title: "New Job Application",
+          message: `${firstName} ${lastName} applied for ${job.title} via the careers page.`,
+          relatedEntityId: candidate.id,
+          relatedEntityType: "hiring_candidate",
+        });
+      } catch { /* notification failure shouldn't block response */ }
+    }
+
+    res.status(201).json({ success: true, message: "Application submitted successfully" });
+  } catch (error) {
+    console.error("Error submitting job application:", error);
+    res.status(500).json({ error: "Failed to submit application" });
   }
 });
 

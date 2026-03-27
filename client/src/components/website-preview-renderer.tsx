@@ -135,6 +135,9 @@ interface PreviewData {
     youtubeUrl: string | null;
     tiktokUrl: string | null;
   } | null;
+  careersEnabled?: boolean;
+  careersIntroText?: string | null;
+  subdomain?: string;
   headerConfig?: HeaderComponentsConfig | null;
   footerConfig?: FooterComponentsConfig | null;
   bodyConfig?: BodyComponentsConfig | null;
@@ -155,6 +158,26 @@ interface PreviewData {
       bottom?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
     } | null;
   } | null;
+}
+
+interface CareersJob {
+  id: string;
+  title: string;
+  trade?: string | null;
+  location?: string | null;
+  employmentType?: string | null;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  description?: string | null;
+  requirements?: string | null;
+  benefits?: string | null;
+  screeningQuestions?: Array<{ question: string; required?: boolean }> | null;
+  createdAt?: string | null;
+  created_at?: string | null;
+}
+
+interface CareersJobDetail extends CareersJob {
+  organizationName?: string | null;
 }
 
 type PageView = "home" | "about" | "services" | "blog" | "gallery" | "contact" | "blog-post" | "project-detail" | string;
@@ -180,6 +203,13 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
   const [selectedProject, setSelectedProject] = useState<typeof projects[0] | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [contactFormSubmitted, setContactFormSubmitted] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<CareersJob | null>(null);
+  const [jobDetailData, setJobDetailData] = useState<CareersJobDetail | null>(null);
+  const [careersJobs, setCareersJobs] = useState<CareersJob[]>([]);
+  const [careersLoaded, setCareersLoaded] = useState(false);
+  const [applicationSubmitted, setApplicationSubmitted] = useState(false);
+  const [applicationSubmitting, setApplicationSubmitting] = useState(false);
+  const [careersFilter, setCareersFilter] = useState({ trade: '', location: '', employmentType: '' });
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [expandedMobileMenus, setExpandedMobileMenus] = useState<Set<string>>(new Set());
   const [faqOpenItems, setFaqOpenItems] = useState<Set<string>>(new Set());
@@ -190,6 +220,16 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
   useEffect(() => {
     if (onPageChange) onPageChange(currentPage);
   }, [currentPage, onPageChange]);
+
+  useEffect(() => {
+    const subdomain = data.subdomain || '';
+    if (!subdomain || careersLoaded) return;
+    setCareersLoaded(true);
+    fetch(`/api/website/public/${subdomain}/careers`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => setCareersJobs(d.jobs || []))
+      .catch(() => setCareersJobs([]));
+  }, [data.subdomain, careersLoaded]);
 
   useEffect(() => {
     if (!trackingEnabled || !websiteId) return;
@@ -267,8 +307,11 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
     setCurrentPage(page);
     setSelectedBlogPost(null);
     setSelectedProject(null);
+    setSelectedJob(null);
+    setJobDetailData(null);
     setMobileMenuOpen(false);
     setContactFormSubmitted(false);
+    setApplicationSubmitted(false);
   };
 
   // Helper to find custom page content
@@ -358,6 +401,9 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
     }
     if (website.blogEnabled !== false && blogPosts.length > 0) {
       items.push({ id: "blog", label: "Blog", slug: "blog" });
+    }
+    if (data.careersEnabled) {
+      items.push({ id: "careers", label: "Careers", slug: "careers" });
     }
     items.push({ id: "contact", label: "Contact", slug: "contact" });
     
@@ -3128,6 +3174,341 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
     );
   };
 
+  // CAREERS PAGE
+  const renderCareersPage = () => {
+    const subdomain = data.subdomain || '';
+    const introText = data.careersIntroText;
+
+    const filteredJobs = careersJobs.filter(job => {
+      if (careersFilter.trade && (!job.trade || !job.trade.toLowerCase().includes(careersFilter.trade.toLowerCase()))) return false;
+      if (careersFilter.location && (!job.location || !job.location.toLowerCase().includes(careersFilter.location.toLowerCase()))) return false;
+      if (careersFilter.employmentType && (!job.employmentType || job.employmentType !== careersFilter.employmentType)) return false;
+      return true;
+    });
+
+    const trades = [...new Set(careersJobs.map(j => j.trade).filter(Boolean))];
+    const locations = [...new Set(careersJobs.map(j => j.location).filter(Boolean))];
+    const employmentTypes = [...new Set(careersJobs.map(j => j.employmentType).filter(Boolean))];
+
+    const formatEmploymentType = (t: string) => t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const formatCompensation = (job: any) => {
+      if (!job.compensationMin && !job.compensationMax) return null;
+      const fmt = (v: string) => {
+        const n = parseFloat(v);
+        return isNaN(n) ? v : `$${n.toLocaleString()}`;
+      };
+      if (job.compensationMin && job.compensationMax) return `${fmt(job.compensationMin)} - ${fmt(job.compensationMax)}`;
+      if (job.compensationMin) return `From ${fmt(job.compensationMin)}`;
+      return `Up to ${fmt(job.compensationMax)}`;
+    };
+
+    return (
+      <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>
+        <div className="mx-auto px-4" style={{ maxWidth: '1200px' }}>
+          <h1 className={`${isMobile ? 'text-2xl' : 'text-4xl'} font-bold mb-4`} style={{ color: textColor }} data-testid="text-careers-title">
+            Careers
+          </h1>
+          {introText && (
+            <p className="text-lg opacity-80 mb-8 max-w-3xl" data-testid="text-careers-intro">{introText}</p>
+          )}
+
+          {careersJobs.length > 3 && (
+            <div className={`flex ${isMobile ? 'flex-col' : 'flex-row'} gap-3 mb-8`} data-testid="careers-filters">
+              {trades.length > 1 && (
+                <select
+                  value={careersFilter.trade}
+                  onChange={e => setCareersFilter(p => ({ ...p, trade: e.target.value }))}
+                  className="px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: `${primaryColor}30` }}
+                  data-testid="select-careers-trade"
+                >
+                  <option value="">All Trades</option>
+                  {trades.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              )}
+              {locations.length > 1 && (
+                <select
+                  value={careersFilter.location}
+                  onChange={e => setCareersFilter(p => ({ ...p, location: e.target.value }))}
+                  className="px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: `${primaryColor}30` }}
+                  data-testid="select-careers-location"
+                >
+                  <option value="">All Locations</option>
+                  {locations.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              )}
+              {employmentTypes.length > 1 && (
+                <select
+                  value={careersFilter.employmentType}
+                  onChange={e => setCareersFilter(p => ({ ...p, employmentType: e.target.value }))}
+                  className="px-3 py-2 rounded border text-sm"
+                  style={{ borderColor: `${primaryColor}30` }}
+                  data-testid="select-careers-employment-type"
+                >
+                  <option value="">All Types</option>
+                  {employmentTypes.map(t => <option key={t} value={t}>{formatEmploymentType(t)}</option>)}
+                </select>
+              )}
+            </div>
+          )}
+
+          {filteredJobs.length === 0 ? (
+            <div className="text-center py-12 rounded-lg" style={{ backgroundColor: `${primaryColor}05`, border: `1px solid ${primaryColor}15` }} data-testid="text-careers-empty">
+              <Briefcase className="h-12 w-12 mx-auto mb-4 opacity-30" />
+              <p className="opacity-60">No open positions at this time. Check back soon!</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredJobs.map(job => (
+                <button
+                  key={job.id}
+                  onClick={() => {
+                    setSelectedJob(job);
+                    setCurrentPage("job-detail");
+                    setApplicationSubmitted(false);
+                    if (subdomain) {
+                      fetch(`/api/website/public/${subdomain}/careers/${job.id}`)
+                        .then(r => r.ok ? r.json() : Promise.reject())
+                        .then(d => setJobDetailData(d))
+                        .catch(() => setJobDetailData(null));
+                    }
+                  }}
+                  className="w-full text-left p-6 rounded-lg border transition-shadow hover:shadow-md"
+                  style={{ borderColor: `${primaryColor}20`, backgroundColor: bgColor }}
+                  data-testid={`card-job-${job.id}`}
+                >
+                  <div className={`flex ${isMobile ? 'flex-col gap-2' : 'items-center justify-between'}`}>
+                    <div>
+                      <h3 className="text-lg font-semibold" style={{ color: textColor }}>{job.title}</h3>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {job.location && (
+                          <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded" style={{ backgroundColor: `${primaryColor}10`, color: primaryColor }}>
+                            <MapPin className="h-3 w-3" />{job.location}
+                          </span>
+                        )}
+                        {job.employmentType && (
+                          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: `${accentColor}15`, color: accentColor }}>
+                            {formatEmploymentType(job.employmentType)}
+                          </span>
+                        )}
+                        {job.trade && (
+                          <span className="text-xs px-2 py-1 rounded" style={{ backgroundColor: `${secondaryColor}10`, color: secondaryColor }}>
+                            {job.trade}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {formatCompensation(job) && (
+                        <span className="text-sm font-medium" style={{ color: primaryColor }}>{formatCompensation(job)}</span>
+                      )}
+                      <ChevronRight className="h-5 w-5 opacity-40" />
+                    </div>
+                  </div>
+                  {job.description && (
+                    <p className="text-sm opacity-70 mt-3 line-clamp-2">{job.description}</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    );
+  };
+
+  // JOB DETAIL + APPLICATION FORM
+  const renderJobDetailPage = () => {
+    const job = jobDetailData || selectedJob;
+    if (!job) return renderCareersPage();
+    const subdomain = data.subdomain || '';
+
+    const formatEmploymentType = (t: string) => t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const formatCompensation = (j: any) => {
+      if (!j.compensationMin && !j.compensationMax) return null;
+      const fmt = (v: string) => { const n = parseFloat(v); return isNaN(n) ? v : `$${n.toLocaleString()}`; };
+      if (j.compensationMin && j.compensationMax) return `${fmt(j.compensationMin)} - ${fmt(j.compensationMax)}`;
+      if (j.compensationMin) return `From ${fmt(j.compensationMin)}`;
+      return `Up to ${fmt(j.compensationMax)}`;
+    };
+
+    let screeningQuestions: Array<{ question: string; type?: string }> = [];
+    if (job.screeningQuestionsJson) {
+      try { screeningQuestions = JSON.parse(job.screeningQuestionsJson); } catch { /* ignore */ }
+    }
+
+    const handleApply = async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      if (applicationSubmitting) return;
+      setApplicationSubmitting(true);
+      const formData = new FormData(e.currentTarget);
+
+      const answers: Record<string, string> = {};
+      screeningQuestions.forEach((q, i) => {
+        const val = formData.get(`screening_${i}`);
+        if (val) answers[q.question] = val.toString();
+      });
+
+      const submitData = new FormData();
+      submitData.append('firstName', formData.get('firstName') as string);
+      submitData.append('lastName', formData.get('lastName') as string);
+      submitData.append('email', formData.get('email') as string);
+      const phone = formData.get('phone') as string;
+      if (phone) submitData.append('phone', phone);
+      if (Object.keys(answers).length > 0) submitData.append('screeningAnswers', JSON.stringify(answers));
+      const resume = formData.get('resume') as File;
+      if (resume && resume.size > 0) submitData.append('resume', resume);
+
+      try {
+        const resp = await fetch(`/api/website/public/${subdomain}/careers/${job.id}/apply`, {
+          method: 'POST',
+          body: submitData,
+        });
+        if (resp.ok) {
+          setApplicationSubmitted(true);
+        } else {
+          const data = await resp.json().catch(() => ({}));
+          alert(data.error || 'Failed to submit application. Please try again.');
+        }
+      } catch {
+        alert('Failed to submit application. Please try again.');
+      } finally {
+        setApplicationSubmitting(false);
+      }
+    };
+
+    return (
+      <section className={`${isMobile ? 'py-12' : 'py-20'}`} style={{ backgroundColor: bgColor }}>
+        <div className="mx-auto px-4" style={{ maxWidth: '900px' }}>
+          <button
+            onClick={() => { setSelectedJob(null); setJobDetailData(null); navigateTo("careers"); }}
+            className="inline-flex items-center gap-1 text-sm mb-6 cursor-pointer hover:opacity-80"
+            style={{ color: primaryColor }}
+            data-testid="button-back-to-careers"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to all positions
+          </button>
+
+          <h1 className={`${isMobile ? 'text-2xl' : 'text-3xl'} font-bold mb-4`} style={{ color: textColor }} data-testid="text-job-title">
+            {job.title}
+          </h1>
+
+          <div className="flex flex-wrap gap-3 mb-6">
+            {job.location && (
+              <span className="inline-flex items-center gap-1 text-sm px-3 py-1 rounded-full" style={{ backgroundColor: `${primaryColor}10`, color: primaryColor }}>
+                <MapPin className="h-4 w-4" />{job.location}
+              </span>
+            )}
+            {job.employmentType && (
+              <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: `${accentColor}15`, color: accentColor }}>
+                {formatEmploymentType(job.employmentType)}
+              </span>
+            )}
+            {job.department && (
+              <span className="text-sm px-3 py-1 rounded-full" style={{ backgroundColor: `${secondaryColor}10`, color: secondaryColor }}>
+                {job.department}
+              </span>
+            )}
+            {formatCompensation(job) && (
+              <span className="text-sm px-3 py-1 rounded-full font-medium" style={{ backgroundColor: `${primaryColor}10`, color: primaryColor }}>
+                {formatCompensation(job)}
+              </span>
+            )}
+          </div>
+
+          {job.description && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-3" style={{ color: textColor }}>Description</h2>
+              <p className="opacity-80 whitespace-pre-wrap" data-testid="text-job-description">{job.description}</p>
+            </div>
+          )}
+
+          {job.requirements && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-3" style={{ color: textColor }}>Requirements</h2>
+              <p className="opacity-80 whitespace-pre-wrap" data-testid="text-job-requirements">{job.requirements}</p>
+            </div>
+          )}
+
+          {job.preferredQualifications && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-3" style={{ color: textColor }}>Preferred Qualifications</h2>
+              <p className="opacity-80 whitespace-pre-wrap">{job.preferredQualifications}</p>
+            </div>
+          )}
+
+          {job.certificationsRequired && (
+            <div className="mb-6">
+              <h2 className="text-lg font-semibold mb-3" style={{ color: textColor }}>Required Certifications</h2>
+              <p className="opacity-80 whitespace-pre-wrap">{job.certificationsRequired}</p>
+            </div>
+          )}
+
+          <div className="mt-10 p-6 rounded-lg" style={{ backgroundColor: `${primaryColor}05`, border: `1px solid ${primaryColor}15` }}>
+            {applicationSubmitted ? (
+              <div className="text-center py-8" data-testid="text-application-success">
+                <CheckCircle className="h-12 w-12 mx-auto mb-4" style={{ color: primaryColor }} />
+                <h3 className="text-xl font-semibold mb-2" style={{ color: textColor }}>Application Submitted!</h3>
+                <p className="opacity-70">Thank you for your interest. We'll review your application and get back to you.</p>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold mb-6" style={{ color: textColor }} data-testid="text-apply-heading">Apply for this Position</h2>
+                <form onSubmit={handleApply} className="space-y-4">
+                  <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>First Name *</label>
+                      <input name="firstName" required className="w-full px-3 py-2 rounded border text-sm" style={{ borderColor: `${primaryColor}30` }} data-testid="input-apply-first-name" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>Last Name *</label>
+                      <input name="lastName" required className="w-full px-3 py-2 rounded border text-sm" style={{ borderColor: `${primaryColor}30` }} data-testid="input-apply-last-name" />
+                    </div>
+                  </div>
+                  <div className={`grid ${isMobile ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>Email *</label>
+                      <input name="email" type="email" required className="w-full px-3 py-2 rounded border text-sm" style={{ borderColor: `${primaryColor}30` }} data-testid="input-apply-email" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>Phone</label>
+                      <input name="phone" type="tel" className="w-full px-3 py-2 rounded border text-sm" style={{ borderColor: `${primaryColor}30` }} data-testid="input-apply-phone" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>Resume (PDF or Word)</label>
+                    <input name="resume" type="file" accept=".pdf,.doc,.docx" className="w-full text-sm" data-testid="input-apply-resume" />
+                  </div>
+                  {screeningQuestions.length > 0 && (
+                    <div className="space-y-4 pt-2">
+                      <h3 className="font-medium" style={{ color: textColor }}>Screening Questions</h3>
+                      {screeningQuestions.map((q, i) => (
+                        <div key={i}>
+                          <label className="block text-sm font-medium mb-1" style={{ color: textColor }}>{q.question}</label>
+                          <textarea name={`screening_${i}`} rows={2} className="w-full px-3 py-2 rounded border text-sm" style={{ borderColor: `${primaryColor}30` }} data-testid={`input-screening-${i}`} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={applicationSubmitting}
+                    className="px-6 py-3 rounded font-medium text-white cursor-pointer hover:opacity-90 transition-opacity disabled:opacity-50"
+                    style={{ backgroundColor: primaryColor }}
+                    data-testid="button-submit-application"
+                  >
+                    {applicationSubmitting ? 'Submitting...' : 'Submit Application'}
+                  </button>
+                </form>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+    );
+  };
+
   // Main render based on current page
   const renderCurrentPage = () => {
     // Handle custom pages (those starting with "custom-")
@@ -3153,6 +3534,10 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
         return renderProjectDetail();
       case "contact":
         return renderContactPage();
+      case "careers":
+        return renderCareersPage();
+      case "job-detail":
+        return renderJobDetailPage();
       default:
         return renderHomePage();
     }

@@ -248,6 +248,9 @@ export default function PublicWebsite({ isStaging = false }: { isStaging?: boole
     bodyConfig: data.bodyConfig || null,
     headerLayoutSettings: data.headerLayoutSettings || null,
     footerLayoutSettings: data.footerLayoutSettings || null,
+    careersEnabled: data.careersEnabled || false,
+    careersIntroText: data.careersIntroText || null,
+    subdomain: data.website?.subdomain || subdomain || "",
   };
 
   return (

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Globe,
   Image,
@@ -18,6 +19,7 @@ import {
   Save,
   Upload,
   LayoutTemplate,
+  Briefcase,
 } from "lucide-react";
 import { SiFacebook, SiInstagram, SiLinkedin, SiYoutube, SiTiktok } from "react-icons/si";
 import type { Website, SocialLinks, WebsiteFormState } from "./types";
@@ -436,6 +438,61 @@ export default function WebsiteSetupTab({
           </CardFooter>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Briefcase className="h-5 w-5" />
+            Careers Page
+          </CardTitle>
+          <CardDescription>Show open job positions on your public website so visitors can apply</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label>Enable Careers Page</Label>
+              <p className="text-xs text-muted-foreground mt-1">
+                When enabled, a "Careers" link appears in your website navigation listing published jobs
+              </p>
+            </div>
+            <Switch
+              checked={websiteForm.careersEnabled}
+              onCheckedChange={(checked) => setWebsiteForm(prev => ({ ...prev, careersEnabled: checked }))}
+              data-testid="switch-careers-enabled"
+            />
+          </div>
+          {websiteForm.careersEnabled && (
+            <div className="space-y-2">
+              <Label htmlFor="careersIntroText">Intro Text (optional)</Label>
+              <Textarea
+                id="careersIntroText"
+                value={websiteForm.careersIntroText}
+                onChange={(e) => setWebsiteForm(prev => ({ ...prev, careersIntroText: e.target.value }))}
+                placeholder="Join our team! We're always looking for talented people to help us build great things."
+                rows={3}
+                data-testid="input-careers-intro-text"
+              />
+              <p className="text-xs text-muted-foreground">
+                Displayed at the top of your careers page above the job listings
+              </p>
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex justify-end gap-2">
+          <Button
+            onClick={onSave}
+            disabled={saveIsPending}
+            data-testid="button-save-careers"
+          >
+            {saveIsPending ? (
+              <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4 mr-1" />
+            )}
+            Save Settings
+          </Button>
+        </CardFooter>
+      </Card>
 
       <Card>
         <CardHeader>

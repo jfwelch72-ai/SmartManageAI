@@ -414,7 +414,7 @@ export const lienWaiverStatusEnum = pgEnum("lien_waiver_status", ["PENDING", "SE
 export const sovPaymentMethodEnum = pgEnum("sov_payment_method", ["CHECK", "ACH", "WIRE", "CREDIT_CARD", "OTHER"]);
 
 export const websiteStatusEnum = pgEnum("website_status", ["DRAFT", "PUBLISHED", "MAINTENANCE"]);
-export const websitePageTypeEnum = pgEnum("website_page_type", ["HOME", "ABOUT", "SERVICES", "SAFETY", "GALLERY", "BLOG", "CONTACT", "CUSTOM"]);
+export const websitePageTypeEnum = pgEnum("website_page_type", ["HOME", "ABOUT", "SERVICES", "SAFETY", "GALLERY", "BLOG", "CONTACT", "CUSTOM", "CAREERS"]);
 export const blogPostStatusEnum = pgEnum("blog_post_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
 export const blogCommentStatusEnum = pgEnum("blog_comment_status", ["PENDING", "APPROVED", "REJECTED", "SPAM"]);
 export const websiteProjectStatusEnum = pgEnum("website_project_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);

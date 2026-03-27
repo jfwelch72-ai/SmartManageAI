@@ -301,4 +301,6 @@ export interface WebsiteFormState {
   footerPadding: number;
   footerSectionSettings: Record<string, any> | null;
   headerSectionSettings: Record<string, any> | null;
+  careersEnabled: boolean;
+  careersIntroText: string;
 }
