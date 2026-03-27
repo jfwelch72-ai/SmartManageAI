@@ -105,12 +105,12 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
   }
 
   const { data, isLoading, refetch } = useQuery<BatchResponse>({
-    queryKey: ["/api/ai-features/jobsite-analysis", projectId],
+    queryKey: ["/api/ai-features/jobsite/history", projectId],
   });
 
   const analyzeMutation = useMutation({
     mutationFn: async (photoUrls: string[]) => {
-      const response = await apiRequest("POST", "/api/ai-features/jobsite-analysis/analyze", {
+      const response = await apiRequest("POST", "/api/ai-features/jobsite/analyze", {
         projectId,
         photoUrls,
         analysisType: "SAFETY",
@@ -118,7 +118,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite-analysis", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
       toast({
         title: "Analysis Started",
         description: `AI is analyzing ${data.batchId ? "your photos" : "the image"}`,
@@ -135,14 +135,14 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
 
   const reviewMutation = useMutation({
     mutationFn: async ({ resultId, status, notes }: { resultId: string; status: string; notes?: string }) => {
-      const response = await apiRequest("PATCH", `/api/ai-features/jobsite-analysis/results/${resultId}`, {
+      const response = await apiRequest("PATCH", `/api/ai-features/jobsite/results/${resultId}`, {
         reviewStatus: status,
         reviewNotes: notes,
       });
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite-analysis", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
       setReviewDialogOpen(false);
       setSelectedPhoto(null);
       toast({
