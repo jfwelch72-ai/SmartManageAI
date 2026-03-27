@@ -112,8 +112,8 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
     mutationFn: async (photoUrls: string[]) => {
       const response = await apiRequest("POST", "/api/ai-features/jobsite/analyze", {
         projectId,
-        photoUrls,
-        analysisType: "SAFETY",
+        date: new Date().toISOString().split("T")[0],
+        analysisTypes: ["SAFETY"],
       });
       return response.json();
     },
