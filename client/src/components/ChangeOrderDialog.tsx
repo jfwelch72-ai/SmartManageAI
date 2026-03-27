@@ -18,6 +18,7 @@ import { ChangeOrderFileUploader } from "./ChangeOrderFileUploader";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { WorkflowTracker } from "@/components/workflow-tracker";
 import { hasManagementAccess } from "@/lib/rbac";
 
 interface ChangeOrder {
@@ -1029,6 +1030,8 @@ export function ChangeOrderDialog({
             </div>
           </div>
         </DialogHeader>
+
+        <WorkflowTracker entityType="CHANGE_ORDER" entityId={changeOrder.id} compact data-testid={`workflow-tracker-co-dialog-${changeOrder.id}`} />
 
         <div className="space-y-4">
           {changeOrder.voidReason && (

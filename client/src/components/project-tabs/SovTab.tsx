@@ -21,6 +21,7 @@ import { SovLienWaiverPanel } from "@/components/sov/SovLienWaiverPanel";
 import { SovCoTieoutPanel } from "@/components/sov/SovCoTieoutPanel";
 import { SovSummaryCards } from "@/components/sov/SovSummaryCards";
 import type { SovProject, SOV } from "@/components/sov/types";
+import { WorkflowTracker } from "@/components/workflow-tracker";
 
 interface SovTabProps {
   projectId: string;
@@ -361,12 +362,15 @@ export default function SovTab({ projectId, projectCode }: SovTabProps) {
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           {selectedSOV && (
-            <SovLineItemsEditor
-              sov={selectedSOV}
-              canEdit={canEdit}
-              canApprove={canApprove}
-              onClose={() => setShowDetailDialog(false)}
-            />
+            <>
+              <WorkflowTracker entityType="SOV_PAY_APP" entityId={selectedSOV.id} compact data-testid={`workflow-tracker-sov-${selectedSOV.id}`} />
+              <SovLineItemsEditor
+                sov={selectedSOV}
+                canEdit={canEdit}
+                canApprove={canApprove}
+                onClose={() => setShowDetailDialog(false)}
+              />
+            </>
           )}
         </DialogContent>
       </Dialog>

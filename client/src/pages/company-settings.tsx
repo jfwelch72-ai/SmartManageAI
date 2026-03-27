@@ -4,7 +4,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm } from "lucide-react";
+import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch } from "lucide-react";
 import { CompanyTradeConfigTab } from "@/components/settings/CompanyTradeConfigTab";
 import { CompanyProfileTab } from "@/components/settings/CompanyProfileTab";
 import { CompanyNotificationsTab } from "@/components/settings/CompanyNotificationsTab";
@@ -22,6 +22,7 @@ const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
 const AISettingsPage = lazy(() => import("@/pages/ai-settings"));
 const AIGovernancePage = lazy(() => import("@/pages/ai-governance"));
 const LeaveTypesSettings = lazy(() => import("@/components/settings/LeaveTypesSettings"));
+const WorkflowBuilderPage = lazy(() => import("@/pages/workflow-builder"));
 
 function TabLoader() {
   return (
@@ -89,6 +90,7 @@ const TAB_GROUPS: TabGroup[] = [
     subTabs: [
       { value: "report-locks", label: "Report Locks", icon: Lock },
       { value: "scope-settings", label: "Scope Settings", icon: Layers },
+      { value: "workflows", label: "Workflow Builder", icon: GitBranch },
     ],
   },
   {
@@ -117,7 +119,7 @@ const TAB_GROUPS: TabGroup[] = [
 const VALID_TABS = [
   "trade", "branding", "insurance", "compliance", "payroll", "hustler",
   "cost-codes", "users", "integrations", "website", "overhead-costs", "production-rates",
-  "report-locks", "scope-settings", "ai-settings", "ai-governance", "leave-types",
+  "report-locks", "scope-settings", "workflows", "ai-settings", "ai-governance", "leave-types",
 ];
 
 function getParentForTab(tab: string): string {
@@ -180,6 +182,7 @@ export default function CompanySettings() {
   const canViewProductionRates = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT" || user.role === "OFFICE_MANAGER" || featurePerms?.canAccessReports === true;
   const canViewReportLocks = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
   const canViewScopeSettings = isOrgAdmin || user.role === "MANAGER" || user.role === "ESTIMATOR";
+  const canViewWorkflows = isOrgAdmin;
   const canViewAISettings = isOrgAdmin;
   const canViewAIGovernance = isOrgAdmin;
   const canViewLeaveTypes = isOrgAdmin || user.role === "MANAGER" || user.role === "HR_MANAGER";
@@ -190,6 +193,7 @@ export default function CompanySettings() {
     "cost-codes": canViewCostCodes, users: canViewUsers, integrations: canViewIntegrations,
     website: canViewWebsite, "overhead-costs": canViewOverhead, "production-rates": canViewProductionRates,
     "report-locks": canViewReportLocks, "scope-settings": canViewScopeSettings,
+    workflows: canViewWorkflows,
     "ai-settings": canViewAISettings, "ai-governance": canViewAIGovernance,
     "leave-types": canViewLeaveTypes,
   };
@@ -423,6 +427,14 @@ export default function CompanySettings() {
           <TabsContent value="scope-settings" className="mt-6">
             <Suspense fallback={<TabLoader />}>
               <ScopeSettingsPage />
+            </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewWorkflows && (
+          <TabsContent value="workflows" className="mt-6">
+            <Suspense fallback={<TabLoader />}>
+              <WorkflowBuilderPage embedded />
             </Suspense>
           </TabsContent>
         )}

@@ -623,3 +623,8 @@ export const assetMaintenanceTypeEnum = pgEnum("asset_maintenance_type", ["PREVE
 export const maintenanceSystemEnum = pgEnum("maintenance_system", ["HVAC", "PLUMBING", "ELECTRICAL", "ROOFING", "STRUCTURAL", "FIRE_PROTECTION", "ELEVATOR", "LANDSCAPING", "GENERAL", "OTHER"]);
 export const recurringFrequencyEnum = pgEnum("recurring_frequency", ["WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
 export const geofenceEnforcementEnum = pgEnum("geofence_enforcement", ["OFF", "WARN", "BLOCK"]);
+
+export const workflowEntityTypeEnum = pgEnum("workflow_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET"]);
+export const workflowTemplateStatusEnum = pgEnum("workflow_template_status", ["ACTIVE", "INACTIVE", "DRAFT"]);
+export const workflowInstanceStatusEnum = pgEnum("workflow_instance_status", ["IN_PROGRESS", "COMPLETED", "CANCELLED"]);
+export const workflowNotificationChannelEnum = pgEnum("workflow_notification_channel", ["EMAIL", "PUSH", "SMS", "SLACK", "TEAMS"]);

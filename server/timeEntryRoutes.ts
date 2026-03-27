@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
 import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
+import * as workflowEngine from "./services/workflowEngine";
 
 const router = Router();
 
@@ -117,6 +118,27 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
 
     if (entry.entry.approvalStatus === "APPROVED") {
       return res.status(400).json({ error: "Time entry is already approved" });
+    }
+
+    const entryOrgId = entry.project?.gcOrganizationId || entry.entryUser?.organizationId;
+    if (entryOrgId) {
+      const delegation = await workflowEngine.delegateEntityTransition(
+        entryOrgId,
+        "TIME_APPROVAL",
+        req.params.id,
+        req.user!.id,
+        req.user!.role || "WORKER",
+        "APPROVED",
+        "Time entry approved"
+      );
+      if (delegation.delegated) {
+        if (delegation.needsMoreApprovals) {
+          return res.status(202).json({ message: delegation.error, approvalRecorded: true, needsMoreApprovals: true });
+        }
+        if (!delegation.success) {
+          return res.status(400).json({ error: delegation.error || "Workflow transition blocked" });
+        }
+      }
     }
 
     const [updatedEntry] = await db

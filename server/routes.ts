@@ -115,6 +115,7 @@ import clientChatRoutes from "./clientChatRoutes";
 import integrationRoutes from "./integrationRoutes";
 import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
+import workflowRoutes from "./workflowRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
 import drawingSetRoutes from "./drawingSetRoutes";
 import addendaRoutes from "./addendaRoutes";
@@ -300,6 +301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(vendorRoutes);
 
   app.use("/api/approvals", approvalRoutes);
+  app.use("/api/workflows", workflowRoutes);
   app.use("/api/documents", documentRevisionRoutes);
   app.use("/api/projects", drawingSetRoutes);
   app.use("/api", addendaRoutes);

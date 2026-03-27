@@ -13,6 +13,7 @@ import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
+import * as workflowEngine from "./services/workflowEngine";
 
 const router = Router();
 
@@ -351,6 +352,17 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       project?.gcOrganizationId || undefined
     );
 
+    if (project?.gcOrganizationId) {
+      try {
+        await workflowEngine.startWorkflow(
+          project.gcOrganizationId,
+          "CHANGE_ORDER",
+          order.id,
+          req.user!.id
+        );
+      } catch (e) { /* non-blocking */ }
+    }
+
     res.json(updatedOrder);
   } catch (error: any) {
     console.error("Submit change order error:", error);
@@ -387,7 +399,28 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       return;
     }
 
-    // Approve change order (sequential operations - Neon HTTP driver doesn't support transactions)
+    if (project?.gcOrganizationId) {
+      const delegation = await workflowEngine.delegateEntityTransition(
+        project.gcOrganizationId,
+        "CHANGE_ORDER",
+        order.id,
+        req.user!.id,
+        req.user!.role || "WORKER",
+        "APPROVED",
+        "Approved via change order action"
+      );
+      if (delegation.delegated) {
+        if (delegation.needsMoreApprovals) {
+          res.status(202).json({ message: delegation.error, needsMoreApprovals: true });
+          return;
+        }
+        if (!delegation.success) {
+          res.status(400).json({ error: delegation.error || "Workflow transition failed" });
+          return;
+        }
+      }
+    }
+
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({
@@ -597,7 +630,22 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
       return;
     }
 
-    // Reject change order (sequential operations - Neon HTTP driver doesn't support transactions)
+    if (project?.gcOrganizationId) {
+      const delegation = await workflowEngine.delegateEntityTransition(
+        project.gcOrganizationId,
+        "CHANGE_ORDER",
+        order.id,
+        req.user!.id,
+        req.user!.role || "WORKER",
+        "REJECTED",
+        rejectionReason
+      );
+      if (delegation.delegated && !delegation.success) {
+        res.status(400).json({ error: delegation.error || "Workflow transition failed" });
+        return;
+      }
+    }
+
     const [updatedOrder] = await db
       .update(changeOrders)
       .set({

@@ -10,6 +10,7 @@ import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { generateSOVPDF } from "./sov-pdf-service";
 import { insertNotifications } from "./services/notificationService";
+import * as workflowEngine from "./services/workflowEngine";
 
 const router = Router();
 
@@ -527,7 +528,27 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
       });
     }
 
-    const updateData: any = {
+    if (req.user?.organizationId && (newStatus === "APPROVED" || newStatus === "REJECTED")) {
+      const delegation = await workflowEngine.delegateEntityTransition(
+        req.user.organizationId,
+        "SOV_PAY_APP",
+        id,
+        req.user.id,
+        req.user.role || "WORKER",
+        newStatus,
+        `SOV status changed to ${newStatus}`
+      );
+      if (delegation.delegated) {
+        if (delegation.needsMoreApprovals) {
+          return res.status(202).json({ message: delegation.error, needsMoreApprovals: true });
+        }
+        if (!delegation.success) {
+          return res.status(400).json({ error: delegation.error || "Workflow transition failed" });
+        }
+      }
+    }
+
+    const updateData: Record<string, unknown> = {
       status: newStatus,
       updatedAt: new Date(),
     };
@@ -559,6 +580,15 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
             `SOV/Pay App submitted for approval`
           );
         }
+      } catch (e) { /* non-blocking */ }
+
+      try {
+        await workflowEngine.startWorkflow(
+          req.user.organizationId,
+          "SOV_PAY_APP",
+          id,
+          req.user.id
+        );
       } catch (e) { /* non-blocking */ }
     }
 

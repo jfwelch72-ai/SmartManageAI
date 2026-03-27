@@ -20,6 +20,7 @@ import StandardizedScopeSelector, { type ScopeSelectionData } from "@/components
 import AiChangeOrderGenerator from "@/components/AiChangeOrderGenerator";
 import { hasManagementAccess } from "@/lib/rbac";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { WorkflowTracker } from "@/components/workflow-tracker";
 
 interface ChangeOrdersTabProps {
   changeOrders: ChangeOrder[];
@@ -631,6 +632,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
                         )}
                         
                         <ChangeOrderFiles changeOrderId={co.id} />
+                        <WorkflowTracker entityType="CHANGE_ORDER" entityId={co.id} compact data-testid={`workflow-tracker-co-${co.id}`} />
                       </div>
                       <div className="text-right">
                         {hasManagementAccess(userRole) && (
