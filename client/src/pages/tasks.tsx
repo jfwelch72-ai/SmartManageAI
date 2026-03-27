@@ -4,6 +4,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import TaskDetailModal from "@/components/TaskDetailModal";
 import {
   Table,
   TableBody,
@@ -74,6 +75,8 @@ export default function Tasks() {
   const [dismissingTaskId, setDismissingTaskId] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [selectedTask, setSelectedTask] = useState<Record<string, unknown> | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -650,7 +653,15 @@ export default function Tasks() {
             </TableHeader>
             <TableBody>
               {filteredTasks.map((task: any) => (
-                <TableRow key={task.id} data-testid={`task-row-${task.id}`}>
+                <TableRow
+                  key={task.id}
+                  className="cursor-pointer hover:bg-muted/50"
+                  onClick={() => {
+                    setSelectedTask(task);
+                    setIsDetailModalOpen(true);
+                  }}
+                  data-testid={`task-row-${task.id}`}
+                >
                   <TableCell className="font-medium max-w-[300px]">
                     <div className="flex items-center gap-2" data-testid={`task-title-${task.id}`}>
                       {getStatusIcon(task.status)}
@@ -686,7 +697,7 @@ export default function Tasks() {
                       <span className="text-sm text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       {task.status === "PENDING" && (
                         <Button
@@ -730,6 +741,29 @@ export default function Tasks() {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {selectedTask && (
+        <TaskDetailModal
+          task={selectedTask}
+          open={isDetailModalOpen}
+          onOpenChange={(open) => {
+            setIsDetailModalOpen(open);
+            if (!open) setSelectedTask(null);
+          }}
+          onStatusUpdate={(taskId, status, dismissReason) => {
+            if (status === "DISMISSED" && !dismissReason) {
+              setDismissingTaskId(taskId);
+              setDismissDialogOpen(true);
+              setIsDetailModalOpen(false);
+              return;
+            }
+            updateStatusMutation.mutate({ taskId, status, dismissReason });
+            setIsDetailModalOpen(false);
+            setSelectedTask(null);
+          }}
+          isUpdating={updateStatusMutation.isPending}
+        />
       )}
 
       <Dialog open={dismissDialogOpen} onOpenChange={setDismissDialogOpen}>

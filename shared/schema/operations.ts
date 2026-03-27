@@ -587,6 +587,54 @@ export type Task = typeof tasks.$inferSelect;
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export const updateTaskSchema = insertTaskSchema.partial();
 
+export const taskSubtasks = pgTable("task_subtasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  completed: boolean("completed").notNull().default(false),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  taskIdIdx: index("task_subtasks_task_id_idx").on(table.taskId),
+}));
+
+export const insertTaskSubtaskSchema = createInsertSchema(taskSubtasks).omit({ id: true, createdAt: true, updatedAt: true });
+export type TaskSubtask = typeof taskSubtasks.$inferSelect;
+export type InsertTaskSubtask = z.infer<typeof insertTaskSubtaskSchema>;
+
+export const taskComments = pgTable("task_comments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  taskIdIdx: index("task_comments_task_id_idx").on(table.taskId),
+}));
+
+export const insertTaskCommentSchema = createInsertSchema(taskComments).omit({ id: true, createdAt: true, updatedAt: true });
+export type TaskComment = typeof taskComments.$inferSelect;
+export type InsertTaskComment = z.infer<typeof insertTaskCommentSchema>;
+
+export const taskAttachments = pgTable("task_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  taskId: varchar("task_id").notNull().references(() => tasks.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  uploadedById: varchar("uploaded_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  taskIdIdx: index("task_attachments_task_id_idx").on(table.taskId),
+}));
+
+export const insertTaskAttachmentSchema = createInsertSchema(taskAttachments).omit({ id: true, createdAt: true });
+export type TaskAttachment = typeof taskAttachments.$inferSelect;
+export type InsertTaskAttachment = z.infer<typeof insertTaskAttachmentSchema>;
+
 // Material responsibility enum - who is responsible for material overages
 export const scopeItems = pgTable("scope_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

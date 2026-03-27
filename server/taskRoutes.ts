@@ -1,14 +1,51 @@
 import { Router, Response } from "express";
 import { db } from "./db";
-import { tasks, aiNoteInsights, users, projects } from "@shared/schema";
-import { eq, and, desc, isNull, or } from "drizzle-orm";
+import { tasks, aiNoteInsights, users, projects, taskSubtasks, taskComments, taskAttachments } from "@shared/schema";
+import { eq, and, desc, asc, isNull, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
+import multer from "multer";
+import { ObjectStorageService } from "./objectStorage";
+
+const taskUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = Router();
+
+async function authorizeTaskAccess(req: AuthRequest, taskId: string): Promise<{ authorized: boolean; task?: typeof tasks.$inferSelect; error?: string; status?: number }> {
+  const userId = req.user!.id;
+  const userRole = req.user!.role;
+
+  const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+  if (mustDenyAccess) {
+    return { authorized: false, error: "Access denied", status: 403 };
+  }
+
+  const conditions: SQL[] = [eq(tasks.id, taskId)];
+  if (shouldFilter && orgId) {
+    conditions.push(eq(tasks.organizationId, orgId));
+  }
+
+  const [task] = await db
+    .select()
+    .from(tasks)
+    .where(and(...conditions));
+
+  if (!task) {
+    return { authorized: false, error: "Task not found", status: 404 };
+  }
+
+  if (!["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(userRole)) {
+    if (task.assignedToId !== userId && task.createdById !== userId) {
+      return { authorized: false, error: "Access denied", status: 403 };
+    }
+  }
+
+  return { authorized: true, task };
+}
 
 // ============================
 // AI INSIGHT STATUS ENDPOINTS
@@ -448,6 +485,373 @@ router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: R
   } catch (error) {
     console.error("Error deleting task:", error);
     res.status(500).json({ error: "Failed to delete task" });
+  }
+});
+
+// ============================
+// TASK SUBTASKS ENDPOINTS
+// ============================
+
+router.get("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const subtaskList = await db
+      .select()
+      .from(taskSubtasks)
+      .where(eq(taskSubtasks.taskId, taskId))
+      .orderBy(asc(taskSubtasks.createdAt));
+    res.json(subtaskList);
+  } catch (error) {
+    console.error("Error fetching subtasks:", error);
+    res.status(500).json({ error: "Failed to fetch subtasks" });
+  }
+});
+
+router.post("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const userId = req.user!.id;
+    const schema = z.object({ title: z.string().min(1, "Title is required") });
+    const { title } = schema.parse(req.body);
+
+    const [subtask] = await db
+      .insert(taskSubtasks)
+      .values({ taskId, title, createdById: userId })
+      .returning();
+    res.status(201).json(subtask);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: error.errors });
+    }
+    console.error("Error creating subtask:", error);
+    res.status(500).json({ error: "Failed to create subtask" });
+  }
+});
+
+router.patch("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId, subtaskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const schema = z.object({
+      title: z.string().min(1).optional(),
+      completed: z.boolean().optional(),
+    });
+    const validated = schema.parse(req.body);
+
+    const [updated] = await db
+      .update(taskSubtasks)
+      .set({ ...validated, updatedAt: new Date() })
+      .where(and(eq(taskSubtasks.id, subtaskId), eq(taskSubtasks.taskId, taskId)))
+      .returning();
+
+    if (!updated) return res.status(404).json({ error: "Subtask not found" });
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: error.errors });
+    }
+    console.error("Error updating subtask:", error);
+    res.status(500).json({ error: "Failed to update subtask" });
+  }
+});
+
+router.delete("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId, subtaskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const [deleted] = await db
+      .delete(taskSubtasks)
+      .where(and(eq(taskSubtasks.id, subtaskId), eq(taskSubtasks.taskId, taskId)))
+      .returning();
+    if (!deleted) return res.status(404).json({ error: "Subtask not found" });
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting subtask:", error);
+    res.status(500).json({ error: "Failed to delete subtask" });
+  }
+});
+
+// ============================
+// TASK COMMENTS ENDPOINTS
+// ============================
+
+router.get("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const commenter = alias(users, "commenter");
+    const commentList = await db
+      .select({
+        id: taskComments.id,
+        taskId: taskComments.taskId,
+        content: taskComments.content,
+        createdById: taskComments.createdById,
+        createdByFirstName: commenter.firstName,
+        createdByLastName: commenter.lastName,
+        createdAt: taskComments.createdAt,
+        updatedAt: taskComments.updatedAt,
+      })
+      .from(taskComments)
+      .leftJoin(commenter, eq(taskComments.createdById, commenter.id))
+      .where(eq(taskComments.taskId, taskId))
+      .orderBy(desc(taskComments.createdAt));
+    res.json(commentList);
+  } catch (error) {
+    console.error("Error fetching comments:", error);
+    res.status(500).json({ error: "Failed to fetch comments" });
+  }
+});
+
+router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const userId = req.user!.id;
+    const schema = z.object({ content: z.string().min(1, "Content is required") });
+    const { content } = schema.parse(req.body);
+
+    const [comment] = await db
+      .insert(taskComments)
+      .values({ taskId, content, createdById: userId })
+      .returning();
+
+    const commenter = alias(users, "commenter");
+    const [commentWithUser] = await db
+      .select({
+        id: taskComments.id,
+        taskId: taskComments.taskId,
+        content: taskComments.content,
+        createdById: taskComments.createdById,
+        createdByFirstName: commenter.firstName,
+        createdByLastName: commenter.lastName,
+        createdAt: taskComments.createdAt,
+        updatedAt: taskComments.updatedAt,
+      })
+      .from(taskComments)
+      .leftJoin(commenter, eq(taskComments.createdById, commenter.id))
+      .where(eq(taskComments.id, comment.id));
+
+    res.status(201).json(commentWithUser);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: error.errors });
+    }
+    console.error("Error creating comment:", error);
+    res.status(500).json({ error: "Failed to create comment" });
+  }
+});
+
+// ============================
+// TASK ATTACHMENTS ENDPOINTS
+// ============================
+
+router.get("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const uploader = alias(users, "uploader");
+    const attachmentList = await db
+      .select({
+        id: taskAttachments.id,
+        taskId: taskAttachments.taskId,
+        fileName: taskAttachments.fileName,
+        fileUrl: taskAttachments.fileUrl,
+        fileSize: taskAttachments.fileSize,
+        mimeType: taskAttachments.mimeType,
+        uploadedById: taskAttachments.uploadedById,
+        uploadedByFirstName: uploader.firstName,
+        uploadedByLastName: uploader.lastName,
+        createdAt: taskAttachments.createdAt,
+      })
+      .from(taskAttachments)
+      .leftJoin(uploader, eq(taskAttachments.uploadedById, uploader.id))
+      .where(eq(taskAttachments.taskId, taskId))
+      .orderBy(desc(taskAttachments.createdAt));
+    res.json(attachmentList);
+  } catch (error) {
+    console.error("Error fetching attachments:", error);
+    res.status(500).json({ error: "Failed to fetch attachments" });
+  }
+});
+
+router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const userId = req.user!.id;
+    const schema = z.object({
+      fileName: z.string().min(1),
+      fileUrl: z.string().min(1),
+      fileSize: z.number().optional(),
+      mimeType: z.string().optional(),
+    });
+    const validated = schema.parse(req.body);
+
+    const [attachment] = await db
+      .insert(taskAttachments)
+      .values({ taskId, ...validated, uploadedById: userId })
+      .returning();
+    res.status(201).json(attachment);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation error", details: error.errors });
+    }
+    console.error("Error creating attachment:", error);
+    res.status(500).json({ error: "Failed to create attachment" });
+  }
+});
+
+router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.single("file"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "No file provided" });
+
+    const userId = req.user!.id;
+    const organizationId = req.user!.organizationId;
+
+    const objectStorage = new ObjectStorageService();
+    const { uploadURL, objectKey } = await objectStorage.getObjectEntityUploadURL(organizationId!);
+    const uploadRes = await fetch(uploadURL, {
+      method: "PUT",
+      body: file.buffer,
+      headers: { "Content-Type": file.mimetype },
+    });
+    if (!uploadRes.ok) {
+      return res.status(500).json({ error: "Failed to upload file to storage" });
+    }
+    const fileUrl = objectKey;
+
+    const [attachment] = await db
+      .insert(taskAttachments)
+      .values({
+        taskId,
+        fileName: file.originalname,
+        fileUrl,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        uploadedById: userId,
+      })
+      .returning();
+    res.status(201).json(attachment);
+  } catch (error) {
+    console.error("Error uploading attachment:", error);
+    res.status(500).json({ error: "Failed to upload attachment" });
+  }
+});
+
+router.delete("/api/tasks/:taskId/attachments/:attachmentId", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId, attachmentId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const [deleted] = await db
+      .delete(taskAttachments)
+      .where(and(eq(taskAttachments.id, attachmentId), eq(taskAttachments.taskId, taskId)))
+      .returning();
+    if (!deleted) return res.status(404).json({ error: "Attachment not found" });
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting attachment:", error);
+    res.status(500).json({ error: "Failed to delete attachment" });
+  }
+});
+
+// ============================
+// TASK ACTIVITY LOG ENDPOINT
+// ============================
+
+router.get("/api/tasks/:taskId/activity", requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { taskId } = req.params;
+    const auth = await authorizeTaskAccess(req, taskId);
+    if (!auth.authorized) return res.status(auth.status!).json({ error: auth.error });
+
+    const task = auth.task!;
+    const activity: Array<{ action: string; timestamp: string; userId: string | null; userName?: string }> = [];
+
+    activity.push({
+      action: "Task created",
+      timestamp: task.createdAt.toISOString(),
+      userId: task.createdById,
+    });
+
+    if (task.acknowledgedAt) {
+      activity.push({
+        action: "Task acknowledged / started",
+        timestamp: task.acknowledgedAt.toISOString(),
+        userId: task.acknowledgedById,
+      });
+    }
+
+    if (task.completedAt) {
+      activity.push({
+        action: "Task marked as completed",
+        timestamp: task.completedAt.toISOString(),
+        userId: task.completedById,
+      });
+    }
+
+    if (task.dismissedAt) {
+      activity.push({
+        action: `Task dismissed${task.dismissReason ? `: ${task.dismissReason}` : ""}`,
+        timestamp: task.dismissedAt.toISOString(),
+        userId: task.dismissedById,
+      });
+    }
+
+    if (task.updatedAt && task.updatedAt.getTime() !== task.createdAt.getTime()) {
+      activity.push({
+        action: "Task updated",
+        timestamp: task.updatedAt.toISOString(),
+        userId: null,
+      });
+    }
+
+    const userIds = activity.map(a => a.userId).filter(Boolean) as string[];
+    if (userIds.length > 0) {
+      const uniqueIds = [...new Set(userIds)];
+      const userRows = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(or(...uniqueIds.map(uid => eq(users.id, uid))));
+
+      const userMap = new Map(userRows.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
+      for (const item of activity) {
+        if (item.userId) {
+          item.userName = userMap.get(item.userId) || "Unknown";
+        }
+      }
+    }
+
+    activity.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    res.json(activity);
+  } catch (error) {
+    console.error("Error fetching activity:", error);
+    res.status(500).json({ error: "Failed to fetch activity" });
   }
 });
 
