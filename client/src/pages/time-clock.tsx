@@ -29,6 +29,9 @@ import {
   useOvertimeApprovers,
   useOvertimeRequestsByShifts,
   useCreateOvertimeRequest,
+  useUpdateShiftCostCode,
+  useCostCodes,
+  useProjectCostCodes,
 } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -42,6 +45,10 @@ import {
   Timer,
   Send,
   History,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Tag,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import TimeLogTab from "./time-log-tab";
@@ -61,22 +68,32 @@ export default function TimeClockPage() {
   const [otSuperintendentId, setOtSuperintendentId] = useState<string>("");
   const [otNotes, setOtNotes] = useState<string>("");
 
+  const [selectedCostCode, setSelectedCostCode] = useState<string>("");
+
   const { data: currentShift, isLoading: currentShiftLoading } =
     useCurrentShift();
   const { data: myShifts = [], isLoading: shiftsLoading } = useMyShifts();
   const { data: projects = [] } = useProjects();
+  const { data: orgCostCodes = [] } = useCostCodes();
+  const { data: projectCostCodes = [] } = useProjectCostCodes(selectedProjectId || null);
+  const costCodes = selectedProjectId ? projectCostCodes : orgCostCodes;
+
+  const activeShiftProjectId = currentShift?.shift?.projectId || null;
+  const { data: activeShiftCostCodes = [] } = useProjectCostCodes(activeShiftProjectId);
+  const shiftCostCodes = activeShiftProjectId ? activeShiftCostCodes : orgCostCodes;
   const clockIn = useClockIn();
   const clockOut = useClockOut();
+  const updateCostCode = useUpdateShiftCostCode();
 
-  const shiftIds = useMemo(() => myShifts.map((s: any) => s.id), [myShifts]);
+  const shiftIds = useMemo(() => myShifts.map((s: Record<string, unknown>) => s.id as string), [myShifts]);
   const { data: otRequests = [] } = useOvertimeRequestsByShifts(shiftIds);
   const { data: approvers = [] } = useOvertimeApprovers();
   const createOtRequest = useCreateOvertimeRequest();
 
   const otRequestMap = useMemo(() => {
-    const map = new Map<string, any>();
-    otRequests.forEach((req: any) => {
-      map.set(req.shiftId, req);
+    const map = new Map<string, Record<string, unknown>>();
+    otRequests.forEach((req: Record<string, unknown>) => {
+      map.set(req.shiftId as string, req);
     });
     return map;
   }, [otRequests]);
@@ -116,6 +133,7 @@ export default function TimeClockPage() {
     try {
       const result = await clockIn.mutateAsync({
         projectId: selectedProjectId,
+        costCode: selectedCostCode || undefined,
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
       });
@@ -123,23 +141,25 @@ export default function TimeClockPage() {
         title: "Clocked In",
         description: "You have successfully clocked in",
       });
+      const clockInResult = result as Record<string, unknown>;
       if (
-        (result as any)?.geofenceWarning ||
-        (result as any)?.geofenceStatus === "OUT_OF_RANGE"
+        clockInResult?.geofenceWarning ||
+        clockInResult?.geofenceStatus === "OUT_OF_RANGE"
       ) {
         toast({
           title: "Geofence Warning",
           description:
-            (result as any)?.geofenceWarning ||
+            (clockInResult?.geofenceWarning as string) ||
             "You appear to be outside the project job site area. Your clock-in has been recorded but flagged.",
           variant: "destructive",
         });
       }
       setSelectedProjectId("");
-    } catch (error: any) {
+      setSelectedCostCode("");
+    } catch (error) {
       toast({
         title: "Clock In Failed",
-        description: error.message || "Failed to clock in",
+        description: error instanceof Error ? error.message : "Failed to clock in",
         variant: "destructive",
       });
     }
@@ -155,10 +175,10 @@ export default function TimeClockPage() {
         title: "Clocked Out",
         description: "You have successfully clocked out",
       });
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "Clock Out Failed",
-        description: error.message || "Failed to clock out",
+        description: error instanceof Error ? error.message : "Failed to clock out",
         variant: "destructive",
       });
     }
@@ -253,10 +273,10 @@ export default function TimeClockPage() {
       setOtShift(null);
       setOtSuperintendentId("");
       setOtNotes("");
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: "OT Request Failed",
-        description: error.message || "Failed to submit overtime request",
+        description: error instanceof Error ? error.message : "Failed to submit overtime request",
         variant: "destructive",
       });
     }
@@ -380,6 +400,54 @@ export default function TimeClockPage() {
                           </div>
                         )}
 
+                        <div className="flex items-center gap-3 text-sm">
+                          <Tag className="w-4 h-4 text-muted-foreground" />
+                          <span className="text-muted-foreground">Cost Code:</span>
+                          <Select
+                            value={(currentShift.shift as Record<string, unknown>)?.costCode as string || "__none__"}
+                            onValueChange={(val) => {
+                              updateCostCode.mutate({ costCode: val === "__none__" ? null : val || null }, {
+                                onSuccess: () => {
+                                  toast({ title: "Cost Code Updated" });
+                                },
+                                onError: (err: Error) => {
+                                  toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+                                },
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="w-[220px] h-8" data-testid="select-active-cost-code">
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__" data-testid="option-no-cost-code">No cost code</SelectItem>
+                              {shiftCostCodes.map((cc) => (
+                                <SelectItem key={cc.code} value={cc.code}>
+                                  {cc.code} - {cc.description}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {(() => {
+                          const shiftData = currentShift.shift as Record<string, unknown>;
+                          const geoStatus = shiftData?.geofenceStatus as string | undefined;
+                          if (!geoStatus) return null;
+                          if (geoStatus === "WITHIN_RANGE") return (
+                            <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="text-geofence-status">
+                              <ShieldCheck className="w-4 h-4" />
+                              <span>Geo-fence: Within Range</span>
+                            </div>
+                          );
+                          return (
+                            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400" data-testid="text-geofence-status">
+                              <ShieldAlert className="w-4 h-4" />
+                              <span>Geo-fence: {geoStatus === "OUT_OF_RANGE" ? "Out of Range" : "No GPS"}</span>
+                            </div>
+                          );
+                        })()}
+
                         {gpsError && (
                           <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
                             <AlertCircle className="w-4 h-4" />
@@ -425,6 +493,106 @@ export default function TimeClockPage() {
                             </SelectContent>
                           </Select>
                         </div>
+
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium">
+                            Cost Code (Optional)
+                          </label>
+                          <Select
+                            value={selectedCostCode}
+                            onValueChange={setSelectedCostCode}
+                          >
+                            <SelectTrigger data-testid="select-cost-code">
+                              <SelectValue placeholder="Select cost code..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {costCodes.map((cc) => (
+                                <SelectItem
+                                  key={cc.code}
+                                  value={cc.code}
+                                  data-testid={`select-option-cost-code-${cc.code}`}
+                                >
+                                  {cc.code} - {cc.description}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {selectedProjectId && (() => {
+                          const proj = projects.find((p) => p.id === selectedProjectId);
+                          const mode = proj?.geofenceEnforcement || "OFF";
+                          if (mode === "OFF") return null;
+
+                          const hasSiteCoords = proj?.siteLatitude && proj?.siteLongitude;
+                          const hasWorkerCoords = coordinates?.latitude != null && coordinates?.longitude != null;
+
+                          let workerInRange = false;
+                          let distanceMeters = 0;
+                          const radiusMeters = (proj as Record<string, unknown>)?.geofenceRadius as number || 500;
+                          if (hasSiteCoords && hasWorkerCoords) {
+                            const R = 6371000;
+                            const dLat = ((coordinates!.latitude - proj.siteLatitude!) * Math.PI) / 180;
+                            const dLon = ((coordinates!.longitude - proj.siteLongitude!) * Math.PI) / 180;
+                            const a = Math.sin(dLat / 2) ** 2 + Math.cos((proj.siteLatitude! * Math.PI) / 180) * Math.cos((coordinates!.latitude * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+                            distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                            workerInRange = distanceMeters <= radiusMeters;
+                          }
+
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-sm" data-testid="text-geofence-mode">
+                                {mode === "BLOCK" ? (
+                                  <ShieldAlert className="w-4 h-4 text-red-500" />
+                                ) : (
+                                  <Shield className="w-4 h-4 text-amber-500" />
+                                )}
+                                <span className={mode === "BLOCK" ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}>
+                                  Geo-fence: {mode === "BLOCK" ? "Required — clock-in blocked if out of range" : "Warning — clock-in allowed but flagged"}
+                                </span>
+                              </div>
+
+                              {hasSiteCoords && (
+                                <div className="border rounded-lg p-3 bg-muted/30" data-testid="geofence-map-thumbnail">
+                                  <div className="flex items-center gap-2 mb-2 text-xs font-medium text-muted-foreground">
+                                    <MapPin className="w-3 h-3" />
+                                    Geo-fence Boundary
+                                  </div>
+                                  <svg viewBox="0 0 200 200" className="w-full max-w-[200px] mx-auto" aria-label="Geofence map showing worker position relative to site boundary">
+                                    <circle cx="100" cy="100" r="70" fill="none" stroke={workerInRange ? "#22c55e" : "#ef4444"} strokeWidth="2" strokeDasharray="6 3" opacity="0.6" />
+                                    <circle cx="100" cy="100" r="4" fill="#3b82f6" />
+                                    <text x="100" y="120" textAnchor="middle" fontSize="8" fill="currentColor" opacity="0.6">Site Center</text>
+                                    {hasWorkerCoords && (() => {
+                                      const scale = 70 / Math.max(radiusMeters, distanceMeters * 1.2);
+                                      const bearing = Math.atan2(coordinates!.longitude - proj.siteLongitude!, coordinates!.latitude - proj.siteLatitude!);
+                                      const dx = Math.sin(bearing) * distanceMeters * scale;
+                                      const dy = -Math.cos(bearing) * distanceMeters * scale;
+                                      const wx = Math.min(190, Math.max(10, 100 + dx));
+                                      const wy = Math.min(190, Math.max(10, 100 + dy));
+                                      return (
+                                        <>
+                                          <line x1="100" y1="100" x2={wx} y2={wy} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3 2" />
+                                          <circle cx={wx} cy={wy} r="5" fill={workerInRange ? "#22c55e" : "#ef4444"} />
+                                          <text x={wx} y={wy + 14} textAnchor="middle" fontSize="7" fill="currentColor" opacity="0.7">You</text>
+                                        </>
+                                      );
+                                    })()}
+                                  </svg>
+                                  <div className="text-center text-xs text-muted-foreground mt-1">
+                                    {hasWorkerCoords ? (
+                                      <span data-testid="text-geofence-distance">
+                                        {distanceMeters < 1000 ? `${Math.round(distanceMeters)}m` : `${(distanceMeters / 1000).toFixed(1)}km`} from site
+                                        {" · "}Radius: {radiusMeters}m
+                                      </span>
+                                    ) : (
+                                      <span>Awaiting GPS position...</span>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {coordinates && (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -497,7 +665,7 @@ export default function TimeClockPage() {
                         >
                           {
                             myShifts.filter(
-                              (s: any) => s.approvalStatus === "PENDING",
+                              (s) => s.approvalStatus === "PENDING",
                             ).length
                           }
                         </p>
@@ -523,7 +691,7 @@ export default function TimeClockPage() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {myShifts.map((shift: any) => {
+                    {myShifts.map((shift) => {
                       const existingOtRequest = otRequestMap.get(shift.id);
                       return (
                         <div
@@ -591,6 +759,14 @@ export default function TimeClockPage() {
                                       : "Now"}
                                   </span>
                                 </div>
+                                {shift.costCode && (
+                                  <div className="flex items-center gap-1">
+                                    <Tag className="w-3.5 h-3.5 shrink-0" />
+                                    <Badge variant="outline" className="text-xs" data-testid={`cell-cost-code-${shift.id}`}>
+                                      {shift.costCode}
+                                    </Badge>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="flex items-center gap-2 flex-wrap">
@@ -728,7 +904,7 @@ export default function TimeClockPage() {
                     <SelectValue placeholder="Select approver..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {approvers.map((approver: any) => (
+                    {approvers.map((approver: { id: string; firstName: string; lastName: string; role: string }) => (
                       <SelectItem
                         key={approver.id}
                         value={approver.id}

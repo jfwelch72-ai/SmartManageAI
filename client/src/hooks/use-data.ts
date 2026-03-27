@@ -1445,6 +1445,7 @@ export function useDeleteScopeItem() {
 // Time Clock
 interface ClockInData {
   projectId: string;
+  costCode?: string;
   latitude?: number;
   longitude?: number;
 }
@@ -1486,6 +1487,117 @@ export function useClockOut() {
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-shifts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/time-clock/active-shifts"] });
     },
+  });
+}
+
+export function useUpdateShiftCostCode() {
+  return useMutation({
+    mutationFn: async (data: { costCode: string | null }) => {
+      const response = await apiRequest("PATCH", "/api/time-clock/my-shift/cost-code", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/time-clock/my-current-shift"] });
+    },
+  });
+}
+
+export interface OvertimeRuleResponse {
+  id: string;
+  organizationId: string;
+  projectId: string | null;
+  dailyOtThreshold: number;
+  dailyDtThreshold: number;
+  weeklyOtThreshold: number;
+  weeklyDtThreshold: number;
+  otMultiplier: number;
+  dtMultiplier: number;
+  consecutiveDayRule: boolean;
+  consecutiveDayThreshold: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface OvertimeRuleInput {
+  projectId?: string | null;
+  dailyOtThreshold: number;
+  dailyDtThreshold: number;
+  weeklyOtThreshold: number;
+  weeklyDtThreshold: number;
+  otMultiplier: number;
+  dtMultiplier: number;
+  consecutiveDayRule?: boolean;
+  consecutiveDayThreshold?: number;
+}
+
+export function useOvertimeRules() {
+  return useQuery<OvertimeRuleResponse[]>({
+    queryKey: ["/api/overtime-rules"],
+  });
+}
+
+export function useCreateOvertimeRule() {
+  return useMutation({
+    mutationFn: async (data: OvertimeRuleInput) => {
+      const response = await apiRequest("POST", "/api/overtime-rules", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-rules"] });
+    },
+  });
+}
+
+export function useUpdateOvertimeRule() {
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: string } & Partial<OvertimeRuleInput>) => {
+      const response = await apiRequest("PATCH", `/api/overtime-rules/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-rules"] });
+    },
+  });
+}
+
+export function useDeleteOvertimeRule() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await apiRequest("DELETE", `/api/overtime-rules/${id}`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/overtime-rules"] });
+    },
+  });
+}
+
+interface CostCodeEntry {
+  id: number;
+  code: string;
+  description: string;
+  division: string;
+  isActive: boolean;
+  isCustom: boolean;
+}
+
+export function useCostCodes() {
+  return useQuery<CostCodeEntry[]>({
+    queryKey: ["/api/cost-codes"],
+  });
+}
+
+export function useProjectCostCodes(projectId: string | null | undefined) {
+  return useQuery<CostCodeEntry[]>({
+    queryKey: ["/api/projects", projectId, "cost-codes"],
+    queryFn: async () => {
+      if (!projectId) return [];
+      const res = await fetch(`/api/projects/${projectId}/cost-codes`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch project cost codes");
+      return res.json();
+    },
+    enabled: !!projectId,
   });
 }
 

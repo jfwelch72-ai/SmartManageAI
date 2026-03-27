@@ -1,11 +1,12 @@
 import { Router } from "express";
 import { db } from "./db";
-import { timeClockShifts, users, projects, overtimeRequests } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { timeClockShifts, users, projects, overtimeRequests, overtimeRules } from "@shared/schema";
+import { eq, and, desc, sql, isNull } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
+import { z } from "zod";
 
 const router = Router();
 
@@ -269,6 +270,268 @@ router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN
     res.json(updated);
   } catch (error) {
     console.error("Reject OT request error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const rules = await db.select().from(overtimeRules)
+      .where(eq(overtimeRules.organizationId, orgId))
+      .orderBy(desc(overtimeRules.createdAt));
+    res.json(rules.map(formatRuleResponse));
+  } catch (error) {
+    console.error("Get overtime rules error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const [rule] = await db.select().from(overtimeRules)
+      .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, req.user!.organizationId)));
+    if (!rule) { res.status(404).json({ error: "Rule not found" }); return; }
+    res.json(formatRuleResponse(rule));
+  } catch (error) {
+    console.error("Get overtime rule error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+function formatRuleResponse(rule: Record<string, unknown>) {
+  return {
+    id: rule.id,
+    organizationId: rule.organizationId,
+    projectId: rule.projectId,
+    dailyOtThreshold: parseFloat(String(rule.dailyThreshold)) || 8,
+    dailyDtThreshold: parseFloat(String(rule.doubleTimeThreshold)) || 12,
+    weeklyOtThreshold: parseFloat(String(rule.weeklyThreshold)) || 40,
+    weeklyDtThreshold: parseFloat(String(rule.weeklyDtThreshold)) || 60,
+    otMultiplier: parseFloat(String(rule.otMultiplier)) || 1.5,
+    dtMultiplier: parseFloat(String(rule.dtMultiplier)) || 2.0,
+    isActive: rule.isActive,
+    consecutiveDayRule: rule.consecutiveDayRule,
+    consecutiveDayThreshold: rule.consecutiveDayThreshold,
+    createdAt: rule.createdAt,
+    updatedAt: rule.updatedAt,
+  };
+}
+
+router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      projectId: z.string().optional().nullable(),
+      dailyOtThreshold: z.number().optional().default(8),
+      dailyDtThreshold: z.number().optional().default(12),
+      weeklyOtThreshold: z.number().optional().default(40),
+      weeklyDtThreshold: z.number().optional().default(60),
+      otMultiplier: z.number().optional().default(1.5),
+      dtMultiplier: z.number().optional().default(2.0),
+      dailyThreshold: z.string().optional(),
+      weeklyThreshold: z.string().optional(),
+      doubleTimeThreshold: z.string().optional().nullable(),
+      consecutiveDayRule: z.boolean().optional().default(false),
+      consecutiveDayThreshold: z.number().optional().default(7),
+    });
+
+    const data = schema.parse(req.body);
+    const orgId = req.user!.organizationId;
+
+    const dailyThreshold = data.dailyThreshold || String(data.dailyOtThreshold);
+    const weeklyThreshold = data.weeklyThreshold || String(data.weeklyOtThreshold);
+    const doubleTimeThreshold = data.doubleTimeThreshold || String(data.dailyDtThreshold);
+
+    const dailyVal = parseFloat(dailyThreshold);
+    const weeklyVal = parseFloat(weeklyThreshold);
+    const dtVal = doubleTimeThreshold ? parseFloat(doubleTimeThreshold) : null;
+    const weeklyDtVal = data.weeklyDtThreshold;
+
+    if (dailyVal < 0 || weeklyVal < 0 || !isFinite(dailyVal) || !isFinite(weeklyVal)) {
+      res.status(400).json({ error: "Thresholds must be non-negative finite numbers" });
+      return;
+    }
+    if (dtVal !== null && (dtVal < dailyVal || !isFinite(dtVal))) {
+      res.status(400).json({ error: "Daily double-time threshold must be >= daily OT threshold" });
+      return;
+    }
+    if (weeklyDtVal < weeklyVal) {
+      res.status(400).json({ error: "Weekly double-time threshold must be >= weekly OT threshold" });
+      return;
+    }
+    if (data.otMultiplier < 1 || data.dtMultiplier < 1) {
+      res.status(400).json({ error: "Multipliers must be >= 1.0" });
+      return;
+    }
+
+    if (data.projectId) {
+      const [proj] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+        .from(projects).where(eq(projects.id, data.projectId));
+      if (!proj || proj.gcOrganizationId !== orgId) {
+        res.status(400).json({ error: "Project not found or does not belong to your organization" });
+        return;
+      }
+    }
+
+    if (!data.projectId) {
+      const [existing] = await db.select().from(overtimeRules)
+        .where(and(
+          eq(overtimeRules.organizationId, orgId),
+          isNull(overtimeRules.projectId),
+          eq(overtimeRules.isActive, true),
+        ));
+      if (existing) {
+        res.status(400).json({ error: "An active org-level overtime rule already exists. Edit or deactivate it first." });
+        return;
+      }
+    }
+
+    const [rule] = await db.insert(overtimeRules).values({
+      organizationId: orgId,
+      projectId: data.projectId || null,
+      dailyThreshold,
+      weeklyThreshold,
+      doubleTimeThreshold,
+      weeklyDtThreshold: String(data.weeklyDtThreshold),
+      otMultiplier: String(data.otMultiplier),
+      dtMultiplier: String(data.dtMultiplier),
+      consecutiveDayRule: data.consecutiveDayRule,
+      consecutiveDayThreshold: data.consecutiveDayThreshold,
+    }).returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "overtime_rule",
+      entityId: rule.id,
+      action: "CREATE",
+      oldValue: null,
+      newValue: JSON.stringify(rule),
+    }, req);
+
+    res.status(201).json(formatRuleResponse(rule));
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: "Invalid input", details: error.errors });
+      return;
+    }
+    console.error("Create overtime rule error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      dailyOtThreshold: z.number().optional(),
+      dailyDtThreshold: z.number().optional(),
+      weeklyOtThreshold: z.number().optional(),
+      weeklyDtThreshold: z.number().optional(),
+      otMultiplier: z.number().min(1).optional(),
+      dtMultiplier: z.number().min(1).optional(),
+      dailyThreshold: z.string().optional(),
+      weeklyThreshold: z.string().optional(),
+      doubleTimeThreshold: z.string().optional().nullable(),
+      consecutiveDayRule: z.boolean().optional(),
+      consecutiveDayThreshold: z.number().int().min(1).optional(),
+      isActive: z.boolean().optional(),
+    });
+
+    const data = schema.parse(req.body);
+    const orgId = req.user!.organizationId;
+
+    const [existing] = await db.select().from(overtimeRules)
+      .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, orgId)));
+    if (!existing) { res.status(404).json({ error: "Rule not found" }); return; }
+
+    const effectiveDaily = data.dailyOtThreshold !== undefined ? data.dailyOtThreshold
+      : data.dailyThreshold !== undefined ? parseFloat(data.dailyThreshold)
+      : parseFloat(existing.dailyThreshold);
+    const effectiveWeekly = data.weeklyOtThreshold !== undefined ? data.weeklyOtThreshold
+      : data.weeklyThreshold !== undefined ? parseFloat(data.weeklyThreshold)
+      : parseFloat(existing.weeklyThreshold);
+    const effectiveDailyDt = data.dailyDtThreshold !== undefined ? data.dailyDtThreshold
+      : data.doubleTimeThreshold !== undefined ? (data.doubleTimeThreshold !== null ? parseFloat(data.doubleTimeThreshold) : null)
+      : (existing.doubleTimeThreshold ? parseFloat(existing.doubleTimeThreshold) : null);
+    const effectiveWeeklyDt = data.weeklyDtThreshold !== undefined ? data.weeklyDtThreshold
+      : (existing.weeklyDtThreshold ? parseFloat(existing.weeklyDtThreshold) : 60);
+    const effectiveOtMul = data.otMultiplier !== undefined ? data.otMultiplier : parseFloat(existing.otMultiplier || "1.5");
+    const effectiveDtMul = data.dtMultiplier !== undefined ? data.dtMultiplier : parseFloat(existing.dtMultiplier || "2.0");
+
+    if (effectiveDaily < 0 || effectiveWeekly < 0 || !isFinite(effectiveDaily) || !isFinite(effectiveWeekly)) {
+      res.status(400).json({ error: "Thresholds must be non-negative finite numbers" });
+      return;
+    }
+    if (effectiveDailyDt !== null && effectiveDailyDt < effectiveDaily) {
+      res.status(400).json({ error: "Daily double-time threshold must be >= daily OT threshold" });
+      return;
+    }
+    if (effectiveWeeklyDt < effectiveWeekly) {
+      res.status(400).json({ error: "Weekly double-time threshold must be >= weekly OT threshold" });
+      return;
+    }
+    if (effectiveOtMul < 1 || effectiveDtMul < 1) {
+      res.status(400).json({ error: "Multipliers must be >= 1.0" });
+      return;
+    }
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (data.dailyOtThreshold !== undefined) updates.dailyThreshold = String(data.dailyOtThreshold);
+    if (data.dailyThreshold !== undefined) updates.dailyThreshold = data.dailyThreshold;
+    if (data.weeklyOtThreshold !== undefined) updates.weeklyThreshold = String(data.weeklyOtThreshold);
+    if (data.weeklyThreshold !== undefined) updates.weeklyThreshold = data.weeklyThreshold;
+    if (data.dailyDtThreshold !== undefined) updates.doubleTimeThreshold = String(data.dailyDtThreshold);
+    if (data.doubleTimeThreshold !== undefined) updates.doubleTimeThreshold = data.doubleTimeThreshold;
+    if (data.weeklyDtThreshold !== undefined) updates.weeklyDtThreshold = String(data.weeklyDtThreshold);
+    if (data.otMultiplier !== undefined) updates.otMultiplier = String(data.otMultiplier);
+    if (data.dtMultiplier !== undefined) updates.dtMultiplier = String(data.dtMultiplier);
+    if (data.consecutiveDayRule !== undefined) updates.consecutiveDayRule = data.consecutiveDayRule;
+    if (data.consecutiveDayThreshold !== undefined) updates.consecutiveDayThreshold = data.consecutiveDayThreshold;
+    if (data.isActive !== undefined) updates.isActive = data.isActive;
+
+    const [updated] = await db.update(overtimeRules).set(updates)
+      .where(eq(overtimeRules.id, req.params.id)).returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "overtime_rule",
+      entityId: req.params.id,
+      action: "UPDATE",
+      oldValue: JSON.stringify(existing),
+      newValue: JSON.stringify(updated),
+    }, req);
+
+    res.json(formatRuleResponse(updated));
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: "Invalid input", details: error.errors });
+      return;
+    }
+    console.error("Update overtime rule error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const [existing] = await db.select().from(overtimeRules)
+      .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, orgId)));
+    if (!existing) { res.status(404).json({ error: "Rule not found" }); return; }
+
+    await db.delete(overtimeRules).where(eq(overtimeRules.id, req.params.id));
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "overtime_rule",
+      entityId: req.params.id,
+      action: "DELETE",
+      oldValue: JSON.stringify(existing),
+      newValue: null,
+    }, req);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Delete overtime rule error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

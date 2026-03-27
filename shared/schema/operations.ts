@@ -1272,6 +1272,7 @@ export const timeClockShifts = pgTable("time_clock_shifts", {
   clockInLongitude: doublePrecision("clock_in_longitude"),
   clockOutLatitude: doublePrecision("clock_out_latitude"),
   clockOutLongitude: doublePrecision("clock_out_longitude"),
+  costCode: text("cost_code"),
   notes: text("notes"),
   autoClockOut: boolean("auto_clock_out").notNull().default(false),
   geofenceStatus: varchar("geofence_status", { length: 20 }),
@@ -2302,6 +2303,21 @@ export const insertOrgCostCodeSchema = createInsertSchema(orgCostCodes).omit({ i
 export type InsertOrgCostCode = z.infer<typeof insertOrgCostCodeSchema>;
 export type OrgCostCode = typeof orgCostCodes.$inferSelect;
 
+export const projectCostCodes = pgTable("project_cost_codes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCode: varchar("cost_code", { length: 20 }).notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+}, (table) => [
+  index("project_cost_codes_project_idx").on(table.projectId),
+  unique("project_cost_codes_project_code_uniq").on(table.projectId, table.costCode),
+]);
+
+export const insertProjectCostCodeSchema = createInsertSchema(projectCostCodes).omit({ id: true, assignedAt: true });
+export type InsertProjectCostCode = z.infer<typeof insertProjectCostCodeSchema>;
+export type ProjectCostCode = typeof projectCostCodes.$inferSelect;
+
 export const budgetLineItems = pgTable("budget_line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -2801,4 +2817,54 @@ export const insertHistoricalCostSchema = createInsertSchema(historicalCosts).om
 });
 export type InsertHistoricalCost = z.infer<typeof insertHistoricalCostSchema>;
 export type HistoricalCost = typeof historicalCosts.$inferSelect;
+
+export const overtimeRules = pgTable("overtime_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  dailyThreshold: decimal("daily_threshold", { precision: 5, scale: 2 }).notNull().default("8"),
+  weeklyThreshold: decimal("weekly_threshold", { precision: 5, scale: 2 }).notNull().default("40"),
+  doubleTimeThreshold: decimal("double_time_threshold", { precision: 5, scale: 2 }),
+  weeklyDtThreshold: decimal("weekly_dt_threshold", { precision: 5, scale: 2 }).default("60"),
+  otMultiplier: decimal("ot_multiplier", { precision: 4, scale: 2 }).notNull().default("1.50"),
+  dtMultiplier: decimal("dt_multiplier", { precision: 4, scale: 2 }).notNull().default("2.00"),
+  consecutiveDayRule: boolean("consecutive_day_rule").notNull().default(false),
+  consecutiveDayThreshold: integer("consecutive_day_threshold").default(7),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("overtime_rules_org_idx").on(table.organizationId),
+  projectIdx: index("overtime_rules_project_idx").on(table.projectId),
+}));
+
+export const insertOvertimeRuleSchema = createInsertSchema(overtimeRules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOvertimeRule = z.infer<typeof insertOvertimeRuleSchema>;
+export type OvertimeRule = typeof overtimeRules.$inferSelect;
+
+export const costLedgerPostings = pgTable("cost_ledger_postings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  payRunId: varchar("pay_run_id").notNull(),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCode: text("cost_code"),
+  regularAmount: decimal("regular_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  overtimeAmount: decimal("overtime_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  doubleTimeAmount: decimal("double_time_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  burdenMultiplier: decimal("burden_multiplier", { precision: 5, scale: 4 }).notNull().default("1.0000"),
+  burdenedTotalAmount: decimal("burdened_total_amount", { precision: 14, scale: 2 }).notNull().default("0"),
+  regularHours: decimal("regular_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  overtimeHours: decimal("overtime_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  doubleTimeHours: decimal("double_time_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  postedAt: timestamp("posted_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  payRunIdx: index("cost_ledger_postings_pay_run_idx").on(table.payRunId),
+  projectIdx: index("cost_ledger_postings_project_idx").on(table.projectId),
+  costCodeIdx: index("cost_ledger_postings_cost_code_idx").on(table.costCode),
+}));
+
+export const insertCostLedgerPostingSchema = createInsertSchema(costLedgerPostings).omit({ id: true, createdAt: true });
+export type InsertCostLedgerPosting = z.infer<typeof insertCostLedgerPostingSchema>;
+export type CostLedgerPosting = typeof costLedgerPostings.$inferSelect;
 

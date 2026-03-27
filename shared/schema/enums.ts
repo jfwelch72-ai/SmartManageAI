@@ -621,3 +621,4 @@ export const handoverSignoffRoleEnum = pgEnum("handover_signoff_role", ["CONTRAC
 export const assetMaintenanceTypeEnum = pgEnum("asset_maintenance_type", ["PREVENTIVE", "CORRECTIVE", "EMERGENCY"]);
 export const maintenanceSystemEnum = pgEnum("maintenance_system", ["HVAC", "PLUMBING", "ELECTRICAL", "ROOFING", "STRUCTURAL", "FIRE_PROTECTION", "ELEVATOR", "LANDSCAPING", "GENERAL", "OTHER"]);
 export const recurringFrequencyEnum = pgEnum("recurring_frequency", ["WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
+export const geofenceEnforcementEnum = pgEnum("geofence_enforcement", ["OFF", "WARN", "BLOCK"]);

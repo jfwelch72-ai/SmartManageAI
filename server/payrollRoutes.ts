@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
-import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts } from "@shared/schema";
+import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
@@ -95,6 +95,217 @@ function lookupRate(rateMap: Map<string, RateInfo>, userId: string, projectId: s
     if (rate) return rate;
   }
   return { regularRate: DEFAULT_REGULAR_RATE, overtimeRate: DEFAULT_OVERTIME_RATE };
+}
+
+interface OvertimeConfig {
+  dailyThreshold: number;
+  weeklyThreshold: number;
+  doubleTimeThreshold: number | null;
+  weeklyDtThreshold: number | null;
+  otMultiplier: number;
+  dtMultiplier: number;
+  consecutiveDayRule: boolean;
+  consecutiveDayThreshold: number;
+}
+
+const DEFAULT_OT_CONFIG: OvertimeConfig = {
+  dailyThreshold: 8,
+  weeklyThreshold: 40,
+  doubleTimeThreshold: 12,
+  weeklyDtThreshold: 60,
+  otMultiplier: 1.5,
+  dtMultiplier: 2.0,
+  consecutiveDayRule: false,
+  consecutiveDayThreshold: 7,
+};
+
+function resolveWorkerOtConfig(
+  workerProjectIds: string[],
+  projectOtConfigCache: Map<string, OvertimeConfig>
+): OvertimeConfig {
+  if (workerProjectIds.length === 1) {
+    return projectOtConfigCache.get(workerProjectIds[0]) || DEFAULT_OT_CONFIG;
+  }
+  const configs = workerProjectIds.map(pid => projectOtConfigCache.get(pid) || DEFAULT_OT_CONFIG);
+  return {
+    dailyThreshold: Math.min(...configs.map(c => c.dailyThreshold)),
+    weeklyThreshold: Math.min(...configs.map(c => c.weeklyThreshold)),
+    doubleTimeThreshold: Math.min(...configs.map(c => c.doubleTimeThreshold ?? Infinity)) === Infinity
+      ? null : Math.min(...configs.map(c => c.doubleTimeThreshold ?? Infinity)),
+    weeklyDtThreshold: Math.min(...configs.map(c => c.weeklyDtThreshold ?? Infinity)) === Infinity
+      ? null : Math.min(...configs.map(c => c.weeklyDtThreshold ?? Infinity)),
+    otMultiplier: Math.max(...configs.map(c => c.otMultiplier)),
+    dtMultiplier: Math.max(...configs.map(c => c.dtMultiplier)),
+    consecutiveDayRule: configs.some(c => c.consecutiveDayRule),
+    consecutiveDayThreshold: Math.min(...configs.filter(c => c.consecutiveDayRule).map(c => c.consecutiveDayThreshold).concat([7])),
+  };
+}
+
+async function getOvertimeConfig(orgId: string, projectId: string | null): Promise<OvertimeConfig> {
+  function ruleToConfig(rule: typeof overtimeRules.$inferSelect): OvertimeConfig {
+    return {
+      dailyThreshold: parseFloat(rule.dailyThreshold),
+      weeklyThreshold: parseFloat(rule.weeklyThreshold),
+      doubleTimeThreshold: rule.doubleTimeThreshold ? parseFloat(rule.doubleTimeThreshold) : null,
+      weeklyDtThreshold: rule.weeklyDtThreshold ? parseFloat(rule.weeklyDtThreshold) : null,
+      otMultiplier: rule.otMultiplier ? parseFloat(rule.otMultiplier) : 1.5,
+      dtMultiplier: rule.dtMultiplier ? parseFloat(rule.dtMultiplier) : 2.0,
+      consecutiveDayRule: rule.consecutiveDayRule,
+      consecutiveDayThreshold: rule.consecutiveDayThreshold || 7,
+    };
+  }
+
+  if (projectId) {
+    const [projectRule] = await db.select().from(overtimeRules)
+      .where(and(
+        eq(overtimeRules.organizationId, orgId),
+        eq(overtimeRules.projectId, projectId),
+        eq(overtimeRules.isActive, true),
+      ))
+      .orderBy(desc(overtimeRules.updatedAt))
+      .limit(1);
+    if (projectRule) return ruleToConfig(projectRule);
+  }
+
+  const [orgRule] = await db.select().from(overtimeRules)
+    .where(and(
+      eq(overtimeRules.organizationId, orgId),
+      isNull(overtimeRules.projectId),
+      eq(overtimeRules.isActive, true),
+    ))
+    .orderBy(desc(overtimeRules.updatedAt))
+    .limit(1);
+
+  if (orgRule) return ruleToConfig(orgRule);
+
+  return DEFAULT_OT_CONFIG;
+}
+
+interface ClassifiedHours {
+  regular: number;
+  overtime: number;
+  doubleTime: number;
+}
+
+function classifyDailyHours(totalHours: number, config: OvertimeConfig): ClassifiedHours {
+  const daily = config.dailyThreshold;
+  const dtThreshold = config.doubleTimeThreshold;
+
+  let regular = Math.min(totalHours, daily);
+  let overtime = 0;
+  let doubleTime = 0;
+
+  if (totalHours > daily) {
+    if (dtThreshold !== null && totalHours > dtThreshold) {
+      overtime = dtThreshold - daily;
+      doubleTime = totalHours - dtThreshold;
+    } else {
+      overtime = totalHours - daily;
+    }
+  }
+
+  return { regular, overtime, doubleTime };
+}
+
+async function postCostLedger(payRunId: string, txDb?: typeof db) {
+  const queryDb = txDb || db;
+  const [existingPosting] = await queryDb.select({ id: costLedgerPostings.id })
+    .from(costLedgerPostings)
+    .where(eq(costLedgerPostings.payRunId, payRunId))
+    .limit(1);
+  if (existingPosting) {
+    console.log(`Cost ledger postings already exist for pay run ${payRunId}, skipping`);
+    return;
+  }
+
+  const lineItems = await queryDb.select({
+    projectId: payRunLineItems.projectId,
+    costCode: payRunLineItems.costCode,
+    regularHours: payRunLineItems.regularHours,
+    overtimeHours: payRunLineItems.overtimeHours,
+    doubleTimeHours: payRunLineItems.doubleTimeHours,
+    regularRate: payRunLineItems.regularRate,
+    overtimeRate: payRunLineItems.overtimeRate,
+    doubleTimeRate: payRunLineItems.doubleTimeRate,
+  }).from(payRunLineItems).where(eq(payRunLineItems.payRunId, payRunId));
+
+  const uniqueProjectIds = [...new Set(lineItems.map(li => li.projectId))];
+  const burdenLookup = new Map<string, number>();
+  if (uniqueProjectIds.length > 0) {
+    const plrRows = await queryDb.select({
+      projectId: projectLaborRates.projectId,
+      burdenMultiplier: projectLaborRates.burdenMultiplier,
+    }).from(projectLaborRates).where(inArray(projectLaborRates.projectId, uniqueProjectIds));
+    for (const row of plrRows) {
+      burdenLookup.set(row.projectId, parseFloat(row.burdenMultiplier));
+    }
+  }
+
+  const postingMap = new Map<string, {
+    projectId: string;
+    costCode: string | null;
+    regularAmount: number;
+    overtimeAmount: number;
+    doubleTimeAmount: number;
+    regularHours: number;
+    overtimeHours: number;
+    doubleTimeHours: number;
+  }>();
+
+  for (const item of lineItems) {
+    const key = `${item.projectId}:${item.costCode || "NONE"}`;
+    if (!postingMap.has(key)) {
+      postingMap.set(key, {
+        projectId: item.projectId,
+        costCode: item.costCode,
+        regularAmount: 0,
+        overtimeAmount: 0,
+        doubleTimeAmount: 0,
+        regularHours: 0,
+        overtimeHours: 0,
+        doubleTimeHours: 0,
+      });
+    }
+    const posting = postingMap.get(key)!;
+    const regH = parseFloat(item.regularHours);
+    const otH = parseFloat(item.overtimeHours);
+    const dtH = parseFloat(item.doubleTimeHours || "0");
+    const regR = parseFloat(item.regularRate);
+    const otR = parseFloat(item.overtimeRate);
+    const dtR = parseFloat(item.doubleTimeRate || "0");
+
+    posting.regularHours += regH;
+    posting.overtimeHours += otH;
+    posting.doubleTimeHours += dtH;
+    posting.regularAmount += regH * regR;
+    posting.overtimeAmount += otH * otR;
+    posting.doubleTimeAmount += dtH * dtR;
+  }
+
+  const postings = Array.from(postingMap.values()).map(p => {
+    const totalAmount = Math.round((p.regularAmount + p.overtimeAmount + p.doubleTimeAmount) * 100) / 100;
+    const burden = burdenLookup.get(p.projectId) || 1.0;
+    const burdenedTotal = Math.round(totalAmount * burden * 100) / 100;
+    return {
+      payRunId,
+      projectId: p.projectId,
+      costCode: p.costCode,
+      regularAmount: String(Math.round(p.regularAmount * 100) / 100),
+      overtimeAmount: String(Math.round(p.overtimeAmount * 100) / 100),
+      doubleTimeAmount: String(Math.round(p.doubleTimeAmount * 100) / 100),
+      totalAmount: String(totalAmount),
+      burdenMultiplier: String(burden),
+      burdenedTotalAmount: String(burdenedTotal),
+      regularHours: String(Math.round(p.regularHours * 100) / 100),
+      overtimeHours: String(Math.round(p.overtimeHours * 100) / 100),
+      doubleTimeHours: String(Math.round(p.doubleTimeHours * 100) / 100),
+      postedAt: new Date(),
+    };
+  });
+
+  if (postings.length > 0) {
+    await queryDb.insert(costLedgerPostings).values(postings);
+  }
 }
 
 router.get("/api/payroll/overview", requireAuth, async (req, res) => {
@@ -272,21 +483,191 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "No approved time entries found for this period" });
     }
 
-    const workerMap = new Map<string, { projectMap: Map<string, { regular: number; overtime: number; costCode: string | null; entryIds: string[] }> }>();
+    const workerMap = new Map<string, { projectMap: Map<string, { regular: number; overtime: number; doubleTime: number; costCode: string | null; entryIds: string[] }> }>();
 
-    for (const { entry, user } of approvedEntries) {
-      if (!workerMap.has(entry.userId)) {
-        workerMap.set(entry.userId, { projectMap: new Map() });
+    interface DayDetail {
+      hours: number;
+      date: string;
+      projectId: string;
+      costCode: string | null;
+      entryIds: string[];
+    }
+
+    const workerDailyDetails = new Map<string, DayDetail[]>();
+
+    for (const { entry } of approvedEntries) {
+      const dateKey = entry.date instanceof Date ? entry.date.toISOString().split("T")[0] : String(entry.date).split("T")[0];
+      const totalEntryHours = parseFloat(entry.hoursRegular || "0") + parseFloat(entry.hoursOvertime || "0");
+
+      if (!workerDailyDetails.has(entry.userId)) {
+        workerDailyDetails.set(entry.userId, []);
       }
-      const worker = workerMap.get(entry.userId)!;
-      const key = `${entry.projectId}:${entry.costCode || "NONE"}`;
-      if (!worker.projectMap.has(key)) {
-        worker.projectMap.set(key, { regular: 0, overtime: 0, costCode: entry.costCode, entryIds: [] });
+      workerDailyDetails.get(entry.userId)!.push({
+        hours: totalEntryHours,
+        date: dateKey,
+        projectId: entry.projectId,
+        costCode: entry.costCode,
+        entryIds: [entry.id],
+      });
+    }
+
+    const projectOtConfigCache = new Map<string, OvertimeConfig>();
+    async function resolveOtConfig(projectId: string): Promise<OvertimeConfig> {
+      if (!projectOtConfigCache.has(projectId)) {
+        projectOtConfigCache.set(projectId, await getOvertimeConfig(orgId, projectId));
       }
-      const proj = worker.projectMap.get(key)!;
-      proj.regular += parseFloat(entry.hoursRegular || "0");
-      proj.overtime += parseFloat(entry.hoursOvertime || "0");
-      proj.entryIds.push(entry.id);
+      return projectOtConfigCache.get(projectId)!;
+    }
+
+    const settingsForWeek = await db.select().from(organizationPayrollSettings).where(eq(organizationPayrollSettings.organizationId, orgId)).limit(1);
+    const weekStartDay = settingsForWeek[0]?.workWeekStartDay || "MONDAY";
+    const dayNames = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"];
+    const weekStartIndex = dayNames.indexOf(weekStartDay);
+
+    function getWeekKey(dateStr: string): string {
+      const d = new Date(dateStr + "T00:00:00Z");
+      const dayOfWeek = d.getUTCDay();
+      const diff = (dayOfWeek - weekStartIndex + 7) % 7;
+      const weekStart = new Date(d);
+      weekStart.setUTCDate(weekStart.getUTCDate() - diff);
+      return weekStart.toISOString().split("T")[0];
+    }
+
+    for (const [userId, details] of Array.from(workerDailyDetails)) {
+      const workerProjectIds = [...new Set(details.map(d => d.projectId))];
+      for (const pid of workerProjectIds) {
+        await resolveOtConfig(pid);
+      }
+
+      const dayPccDetails = new Map<string, Map<string, { hours: number; entryIds: string[]; costCode: string | null }>>();
+      const workerDailyTotalMap = new Map<string, number>();
+      const dayProjectHoursMap = new Map<string, Map<string, number>>();
+
+      for (const d of details) {
+        workerDailyTotalMap.set(d.date, (workerDailyTotalMap.get(d.date) || 0) + d.hours);
+        if (!dayPccDetails.has(d.date)) {
+          dayPccDetails.set(d.date, new Map());
+        }
+        const pccKey = `${d.projectId}:${d.costCode || "NONE"}`;
+        const pccMap = dayPccDetails.get(d.date)!;
+        if (!pccMap.has(pccKey)) {
+          pccMap.set(pccKey, { hours: 0, entryIds: [], costCode: d.costCode });
+        }
+        const existing = pccMap.get(pccKey)!;
+        existing.hours += d.hours;
+        existing.entryIds.push(...d.entryIds);
+
+        if (!dayProjectHoursMap.has(d.date)) {
+          dayProjectHoursMap.set(d.date, new Map());
+        }
+        const projMap = dayProjectHoursMap.get(d.date)!;
+        projMap.set(d.projectId, (projMap.get(d.projectId) || 0) + d.hours);
+      }
+
+      const sortedDates = [...workerDailyTotalMap.keys()].sort();
+
+      const consecutiveDayStreak = new Map<string, number>();
+      let streak = 1;
+      for (let i = 0; i < sortedDates.length; i++) {
+        if (i > 0) {
+          const prev = new Date(sortedDates[i - 1]);
+          const curr = new Date(sortedDates[i]);
+          streak = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24) === 1 ? streak + 1 : 1;
+        }
+        consecutiveDayStreak.set(sortedDates[i], streak);
+      }
+
+      if (!workerMap.has(userId)) {
+        workerMap.set(userId, { projectMap: new Map() });
+      }
+      const worker = workerMap.get(userId)!;
+
+      const workerOtConfig = resolveWorkerOtConfig(workerProjectIds, projectOtConfigCache);
+
+      let workerWeeklyCumulative = 0;
+      let currentWeekKey = "";
+
+      for (const date of sortedDates) {
+        const wk = getWeekKey(date);
+        if (wk !== currentWeekKey) {
+          workerWeeklyCumulative = 0;
+          currentWeekKey = wk;
+        }
+
+        const pccMap = dayPccDetails.get(date)!;
+        const workerDayTotal = workerDailyTotalMap.get(date) || 0;
+        const prevWeeklyCum = workerWeeklyCumulative;
+        workerWeeklyCumulative += workerDayTotal;
+
+        let dayRegular: number;
+        let dayOvertime: number;
+        let dayDoubleTime: number;
+
+        const isConsecutiveDay = workerOtConfig.consecutiveDayRule &&
+          (consecutiveDayStreak.get(date) || 0) >= workerOtConfig.consecutiveDayThreshold;
+
+        if (isConsecutiveDay) {
+          dayRegular = 0;
+          dayOvertime = 0;
+          dayDoubleTime = workerDayTotal;
+        } else {
+          const dailyClassified = classifyDailyHours(workerDayTotal, workerOtConfig);
+
+          const wdt = workerOtConfig.weeklyDtThreshold;
+          if (wdt !== null && prevWeeklyCum >= wdt) {
+            dayRegular = 0;
+            dayOvertime = 0;
+            dayDoubleTime = workerDayTotal;
+          } else if (wdt !== null && workerWeeklyCumulative > wdt) {
+            const hoursBeforeWDT = Math.max(0, wdt - prevWeeklyCum);
+            const hoursAfterWDT = workerWeeklyCumulative - wdt;
+            const otHours = prevWeeklyCum >= workerOtConfig.weeklyThreshold
+              ? hoursBeforeWDT
+              : Math.max(0, hoursBeforeWDT - Math.max(0, workerOtConfig.weeklyThreshold - prevWeeklyCum));
+            dayRegular = hoursBeforeWDT - otHours;
+            dayOvertime = otHours;
+            dayDoubleTime = hoursAfterWDT;
+          } else if (prevWeeklyCum >= workerOtConfig.weeklyThreshold) {
+            dayRegular = 0;
+            dayOvertime = dailyClassified.regular + dailyClassified.overtime;
+            dayDoubleTime = dailyClassified.doubleTime;
+          } else if (workerWeeklyCumulative > workerOtConfig.weeklyThreshold) {
+            const regularBudget = Math.max(0, workerOtConfig.weeklyThreshold - prevWeeklyCum);
+            dayRegular = Math.min(dailyClassified.regular, regularBudget);
+            dayOvertime = Math.max(0, dailyClassified.regular - regularBudget) + dailyClassified.overtime;
+            dayDoubleTime = dailyClassified.doubleTime;
+          } else {
+            dayRegular = dailyClassified.regular;
+            dayOvertime = dailyClassified.overtime;
+            dayDoubleTime = dailyClassified.doubleTime;
+          }
+        }
+
+        for (const [pccKey, pccData] of Array.from(pccMap)) {
+          const proportion = workerDayTotal > 0 ? pccData.hours / workerDayTotal : 0;
+
+          const allocRegular = Math.round(dayRegular * proportion * 100) / 100;
+          const allocOvertime = Math.round(dayOvertime * proportion * 100) / 100;
+          const allocDoubleTime = Math.round(dayDoubleTime * proportion * 100) / 100;
+
+          if (!worker.projectMap.has(pccKey)) {
+            const costCodePart = pccKey.split(":").slice(1).join(":");
+            worker.projectMap.set(pccKey, {
+              regular: 0,
+              overtime: 0,
+              doubleTime: 0,
+              costCode: costCodePart === "NONE" ? null : costCodePart,
+              entryIds: [],
+            });
+          }
+          const bucket = worker.projectMap.get(pccKey)!;
+          bucket.regular += allocRegular;
+          bucket.overtime += allocOvertime;
+          bucket.doubleTime += allocDoubleTime;
+          bucket.entryIds.push(...pccData.entryIds);
+        }
+
+      }
     }
 
     let totalRegular = 0;
@@ -333,9 +714,15 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
       for (const [key, data] of Array.from(worker.projectMap)) {
         const projectId = key.split(":")[0];
         const rates = lookupRate(payRunRateMap, userId, projectId);
-        const grossAmount = data.regular * rates.regularRate + data.overtime * rates.overtimeRate;
+        if (!projectOtConfigCache.has(projectId)) {
+          projectOtConfigCache.set(projectId, await getOvertimeConfig(orgId, projectId));
+        }
+        const projConfig = projectOtConfigCache.get(projectId)!;
+        const otRate = rates.regularRate * projConfig.otMultiplier;
+        const dtRate = rates.regularRate * projConfig.dtMultiplier;
+        const grossAmount = data.regular * rates.regularRate + data.overtime * otRate + data.doubleTime * dtRate;
         totalRegular += data.regular;
-        totalOvertime += data.overtime;
+        totalOvertime += data.overtime + data.doubleTime;
         totalCost += grossAmount;
 
         deferredDeductions.push({ lineItemIndex: lineItemsToInsert.length, userId, grossAmount });
@@ -347,8 +734,10 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
           costCode: data.costCode,
           regularHours: String(data.regular),
           overtimeHours: String(data.overtime),
+          doubleTimeHours: String(data.doubleTime),
           regularRate: String(rates.regularRate),
-          overtimeRate: String(rates.overtimeRate),
+          overtimeRate: String(otRate),
+          doubleTimeRate: String(dtRate),
           totalAmount: String(grossAmount),
           grossAmount: String(grossAmount),
           totalDeductions: "0",
@@ -462,8 +851,20 @@ const payRunStatusHandler = async (req: any, res: Response) => {
       updateData.paidAt = new Date();
     }
 
-    const [updated] = await db.update(payRuns).set(updateData)
-      .where(eq(payRuns.id, req.params.id)).returning();
+    let updated: typeof payRuns.$inferSelect;
+
+    if (status === "APPROVED") {
+      updated = await db.transaction(async (tx) => {
+        const [result] = await tx.update(payRuns).set(updateData)
+          .where(eq(payRuns.id, req.params.id)).returning();
+        await postCostLedger(result.id, tx);
+        return result;
+      });
+    } else {
+      const [result] = await db.update(payRuns).set(updateData)
+        .where(eq(payRuns.id, req.params.id)).returning();
+      updated = result;
+    }
 
     await logAudit({
       userId: authReq.user!.id,
@@ -475,6 +876,12 @@ const payRunStatusHandler = async (req: any, res: Response) => {
     });
 
     if (status === "PAID") {
+      try {
+        await postCostLedger(updated.id);
+      } catch (err) {
+        console.error(`Cost ledger posting failed on PAID transition for pay run ${updated.id} (non-blocking):`, err);
+      }
+
       const lineItemCount = await db
         .select({ userId: payRunLineItems.userId })
         .from(payRunLineItems)

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,11 @@ import {
   Building2,
   Wrench,
   ClipboardCheck,
+  Shield,
+  ShieldAlert,
+  ShieldOff,
 } from "lucide-react";
+import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -825,6 +829,7 @@ export default function ProjectDetailPage() {
               financialsLoading={financialsLoading}
               setActiveTab={handleSetActiveTab}
             />
+            <GeofenceEnforcementCard project={project} projectCode={projectCode} />
           </TabsContent>
 
           <TabsContent value="scope">
@@ -1198,5 +1203,81 @@ export default function ProjectDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+function GeofenceEnforcementCard({ project, projectCode }: { project: Record<string, unknown>; projectCode: string }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const canManage = user && hasManagementAccess(user.role, FeaturePermissions.PROJECT_MANAGEMENT);
+  const currentMode = (project.geofenceEnforcement as string) || "OFF";
+  const updateMutation = useMutation({
+    mutationFn: async (mode: string) => {
+      await apiRequest("PATCH", `/api/projects/${projectCode}`, { geofenceEnforcement: mode });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
+      toast({ title: "Geofence enforcement updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Update Failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const modeConfig = {
+    OFF: { icon: ShieldOff, label: "Off", desc: "No geofence checks on clock-in", color: "text-muted-foreground" },
+    WARN: { icon: Shield, label: "Warn", desc: "Clock-in allowed but flagged if out of range", color: "text-amber-600 dark:text-amber-400" },
+    BLOCK: { icon: ShieldAlert, label: "Block", desc: "Clock-in blocked if out of geofence range", color: "text-red-600 dark:text-red-400" },
+  };
+  const current = modeConfig[currentMode as keyof typeof modeConfig] || modeConfig.OFF;
+  const CurrentIcon = current.icon;
+
+  return (
+    <Card data-testid="card-geofence-settings">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <CurrentIcon className={`w-5 h-5 ${current.color}`} />
+          <CardTitle className="text-base">Geo-fence Enforcement</CardTitle>
+        </div>
+        <CardDescription>{current.desc}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">Enforcement Mode:</Label>
+            <Badge variant={currentMode === "BLOCK" ? "destructive" : currentMode === "WARN" ? "outline" : "secondary"} data-testid="badge-geofence-mode">
+              {current.label}
+            </Badge>
+          </div>
+          {canManage && (
+            <div className="flex gap-2">
+              {(["OFF", "WARN", "BLOCK"] as const).map((mode) => {
+                const cfg = modeConfig[mode];
+                const ModeIcon = cfg.icon;
+                return (
+                  <Button
+                    key={mode}
+                    variant={currentMode === mode ? "default" : "outline"}
+                    size="sm"
+                    disabled={updateMutation.isPending}
+                    onClick={() => updateMutation.mutate(mode)}
+                    data-testid={`button-geofence-${mode.toLowerCase()}`}
+                  >
+                    <ModeIcon className="w-4 h-4 mr-1" />
+                    {cfg.label}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+          {project.siteLatitude && project.siteLongitude && (
+            <div className="text-xs text-muted-foreground mt-2" data-testid="text-geofence-site-coords">
+              Site: {(project.siteLatitude as number).toFixed(6)}, {(project.siteLongitude as number).toFixed(6)}
+              {project.geofenceRadius && ` · Radius: ${project.geofenceRadius}m`}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

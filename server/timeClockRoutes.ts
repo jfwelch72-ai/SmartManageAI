@@ -3,7 +3,7 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { 
   timeClockShifts, timeClockEvents, users, projects, timeEntries,
-  kpiAssignments, kpiTemplates, kpiEntries
+  kpiAssignments, kpiTemplates, kpiEntries, orgCostCodes, organizations, projectCostCodes
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -19,6 +19,47 @@ import {
 const router = Router();
 
 const GEOFENCE_RADIUS = 200;
+
+async function getProjectEligibleCostCodes(organizationId: string, projectId: string | null): Promise<Set<string>> {
+  if (projectId) {
+    const assigned = await db.select({ costCode: projectCostCodes.costCode })
+      .from(projectCostCodes)
+      .where(and(eq(projectCostCodes.projectId, projectId), eq(projectCostCodes.isActive, true)));
+    if (assigned.length > 0) {
+      return new Set(assigned.map(a => a.costCode));
+    }
+  }
+
+  const { getCostCodesForTrade } = await import("@shared/costCodes");
+  const [org] = await db.select({ tradeType: organizations.tradeType })
+    .from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+  const tradeType = org?.tradeType || "OTHER";
+  const staticCodes = getCostCodesForTrade(tradeType);
+
+  const orgRows = await db.select().from(orgCostCodes)
+    .where(and(eq(orgCostCodes.organizationId, organizationId)));
+
+  const activeCustom = orgRows.filter(r => r.isCustom && r.isActive);
+  const orgCodeSet = new Set(orgRows.map(r => r.code));
+  const deactivated = new Set(orgRows.filter(r => !r.isActive).map(r => r.code));
+
+  const eligible = new Set<string>();
+  for (const cc of activeCustom) {
+    eligible.add(cc.code);
+  }
+  for (const sc of staticCodes) {
+    if (!orgCodeSet.has(sc.code) || (orgCodeSet.has(sc.code) && !deactivated.has(sc.code))) {
+      eligible.add(sc.code);
+    }
+  }
+
+  return eligible;
+}
+
+async function validateCostCode(organizationId: string, costCode: string, projectId?: string | null): Promise<boolean> {
+  const eligible = await getProjectEligibleCostCodes(organizationId, projectId || null);
+  return eligible.has(costCode);
+}
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
@@ -87,6 +128,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
 
     const schema = z.object({
       projectId: z.string().optional().nullable(),
+      costCode: z.string().optional().nullable(),
       latitude: z.number().optional().nullable(),
       longitude: z.number().optional().nullable(),
       notes: z.string().optional().nullable(),
@@ -113,10 +155,19 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
     let geofenceStatus: string = "NOT_CONFIGURED";
     let geofenceWarning: string | null = null;
 
+    let enforcementMode: string = "OFF";
+
     if (data.projectId) {
-      const [project] = await db.select().from(projects).where(eq(projects.id, data.projectId)).limit(1);
+      const [project] = await db.select().from(projects).where(
+        and(eq(projects.id, data.projectId), eq(projects.gcOrganizationId, req.user!.organizationId))
+      ).limit(1);
+      if (!project) {
+        res.status(400).json({ error: "Project not found or does not belong to your organization" });
+        return;
+      }
+      enforcementMode = project?.geofenceEnforcement || "OFF";
       if (project?.siteLatitude && project?.siteLongitude) {
-        if (data.latitude && data.longitude) {
+        if (data.latitude != null && data.longitude != null) {
           const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
           const radius = project.geofenceRadius || GEOFENCE_RADIUS;
           if (distance <= radius) {
@@ -131,12 +182,46 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       }
     }
 
+    if (enforcementMode === "BLOCK" && (geofenceStatus === "OUT_OF_RANGE" || geofenceStatus === "NO_GPS")) {
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "TIME_CLOCK_SHIFT",
+        entityId: "BLOCKED",
+        action: "CLOCK_IN_BLOCKED",
+        oldValue: null,
+        newValue: JSON.stringify({
+          projectId: data.projectId,
+          geofenceStatus,
+          reason: geofenceStatus === "NO_GPS" ? "GPS unavailable" : geofenceWarning,
+          location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null,
+        }),
+      }, req);
+
+      res.status(403).json({
+        error: geofenceStatus === "NO_GPS"
+          ? "Clock-in blocked: GPS is required for this project but is unavailable."
+          : `Clock-in blocked: ${geofenceWarning}`,
+        geofenceStatus,
+        blocked: true,
+      });
+      return;
+    }
+
+    if (data.costCode) {
+      const isValid = await validateCostCode(req.user!.organizationId, data.costCode, data.projectId);
+      if (!isValid) {
+        res.status(400).json({ error: "Invalid or inactive cost code for this project" });
+        return;
+      }
+    }
+
     const [newShift] = await db.insert(timeClockShifts).values({
       userId: req.user!.id,
       projectId: data.projectId || null,
+      costCode: data.costCode || null,
       clockIn: now,
-      clockInLatitude: data.latitude || null,
-      clockInLongitude: data.longitude || null,
+      clockInLatitude: data.latitude != null ? data.latitude : null,
+      clockInLongitude: data.longitude != null ? data.longitude : null,
       notes: data.notes || null,
       autoClockOut: false,
       geofenceStatus,
@@ -147,8 +232,8 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       shiftId: newShift.id,
       eventType: "CLOCK_IN",
       timestamp: now,
-      latitude: data.latitude || null,
-      longitude: data.longitude || null,
+      latitude: data.latitude != null ? data.latitude : null,
+      longitude: data.longitude != null ? data.longitude : null,
       notes: data.notes || null,
       performedById: req.user!.id,
     });
@@ -172,8 +257,8 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
         shiftId: newShift.id,
         userId: req.user!.id,
         projectId: data.projectId || null,
-        lat: data.latitude || null,
-        lng: data.longitude || null,
+        lat: data.latitude != null ? data.latitude : null,
+        lng: data.longitude != null ? data.longitude : null,
       },
     });
 
@@ -221,8 +306,8 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       .update(timeClockShifts)
       .set({
         clockOut: now,
-        clockOutLatitude: data.latitude || null,
-        clockOutLongitude: data.longitude || null,
+        clockOutLatitude: data.latitude != null ? data.latitude : null,
+        clockOutLongitude: data.longitude != null ? data.longitude : null,
         totalHours: totalHours.toString(),
         notes: data.notes || activeShift.notes,
         updatedAt: now,
@@ -234,8 +319,8 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       shiftId: activeShift.id,
       eventType: "CLOCK_OUT",
       timestamp: now,
-      latitude: data.latitude || null,
-      longitude: data.longitude || null,
+      latitude: data.latitude != null ? data.latitude : null,
+      longitude: data.longitude != null ? data.longitude : null,
       notes: data.notes || null,
       performedById: req.user!.id,
     });
@@ -385,6 +470,58 @@ router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: Aut
     res.json(updatedShift);
   } catch (error) {
     console.error("Update notes error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const schema = z.object({
+      costCode: z.string().nullable(),
+    });
+
+    const data = schema.parse(req.body);
+
+    const [activeShift] = await db
+      .select()
+      .from(timeClockShifts)
+      .where(and(
+        eq(timeClockShifts.userId, req.user!.id),
+        isNull(timeClockShifts.clockOut)
+      ))
+      .limit(1);
+
+    if (!activeShift) {
+      res.status(400).json({ error: "No active shift found." });
+      return;
+    }
+
+    if (data.costCode) {
+      const isValid = await validateCostCode(req.user!.organizationId, data.costCode, activeShift.projectId);
+      if (!isValid) {
+        res.status(400).json({ error: "Invalid or inactive cost code for this project" });
+        return;
+      }
+    }
+
+    const [updatedShift] = await db
+      .update(timeClockShifts)
+      .set({ costCode: data.costCode, updatedAt: new Date() })
+      .where(eq(timeClockShifts.id, activeShift.id))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "TIME_CLOCK_SHIFT",
+      entityId: activeShift.id,
+      action: "UPDATE_COST_CODE",
+      oldValue: JSON.stringify({ costCode: activeShift.costCode }),
+      newValue: JSON.stringify({ costCode: data.costCode }),
+    }, req);
+
+    res.json(updatedShift);
+  } catch (error) {
+    console.error("Update cost code error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -716,6 +853,7 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
           date: shift.clockIn,
           hoursRegular: regularHours.toString(),
           hoursOvertime: overtimeHours.toString(),
+          costCode: shift.costCode || null,
           notes: shift.notes || `Auto-created from time clock shift`,
           approvedById: req.user!.id,
           approvedAt: new Date(),

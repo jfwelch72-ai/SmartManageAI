@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
-import { projects, users, scopeItems, changeOrders, projectLaborRates, projectEmployeeRates, insertProjectSchema, timeClockShifts, procurementItems, receipts, subcontractorContracts, subcontractorPayments, tmDailySheets, tmTickets, aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, quantityCategories, tasks, handoffPackets, estimates, estimateLineItems, timeEntries, calendarEvents, media, planDocuments, projectNotes, dailyScopeProgress, conversations, conversationParticipants, crewMembers, crewProjectAssignments, scheduleOfValues, sovLineItems, insertProjectNoteSchema, insertMediaSchema, insertTimeEntrySchema, insertTMDailySheetSchema, insertEstimateSchema, insertProcurementItemSchema, filePermissions, subcontractors, bidSubcontractorQuotes, bidMaterialQuotes, organizations, orgCostCodes, insertOrgCostCodeSchema } from "@shared/schema";
+import { projects, users, scopeItems, changeOrders, projectLaborRates, projectEmployeeRates, insertProjectSchema, timeClockShifts, procurementItems, receipts, subcontractorContracts, subcontractorPayments, tmDailySheets, tmTickets, aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, quantityCategories, tasks, handoffPackets, estimates, estimateLineItems, timeEntries, calendarEvents, media, planDocuments, projectNotes, dailyScopeProgress, conversations, conversationParticipants, crewMembers, crewProjectAssignments, scheduleOfValues, sovLineItems, insertProjectNoteSchema, insertMediaSchema, insertTimeEntrySchema, insertTMDailySheetSchema, insertEstimateSchema, insertProcurementItemSchema, filePermissions, subcontractors, bidSubcontractorQuotes, bidMaterialQuotes, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes } from "@shared/schema";
 import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -1554,6 +1554,143 @@ router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res) => {
 // ====================
 // Cost Codes Route
 // ====================
+
+router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const projectId = req.params.id;
+
+    const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+      .from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId))).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const assigned = await db.select().from(projectCostCodes)
+      .where(and(eq(projectCostCodes.projectId, projectId), eq(projectCostCodes.isActive, true)));
+
+    if (assigned.length > 0) {
+      const { getCostCodesForTrade } = await import("@shared/costCodes");
+      const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+      const tradeType = org?.tradeType || "OTHER";
+      const staticCodes = getCostCodesForTrade(tradeType);
+      const staticMap = new Map(staticCodes.map(c => [c.code, c]));
+
+      const orgRows = await db.select().from(orgCostCodes).where(eq(orgCostCodes.organizationId, orgId));
+      const orgMap = new Map(orgRows.map(r => [r.code, r]));
+
+      const result = assigned.map(a => {
+        const orgEntry = orgMap.get(a.costCode);
+        const staticEntry = staticMap.get(a.costCode);
+        return {
+          code: a.costCode,
+          description: orgEntry?.description || staticEntry?.description || a.costCode,
+          division: orgEntry?.division || staticEntry?.division || "Unassigned",
+          isCustom: orgEntry?.isCustom || false,
+          isActive: true,
+        };
+      });
+      res.json(result);
+      return;
+    }
+
+    const { getCostCodesForTrade } = await import("@shared/costCodes");
+    const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    const tradeType = org?.tradeType || "OTHER";
+    const staticCodes = getCostCodesForTrade(tradeType);
+
+    const orgRows = await db.select().from(orgCostCodes).where(and(eq(orgCostCodes.organizationId, orgId), eq(orgCostCodes.isActive, true)));
+    const orgEntries = orgRows.map(r => ({
+      code: r.code,
+      description: r.description,
+      division: r.division,
+      isCustom: r.isCustom,
+      isActive: r.isActive,
+    }));
+
+    const orgCodeSet = new Set(orgRows.map(r => r.code));
+    const customFirst = orgEntries.filter(e => e.isCustom);
+    const overrides = orgEntries.filter(e => !e.isCustom);
+    const overrideMap = new Map(overrides.map(o => [o.code, o]));
+
+    const staticWithOverrides = staticCodes
+      .filter(c => !orgCodeSet.has(c.code) || overrideMap.has(c.code))
+      .map(c => {
+        const override = overrideMap.get(c.code);
+        if (override) return { ...c, isActive: override.isActive };
+        return c;
+      })
+      .filter(c => c.isActive !== false);
+
+    const merged = [...customFirst, ...staticWithOverrides];
+
+    const seedValues = merged.map(c => ({
+      projectId,
+      costCode: c.code,
+      isActive: true,
+    }));
+    if (seedValues.length > 0) {
+      await db.insert(projectCostCodes).values(seedValues).onConflictDoNothing();
+    }
+
+    res.json(merged);
+  } catch (error) {
+    console.error("Error fetching project cost codes:", error);
+    res.status(500).json({ error: "Failed to fetch project cost codes" });
+  }
+});
+
+router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+  try {
+    const orgId = req.user!.organizationId;
+    const projectId = req.params.id;
+
+    const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+      .from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId))).limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const { costCodes } = req.body;
+    if (!Array.isArray(costCodes)) {
+      res.status(400).json({ error: "costCodes must be an array of { costCode, isActive }" });
+      return;
+    }
+
+    const { getCostCodesForTrade } = await import("@shared/costCodes");
+    const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+    const tradeType = org?.tradeType || "OTHER";
+    const staticCodes = new Set(getCostCodesForTrade(tradeType).map(c => c.code));
+    const orgRows = await db.select().from(orgCostCodes).where(and(eq(orgCostCodes.organizationId, orgId), eq(orgCostCodes.isActive, true)));
+    const orgCodeSet = new Set(orgRows.map(r => r.code));
+    const validUniverse = new Set([...staticCodes, ...orgCodeSet]);
+
+    const invalidCodes = costCodes.filter(e => e.costCode && !validUniverse.has(e.costCode)).map(e => e.costCode);
+    if (invalidCodes.length > 0) {
+      res.status(400).json({ error: `Invalid cost codes: ${invalidCodes.join(", ")}` });
+      return;
+    }
+
+    for (const entry of costCodes) {
+      if (!entry.costCode) continue;
+      await db.insert(projectCostCodes)
+        .values({ projectId, costCode: entry.costCode, isActive: entry.isActive !== false })
+        .onConflictDoUpdate({
+          target: [projectCostCodes.projectId, projectCostCodes.costCode],
+          set: { isActive: entry.isActive !== false },
+        });
+    }
+
+    const updated = await db.select().from(projectCostCodes)
+      .where(and(eq(projectCostCodes.projectId, projectId), eq(projectCostCodes.isActive, true)));
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating project cost codes:", error);
+    res.status(500).json({ error: "Failed to update project cost codes" });
+  }
+});
 
 router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
   try {

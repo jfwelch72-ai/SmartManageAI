@@ -13,6 +13,7 @@ import {
   receipts,
   budgetLineItems,
   forecastAdjustments,
+  costLedgerPostings,
 } from "@shared/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
 
@@ -113,14 +114,38 @@ export async function calculateCostLedger(
     .where(eq(timeEntries.projectId, projectId))
     .limit(10000);
 
-  for (const entry of laborEntries) {
-    if (entry.approvalStatus !== "APPROVED") continue;
-    const cc = normalizeCostCode(entry.costCode);
-    const row = ensureRow(cc);
-    const regRate = entry.costRateRegular ? Number(entry.costRateRegular) : DEFAULT_COST_RATE;
-    const otRate = entry.costRateOvertime ? Number(entry.costRateOvertime) : regRate * DEFAULT_OT_MULTIPLIER;
-    const cost = Number(entry.hoursRegular || 0) * regRate + Number(entry.hoursOvertime || 0) * otRate;
-    row.actualLabor += cost;
+  const payrollPostings = await db
+    .select({
+      costCode: costLedgerPostings.costCode,
+      totalAmount: costLedgerPostings.totalAmount,
+      burdenedTotalAmount: costLedgerPostings.burdenedTotalAmount,
+    })
+    .from(costLedgerPostings)
+    .where(eq(costLedgerPostings.projectId, projectId))
+    .limit(10000);
+
+  const payrollCostByCode = new Map<string, number>();
+  for (const posting of payrollPostings) {
+    const cc = normalizeCostCode(posting.costCode);
+    const amount = Number(posting.burdenedTotalAmount) > 0 ? Number(posting.burdenedTotalAmount) : Number(posting.totalAmount);
+    payrollCostByCode.set(cc, (payrollCostByCode.get(cc) || 0) + amount);
+  }
+
+  if (payrollPostings.length > 0) {
+    for (const [cc, amount] of payrollCostByCode) {
+      const row = ensureRow(cc);
+      row.actualLabor += amount;
+    }
+  } else {
+    for (const entry of laborEntries) {
+      if (entry.approvalStatus !== "APPROVED") continue;
+      const cc = normalizeCostCode(entry.costCode);
+      const row = ensureRow(cc);
+      const regRate = entry.costRateRegular ? Number(entry.costRateRegular) : DEFAULT_COST_RATE;
+      const otRate = entry.costRateOvertime ? Number(entry.costRateOvertime) : regRate * DEFAULT_OT_MULTIPLIER;
+      const cost = Number(entry.hoursRegular || 0) * regRate + Number(entry.hoursOvertime || 0) * otRate;
+      row.actualLabor += cost;
+    }
   }
 
   const poItems = await db

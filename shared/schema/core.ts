@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, onboardingStatusEnum, payRunStatusEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, onboardingStatusEnum, payRunStatusEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -205,8 +205,10 @@ export const payRunLineItems = pgTable("pay_run_line_items", {
   costCode: text("cost_code"),
   regularHours: decimal("regular_hours", { precision: 8, scale: 2 }).notNull().default("0"),
   overtimeHours: decimal("overtime_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  doubleTimeHours: decimal("double_time_hours", { precision: 8, scale: 2 }).notNull().default("0"),
   regularRate: decimal("regular_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   overtimeRate: decimal("overtime_rate", { precision: 10, scale: 2 }).notNull().default("0"),
+  doubleTimeRate: decimal("double_time_rate", { precision: 10, scale: 2 }).notNull().default("0"),
   totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   grossAmount: decimal("gross_amount", { precision: 12, scale: 2 }).notNull().default("0"),
   totalDeductions: decimal("total_deductions", { precision: 12, scale: 2 }).notNull().default("0"),
@@ -351,6 +353,7 @@ export const projects = pgTable("projects", {
   siteLatitude: doublePrecision("site_latitude"),
   siteLongitude: doublePrecision("site_longitude"),
   geofenceRadius: integer("geofence_radius"),
+  geofenceEnforcement: geofenceEnforcementEnum("geofence_enforcement").notNull().default("OFF"),
   budgetAlertThreshold: decimal("budget_alert_threshold", { precision: 5, scale: 2 }).default("80"),
   budgetCriticalThreshold: decimal("budget_critical_threshold", { precision: 5, scale: 2 }).default("95"),
   autoInvoice: boolean("auto_invoice").default(false),
