@@ -1643,6 +1643,21 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =
       return;
     }
 
+    if (validationResult.data.projectId) {
+      const [project] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(
+          eq(projects.id, validationResult.data.projectId),
+          eq(projects.gcOrganizationId, req.user!.organizationId)
+        ))
+        .limit(1);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+    }
+
     const insertData = { ...validationResult.data, createdById: req.user!.id };
     const [newEvent] = await db.insert(calendarEvents).values([insertData]).returning();
 

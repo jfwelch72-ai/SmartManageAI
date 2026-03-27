@@ -30,7 +30,7 @@ function getEventBadgeVariant(eventType: string): "default" | "secondary" | "out
   switch (eventType) {
     case "TIME_OFF_APPROVED":
       return "default";
-    case "MILESTONE":
+    case "PROJECT_MILESTONE":
     case "PROJECT_DEADLINE":
       return "outline";
     default:
