@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Target, BarChart3, Shield } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, AlertTriangle, Target, BarChart3, Shield, Flame, Clock, Activity } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-import type { CFOForecastingData, BudgetAlertItem } from "./types";
+import type { CFOForecastingData, BudgetAlertItem, EarlyWarning } from "./types";
 
 interface CostForecastingSectionProps {
   formatCurrency: (amount: number) => string;
@@ -55,8 +55,20 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
 
   if (!forecasting) return null;
 
-  const { summary, projects } = forecasting;
+  const { summary, projects, early_warnings } = forecasting;
   const alerts = allAlerts || [];
+  const earlyWarnings = early_warnings || [];
+
+  function getTrendBadge(trend: string) {
+    switch (trend) {
+      case 'INCREASING':
+        return <Badge variant="destructive" className="text-xs gap-1"><TrendingUp className="h-3 w-3" />Rising</Badge>;
+      case 'DECREASING':
+        return <Badge className="bg-green-500 hover:bg-green-600 text-xs gap-1"><TrendingDown className="h-3 w-3" />Falling</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs gap-1"><Activity className="h-3 w-3" />Stable</Badge>;
+    }
+  }
 
   return (
     <div className="space-y-4 mt-6" data-testid="cfo-forecasting-section">
@@ -65,7 +77,7 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
         Cost Forecasting
       </h2>
 
-      <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-6">
         <Card data-testid="card-portfolio-budget">
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -138,6 +150,21 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
             <p className="text-xs text-muted-foreground mt-1">Projects over budget</p>
           </CardContent>
         </Card>
+
+        {summary.early_warning_count != null && summary.early_warning_count > 0 && (
+          <Card data-testid="card-early-warnings-count" className="border-amber-300 dark:border-amber-700">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Flame className="h-4 w-4 text-amber-500" />
+                Early Warnings
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-amber-600">{summary.early_warning_count}</div>
+              <p className="text-xs text-muted-foreground mt-1">Projects trending over</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {sCurveData.length > 0 && (
@@ -205,6 +232,60 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
         </Card>
       )}
 
+      {earlyWarnings.length > 0 && (
+        <Card className="border-amber-400 dark:border-amber-700" data-testid="card-early-warnings">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Flame className="h-5 w-5 text-amber-500" />
+              Cost Overrun Early Warnings ({earlyWarnings.length})
+            </CardTitle>
+            <CardDescription>Projects with predicted cost overruns based on burn-rate analysis</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {earlyWarnings.map(w => (
+                <div
+                  key={w.project_code}
+                  className="flex items-start justify-between p-3 rounded-lg border-l-4 border-l-amber-500 bg-amber-50/50 dark:bg-amber-950/20 cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  onClick={() => onProjectClick(w.project_code)}
+                  data-testid={`warning-${w.project_code}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-medium text-sm">{w.project_code}</span>
+                      <span className="text-sm text-muted-foreground">— {w.project_name}</span>
+                      {getTrendBadge(w.burn_rate_trend)}
+                    </div>
+                    {w.warning_message && (
+                      <p className="text-sm text-muted-foreground">{w.warning_message}</p>
+                    )}
+                    <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        Burn: {formatCurrency(w.weekly_burn_rate)}/wk
+                      </span>
+                      {w.weeks_until_overrun != null && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          ~{w.weeks_until_overrun} weeks to overrun
+                        </span>
+                      )}
+                      <span>Confidence: {w.confidence_score}%</span>
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-4">
+                    <div className="text-lg font-bold text-red-600 dark:text-red-400">
+                      {formatCurrency(w.predicted_overrun)}
+                    </div>
+                    <p className="text-xs text-muted-foreground">predicted overrun</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {projects.length > 0 && (
         <Card data-testid="card-forecasting-projects">
           <CardHeader>
@@ -212,7 +293,7 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
               <BarChart3 className="h-5 w-5" />
               Projects by Projected Overrun
             </CardTitle>
-            <CardDescription>Sorted by worst projected variance (budget - forecast final cost)</CardDescription>
+            <CardDescription>Sorted by worst projected variance — includes AI burn-rate prediction</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border overflow-auto">
@@ -221,10 +302,11 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
                   <tr className="border-b bg-muted/50">
                     <th className="text-left p-3 font-medium">Project</th>
                     <th className="text-right p-3 font-medium">Budget</th>
-                    <th className="text-right p-3 font-medium">Committed</th>
                     <th className="text-right p-3 font-medium">Actual</th>
                     <th className="text-right p-3 font-medium">FFC</th>
                     <th className="text-right p-3 font-medium">Variance</th>
+                    <th className="text-right p-3 font-medium">Burn Rate</th>
+                    <th className="text-center p-3 font-medium">Trend</th>
                     <th className="text-center p-3 font-medium">Status</th>
                   </tr>
                 </thead>
@@ -237,11 +319,15 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
                       data-testid={`row-forecast-project-${p.project_code}`}
                     >
                       <td className="p-3">
-                        <div className="font-medium">{p.project_code}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium">{p.project_code}</div>
+                          {p.cost_prediction?.early_warning && (
+                            <Flame className="h-3 w-3 text-amber-500" />
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{p.project_name}</div>
                       </td>
                       <td className="text-right p-3">{formatCurrency(p.budget)}</td>
-                      <td className="text-right p-3">{formatCurrency(p.committed)}</td>
                       <td className="text-right p-3">{formatCurrency(p.actual)}</td>
                       <td className="text-right p-3 font-medium">{formatCurrency(p.ffc)}</td>
                       <td className={`text-right p-3 font-medium ${p.variance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
@@ -249,6 +335,19 @@ export function CostForecastingSection({ formatCurrency, onProjectClick }: CostF
                         <div className="text-xs font-normal">
                           {p.variance_percent >= 0 ? '+' : ''}{p.variance_percent.toFixed(1)}%
                         </div>
+                      </td>
+                      <td className="text-right p-3 text-xs">
+                        {p.cost_prediction ? (
+                          <>
+                            <div>{formatCurrency(p.cost_prediction.weekly_burn_rate)}/wk</div>
+                            {p.cost_prediction.weeks_until_overrun != null && (
+                              <div className="text-amber-600 dark:text-amber-400">~{p.cost_prediction.weeks_until_overrun}w to overrun</div>
+                            )}
+                          </>
+                        ) : '—'}
+                      </td>
+                      <td className="text-center p-3">
+                        {p.cost_prediction ? getTrendBadge(p.cost_prediction.burn_rate_trend) : '—'}
                       </td>
                       <td className="text-center p-3">{getStatusBadge(p.status)}</td>
                     </tr>

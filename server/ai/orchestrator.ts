@@ -1,19 +1,20 @@
 import { randomUUID } from "crypto";
 import { db } from "../db";
-import { aiSettings, aiRuns, aiTasks } from "@shared/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { aiSettings, aiRuns, aiTasks, projects } from "@shared/schema";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { buildDataSnapshot } from "./snapshotBuilder";
 import { calculateAllProjectsProfitability } from "./profitabilityEngine";
 import { callOpenAIForAnalysis, AIAnalysisResponse } from "./openaiClient";
 import { AI_PM_SYSTEM_PROMPT } from "./systemPrompt";
+import { detectAndCreateChangeOrderDrafts, ChangeOrderSuggestion } from "./changeOrderAutomation";
+import { getSubcontractorRecommendations } from "./subRecommendationEngine";
 
-export async function runAIAnalysis(triggeredById: string | null = null): Promise<string> {
+export async function runAIAnalysis(triggeredById: string | null = null, organizationId?: string | null): Promise<string> {
   console.log('🤖 Starting AI PM + CFO analysis run...');
 
   const runId = randomUUID();
   
   try {
-    // Create initial run record
     await db.insert(aiRuns).values({
       id: runId,
       runType: triggeredById ? 'manual' : 'daily',
@@ -62,9 +63,26 @@ export async function runAIAnalysis(triggeredById: string | null = null): Promis
       })
       .where(eq(aiRuns.id, runId));
 
-    // Step 7: Create tasks from AI response
+    // Step 7: Create tasks from AI response with sub recommendation enrichment
     console.log('📝 Creating AI-generated tasks...');
-    await createTasksFromAIResponse(runId, aiResponse);
+    await createTasksFromAIResponse(runId, aiResponse, organizationId || null);
+
+    // Step 8: Auto-generate change order drafts from detected delays/issues
+    console.log('📋 Auto-detecting change order opportunities...');
+    try {
+      const coSuggestions: ChangeOrderSuggestion[] = aiResponse.change_order_suggestions || [];
+      const draftsCreated = await detectAndCreateChangeOrderDrafts(snapshot, profitability, coSuggestions, organizationId || undefined);
+      if (draftsCreated > 0) {
+        console.log(`📋 Created ${draftsCreated} auto-generated change order drafts`);
+      }
+    } catch (coError) {
+      console.error('⚠️ Change order automation error (non-fatal):', coError);
+    }
+
+    // Step 9: Persist cost overrun predictions from AI response
+    if (aiResponse.cost_overrun_predictions && aiResponse.cost_overrun_predictions.length > 0) {
+      console.log(`📊 AI flagged ${aiResponse.cost_overrun_predictions.length} cost overrun predictions`);
+    }
 
     console.log(`✅ AI analysis completed successfully. Run ID: ${runId}`);
     return runId;
@@ -118,10 +136,97 @@ Remember:
 Respond with valid JSON matching the required structure.`;
 }
 
-async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisResponse): Promise<void> {
-  const tasksToInsert = aiResponse.tasks.map(task => {
+function isSubRelatedTask(task: { task_type: string; title: string; description: string }): boolean {
+  const subKeywords = /\b(subcontract|sub-contract|sub contractor|crew|trade partner|vendor assignment|hire sub|engage sub)/i;
+  if (task.task_type === 'SCHEDULING' || task.task_type === 'PROCUREMENT') {
+    return subKeywords.test(task.title) || subKeywords.test(task.description);
+  }
+  return subKeywords.test(task.title);
+}
+
+function isCostRelatedTask(task: { task_type: string; title: string; description: string }): boolean {
+  const costKeywords = /\b(cost overrun|over budget|budget exceed|profitability|burn rate|cost warning|financial risk)/i;
+  return task.task_type === 'BILLING' ||
+    costKeywords.test(task.title) ||
+    costKeywords.test(task.description);
+}
+
+async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisResponse, organizationId: string | null): Promise<void> {
+  const aiSubRecs = aiResponse.subcontractor_recommendations || [];
+  const aiSubRecsByProject = new Map<string, typeof aiSubRecs>();
+  for (const rec of aiSubRecs) {
+    const existing = aiSubRecsByProject.get(rec.project_code) || [];
+    existing.push(rec);
+    aiSubRecsByProject.set(rec.project_code, existing);
+  }
+
+  let projectOrgMap: Map<string, string> | null = null;
+  if (!organizationId) {
+    const allProjects = await db
+      .select({ code: projects.code, gcOrganizationId: projects.gcOrganizationId })
+      .from(projects)
+      .limit(500);
+    projectOrgMap = new Map();
+    for (const p of allProjects) {
+      if (p.gcOrganizationId) {
+        projectOrgMap.set(p.code, p.gcOrganizationId);
+      }
+    }
+  }
+
+  const tasksToInsert = await Promise.all(aiResponse.tasks.map(async (task) => {
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (task.due_date_offset_days || 0));
+
+    let enrichedMetadata = task.metadata || {};
+
+    const effectiveOrgId = organizationId || (task.project_code && projectOrgMap?.get(task.project_code)) || null;
+
+    if (isSubRelatedTask(task) && effectiveOrgId) {
+      try {
+        const trade = enrichedMetadata.trade || enrichedMetadata.specialty || null;
+        const recommendations = await getSubcontractorRecommendations({
+          organizationId: effectiveOrgId,
+          tradeSpecialty: trade || undefined,
+          maxResults: 3,
+        });
+        if (recommendations.length > 0) {
+          enrichedMetadata = {
+            ...enrichedMetadata,
+            sub_recommendations: recommendations.map(r => ({
+              subcontractorId: r.subcontractorId,
+              subcontractorName: r.subcontractorName,
+              overallScore: r.overallScore,
+              rank: r.rank,
+              tradeMatch: r.tradeMatch,
+              contractCount: r.contractCount,
+              performanceMetrics: r.performanceMetrics,
+            })),
+          };
+        }
+      } catch (err) {
+        console.warn('⚠️ Failed to enrich task with sub recommendations:', err);
+      }
+
+      if (task.project_code && aiSubRecsByProject.has(task.project_code)) {
+        enrichedMetadata = {
+          ...enrichedMetadata,
+          ai_sub_suggestions: aiSubRecsByProject.get(task.project_code),
+        };
+      }
+    }
+
+    if (isCostRelatedTask(task) && aiResponse.cost_overrun_predictions) {
+      const matchingPrediction = aiResponse.cost_overrun_predictions.find(
+        p => p.project_code === task.project_code
+      );
+      if (matchingPrediction) {
+        enrichedMetadata = {
+          ...enrichedMetadata,
+          ai_cost_prediction: matchingPrediction,
+        };
+      }
+    }
 
     return {
       runId: runId,
@@ -133,9 +238,9 @@ async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisRe
       status: 'PENDING' as const,
       dueDate: dueDate,
       projectCode: task.project_code,
-      metadata: JSON.stringify(task.metadata),
+      metadata: JSON.stringify(enrichedMetadata),
     };
-  });
+  }));
 
   if (tasksToInsert.length > 0) {
     await db.insert(aiTasks).values(tasksToInsert);

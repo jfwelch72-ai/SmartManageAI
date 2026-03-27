@@ -27,6 +27,28 @@ export interface ProjectProfitability {
   };
 }
 
+export interface CostPrediction {
+  weekly_burn_rate: number;
+  burn_rate_trend: 'INCREASING' | 'STABLE' | 'DECREASING';
+  predicted_overrun: number;
+  confidence_score: number;
+  weeks_until_overrun: number | null;
+  forecast_at_completion: number;
+  early_warning: boolean;
+  warning_message: string | null;
+}
+
+export interface EarlyWarning {
+  project_code: string;
+  project_name: string;
+  warning_message: string | null;
+  predicted_overrun: number;
+  confidence_score: number;
+  weeks_until_overrun: number | null;
+  burn_rate_trend: 'INCREASING' | 'STABLE' | 'DECREASING';
+  weekly_burn_rate: number;
+}
+
 export interface CFOForecastingSummary {
   portfolio_budget: number;
   portfolio_ffc: number;
@@ -35,6 +57,7 @@ export interface CFOForecastingSummary {
   portfolio_variance: number;
   project_count: number;
   at_risk_count: number;
+  early_warning_count?: number;
 }
 
 export interface CFOForecastingProject {
@@ -47,6 +70,7 @@ export interface CFOForecastingProject {
   variance: number;
   variance_percent: number;
   status: 'ON_BUDGET' | 'MINOR_CONCERN' | 'MAJOR_RISK';
+  cost_prediction?: CostPrediction;
 }
 
 export interface BudgetAlertItem {
@@ -67,6 +91,7 @@ export interface CFOForecastingData {
   summary: CFOForecastingSummary;
   projects: CFOForecastingProject[];
   alerts: BudgetAlertItem[];
+  early_warnings?: EarlyWarning[];
 }
 
 export interface EquipmentMetricsData {

@@ -85,6 +85,36 @@ export interface AIAnalysisResponse {
     status: string;
     action_needed: string;
   }[];
+  change_order_suggestions?: {
+    project_code: string;
+    source_type: 'DELAY' | 'INSPECTION' | 'SCOPE_CHANGE';
+    source_id: string;
+    title: string;
+    description: string;
+    justification: string;
+    estimated_amount: number;
+    confidence: number;
+    line_items: {
+      labor: { description: string; hours: number; rate: number; amount: number }[];
+      materials: { description: string; quantity: number; unit: string; unitPrice: number; amount: number }[];
+      equipment: { description: string; days: number; dailyRate: number; amount: number }[];
+    };
+  }[];
+  cost_overrun_predictions?: {
+    project_code: string;
+    predicted_overrun_amount: number;
+    confidence_score: number;
+    trend_direction: 'INCREASING' | 'STABLE' | 'DECREASING';
+    weeks_until_overrun: number | null;
+    key_drivers: string[];
+    recommended_actions: string[];
+  }[];
+  subcontractor_recommendations?: {
+    task_reference: string;
+    trade_specialty: string;
+    project_code: string;
+    recommended_action: string;
+  }[];
 }
 
 export async function callOpenAIForAnalysis(

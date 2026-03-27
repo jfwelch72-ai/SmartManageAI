@@ -1,14 +1,45 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { BarChart3, TrendingUp, TrendingDown, Loader2, Star, Filter } from "lucide-react";
+import { BarChart3, TrendingUp, TrendingDown, Loader2, Star, Filter, Sparkles, Award, ShieldCheck, HardHat, DollarSign, Search } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+
+interface SubRecommendation {
+  subcontractorId: string;
+  subcontractorName: string;
+  rank: number;
+  overallScore: number;
+  performanceMetrics: {
+    avgScheduleAdherence: number | null;
+    avgQualityScore: number | null;
+    avgWorkCompletion: number | null;
+    totalSafetyIncidents: number;
+    avgOverallRating: number | null;
+  };
+  vendorMetrics: {
+    avgOnTimeDelivery: number | null;
+    avgQuality: number | null;
+    avgCommunication: number | null;
+    avgReliability: number | null;
+    avgPriceCompetitiveness: number | null;
+  } | null;
+  projectHistory: {
+    projectCode: string;
+    projectName: string;
+    scopeOfWork: string;
+    contractAmount: number;
+    status: string;
+  }[];
+  tradeMatch: boolean;
+  contractCount: number;
+  totalContractValue: number;
+}
 
 interface PerformanceSummaryItem {
   contractId: string;
@@ -298,6 +329,159 @@ export function PerformanceSummaryTab() {
           </Card>
         </>
       )}
+
+      <SubRecommendationPanel />
     </div>
+  );
+}
+
+function SubRecommendationPanel() {
+  const [tradeSearch, setTradeSearch] = useState("");
+  const [searchTrade, setSearchTrade] = useState("");
+
+  const { data, isLoading } = useQuery<{ recommendations: SubRecommendation[]; total: number }>({
+    queryKey: ["/api/ai-features/sub-recommendations", searchTrade],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: "10" });
+      if (searchTrade) params.set("trade", searchTrade);
+      const res = await fetch(`/api/ai-features/sub-recommendations?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch recommendations");
+      return res.json();
+    },
+  });
+
+  const recommendations = data?.recommendations || [];
+
+  const getScoreColor = (score: number) => {
+    if (score >= 80) return "text-green-600";
+    if (score >= 60) return "text-yellow-600";
+    if (score >= 40) return "text-orange-600";
+    return "text-red-600";
+  };
+
+  const getScoreBadge = (score: number) => {
+    if (score >= 80) return <Badge className="bg-green-500">Top Tier</Badge>;
+    if (score >= 60) return <Badge className="bg-yellow-500">Good</Badge>;
+    if (score >= 40) return <Badge className="bg-orange-500">Average</Badge>;
+    return <Badge variant="destructive">Below Avg</Badge>;
+  };
+
+  return (
+    <Card data-testid="card-sub-recommendations">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          AI Subcontractor Recommendations
+        </CardTitle>
+        <CardDescription>Ranked by composite score from performance history, vendor ratings, and contract track record</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex gap-2 mb-4">
+          <div className="flex-1">
+            <Input
+              placeholder="Filter by trade specialty (e.g., Electrical, Plumbing, Concrete)..."
+              value={tradeSearch}
+              onChange={(e) => setTradeSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') setSearchTrade(tradeSearch); }}
+              data-testid="input-trade-search"
+            />
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setSearchTrade(tradeSearch)}
+            data-testid="button-search-trade"
+          >
+            <Search className="h-4 w-4 mr-2" />
+            Search
+          </Button>
+          {searchTrade && (
+            <Button variant="ghost" onClick={() => { setSearchTrade(""); setTradeSearch(""); }} data-testid="button-clear-trade">
+              Clear
+            </Button>
+          )}
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 animate-spin mr-2" />Loading recommendations...</div>
+        ) : recommendations.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <HardHat className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No subcontractor data available{searchTrade ? ` for "${searchTrade}"` : ""}.</p>
+            <p className="text-sm mt-1">Recommendations are based on past performance scores and contract history.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {recommendations.map(rec => (
+              <div
+                key={rec.subcontractorId}
+                className="p-4 rounded-lg border hover:bg-muted/30 transition-colors"
+                data-testid={`rec-sub-${rec.subcontractorId}`}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-bold text-lg text-muted-foreground w-8">#{rec.rank}</span>
+                      <span className="font-semibold">{rec.subcontractorName}</span>
+                      {rec.tradeMatch && searchTrade && (
+                        <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-950">Trade Match</Badge>
+                      )}
+                      {getScoreBadge(rec.overallScore)}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-4 mt-2 text-sm">
+                      {rec.performanceMetrics.avgOverallRating != null && (
+                        <span className="flex items-center gap-1">
+                          <Star className="h-3 w-3 text-yellow-500" />
+                          Rating: {rec.performanceMetrics.avgOverallRating}/5
+                        </span>
+                      )}
+                      {rec.performanceMetrics.avgScheduleAdherence != null && (
+                        <span className="flex items-center gap-1">
+                          <TrendingUp className="h-3 w-3" />
+                          Schedule: {rec.performanceMetrics.avgScheduleAdherence}%
+                        </span>
+                      )}
+                      {rec.performanceMetrics.avgQualityScore != null && (
+                        <span className="flex items-center gap-1">
+                          <Award className="h-3 w-3" />
+                          Quality: {rec.performanceMetrics.avgQualityScore}%
+                        </span>
+                      )}
+                      {rec.performanceMetrics.totalSafetyIncidents > 0 && (
+                        <span className="flex items-center gap-1 text-red-600">
+                          <ShieldCheck className="h-3 w-3" />
+                          {rec.performanceMetrics.totalSafetyIncidents} safety incidents
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-muted-foreground">
+                        <DollarSign className="h-3 w-3" />
+                        {rec.contractCount} contracts ({rec.totalContractValue > 0 ? `$${(rec.totalContractValue / 1000).toFixed(0)}K total` : 'N/A'})
+                      </span>
+                    </div>
+                    {rec.projectHistory.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {rec.projectHistory.slice(0, 3).map((ph, i) => (
+                          <Badge key={i} variant="outline" className="text-xs font-normal">
+                            {ph.projectCode}: {ph.scopeOfWork.length > 30 ? ph.scopeOfWork.slice(0, 30) + '...' : ph.scopeOfWork}
+                          </Badge>
+                        ))}
+                        {rec.projectHistory.length > 3 && (
+                          <Badge variant="outline" className="text-xs font-normal">+{rec.projectHistory.length - 3} more</Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-4">
+                    <div className={`text-2xl font-bold ${getScoreColor(rec.overallScore)}`}>
+                      {rec.overallScore}
+                    </div>
+                    <p className="text-xs text-muted-foreground">score</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

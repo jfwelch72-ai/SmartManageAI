@@ -37,6 +37,16 @@ export interface ProjectProfitability {
   estimated_margin: number;
   committed_cost: number;
   forecast_final_cost: number;
+  cost_prediction: {
+    weekly_burn_rate: number;
+    burn_rate_trend: 'INCREASING' | 'STABLE' | 'DECREASING';
+    predicted_overrun: number;
+    confidence_score: number;
+    weeks_until_overrun: number | null;
+    forecast_at_completion: number;
+    early_warning: boolean;
+    warning_message: string | null;
+  };
   texturaDrawDate: string | null;
   drawDayOfMonth: number | null;
   billingUrgency: 'CRITICAL' | 'HIGH' | null;
@@ -76,6 +86,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       hoursOvertime: timeEntries.hoursOvertime,
       costRateRegular: users.costRateRegular,
       costRateOvertime: users.costRateOvertime,
+      date: timeEntries.date,
     })
     .from(timeEntries)
     .leftJoin(users, eq(timeEntries.userId, users.id))
@@ -120,6 +131,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
   const expenseReceipts = await db
     .select({
       amount: receipts.amount,
+      date: receipts.date,
     })
     .from(receipts)
     .where(eq(receipts.projectId, project.id))
@@ -351,6 +363,87 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     }
   }
 
+  const elapsedWeeks = Math.max(1, elapsed / (7 * 24 * 60 * 60 * 1000));
+  const weeklyBurnRate = totalActualCost / elapsedWeeks;
+
+  const halfwayPoint = new Date(startDate.getTime() + elapsed / 2);
+  let firstHalfCost = 0;
+  let secondHalfCost = 0;
+
+  for (const entry of laborEntries) {
+    const entryDate = entry.date ? new Date(entry.date) : null;
+    if (!entryDate) continue;
+    const regularRate = entry.costRateRegular ? Number(entry.costRateRegular) : DEFAULT_COST_RATE;
+    const overtimeRate = entry.costRateOvertime ? Number(entry.costRateOvertime) : (regularRate * DEFAULT_OT_MULTIPLIER);
+    const entryCost = Number(entry.hoursRegular || 0) * regularRate + Number(entry.hoursOvertime || 0) * overtimeRate;
+    if (entryDate < halfwayPoint) {
+      firstHalfCost += entryCost;
+    } else {
+      secondHalfCost += entryCost;
+    }
+  }
+
+  for (const receipt of expenseReceipts) {
+    const receiptDate = receipt.date ? new Date(receipt.date) : null;
+    if (!receiptDate) continue;
+    const amount = Number(receipt.amount) || 0;
+    if (receiptDate < halfwayPoint) {
+      firstHalfCost += amount;
+    } else {
+      secondHalfCost += amount;
+    }
+  }
+
+  const halfElapsed = elapsedWeeks / 2;
+  const firstHalfRate = halfElapsed > 0 ? firstHalfCost / halfElapsed : 0;
+  const secondHalfRate = halfElapsed > 0 ? secondHalfCost / halfElapsed : 0;
+
+  let burnRateTrend: 'INCREASING' | 'STABLE' | 'DECREASING' = 'STABLE';
+  if (firstHalfRate > 0 && elapsedWeeks >= 2) {
+    const trendRatio = secondHalfRate / firstHalfRate;
+    if (trendRatio > 1.15) burnRateTrend = 'INCREASING';
+    else if (trendRatio < 0.85) burnRateTrend = 'DECREASING';
+  }
+
+  const remainingWeeks = totalDuration > 0
+    ? Math.max(0, (endDate.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000))
+    : 0;
+  const forecastAtCompletion = totalActualCost + (weeklyBurnRate * remainingWeeks);
+  const predictedOverrun = forecastAtCompletion - adjustedBudget;
+
+  let weeksUntilOverrun: number | null = null;
+  if (weeklyBurnRate > 0 && predictedOverrun > 0) {
+    const remainingBudget = adjustedBudget - totalActualCost;
+    weeksUntilOverrun = remainingBudget > 0 ? Math.round(remainingBudget / weeklyBurnRate) : 0;
+  }
+
+  let confidenceScore = 50;
+  if (elapsedWeeks >= 8) confidenceScore += 20;
+  else if (elapsedWeeks >= 4) confidenceScore += 10;
+  if (percentComplete >= 30 && percentComplete <= 80) confidenceScore += 15;
+  if (totalLaborHours > 100) confidenceScore += 10;
+  if (burnRateTrend === 'STABLE') confidenceScore += 5;
+  confidenceScore = Math.min(95, Math.max(20, confidenceScore));
+
+  const earlyWarning = predictedOverrun > 0 && status !== 'MAJOR_RISK';
+  let warningMessage: string | null = null;
+  if (earlyWarning) {
+    warningMessage = `Project projected to exceed budget by $${Math.round(predictedOverrun).toLocaleString()}${weeksUntilOverrun != null ? ` in ~${weeksUntilOverrun} weeks` : ''}. Current burn rate: $${Math.round(weeklyBurnRate).toLocaleString()}/week.`;
+  } else if (burnRateTrend === 'INCREASING' && status !== 'MAJOR_RISK') {
+    warningMessage = `Burn rate increasing — recent weekly spend trending ${Math.round((secondHalfRate / Math.max(1, firstHalfRate) - 1) * 100)}% higher than earlier periods.`;
+  }
+
+  const costPrediction = {
+    weekly_burn_rate: Math.round(weeklyBurnRate * 100) / 100,
+    burn_rate_trend: burnRateTrend,
+    predicted_overrun: Math.round(predictedOverrun * 100) / 100,
+    confidence_score: confidenceScore,
+    weeks_until_overrun: weeksUntilOverrun,
+    forecast_at_completion: Math.round(forecastAtCompletion * 100) / 100,
+    early_warning: earlyWarning,
+    warning_message: warningMessage,
+  };
+
   return {
     project_code: projectCode,
     project_name: project.name,
@@ -373,6 +466,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
     estimated_margin: Math.round(estimatedMargin * 100) / 100,
     committed_cost: Math.round(totalCommittedCost * 100) / 100,
     forecast_final_cost: Math.round(forecastFinalCost * 100) / 100,
+    cost_prediction: costPrediction,
     texturaDrawDate: project.texturaDrawDate || null,
     drawDayOfMonth: project.drawDayOfMonth || null,
     billingUrgency,

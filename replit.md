@@ -53,7 +53,9 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Contract Management Lifecycle**: Full contract lifecycle (Award → Draft → Review → Redlines → Approval → Execution → Versioning) with E-Signature Integration and AI-Powered Risk Analysis.
 *   **Clause Library & Template Builder**: Organization-scoped reusable contract clause management and template assembly.
 *   **CPM Schedule Management Engine**: Full Critical Path Method (CPM) scheduling with forward/backward pass, float calculation, critical path identification, baseline locking, and resource loading.
-*   **Change Order Workflow Enhancement**: Revision history and multi-level approval chain.
+*   **Change Order Workflow Enhancement**: Revision history and multi-level approval chain. AI auto-suggest change orders from detected delays/inspections (creates `ai_co_drafts` records with "AI Suggested" badge).
+*   **Cost Overrun Prediction Engine**: Burn-rate trend analysis, confidence-scored predictions, weeks-until-overrun, and early warnings on CFO dashboard.
+*   **Subcontractor Recommendation Engine**: Ranks subcontractors by composite score from performance history, vendor ratings, and contract track record with trade-specialty filtering.
 *   **Approval Workflow Notifications**: In-app notifications across 6 approval workflows.
 *   **Submittal Items & Attachments**: Management of submittal items and attachments with status tracking.
 *   **Vendor & Sub RFQ Flow**: Sending and tracking RFQ emails directly from bid steps.

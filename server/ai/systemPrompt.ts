@@ -262,6 +262,42 @@ You MUST respond with valid JSON matching this exact structure:
       "cost_variance": number
     }
   },
+  "change_order_suggestions": [
+    {
+      "project_code": "string",
+      "source_type": "DELAY | INSPECTION | SCOPE_CHANGE",
+      "source_id": "string (reference to delay claim, inspection, or scope item)",
+      "title": "string - short CO title",
+      "description": "string - detailed description of the change",
+      "justification": "string - business justification for the change order",
+      "estimated_amount": number,
+      "confidence": number (0-100),
+      "line_items": {
+        "labor": [{ "description": "string", "hours": number, "rate": number, "amount": number }],
+        "materials": [{ "description": "string", "quantity": number, "unit": "string", "unitPrice": number, "amount": number }],
+        "equipment": [{ "description": "string", "days": number, "dailyRate": number, "amount": number }]
+      }
+    }
+  ],
+  "cost_overrun_predictions": [
+    {
+      "project_code": "string",
+      "predicted_overrun_amount": number,
+      "confidence_score": number (0-100),
+      "trend_direction": "INCREASING | STABLE | DECREASING",
+      "weeks_until_overrun": number or null,
+      "key_drivers": ["string - top cost drivers"],
+      "recommended_actions": ["string - specific actions to mitigate"]
+    }
+  ],
+  "subcontractor_recommendations": [
+    {
+      "task_reference": "string - reference to the task that needs sub work",
+      "trade_specialty": "string - the trade/specialty needed",
+      "project_code": "string",
+      "recommended_action": "string - what action to take"
+    }
+  ],
   "production_rate_insights": {
     "low_profitability_scope_items": [
       {

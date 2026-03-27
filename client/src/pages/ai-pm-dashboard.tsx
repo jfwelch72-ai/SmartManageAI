@@ -21,6 +21,8 @@ import {
   Play,
   TrendingUp,
   ArrowLeft,
+  Users,
+  DollarSign,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useLocation } from "wouter";
@@ -460,6 +462,63 @@ export default function AIPMDashboard() {
                         )}
                       </div>
                     </div>
+
+                    {task.metadata?.sub_recommendations && task.metadata.sub_recommendations.length > 0 && (
+                      <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md border border-blue-200 dark:border-blue-800" data-testid={`task-sub-recommendations-${task.id}`}>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Users className="h-3.5 w-3.5 text-blue-600" />
+                          <span className="text-xs font-medium text-blue-700 dark:text-blue-400">Recommended Subcontractors</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {task.metadata.sub_recommendations.map((rec: { subcontractorId: string; subcontractorName: string; overallScore: number; rank: number; tradeMatch: boolean }, idx: number) => (
+                            <div key={rec.subcontractorId || idx} className="flex items-center justify-between text-xs" data-testid={`sub-rec-${task.id}-${idx}`}>
+                              <span className="font-medium">#{rec.rank} {rec.subcontractorName}</span>
+                              <div className="flex items-center gap-2">
+                                {rec.tradeMatch && <Badge variant="outline" className="text-[10px] px-1 py-0">Trade Match</Badge>}
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Score: {rec.overallScore}</Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {task.metadata?.ai_cost_prediction && (
+                      <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-md border border-amber-200 dark:border-amber-800" data-testid={`task-cost-prediction-${task.id}`}>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <DollarSign className="h-3.5 w-3.5 text-amber-600" />
+                          <span className="text-xs font-medium text-amber-700 dark:text-amber-400">AI Cost Overrun Prediction</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Project:</span>{" "}
+                            <span className="font-medium">{task.metadata.ai_cost_prediction.project_code}</span>
+                          </div>
+                          {task.metadata.ai_cost_prediction.predicted_overrun_amount != null && (
+                            <div>
+                              <span className="text-muted-foreground">Predicted Overrun:</span>{" "}
+                              <span className="font-medium text-red-600">${Number(task.metadata.ai_cost_prediction.predicted_overrun_amount).toLocaleString()}</span>
+                            </div>
+                          )}
+                          {(task.metadata.ai_cost_prediction.confidence_score ?? task.metadata.ai_cost_prediction.confidence) != null && (
+                            <div>
+                              <span className="text-muted-foreground">Confidence:</span>{" "}
+                              <span className="font-medium">{task.metadata.ai_cost_prediction.confidence_score ?? task.metadata.ai_cost_prediction.confidence}%</span>
+                            </div>
+                          )}
+                          {(task.metadata.ai_cost_prediction.recommended_actions || task.metadata.ai_cost_prediction.recommended_action) && (
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Actions:</span>{" "}
+                              <span className="font-medium">
+                                {Array.isArray(task.metadata.ai_cost_prediction.recommended_actions)
+                                  ? task.metadata.ai_cost_prediction.recommended_actions.join('; ')
+                                  : task.metadata.ai_cost_prediction.recommended_action}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}

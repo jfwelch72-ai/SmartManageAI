@@ -1103,6 +1103,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 10)
     .map(c => ({
+      id: c.id,
       project_id: c.projectId,
       claim_type: c.claimType,
       claimed_days: Number(c.daysRequested || 0),

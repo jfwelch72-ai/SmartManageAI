@@ -120,7 +120,7 @@ router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest
       }
     }
 
-    const runId = await runAIAnalysis(req.user!.id);
+    const runId = await runAIAnalysis(req.user!.id, orgId);
 
     if (orgId) {
       const { db: dbConn } = await import("./db");
@@ -413,6 +413,7 @@ router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res) => {
         variance: p.adjusted_budget - p.forecast_final_cost,
         variance_percent: p.adjusted_budget > 0 ? ((p.adjusted_budget - p.forecast_final_cost) / p.adjusted_budget) * 100 : 0,
         status: p.status,
+        cost_prediction: p.cost_prediction,
       }))
       .sort((a, b) => a.variance - b.variance);
 
@@ -448,6 +449,20 @@ router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res) => {
         };
       });
 
+    const earlyWarnings = profitabilityData
+      .filter(p => p.cost_prediction.early_warning || p.cost_prediction.burn_rate_trend === 'INCREASING')
+      .map(p => ({
+        project_code: p.project_code,
+        project_name: p.project_name,
+        warning_message: p.cost_prediction.warning_message,
+        predicted_overrun: p.cost_prediction.predicted_overrun,
+        confidence_score: p.cost_prediction.confidence_score,
+        weeks_until_overrun: p.cost_prediction.weeks_until_overrun,
+        burn_rate_trend: p.cost_prediction.burn_rate_trend,
+        weekly_burn_rate: p.cost_prediction.weekly_burn_rate,
+      }))
+      .sort((a, b) => b.predicted_overrun - a.predicted_overrun);
+
     res.json({
       summary: {
         portfolio_budget: Math.round(portfolioBudget * 100) / 100,
@@ -457,9 +472,11 @@ router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res) => {
         portfolio_variance: Math.round(portfolioVariance * 100) / 100,
         project_count: profitabilityData.length,
         at_risk_count: profitabilityData.filter(p => p.status === 'MAJOR_RISK').length,
+        early_warning_count: earlyWarnings.length,
       },
       projects: projectsByOverrun,
       alerts: alertsWithProject,
+      early_warnings: earlyWarnings,
     });
   } catch (error: any) {
     console.error("Error fetching CFO forecasting data:", error);
@@ -2193,7 +2210,7 @@ router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (r
       .where(and(
         eq(aiCoDrafts.projectId, req.params.projectId),
         eq(aiCoDrafts.organizationId, organizationId),
-        eq(aiCoDrafts.status, "DRAFT")
+        sql`${aiCoDrafts.status} IN ('DRAFT', 'REVIEWED')`
       ))
       .orderBy(desc(aiCoDrafts.createdAt));
 
@@ -2278,6 +2295,33 @@ router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, r
   } catch (error) {
     console.error("Convert CO draft error:", error);
     res.status(500).json({ error: "Failed to convert draft" });
+  }
+});
+
+// GET /api/ai-features/sub-recommendations - Get subcontractor recommendations
+router.get("/ai-features/sub-recommendations", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { getSubcontractorRecommendations } = await import("./ai/subRecommendationEngine");
+    const tradeSpecialty = req.query.trade as string | undefined;
+    const projectId = req.query.projectId as string | undefined;
+    const maxResults = req.query.limit ? parseInt(req.query.limit as string) : 10;
+
+    const recommendations = await getSubcontractorRecommendations({
+      organizationId,
+      tradeSpecialty: tradeSpecialty || undefined,
+      projectId: projectId || undefined,
+      maxResults,
+    });
+
+    res.json({ recommendations, total: recommendations.length });
+  } catch (error) {
+    console.error("Sub recommendations error:", error);
+    res.status(500).json({ error: "Failed to get recommendations" });
   }
 });
 
