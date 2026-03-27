@@ -59,6 +59,24 @@ interface AnalysisResult {
   createdAt: string;
 }
 
+interface SafetyFinding {
+  id?: string;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  category?: string;
+  description: string;
+  recommendation?: string;
+  location?: string;
+  photoId?: string;
+}
+
+interface BatchSummary {
+  overallSafetyScore?: number;
+  estimatedCompletion?: number;
+  crewCountEstimate?: number;
+  weatherConditions?: string;
+  primaryConcerns?: string[];
+}
+
 interface AnalysisBatch {
   id: string;
   projectId: string;
@@ -71,6 +89,8 @@ interface AnalysisBatch {
   safetyScore?: number;
   progressScore?: number;
   summaryJson?: string;
+  safetyFindings?: SafetyFinding[];
+  summary?: BatchSummary;
   createdByUserId?: string;
   createdBy?: string;
   createdAt?: string;
@@ -393,15 +413,15 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
   );
 
   const batchSafetyIssues = batches.flatMap(b => {
-    const findings = (b as any).safetyFindings || [];
-    return findings.map((f: any) => ({
-      severity: f.severity || "MEDIUM",
+    const findings: SafetyFinding[] = b.safetyFindings || [];
+    return findings.map((f) => ({
+      severity: f.severity || "MEDIUM" as const,
       category: f.category || "OTHER",
       description: f.description || "",
       recommendation: f.recommendation || "",
       location: f.location,
       photoId: f.photoId || b.id,
-      photo: null,
+      photo: null as AnalysisResult | null,
       batchId: b.id,
     }));
   });

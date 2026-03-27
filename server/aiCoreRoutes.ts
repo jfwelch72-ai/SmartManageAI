@@ -2083,11 +2083,19 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
     const projectMedia = await db.select({ fileUrl: media.fileUrl })
       .from(media)
       .where(and(eq(media.projectId, batch.projectId), eq(media.type, "IMAGE")));
-    const validUrls = new Set(projectMedia.map(m => m.fileUrl));
+    const validMediaUrls = new Set(projectMedia.map(m => m.fileUrl));
+
+    const { uploadIntents } = await import("@shared/schema");
+    const orgIntents = await db.select({ objectKey: uploadIntents.objectKey })
+      .from(uploadIntents)
+      .where(eq(uploadIntents.organizationId, organizationId));
+    const validObjectKeys = new Set(orgIntents.map(i => i.objectKey));
 
     const validatedPhotos = photos.filter(p => {
-      if (validUrls.has(p.fileUrl)) return true;
-      if (p.fileUrl.startsWith("/objects/") || p.fileUrl.startsWith("objects/")) return true;
+      if (validMediaUrls.has(p.fileUrl)) return true;
+      if (p.fileKey && validObjectKeys.has(p.fileKey)) return true;
+      const normalizedPath = p.fileUrl.replace(/^\//, "");
+      if (validObjectKeys.has(normalizedPath)) return true;
       return false;
     });
 
