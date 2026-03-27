@@ -65,6 +65,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Punch List Module**: Tracking deficiency items during project closeout.
 *   **Warranty / Post-Construction Module**: Tracking defects, warranty claims, callbacks, and recalls with task and cost management.
 *   **Asset & Property Management**: Post-completion lifecycle with Asset Handover, Warranty Tracking, and Maintenance Logs.
+*   **Risk Management Module**: Full risk register per project with category/probability/impact scoring (1-5 scale), risk matrix heat map visualization, lifecycle tracking (Identified → Assessed → Mitigating → Resolved/Accepted/Occurred), cost/schedule impact linking, auto change order generation on occurrence, and AI-powered risk suggestions via OpenAI.
 *   **Company Overhead & Fixed Costs Manager**: Administration module for tracking fixed overhead costs.
 *   **BIM Viewer**: IFC file upload and 3D viewer with orbit/pan/zoom, element tree, properties, measurement tools, and split-view.
 *   **Contractor Marketplace Directory**: Searchable public directory of organizations.

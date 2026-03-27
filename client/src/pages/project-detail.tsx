@@ -104,6 +104,7 @@ import ContractsTab from "@/components/project-tabs/ContractsTab";
 import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
 import ProjectVaultTab from "@/components/project-tabs/ProjectVaultTab";
+import RisksTab from "@/components/project-tabs/RisksTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import type { LucideIcon } from "lucide-react";
@@ -270,6 +271,13 @@ function buildTabConfigs(
       icon: Wrench,
       visible: showAssetMgmt,
       group: "Asset Management",
+    },
+    {
+      value: "risks",
+      label: "Risks",
+      icon: AlertTriangle,
+      visible: hasManagementAccess(userRole),
+      group: "Field Operations",
     },
     {
       value: "safety-training",
@@ -1090,6 +1098,14 @@ export default function ProjectDetailPage() {
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
               handoverComplete={handoverComplete}
+            />
+          </TabsContent>
+
+          <TabsContent value="risks">
+            <RisksTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
             />
           </TabsContent>
 

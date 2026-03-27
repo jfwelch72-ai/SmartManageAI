@@ -628,7 +628,13 @@ export const workflowEntityTypeEnum = pgEnum("workflow_entity_type", ["CHANGE_OR
 export const workflowTemplateStatusEnum = pgEnum("workflow_template_status", ["ACTIVE", "INACTIVE", "DRAFT"]);
 export const workflowInstanceStatusEnum = pgEnum("workflow_instance_status", ["IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 export const workflowNotificationChannelEnum = pgEnum("workflow_notification_channel", ["EMAIL", "PUSH", "SMS", "SLACK", "TEAMS"]);
-
 export const costSourceCategoryEnum = pgEnum("cost_source_category", ["LABOR", "MATERIAL", "EQUIPMENT", "SUBCONTRACTOR", "OTHER"]);
 export const costOriginModuleEnum = pgEnum("cost_origin_module", ["ESTIMATE", "PO", "PAYROLL", "TM", "RECEIPT", "CHANGE_ORDER", "EQUIPMENT", "SUBCONTRACTOR"]);
 export const costTransactionStatusEnum = pgEnum("cost_transaction_status", ["ACTIVE", "VOIDED"]);
+export const riskCategoryEnum = pgEnum("risk_category", [
+  "FINANCIAL", "SCHEDULE", "SAFETY", "ENVIRONMENTAL", "REGULATORY",
+  "SUBCONTRACTOR", "SUPPLY_CHAIN", "WEATHER", "DESIGN", "OTHER"
+]);
+export const riskStatusEnum = pgEnum("risk_status", [
+  "IDENTIFIED", "ASSESSED", "MITIGATING", "RESOLVED", "ACCEPTED", "OCCURRED"
+]);

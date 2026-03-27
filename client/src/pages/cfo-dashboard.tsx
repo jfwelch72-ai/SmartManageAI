@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { DollarSign, Sparkles, RefreshCw, Download, PieChart } from "lucide-react";
+import { DollarSign, Sparkles, RefreshCw, Download, PieChart, ShieldAlert, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -12,6 +12,8 @@ import { FinancialKPICards } from "@/components/cfo/FinancialKPICards";
 import { ProjectProfitabilityTable } from "@/components/cfo/ProjectProfitabilityTable";
 import { EquipmentMetrics } from "@/components/cfo/EquipmentMetrics";
 import { CostForecastingSection } from "@/components/cfo/CostForecastingSection";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import type {
   ProjectProfitability,
   EquipmentMetricsData,
@@ -255,6 +257,8 @@ export default function CFODashboard() {
               onProjectClick={handleProjectClick}
             />
 
+            <PortfolioRiskSummary formatCurrency={formatCurrency} />
+
             <EquipmentMetrics
               equipmentMetrics={equipmentMetrics}
               isLoading={equipmentLoading}
@@ -273,5 +277,94 @@ export default function CFODashboard() {
         )}
       </main>
     </div>
+  );
+}
+
+interface PortfolioRiskSummaryProps {
+  formatCurrency: (amount: number) => string;
+}
+
+function PortfolioRiskSummary({ formatCurrency }: PortfolioRiskSummaryProps) {
+  const { data, isLoading } = useQuery<{
+    totalOpenRisks: number;
+    totalHighRisks: number;
+    totalOccurredRisks: number;
+    totalCostExposure: number;
+    totalProjects: number;
+    trend: { newThisPeriod: number; resolvedThisPeriod: number; direction: string };
+    highRiskProjects: Array<{
+      projectId: string;
+      projectName: string;
+      open: number;
+      high: number;
+      occurred: number;
+      costExposure: number;
+    }>;
+  }>({
+    queryKey: ["/api/risks/portfolio-summary"],
+  });
+
+  if (isLoading) {
+    return <Skeleton className="h-48 w-full mt-6" />;
+  }
+
+  if (!data || (data.totalOpenRisks === 0 && data.totalOccurredRisks === 0)) return null;
+
+  return (
+    <Card className="mt-6" data-testid="card-portfolio-risk-summary">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-5 h-5 text-primary" />
+          <CardTitle>Portfolio Risk Summary</CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+          <div className="p-3 rounded-lg border bg-card text-center">
+            <p className="text-sm text-muted-foreground">Open Risks</p>
+            <p className="text-2xl font-bold" data-testid="text-portfolio-open-risks">{data.totalOpenRisks}</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card text-center">
+            <p className="text-sm text-muted-foreground">High/Critical</p>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-portfolio-high-risks">{data.totalHighRisks}</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card text-center">
+            <p className="text-sm text-muted-foreground">Occurred</p>
+            <p className="text-2xl font-bold text-amber-600 dark:text-amber-400" data-testid="text-portfolio-occurred-risks">{data.totalOccurredRisks}</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card text-center">
+            <p className="text-sm text-muted-foreground">Cost Exposure</p>
+            <p className="text-lg font-bold font-mono" data-testid="text-portfolio-cost-exposure">{formatCurrency(data.totalCostExposure)}</p>
+          </div>
+        </div>
+        {data.trend && (data.trend.newThisPeriod > 0 || data.trend.resolvedThisPeriod > 0) && (
+          <div className="p-2 rounded-lg bg-muted/50 text-sm text-muted-foreground mb-4" data-testid="text-portfolio-risk-trend">
+            30-day trend: {data.trend.newThisPeriod} new, {data.trend.resolvedThisPeriod} resolved
+            {data.trend.direction === "improving" && " — improving"}
+            {data.trend.direction === "worsening" && " — worsening"}
+          </div>
+        )}
+        {data.highRiskProjects.length > 0 && (
+          <div>
+            <p className="text-sm font-medium mb-2 flex items-center gap-1">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              High-Risk Projects
+            </p>
+            <div className="space-y-2">
+              {data.highRiskProjects.map((proj) => (
+                <div key={proj.projectId} className="flex items-center justify-between p-2 rounded border text-sm" data-testid={`row-high-risk-project-${proj.projectId}`}>
+                  <span className="font-medium truncate max-w-[60%]">{proj.projectName}</span>
+                  <div className="flex items-center gap-2">
+                    {proj.high > 0 && <Badge variant="destructive">{proj.high} high</Badge>}
+                    {proj.occurred > 0 && <Badge variant="outline" className="text-amber-600 border-amber-300">{proj.occurred} occurred</Badge>}
+                    <span className="text-muted-foreground font-mono">{formatCurrency(proj.costExposure)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

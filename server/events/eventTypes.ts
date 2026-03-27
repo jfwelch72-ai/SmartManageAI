@@ -187,6 +187,22 @@ export interface BidDueDateApproachingEvent extends EventEnvelope {
   };
 }
 
+export interface RiskStatusChangedEvent extends EventEnvelope {
+  type: "risk.status_changed";
+  payload: {
+    riskId: string;
+    projectId: string;
+    title: string;
+    oldStatus: string;
+    newStatus: string;
+    costImpactDollars: number | null;
+    scheduleImpactDays: number | null;
+    linkedCostCode: string | null;
+    linkedChangeOrderId: string | null;
+    autoCreateChangeOrder?: boolean;
+  };
+}
+
 export type DomainEvent =
   | ProjectCreatedEvent
   | ProjectStatusChangedEvent
@@ -218,7 +234,8 @@ export type DomainEvent =
   | TmTicketApprovedEvent
   | SubcontractorPaymentMadeEvent
   | EquipmentActualLoggedEvent
-  | ReceiptCreatedEvent;
+  | ReceiptCreatedEvent
+  | RiskStatusChangedEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
   type: "po.receipt_recorded";
@@ -388,4 +405,5 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "subcontractor.payment_made",
   "equipment.actual_logged",
   "receipt.created",
+  "risk.status_changed",
 ];

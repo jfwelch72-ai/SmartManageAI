@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, CheckCircle, DollarSign, Edit } from "lucide-react";
+import { Building2, MapPin, User, Phone, Mail, Calendar as CalendarIcon, CheckCircle, DollarSign, Edit, AlertTriangle, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/use-auth";
 import { FeaturePermissions, hasManagementAccess } from "@/lib/rbac";
@@ -294,6 +294,8 @@ export default function OverviewTab({
       {project?.id && (
         <ProjectHealthWidget projectId={project.id} />
       )}
+
+      {project?.id && <RiskSummaryWidget projectId={project.id} setActiveTab={setActiveTab} />}
 
       {FeaturePermissions.VIEW_PROJECT_FINANCIALS(user?.role) && (
         <Card>
@@ -945,5 +947,109 @@ export default function OverviewTab({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+interface RiskSummaryWidgetProps {
+  projectId: string;
+  setActiveTab: (tab: string) => void;
+}
+
+function RiskSummaryWidget({ projectId, setActiveTab }: RiskSummaryWidgetProps) {
+  const { data: summary, isLoading } = useQuery<{
+    totalRisks: number;
+    openRisks: number;
+    highRisks: number;
+    criticalRisks: number;
+    occurredRisks: number;
+    resolvedRisks: number;
+    totalCostExposure: number;
+    totalScheduleExposure: number;
+    categoryBreakdown: Record<string, number>;
+    trend: { newThisPeriod: number; resolvedThisPeriod: number; direction: string };
+  }>({
+    queryKey: ["/api/projects", projectId, "risks", "summary"],
+    enabled: !!projectId,
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader><CardTitle>Risk Overview</CardTitle></CardHeader>
+        <CardContent><div className="text-center py-4 text-muted-foreground">Loading risk data...</div></CardContent>
+      </Card>
+    );
+  }
+
+  if (!summary || summary.totalRisks === 0) return null;
+
+  return (
+    <Card data-testid="card-risk-overview">
+      <CardHeader className="flex flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="w-5 h-5 text-primary" />
+          <CardTitle>Risk Overview</CardTitle>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setActiveTab("risks")}
+          data-testid="button-view-risks"
+        >
+          View All Risks
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <p className="text-sm text-muted-foreground">Open</p>
+            </div>
+            <p className="text-2xl font-bold" data-testid="text-risk-open-count">{summary.openRisks}</p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-1">
+              <ShieldAlert className="w-4 h-4 text-red-500" />
+              <p className="text-sm text-muted-foreground">High/Critical</p>
+            </div>
+            <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-risk-high-count">
+              {summary.highRisks}
+            </p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign className="w-4 h-4 text-amber-600" />
+              <p className="text-sm text-muted-foreground">Cost Exposure</p>
+            </div>
+            <p className="text-lg font-bold font-mono" data-testid="text-risk-cost-exposure">
+              ${summary.totalCostExposure.toLocaleString()}
+            </p>
+          </div>
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-1">
+              <ShieldCheck className="w-4 h-4 text-green-500" />
+              <p className="text-sm text-muted-foreground">Resolved</p>
+            </div>
+            <p className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-risk-resolved-count">
+              {summary.resolvedRisks}
+            </p>
+          </div>
+        </div>
+        {summary.occurredRisks > 0 && (
+          <div className="mt-3 p-2 rounded-lg bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-200 text-sm">
+            <AlertTriangle className="w-4 h-4 inline mr-1" />
+            {summary.occurredRisks} risk{summary.occurredRisks > 1 ? "s have" : " has"} occurred
+          </div>
+        )}
+        {summary.trend && (summary.trend.newThisPeriod > 0 || summary.trend.resolvedThisPeriod > 0) && (
+          <div className="mt-3 p-2 rounded-lg bg-muted/50 text-sm text-muted-foreground" data-testid="text-risk-trend">
+            Last 30 days: {summary.trend.newThisPeriod} new, {summary.trend.resolvedThisPeriod} resolved
+            {summary.trend.direction === "improving" && " — trending better"}
+            {summary.trend.direction === "worsening" && " — trending worse"}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
