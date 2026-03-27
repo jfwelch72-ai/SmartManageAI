@@ -735,25 +735,37 @@ export default function OverviewTab({
                   + {changeOrders.length - 5} more change order{changeOrders.length - 5 !== 1 ? 's' : ''}
                 </p>
               )}
-              {hasManagementAccess(user?.role) && (
-                <div className="pt-3 border-t mt-3 grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Total Value</p>
-                    <p className="text-xl font-bold font-mono">
-                      ${changeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
-                    </p>
+              {hasManagementAccess(user?.role) && (() => {
+                const pendingStatuses = ["SUBMITTED", "PENDING_APPROVAL", "PCO", "PRICING_REVIEW"];
+                const pendingCOs = changeOrders.filter(co => pendingStatuses.includes(co.status));
+                const approvedCOs = changeOrders.filter(co => co.status === "APPROVED");
+                return (
+                  <div className="pt-3 border-t mt-3 grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Total Value</p>
+                      <p className="text-xl font-bold font-mono" data-testid="text-co-total-value">
+                        ${changeOrders.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Approved ({approvedCOs.length})</p>
+                      <p className="text-xl font-bold font-mono text-green-600" data-testid="text-co-approved-value">
+                        ${approvedCOs.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
+                      </p>
+                    </div>
+                    {pendingCOs.length > 0 && (
+                      <>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Pending ({pendingCOs.length})</p>
+                          <p className="text-lg font-semibold font-mono text-amber-600 dark:text-amber-400" data-testid="text-co-pending-value">
+                            ${pendingCOs.reduce((sum, co) => sum + parseFloat(co.amount), 0).toLocaleString()}
+                          </p>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Approved Value</p>
-                    <p className="text-xl font-bold font-mono text-green-600">
-                      ${changeOrders
-                        .filter(co => co.status === "APPROVED")
-                        .reduce((sum, co) => sum + parseFloat(co.amount), 0)
-                        .toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </CardContent>
