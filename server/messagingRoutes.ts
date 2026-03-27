@@ -975,7 +975,43 @@ const messagingSetup = (async () => {
       const file = await objectStorage.searchPublicObject(filePath);
       if (!file) return res.status(404).json({ error: "Voice file not found" });
 
-      objectStorage.downloadObject(file, res, 86400);
+      const [metadata] = await file.getMetadata();
+      const fileSize = Number(metadata.size || 0);
+      const contentType = metadata.contentType || "audio/webm";
+
+      res.set("Accept-Ranges", "bytes");
+      res.set("Content-Type", contentType);
+      res.set("Cache-Control", "private, max-age=86400");
+
+      const rangeHeader = req.headers.range;
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (match) {
+          const start = parseInt(match[1], 10);
+          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+          const chunkSize = end - start + 1;
+
+          res.status(206);
+          res.set("Content-Range", `bytes ${start}-${end}/${fileSize}`);
+          res.set("Content-Length", String(chunkSize));
+
+          const stream = file.createReadStream({ start, end });
+          stream.on("error", (err: Error) => {
+            console.error("Voice stream error:", err);
+            if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+          });
+          stream.pipe(res);
+          return;
+        }
+      }
+
+      res.set("Content-Length", String(fileSize));
+      const stream = file.createReadStream();
+      stream.on("error", (err: Error) => {
+        console.error("Voice stream error:", err);
+        if (!res.headersSent) res.status(500).json({ error: "Stream error" });
+      });
+      stream.pipe(res);
     } catch (error: any) {
       console.error("Serve voice error:", error);
       if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
