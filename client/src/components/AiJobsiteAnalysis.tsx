@@ -167,13 +167,6 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
     },
   });
 
-  const processBatchMutation = useMutation({
-    mutationFn: async (batchId: string) => {
-      const response = await apiRequest("POST", `/api/ai-features/jobsite/${batchId}/process`, {});
-      return response.json();
-    },
-  });
-
   const reviewMutation = useMutation({
     mutationFn: async ({ resultId, status, notes }: { resultId: string; status: string; notes?: string }) => {
       const response = await apiRequest("PATCH", `/api/ai-features/jobsite/results/${resultId}`, {
@@ -297,6 +290,22 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
     });
   };
 
+  const pollBatchStatus = useCallback(async (batchId: string) => {
+    const maxPolls = 30;
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const freshData = await queryClient.fetchQuery<BatchResponse>({
+        queryKey: ["/api/ai-features/jobsite/history", projectId],
+        staleTime: 0,
+      });
+      const batch = freshData?.batches?.find((b: AnalysisBatch) => b.id === batchId);
+      if (batch && (batch.status === "COMPLETE" || batch.status === "FAILED")) {
+        return batch;
+      }
+    }
+    return null;
+  }, [projectId]);
+
   const handleStartAnalysis = async () => {
     const libraryPhotos = projectPhotosData?.photos.filter(p => selectedLibraryPhotos.has(p.id)) || [];
     const successUploads = uploadedFiles.filter(f => f.uploaded && f.fileUrl);
@@ -330,25 +339,44 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       ];
 
       await attachPhotosMutation.mutateAsync({ batchId, photos: photosToAttach });
-      await processBatchMutation.mutateAsync(batchId);
-
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/project-photos", projectId] });
 
       setPhotoDialogOpen(false);
       setUploadedFiles([]);
       setSelectedLibraryPhotos(new Set());
 
       toast({
-        title: "Analysis Complete",
-        description: `Analyzed ${photosToAttach.length} photo${photosToAttach.length > 1 ? "s" : ""} successfully`,
+        title: "Analysis Started",
+        description: `AI is analyzing ${photosToAttach.length} photo${photosToAttach.length > 1 ? "s" : ""}...`,
       });
 
-      refetch();
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
+
+      const completedBatch = await pollBatchStatus(batchId);
+
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/history", projectId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-features/jobsite/project-photos", projectId] });
+
+      if (completedBatch?.status === "COMPLETE") {
+        toast({
+          title: "Analysis Complete",
+          description: `Successfully analyzed ${photosToAttach.length} photo${photosToAttach.length > 1 ? "s" : ""}`,
+        });
+      } else if (completedBatch?.status === "FAILED") {
+        toast({
+          title: "Analysis Failed",
+          description: "The AI analysis encountered an error",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Analysis In Progress",
+          description: "The analysis is still processing. Results will appear when ready.",
+        });
+      }
     } catch (err: any) {
       toast({
         title: "Analysis Failed",
-        description: err.message || "Failed to complete analysis",
+        description: err.message || "Failed to start analysis",
         variant: "destructive",
       });
     } finally {
@@ -360,9 +388,25 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
   const results = data?.results || [];
   const stats = data?.stats || { totalPhotos: 0, safetyIssues: 0, avgConfidence: 0 };
   
-  const safetyIssues = results.flatMap(r => 
+  const resultSafetyIssues = results.flatMap(r => 
     (r.aiFindings?.safetyIssues || []).map(issue => ({ ...issue, photoId: r.id, photo: r }))
   );
+
+  const batchSafetyIssues = batches.flatMap(b => {
+    const findings = (b as any).safetyFindings || [];
+    return findings.map((f: any) => ({
+      severity: f.severity || "MEDIUM",
+      category: f.category || "OTHER",
+      description: f.description || "",
+      recommendation: f.recommendation || "",
+      location: f.location,
+      photoId: f.photoId || b.id,
+      photo: null,
+      batchId: b.id,
+    }));
+  });
+
+  const safetyIssues = resultSafetyIssues.length > 0 ? resultSafetyIssues : batchSafetyIssues;
   const criticalIssues = safetyIssues.filter(i => i.severity === "CRITICAL" || i.severity === "HIGH");
   const pendingReviews = results.filter(r => r.reviewStatus === "PENDING");
   const totalPhotosAnalyzed = batches.reduce((sum, b) => sum + (b.photoCount || 0), 0);
@@ -583,8 +627,8 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                     return (
                       <div 
                         key={`${issue.photoId}-${index}`}
-                        className="flex items-start gap-4 p-4 rounded-lg border hover-elevate cursor-pointer"
-                        onClick={() => handleReviewPhoto(issue.photo)}
+                        className={cn("flex items-start gap-4 p-4 rounded-lg border", issue.photo && "hover-elevate cursor-pointer")}
+                        onClick={() => issue.photo && handleReviewPhoto(issue.photo)}
                       >
                         <div className={cn("p-2 rounded-lg flex-shrink-0", config.color)}>
                           <SeverityIcon className="w-5 h-5" />

@@ -1668,81 +1668,55 @@ router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-// POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos with AI Vision
-router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, res) => {
-  try {
-    const organizationId = req.user?.organizationId;
-    const userRole = req.user?.role;
-    
-    // SECURITY: Non-SUPER_ADMIN users must have an organization
-    if (userRole !== "SUPER_ADMIN" && !organizationId) {
-      return res.status(403).json({ error: "Access denied" });
-    }
+async function processJobsiteBatch(batchId: string, user: { id?: string; organizationId?: string; role?: string }) {
+  const [batch] = await db.select()
+    .from(jobsiteAnalysisBatches)
+    .where(eq(jobsiteAnalysisBatches.id, batchId));
 
-    const batchId = req.params.batchId;
+  if (!batch) throw new Error("Batch not found");
 
-    // SECURITY: Verify batch exists and belongs to user's organization BEFORE any mutations
-    const [batch] = await db.select()
-      .from(jobsiteAnalysisBatches)
-      .where(eq(jobsiteAnalysisBatches.id, batchId));
+  await db.update(jobsiteAnalysisBatches)
+    .set({ status: "PROCESSING" })
+    .where(eq(jobsiteAnalysisBatches.id, batchId));
 
-    if (!batch) {
-      return res.status(404).json({ error: "Batch not found" });
-    }
+  const photos = await db.select()
+    .from(jobsiteAnalysisPhotos)
+    .where(eq(jobsiteAnalysisPhotos.batchId, batchId));
 
-    // SECURITY: Verify organization ownership (skip for SUPER_ADMIN)
-    if (userRole !== "SUPER_ADMIN" && batch.organizationId !== organizationId) {
-      return res.status(403).json({ error: "Access denied" });
-    }
+  let safetyFindings: any[];
+  let progressFindings: any[];
+  let summary: any;
+  let crewFindings: any;
+  let aiNotes: string;
 
-    // Now safe to update status to processing
-    await db.update(jobsiteAnalysisBatches)
-      .set({ status: "PROCESSING" })
-      .where(eq(jobsiteAnalysisBatches.id, batchId));
-
-    // Get photos associated with this batch
-    const photos = await db.select()
-      .from(jobsiteAnalysisPhotos)
-      .where(eq(jobsiteAnalysisPhotos.batchId, batchId));
-
-    let safetyFindings: any[];
-    let progressFindings: any[];
-    let summary: any;
-    let crewFindings: any;
-    let aiNotes: string;
-
-    // Use OpenAI Vision if we have photos, otherwise use mock data
-    if (photos.length > 0 && openai) {
-      try {
-        const tradeType = batch.tradeType || "GENERAL_CONTRACTOR";
-        const analysisTypes = batch.analysisTypes || ["SAFETY", "PROGRESS"];
-        
-        // Build prompt based on analysis types
-        const safetyPrompt = analysisTypes.includes("SAFETY") 
-          ? `SAFETY: Identify any safety hazards, PPE compliance issues, fall hazards, housekeeping problems. Rate severity as CRITICAL, HIGH, MEDIUM, or LOW.` 
-          : "";
-        const progressPrompt = analysisTypes.includes("PROGRESS")
-          ? `PROGRESS: Estimate work completion percentage, identify active work areas, note quality of workmanship.`
-          : "";
-        const crewPrompt = `CREW: Estimate number of workers visible, assess PPE compliance percentage.`;
-        
-        const tradeContext = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
-        
-        // Analyze first photo (can extend to multiple)
-        const imageUrl = photos[0].fileUrl;
-        
-        const govResult = await governedAiCall({
-          orgId: batch.organizationId,
-          userId: req.user?.id || null,
-          actionType: "jobsite_analysis",
-          inputRefs: { projectId: batch.projectId },
-          fn: async () => {
-            const completion = await openai.chat.completions.create({
-              model: AI_MODEL_GPT4O,
-              messages: [
-                {
-                  role: "system",
-                  content: `You are a construction site safety and progress inspector for ${tradeType} trade work.
+  if (photos.length > 0 && openai) {
+    try {
+      const tradeType = batch.tradeType || "GENERAL_CONTRACTOR";
+      const analysisTypes = batch.analysisTypes || ["SAFETY", "PROGRESS"];
+      
+      const safetyPrompt = analysisTypes.includes("SAFETY") 
+        ? `SAFETY: Identify any safety hazards, PPE compliance issues, fall hazards, housekeeping problems. Rate severity as CRITICAL, HIGH, MEDIUM, or LOW.` 
+        : "";
+      const progressPrompt = analysisTypes.includes("PROGRESS")
+        ? `PROGRESS: Estimate work completion percentage, identify active work areas, note quality of workmanship.`
+        : "";
+      const crewPrompt = `CREW: Estimate number of workers visible, assess PPE compliance percentage.`;
+      
+      const tradeContext = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
+      const imageUrl = photos[0].fileUrl;
+      
+      const govResult = await governedAiCall({
+        orgId: batch.organizationId,
+        userId: user?.id || null,
+        actionType: "jobsite_analysis",
+        inputRefs: { projectId: batch.projectId },
+        fn: async () => {
+          const completion = await openai!.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages: [
+              {
+                role: "system",
+                content: `You are a construction site safety and progress inspector for ${tradeType} trade work.
 ${tradeContext}
 
 Analyze the jobsite photo and provide a comprehensive assessment.
@@ -1783,112 +1757,120 @@ Return your analysis as JSON with this exact structure:
   },
   "notes": "overall summary of findings"
 }`
-                },
-                {
-                  role: "user",
-                  content: [
-                    {
-                      type: "image_url",
-                      image_url: { url: imageUrl, detail: "high" }
-                    },
-                    {
-                      type: "text",
-                      text: `Analyze this construction jobsite photo for ${tradeType} trade work. Focus on safety hazards, work progress, and crew activity.`
-                    }
-                  ]
-                }
-              ],
-              max_tokens: 4096,
-              temperature: 0.3,
-            });
-            return { result: completion.choices[0]?.message?.content, completion };
-          },
-        });
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "image_url",
+                    image_url: { url: imageUrl, detail: "high" }
+                  },
+                  {
+                    type: "text",
+                    text: `Analyze this construction jobsite photo for ${tradeType} trade work. Focus on safety hazards, work progress, and crew activity.`
+                  }
+                ]
+              }
+            ],
+            max_tokens: 4096,
+            temperature: 0.3,
+          });
+          return { result: completion.choices[0]?.message?.content, completion };
+        },
+      });
 
-        if (govResult.blocked) {
-          return res.status(429).json({ error: govResult.reason });
-        }
-
-        const responseContent = govResult.result || "";
-        
-        // Parse the JSON response
-        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          summary = parsed.summary || {
-            overallSafetyScore: 80,
-            estimatedCompletion: 50,
-            crewCountEstimate: 5,
-            weatherConditions: "Unknown",
-            primaryConcerns: [],
-          };
-          safetyFindings = (parsed.safetyFindings || []).map((f: any, i: number) => ({
-            id: `sf-${i + 1}`,
-            severity: f.severity || "MEDIUM",
-            category: f.category || "OTHER",
-            description: f.description,
-            recommendation: f.recommendation,
-            photoId: photos[0].id,
-          }));
-          progressFindings = (parsed.progressFindings || []).map((f: any, i: number) => ({
-            id: `pf-${i + 1}`,
-            workArea: f.workArea || "General Area",
-            tradeType: f.tradeType || tradeType,
-            estimatedComplete: f.estimatedComplete || 0,
-            observations: f.observations,
-            photoId: photos[0].id,
-          }));
-          crewFindings = parsed.crewFindings || {
-            estimatedCount: 0,
-            ppeCompliance: 100,
-            activeWorkAreas: [],
-          };
-          aiNotes = parsed.notes || "AI Vision analysis complete.";
-        } else {
-          throw new Error("Could not parse AI response");
-        }
-      } catch (visionError) {
-        console.error("OpenAI Vision error for jobsite analysis, falling back to mock:", visionError);
-        safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
-        progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
-        summary = {
-          overallSafetyScore: 85,
-          estimatedCompletion: 45,
-          crewCountEstimate: 6,
-          weatherConditions: "Clear, 72°F",
-          primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
-          analysisMethod: "Fallback (mock)",
-        };
-        crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
-        aiNotes = "Fallback: Generated sample analysis data.";
+      if (govResult.blocked) {
+        await db.update(jobsiteAnalysisBatches)
+          .set({ status: "FAILED", errorMessage: govResult.reason || "AI rate limited", updatedAt: new Date() })
+          .where(eq(jobsiteAnalysisBatches.id, batchId));
+        return;
       }
-    } else {
-      // No photos available, use mock data
+
+      const responseContent = govResult.result || "";
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        summary = parsed.summary || {
+          overallSafetyScore: 80, estimatedCompletion: 50, crewCountEstimate: 5,
+          weatherConditions: "Unknown", primaryConcerns: [],
+        };
+        safetyFindings = (parsed.safetyFindings || []).map((f: any, i: number) => ({
+          id: `sf-${i + 1}`, severity: f.severity || "MEDIUM", category: f.category || "OTHER",
+          description: f.description, recommendation: f.recommendation, photoId: photos[0].id,
+        }));
+        progressFindings = (parsed.progressFindings || []).map((f: any, i: number) => ({
+          id: `pf-${i + 1}`, workArea: f.workArea || "General Area", tradeType: f.tradeType || tradeType,
+          estimatedComplete: f.estimatedComplete || 0, observations: f.observations, photoId: photos[0].id,
+        }));
+        crewFindings = parsed.crewFindings || { estimatedCount: 0, ppeCompliance: 100, activeWorkAreas: [] };
+        aiNotes = parsed.notes || "AI Vision analysis complete.";
+      } else {
+        throw new Error("Could not parse AI response");
+      }
+    } catch (visionError) {
+      console.error("OpenAI Vision error for jobsite analysis, falling back to mock:", visionError);
       safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
       progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
       summary = {
-        overallSafetyScore: 85,
-        estimatedCompletion: 45,
-        crewCountEstimate: 6,
+        overallSafetyScore: 85, estimatedCompletion: 45, crewCountEstimate: 6,
         weatherConditions: "Clear, 72°F",
         primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
-        analysisMethod: "Demo (no photos)",
+        analysisMethod: "Fallback (mock)",
       };
       crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
-      aiNotes = "Demo mode: Generated sample analysis data.";
+      aiNotes = "Fallback: Generated sample analysis data.";
+    }
+  } else {
+    safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+    progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+    summary = {
+      overallSafetyScore: 85, estimatedCompletion: 45, crewCountEstimate: 6,
+      weatherConditions: "Clear, 72°F",
+      primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
+      analysisMethod: "Demo (no photos)",
+    };
+    crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
+    aiNotes = "Demo mode: Generated sample analysis data.";
+  }
+
+  await db.update(jobsiteAnalysisBatches)
+    .set({
+      status: "COMPLETE",
+      summaryJson: JSON.stringify(summary),
+      safetyFindingsJson: JSON.stringify(safetyFindings),
+      progressFindingsJson: JSON.stringify(progressFindings),
+      crewFindingsJson: JSON.stringify(crewFindings),
+      aiNotes,
+      updatedAt: new Date(),
+    })
+    .where(eq(jobsiteAnalysisBatches.id, batchId));
+}
+
+// POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos with AI Vision
+router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userRole = req.user?.role;
+    
+    if (userRole !== "SUPER_ADMIN" && !organizationId) {
+      return res.status(403).json({ error: "Access denied" });
     }
 
-    await db.update(jobsiteAnalysisBatches)
-      .set({
-        status: "COMPLETE",
-        summaryJson: JSON.stringify(summary),
-        safetyFindingsJson: JSON.stringify(safetyFindings),
-        progressFindingsJson: JSON.stringify(progressFindings),
-        crewFindingsJson: JSON.stringify(crewFindings),
-        aiNotes,
-        updatedAt: new Date(),
-      })
+    const batchId = req.params.batchId;
+
+    const [batch] = await db.select()
+      .from(jobsiteAnalysisBatches)
       .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+
+    if (userRole !== "SUPER_ADMIN" && batch.organizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await processJobsiteBatch(batchId, req.user!);
 
     res.json({ success: true, status: "COMPLETE" });
   } catch (error) {
@@ -1991,11 +1973,25 @@ router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: A
       }
     }
 
-    const batchesWithCounts = batches.map(b => ({
-      ...b,
-      photoCount: photoCountMap[b.id] || 0,
-      safetyScore: b.summaryJson ? (() => { try { return JSON.parse(b.summaryJson).overallSafetyScore; } catch { return undefined; } })() : undefined,
-    }));
+    const batchesWithCounts = batches.map(b => {
+      let safetyScore: number | undefined;
+      let safetyFindings: any[] = [];
+      let summary: any = undefined;
+      try {
+        if (b.summaryJson) summary = JSON.parse(b.summaryJson);
+        if (summary) safetyScore = summary.overallSafetyScore;
+      } catch {}
+      try {
+        if (b.safetyFindingsJson) safetyFindings = JSON.parse(b.safetyFindingsJson);
+      } catch {}
+      return {
+        ...b,
+        photoCount: photoCountMap[b.id] || 0,
+        safetyScore,
+        safetyFindings,
+        summary,
+      };
+    });
 
     res.json({ batches: batchesWithCounts });
   } catch (error) {
@@ -2108,7 +2104,11 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
 
     await db.insert(jobsiteAnalysisPhotos).values(photoRecords);
 
-    res.json({ success: true, photosAttached: validatedPhotos.length });
+    res.json({ success: true, photosAttached: validatedPhotos.length, batchId });
+
+    processJobsiteBatch(batchId, req.user!).catch(err => {
+      console.error("Background batch processing error:", err);
+    });
   } catch (error) {
     console.error("Attach photos error:", error);
     res.status(500).json({ error: "Failed to attach photos" });
