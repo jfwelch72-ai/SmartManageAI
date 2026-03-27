@@ -1,8 +1,9 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, BarChart3, TrendingUp, FileEdit, FileSpreadsheet, Receipt, CreditCard, Activity, PieChart } from "lucide-react";
+import { DollarSign, BarChart3, TrendingUp, FileEdit, FileSpreadsheet, Receipt, CreditCard, Activity, PieChart, Search } from "lucide-react";
 import { FeaturePermissions, hasFinancialAccess } from "@/lib/rbac";
 import BudgetTab from "./BudgetTab";
 import CostLedgerTab from "./CostLedgerTab";
+import CostExplorerTab from "./CostExplorerTab";
 import ProfitabilityTab from "./ProfitabilityTab";
 import ChangeOrdersTab from "./ChangeOrdersTab";
 import SovTab from "./SovTab";
@@ -57,6 +58,12 @@ export default function FinancialsTab({
       value: "cost-ledger",
       label: "Cost Ledger",
       icon: BarChart3,
+      visible: hasFinancialAccess(userRole),
+    },
+    {
+      value: "cost-explorer",
+      label: "Cost Explorer",
+      icon: Search,
       visible: hasFinancialAccess(userRole),
     },
     {
@@ -136,6 +143,10 @@ export default function FinancialsTab({
 
       <TabsContent value="cost-ledger">
         <CostLedgerTab projectCode={projectCode} />
+      </TabsContent>
+
+      <TabsContent value="cost-explorer">
+        <CostExplorerTab projectCode={projectCode} />
       </TabsContent>
 
       <TabsContent value="change-orders">

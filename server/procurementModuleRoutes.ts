@@ -13,6 +13,7 @@ import { eq, and, desc, asc, sql, ilike, or, gte, lte, type SQL } from "drizzle-
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
+import { eventBus } from "./events";
 import { verifyOrgAccess } from "./orgFilter";
 import type { Response } from "express";
 
@@ -1171,6 +1172,36 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
 
       return newReceipt;
     });
+
+    try {
+      const poItems = await db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.poId, po.id));
+      const receiptLineItems = parsed.data.items.map(item => {
+        const poItem = poItems.find(pi => pi.id === item.poItemId);
+        const unitCost = parseFloat(poItem?.unitCost?.toString() || "0");
+        const qty = parseFloat(item.quantityReceived);
+        return {
+          costCode: poItem?.costCode || null,
+          amount: unitCost * qty,
+          description: poItem?.description || `PO item ${item.poItemId}`,
+        };
+      });
+
+      await eventBus.emit({
+        version: 1,
+        orgId: po.orgId || "",
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "po.receipt_recorded" as const,
+        payload: {
+          receiptId: receipt.id,
+          poId: po.id,
+          projectId: po.projectId || "",
+          items: receiptLineItems,
+        },
+      });
+    } catch (emitErr) {
+      console.error("Failed to emit po.receipt_recorded event:", emitErr);
+    }
 
     res.status(201).json(receipt);
   } catch (error) {

@@ -882,6 +882,35 @@ const payRunStatusHandler = async (req: any, res: Response) => {
         await postCostLedger(result.id, tx);
         return result;
       });
+
+      try {
+        const lineItemCount = await db
+          .select({ userId: payRunLineItems.userId })
+          .from(payRunLineItems)
+          .where(eq(payRunLineItems.payRunId, updated.id));
+        const uniqueEmployeeCount = new Set(lineItemCount.map((r) => r.userId)).size;
+
+        await eventBus.emit({
+          type: "payroll.run.completed",
+          version: 1,
+          orgId: orgId,
+          actorId: authReq.user!.id,
+          timestamp: new Date(),
+          payload: {
+            payRunId: updated.id,
+            periodStart: updated.payPeriodStart instanceof Date
+              ? updated.payPeriodStart.toISOString().split("T")[0]
+              : String(updated.payPeriodStart),
+            periodEnd: updated.payPeriodEnd instanceof Date
+              ? updated.payPeriodEnd.toISOString().split("T")[0]
+              : String(updated.payPeriodEnd),
+            totalGross: Number(updated.totalGrossAmount || 0),
+            employeeCount: uniqueEmployeeCount,
+          },
+        });
+      } catch (emitErr) {
+        console.error("Failed to emit payroll.run.completed on APPROVED:", emitErr);
+      }
     } else {
       const [result] = await db.update(payRuns).set(updateData)
         .where(eq(payRuns.id, req.params.id)).returning();

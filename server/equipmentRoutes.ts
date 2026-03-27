@@ -8,6 +8,7 @@ import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
 import { governedAiCall } from "./services/aiGovernance";
+import { eventBus } from "./events";
 
 const router = Router();
 
@@ -1921,7 +1922,32 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         .returning();
       
       await logUpdate(userId!, "project_equipment_plans", planId, existing, updated);
-      
+
+      if (req.body.actualCost !== undefined) {
+        try {
+          const { voidByReference, postTransaction } = await import("./costEngineService");
+          const referenceId = `equipment_plan:${updated.id}`;
+          await voidByReference(referenceId, userId || "system", "Equipment actual cost updated");
+
+          const newCost = parseFloat(updated.actualCost || "0");
+          if (newCost > 0) {
+            await postTransaction({
+              projectId,
+              costCode: updated.costCode || "UNASSIGNED",
+              sourceCategory: "EQUIPMENT",
+              originModule: "EQUIPMENT",
+              amount: updated.actualCost!,
+              transactionDate: new Date().toISOString().split("T")[0],
+              referenceId,
+              description: "Equipment actual cost",
+              createdBy: userId || undefined,
+            });
+          }
+        } catch (emitErr) {
+          console.error("Failed to post equipment cost transaction:", emitErr);
+        }
+      }
+
       res.json(updated);
     } catch (error) {
       console.error("Update project equipment plan error:", error);

@@ -4,6 +4,7 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyApprovers, notifySubmitter, getApproverUserIds, notifyUsers } from "./services/approvalNotificationService";
+import { eventBus } from "./events";
 import { 
   tmTickets, 
   tmTicketLaborEntries,
@@ -142,6 +143,29 @@ function registerTMApprovalRoutes(app: Express) {
           relatedEntityId: ticket.projectId || ticketId,
           relatedEntityType: "project",
         });
+      }
+
+      if (ticket.projectId) {
+        try {
+          await eventBus.emit({
+            version: 1,
+            orgId: ticket.organizationId || "",
+            actorId: userId,
+            timestamp: new Date(),
+            type: "tm_ticket.approved" as const,
+            payload: {
+              ticketId: ticket.id,
+              projectId: ticket.projectId,
+              costCode: ticket.costCode || null,
+              laborCost: parseFloat(ticket.laborTotal?.toString() || "0"),
+              equipmentCost: parseFloat(ticket.equipmentTotal?.toString() || "0"),
+              materialCost: parseFloat(ticket.materialTotal?.toString() || "0"),
+              grandTotal: parseFloat(ticket.grandTotal?.toString() || "0"),
+            },
+          });
+        } catch (emitErr) {
+          console.error("Failed to emit tm_ticket.approved event:", emitErr);
+        }
       }
       
       res.json(updatedTicket);

@@ -13,6 +13,7 @@ import {
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { eventBus } from "./events";
 import { logAudit, logCreate, logUpdate, logDelete } from "./auditLogger";
 import { notifySubmitter } from "./services/approvalNotificationService";
 import { insertNotifications } from "./services/notificationService";
@@ -675,6 +676,25 @@ router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN
       fullPayment.subcontractor.companyName,
       req.user!.id
     );
+
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: payment.organizationId || "",
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "subcontractor.payment_made" as const,
+        payload: {
+          paymentId: id,
+          contractId: payment.contractId,
+          projectId: fullPayment.project.id,
+          costCode: fullPayment.contract.costCode || null,
+          amount: parseFloat(payment.amount?.toString() || "0"),
+        },
+      });
+    } catch (emitErr) {
+      console.error("Failed to emit subcontractor.payment_made event:", emitErr);
+    }
 
     res.json({
       ...updatedPayment,

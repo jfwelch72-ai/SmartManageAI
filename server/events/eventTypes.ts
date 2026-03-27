@@ -213,7 +213,67 @@ export type DomainEvent =
   | DocumentRevisionCreatedEvent
   | SafetyIncidentCreatedEvent
   | CostLedgerPostedEvent
-  | InspectionCompletedEvent;
+  | InspectionCompletedEvent
+  | PoReceiptRecordedEvent
+  | TmTicketApprovedEvent
+  | SubcontractorPaymentMadeEvent
+  | EquipmentActualLoggedEvent
+  | ReceiptCreatedEvent;
+
+export interface PoReceiptRecordedEvent extends EventEnvelope {
+  type: "po.receipt_recorded";
+  payload: {
+    receiptId: string;
+    poId: string;
+    projectId: string;
+    items: Array<{ costCode: string | null; amount: number; description: string }>;
+  };
+}
+
+export interface TmTicketApprovedEvent extends EventEnvelope {
+  type: "tm_ticket.approved";
+  payload: {
+    ticketId: string;
+    projectId: string;
+    costCode: string | null;
+    laborCost: number;
+    equipmentCost: number;
+    materialCost: number;
+    grandTotal: number;
+  };
+}
+
+export interface SubcontractorPaymentMadeEvent extends EventEnvelope {
+  type: "subcontractor.payment_made";
+  payload: {
+    paymentId: string;
+    contractId: string;
+    projectId: string;
+    costCode: string | null;
+    amount: number;
+  };
+}
+
+export interface EquipmentActualLoggedEvent extends EventEnvelope {
+  type: "equipment.actual_logged";
+  payload: {
+    planId: string;
+    projectId: string;
+    costCode: string | null;
+    actualCost: number;
+  };
+}
+
+export interface ReceiptCreatedEvent extends EventEnvelope {
+  type: "receipt.created";
+  payload: {
+    receiptId: string;
+    projectId: string;
+    costCode: string | null;
+    amount: number;
+    category: string | null;
+  };
+}
 
 export interface BudgetAlertTriggeredEvent extends EventEnvelope {
   type: "budget.alert_triggered";
@@ -323,4 +383,9 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "safety.incident_created",
   "cost_ledger.posted",
   "inspection.completed",
+  "po.receipt_recorded",
+  "tm_ticket.approved",
+  "subcontractor.payment_made",
+  "equipment.actual_logged",
+  "receipt.created",
 ];

@@ -16,6 +16,7 @@ import {
   costLedgerPostings,
 } from "@shared/schema";
 import { eq, sql, and, inArray } from "drizzle-orm";
+import { hasTransactions, getActualsByProject } from "./costEngineService";
 
 export interface CostCodeLedgerRow {
   costCode: string;
@@ -100,51 +101,18 @@ export async function calculateCostLedger(
     row.budgetedTotal = row.budgetedLabor + row.budgetedMaterial + row.budgetedSub + row.budgetedEquipment + row.budgetedOther;
   }
 
-  const laborEntries = await db
-    .select({
-      costCode: timeEntries.costCode,
-      hoursRegular: timeEntries.hoursRegular,
-      hoursOvertime: timeEntries.hoursOvertime,
-      costRateRegular: users.costRateRegular,
-      costRateOvertime: users.costRateOvertime,
-      approvalStatus: timeEntries.approvalStatus,
-    })
-    .from(timeEntries)
-    .leftJoin(users, eq(timeEntries.userId, users.id))
-    .where(eq(timeEntries.projectId, projectId))
-    .limit(10000);
+  const useUnifiedEngine = await hasTransactions(projectId);
+  let unifiedActuals: Awaited<ReturnType<typeof getActualsByProject>> | null = null;
 
-  const payrollPostings = await db
-    .select({
-      costCode: costLedgerPostings.costCode,
-      totalAmount: costLedgerPostings.totalAmount,
-      burdenedTotalAmount: costLedgerPostings.burdenedTotalAmount,
-    })
-    .from(costLedgerPostings)
-    .where(eq(costLedgerPostings.projectId, projectId))
-    .limit(10000);
-
-  const payrollCostByCode = new Map<string, number>();
-  for (const posting of payrollPostings) {
-    const cc = normalizeCostCode(posting.costCode);
-    const amount = Number(posting.burdenedTotalAmount) > 0 ? Number(posting.burdenedTotalAmount) : Number(posting.totalAmount);
-    payrollCostByCode.set(cc, (payrollCostByCode.get(cc) || 0) + amount);
-  }
-
-  if (payrollPostings.length > 0) {
-    for (const [cc, amount] of payrollCostByCode) {
+  if (useUnifiedEngine) {
+    unifiedActuals = await getActualsByProject(projectId);
+    for (const [cc, entry] of unifiedActuals.byCostCode) {
       const row = ensureRow(cc);
-      row.actualLabor += amount;
-    }
-  } else {
-    for (const entry of laborEntries) {
-      if (entry.approvalStatus !== "APPROVED") continue;
-      const cc = normalizeCostCode(entry.costCode);
-      const row = ensureRow(cc);
-      const regRate = entry.costRateRegular ? Number(entry.costRateRegular) : DEFAULT_COST_RATE;
-      const otRate = entry.costRateOvertime ? Number(entry.costRateOvertime) : regRate * DEFAULT_OT_MULTIPLIER;
-      const cost = Number(entry.hoursRegular || 0) * regRate + Number(entry.hoursOvertime || 0) * otRate;
-      row.actualLabor += cost;
+      row.actualLabor += entry.labor;
+      row.actualMaterial += entry.material;
+      row.actualSub += entry.subcontractor;
+      row.actualEquipment += entry.equipment;
+      row.actualOther += entry.other;
     }
   }
 
@@ -172,38 +140,6 @@ export async function calculateCostLedger(
     }
   }
 
-  const receivablePoIds = poItems
-    .filter(i => ["PARTIAL", "FULFILLED"].includes(i.poStatus as string))
-    .map(i => i.poId);
-
-  if (receivablePoIds.length > 0) {
-    const uniquePoIds = [...new Set(receivablePoIds)];
-    const receiptRows = await db
-      .select({
-        poItemId: poReceiptItems.poItemId,
-        quantityReceived: poReceiptItems.quantityReceived,
-      })
-      .from(poReceiptItems)
-      .innerJoin(poReceipts, eq(poReceiptItems.receiptId, poReceipts.id))
-      .where(inArray(poReceipts.poId, uniquePoIds))
-      .limit(10000);
-
-    const receivedQtyMap = new Map<string, number>();
-    for (const r of receiptRows) {
-      receivedQtyMap.set(r.poItemId, (receivedQtyMap.get(r.poItemId) || 0) + Number(r.quantityReceived));
-    }
-
-    for (const item of poItems) {
-      if (!["PARTIAL", "FULFILLED"].includes(item.poStatus as string)) continue;
-      const cc = normalizeCostCode(item.costCode);
-      const row = ensureRow(cc);
-      const receivedQty = receivedQtyMap.get(item.poItemId) || 0;
-      if (receivedQty > 0) {
-        row.actualMaterial += receivedQty * Number(item.unitCost || 0);
-      }
-    }
-  }
-
   const subContracts = await db
     .select({
       id: subcontractorContracts.id,
@@ -216,10 +152,8 @@ export async function calculateCostLedger(
     .where(eq(subcontractorContracts.projectId, projectId))
     .limit(1000);
 
-  const contractCostCodeMap = new Map<string, string | null>();
   for (const contract of subContracts) {
     const cc = normalizeCostCode(contract.costCode || "UNASSIGNED");
-    contractCostCodeMap.set(contract.id, contract.costCode);
     const row = ensureRow(cc, cc === "UNASSIGNED" ? "Subcontractors" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
     const amount = Number(contract.contractAmount);
     if (["ACTIVE", "PENDING", "APPROVED"].includes(contract.status)) {
@@ -227,76 +161,163 @@ export async function calculateCostLedger(
     }
   }
 
-  if (subContracts.length > 0) {
-    const contractIds = subContracts.map(c => c.id);
-    const payments = await db
+  if (!useUnifiedEngine) {
+    const laborEntries = await db
       .select({
-        contractId: subcontractorPayments.contractId,
-        amount: subcontractorPayments.amount,
-        status: subcontractorPayments.status,
+        costCode: timeEntries.costCode,
+        hoursRegular: timeEntries.hoursRegular,
+        hoursOvertime: timeEntries.hoursOvertime,
+        costRateRegular: users.costRateRegular,
+        costRateOvertime: users.costRateOvertime,
+        approvalStatus: timeEntries.approvalStatus,
       })
-      .from(subcontractorPayments)
-      .where(inArray(subcontractorPayments.contractId, contractIds))
+      .from(timeEntries)
+      .leftJoin(users, eq(timeEntries.userId, users.id))
+      .where(eq(timeEntries.projectId, projectId))
+      .limit(10000);
+
+    const payrollPostings = await db
+      .select({
+        costCode: costLedgerPostings.costCode,
+        totalAmount: costLedgerPostings.totalAmount,
+        burdenedTotalAmount: costLedgerPostings.burdenedTotalAmount,
+      })
+      .from(costLedgerPostings)
+      .where(eq(costLedgerPostings.projectId, projectId))
+      .limit(10000);
+
+    const payrollCostByCode = new Map<string, number>();
+    for (const posting of payrollPostings) {
+      const cc = normalizeCostCode(posting.costCode);
+      const amount = Number(posting.burdenedTotalAmount) > 0 ? Number(posting.burdenedTotalAmount) : Number(posting.totalAmount);
+      payrollCostByCode.set(cc, (payrollCostByCode.get(cc) || 0) + amount);
+    }
+
+    if (payrollPostings.length > 0) {
+      for (const [cc, amount] of payrollCostByCode) {
+        const row = ensureRow(cc);
+        row.actualLabor += amount;
+      }
+    } else {
+      for (const entry of laborEntries) {
+        if (entry.approvalStatus !== "APPROVED") continue;
+        const cc = normalizeCostCode(entry.costCode);
+        const row = ensureRow(cc);
+        const regRate = entry.costRateRegular ? Number(entry.costRateRegular) : DEFAULT_COST_RATE;
+        const otRate = entry.costRateOvertime ? Number(entry.costRateOvertime) : regRate * DEFAULT_OT_MULTIPLIER;
+        const cost = Number(entry.hoursRegular || 0) * regRate + Number(entry.hoursOvertime || 0) * otRate;
+        row.actualLabor += cost;
+      }
+    }
+
+    const receivablePoIds = poItems
+      .filter(i => ["PARTIAL", "FULFILLED"].includes(i.poStatus as string))
+      .map(i => i.poId);
+
+    if (receivablePoIds.length > 0) {
+      const uniquePoIds = [...new Set(receivablePoIds)];
+      const receiptRows = await db
+        .select({
+          poItemId: poReceiptItems.poItemId,
+          quantityReceived: poReceiptItems.quantityReceived,
+        })
+        .from(poReceiptItems)
+        .innerJoin(poReceipts, eq(poReceiptItems.receiptId, poReceipts.id))
+        .where(inArray(poReceipts.poId, uniquePoIds))
+        .limit(10000);
+
+      const receivedQtyMap = new Map<string, number>();
+      for (const r of receiptRows) {
+        receivedQtyMap.set(r.poItemId, (receivedQtyMap.get(r.poItemId) || 0) + Number(r.quantityReceived));
+      }
+
+      for (const item of poItems) {
+        if (!["PARTIAL", "FULFILLED"].includes(item.poStatus as string)) continue;
+        const cc = normalizeCostCode(item.costCode);
+        const row = ensureRow(cc);
+        const receivedQty = receivedQtyMap.get(item.poItemId) || 0;
+        if (receivedQty > 0) {
+          row.actualMaterial += receivedQty * Number(item.unitCost || 0);
+        }
+      }
+    }
+
+    const contractCostCodeMap = new Map<string, string | null>();
+    for (const contract of subContracts) {
+      contractCostCodeMap.set(contract.id, contract.costCode);
+    }
+
+    if (subContracts.length > 0) {
+      const contractIds = subContracts.map(c => c.id);
+      const payments = await db
+        .select({
+          contractId: subcontractorPayments.contractId,
+          amount: subcontractorPayments.amount,
+          status: subcontractorPayments.status,
+        })
+        .from(subcontractorPayments)
+        .where(inArray(subcontractorPayments.contractId, contractIds))
+        .limit(5000);
+
+      for (const payment of payments) {
+        if (payment.status !== "APPROVED" && payment.status !== "PAID") continue;
+        const parentCostCode = contractCostCodeMap.get(payment.contractId) || "UNASSIGNED";
+        const cc = normalizeCostCode(parentCostCode);
+        const row = ensureRow(cc, cc === "UNASSIGNED" ? "Subcontractors" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
+        row.actualSub += Number(payment.amount);
+      }
+    }
+
+    const equipPlans = await db
+      .select({
+        plannedCost: projectEquipmentPlans.plannedCost,
+        actualCost: projectEquipmentPlans.actualCost,
+        costCode: projectEquipmentPlans.costCode,
+      })
+      .from(projectEquipmentPlans)
+      .where(eq(projectEquipmentPlans.projectId, projectId))
+      .limit(500);
+
+    for (const plan of equipPlans) {
+      const cc = normalizeCostCode(plan.costCode || "UNASSIGNED");
+      const row = ensureRow(cc, cc === "UNASSIGNED" ? "Equipment (unassigned)" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
+      const cost = Number(plan.actualCost || 0) > 0 ? Number(plan.actualCost) : Number(plan.plannedCost || 0);
+      row.actualEquipment += cost;
+    }
+
+    const tmTicketRows = await db
+      .select({
+        grandTotal: tmTickets.grandTotal,
+        status: tmTickets.status,
+        costCode: tmTickets.costCode,
+      })
+      .from(tmTickets)
+      .where(eq(tmTickets.projectId, projectId))
+      .limit(1000);
+
+    for (const ticket of tmTicketRows) {
+      if (ticket.status === "APPROVED") {
+        const cc = normalizeCostCode(ticket.costCode || "UNASSIGNED");
+        const row = ensureRow(cc, cc === "UNASSIGNED" ? "T&M Tickets" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
+        row.actualTM += Number(ticket.grandTotal || 0);
+      }
+    }
+
+    const expenseReceipts = await db
+      .select({
+        amount: receipts.amount,
+        category: receipts.category,
+        costCode: receipts.costCode,
+      })
+      .from(receipts)
+      .where(eq(receipts.projectId, projectId))
       .limit(5000);
 
-    for (const payment of payments) {
-      if (payment.status !== "APPROVED" && payment.status !== "PAID") continue;
-      const parentCostCode = contractCostCodeMap.get(payment.contractId) || "UNASSIGNED";
-      const cc = normalizeCostCode(parentCostCode);
-      const row = ensureRow(cc, cc === "UNASSIGNED" ? "Subcontractors" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
-      row.actualSub += Number(payment.amount);
+    for (const receipt of expenseReceipts) {
+      const cc = normalizeCostCode(receipt.costCode || "UNASSIGNED");
+      const row = ensureRow(cc, cc === "UNASSIGNED" ? "Other Expenses" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
+      row.actualOther += Number(receipt.amount || 0);
     }
-  }
-
-  const equipPlans = await db
-    .select({
-      plannedCost: projectEquipmentPlans.plannedCost,
-      actualCost: projectEquipmentPlans.actualCost,
-      costCode: projectEquipmentPlans.costCode,
-    })
-    .from(projectEquipmentPlans)
-    .where(eq(projectEquipmentPlans.projectId, projectId))
-    .limit(500);
-
-  for (const plan of equipPlans) {
-    const cc = normalizeCostCode(plan.costCode || "UNASSIGNED");
-    const row = ensureRow(cc, cc === "UNASSIGNED" ? "Equipment (unassigned)" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
-    const cost = Number(plan.actualCost || 0) > 0 ? Number(plan.actualCost) : Number(plan.plannedCost || 0);
-    row.actualEquipment += cost;
-  }
-
-  const tmTicketRows = await db
-    .select({
-      grandTotal: tmTickets.grandTotal,
-      status: tmTickets.status,
-      costCode: tmTickets.costCode,
-    })
-    .from(tmTickets)
-    .where(eq(tmTickets.projectId, projectId))
-    .limit(1000);
-
-  for (const ticket of tmTicketRows) {
-    if (ticket.status === "APPROVED") {
-      const cc = normalizeCostCode(ticket.costCode || "UNASSIGNED");
-      const row = ensureRow(cc, cc === "UNASSIGNED" ? "T&M Tickets" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
-      row.actualTM += Number(ticket.grandTotal || 0);
-    }
-  }
-
-  const expenseReceipts = await db
-    .select({
-      amount: receipts.amount,
-      category: receipts.category,
-      costCode: receipts.costCode,
-    })
-    .from(receipts)
-    .where(eq(receipts.projectId, projectId))
-    .limit(5000);
-
-  for (const receipt of expenseReceipts) {
-    const cc = normalizeCostCode(receipt.costCode || "UNASSIGNED");
-    const row = ensureRow(cc, cc === "UNASSIGNED" ? "Other Expenses" : undefined, cc === "UNASSIGNED" ? "Unassigned" : undefined);
-    row.actualOther += Number(receipt.amount || 0);
   }
 
   const adjustments = await db.select().from(forecastAdjustments).where(eq(forecastAdjustments.projectId, projectId));

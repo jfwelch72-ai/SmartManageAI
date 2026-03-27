@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, contracts, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -2867,4 +2867,34 @@ export const costLedgerPostings = pgTable("cost_ledger_postings", {
 export const insertCostLedgerPostingSchema = createInsertSchema(costLedgerPostings).omit({ id: true, createdAt: true });
 export type InsertCostLedgerPosting = z.infer<typeof insertCostLedgerPostingSchema>;
 export type CostLedgerPosting = typeof costLedgerPostings.$inferSelect;
+
+export const costTransactions = pgTable("cost_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  costCode: text("cost_code").notNull().default("UNASSIGNED"),
+  sourceCategory: costSourceCategoryEnum("source_category").notNull(),
+  originModule: costOriginModuleEnum("origin_module").notNull(),
+  amount: decimal("amount", { precision: 14, scale: 2 }).notNull(),
+  transactionDate: date("transaction_date").notNull(),
+  referenceId: varchar("reference_id"),
+  description: text("description"),
+  status: costTransactionStatusEnum("status").notNull().default("ACTIVE"),
+  voidedAt: timestamp("voided_at"),
+  voidedBy: varchar("voided_by").references(() => users.id),
+  voidReason: text("void_reason"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("cost_transactions_project_idx").on(table.projectId),
+  costCodeIdx: index("cost_transactions_cost_code_idx").on(table.costCode),
+  sourceCategoryIdx: index("cost_transactions_source_category_idx").on(table.sourceCategory),
+  originModuleIdx: index("cost_transactions_origin_module_idx").on(table.originModule),
+  statusIdx: index("cost_transactions_status_idx").on(table.status),
+  transactionDateIdx: index("cost_transactions_transaction_date_idx").on(table.transactionDate),
+  referenceIdx: index("cost_transactions_reference_idx").on(table.referenceId),
+}));
+
+export const insertCostTransactionSchema = createInsertSchema(costTransactions).omit({ id: true, createdAt: true });
+export type InsertCostTransaction = z.infer<typeof insertCostTransactionSchema>;
+export type CostTransaction = typeof costTransactions.$inferSelect;
 

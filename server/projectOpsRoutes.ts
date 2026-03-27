@@ -10,6 +10,7 @@ import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
 import * as healthService from "./services/projectHealthService";
 import { logError } from "./utils/logger";
+import { eventBus } from "./events";
 
 const router = Router();
 
@@ -146,6 +147,25 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
 
     if (newReceipt.projectId) {
       import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(newReceipt.projectId!)).catch(e => console.error("Budget alert eval after receipt:", e));
+
+      try {
+        await eventBus.emit({
+          version: 1,
+          orgId: req.user!.organizationId || "",
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "receipt.created" as const,
+          payload: {
+            receiptId: newReceipt.id,
+            projectId: newReceipt.projectId,
+            costCode: newReceipt.costCode || null,
+            amount: parseFloat(newReceipt.amount?.toString() || "0"),
+            category: newReceipt.category || null,
+          },
+        });
+      } catch (emitErr) {
+        console.error("Failed to emit receipt.created event:", emitErr);
+      }
     }
 
     res.status(201).json(newReceipt);

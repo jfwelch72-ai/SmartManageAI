@@ -160,6 +160,7 @@ import safetyTrainingRoutes from "./safetyTrainingRoutes";
 import safetyWorkflowRoutes from "./safetyWorkflowRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
+import costEngineRoutes from "./costEngineRoutes";
 import hiringRoutes from "./hiringRoutes";
 import talentPoolRoutes from "./talentPoolRoutes";
 import overheadRoutes from "./overheadRoutes";
@@ -319,6 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(profitabilityAlertRoutes);
   app.use(costLedgerRoutes);
   app.use(revenueRecognitionRoutes);
+  app.use(costEngineRoutes);
 
   // Register Hiring Module routes
   app.use("/api/hiring", hiringRoutes);
