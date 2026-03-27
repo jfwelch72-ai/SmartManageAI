@@ -1010,7 +1010,8 @@ function ScheduleTalkDialog({ open, onClose, topics, onSave, isSaving }: {
 }) {
   const [form, setForm] = useState({ topicId: "", scheduledDate: "", presenter: "", notes: "", projectId: "" });
   const set = (key: string, val: string | number | boolean) => setForm(f => ({ ...f, [key]: val }));
-  const { data: projects = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/projects"] });
+  const { data: projectsResponse } = useQuery<{ data: { id: string; name: string }[] }>({ queryKey: ["/api/projects"] });
+  const projects = projectsResponse?.data || [];
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -1114,7 +1115,8 @@ function StartChecklistDialog({ open, onClose, templates, onSave, isSaving }: {
   const [itemNotes, setItemNotes] = useState<Record<number, string>>({});
   const [itemPhotos, setItemPhotos] = useState<Record<number, string>>({});
   const [notes, setNotes] = useState("");
-  const { data: projects = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/projects"] });
+  const { data: projectsResponse } = useQuery<{ data: { id: string; name: string }[] }>({ queryKey: ["/api/projects"] });
+  const projects = projectsResponse?.data || [];
 
   const selectedTemplate = templates.find(t => t.id === templateId);
   let items: string[] = [];
