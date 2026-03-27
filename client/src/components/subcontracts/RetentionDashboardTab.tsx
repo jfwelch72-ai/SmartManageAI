@@ -25,13 +25,9 @@ interface RetentionSummary {
 export function RetentionDashboardTab() {
   const fmt = (v: string | number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(typeof v === "string" ? parseFloat(v) : v);
 
-  const { data, isLoading, isError, refetch } = useQuery<RetentionSummary>({
+  const { data, isLoading, isError, error, refetch } = useQuery<RetentionSummary>({
     queryKey: ["/api/subcontracts/retention/summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/subcontracts/retention/summary", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
+    retry: 1,
   });
 
   if (isLoading) {
@@ -39,7 +35,7 @@ export function RetentionDashboardTab() {
   }
 
   if (isError) {
-    return <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground"><p>Failed to load retention summary.</p><Button variant="outline" onClick={() => refetch()}>Retry</Button></div>;
+    return <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground"><p>Failed to load retention summary.</p>{error?.message && <p className="text-sm">{error.message}</p>}<Button variant="outline" onClick={() => refetch()}>Retry</Button></div>;
   }
 
   const totals = data?.totals;

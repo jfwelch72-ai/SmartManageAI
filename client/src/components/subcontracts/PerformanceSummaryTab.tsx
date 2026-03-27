@@ -33,13 +33,9 @@ export function PerformanceSummaryTab() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const { data: summaries = [], isLoading, isError, refetch } = useQuery<PerformanceSummaryItem[]>({
+  const { data: summaries = [], isLoading, isError, error, refetch } = useQuery<PerformanceSummaryItem[]>({
     queryKey: ["/api/subcontracts/performance/summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/subcontracts/performance/summary", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
+    retry: 1,
   });
 
   const projectOptions = useMemo(() => {
@@ -108,7 +104,7 @@ export function PerformanceSummaryTab() {
   }
 
   if (isError) {
-    return <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground"><p>Failed to load performance summary.</p><Button variant="outline" onClick={() => refetch()}>Retry</Button></div>;
+    return <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground"><p>Failed to load performance summary.</p>{error?.message && <p className="text-sm">{error.message}</p>}<Button variant="outline" onClick={() => refetch()}>Retry</Button></div>;
   }
 
   const topPerformers = filteredSummaries.filter(s => parseFloat(s.averageRating) >= 3.5).slice(0, 5);

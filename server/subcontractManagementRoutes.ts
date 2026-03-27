@@ -771,7 +771,7 @@ router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeat
 router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], 'canAccessFinancials'), async (req: AuthRequest, res: Response) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
-    if (mustDenyAccess) return res.json({ totals: { totalHeld: 0, totalReleased: 0, totalPending: 0, netRetention: 0 }, contracts: [] });
+    if (mustDenyAccess) return res.json({ totals: { totalRetentionHeld: "0.00", totalReleased: "0.00", balanceRemaining: "0.00" }, contracts: [] });
 
     const allContracts = await db
       .select({
