@@ -834,6 +834,8 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
   }
 });
 
+const PAYROLL_APPROVE_ROLES = ["ADMIN", "OFFICE_MANAGER", "SUPER_ADMIN"] as const;
+
 const payRunStatusHandler = async (req: any, res: Response) => {
   try {
     const authReq = req as AuthRequest;
@@ -852,6 +854,14 @@ const payRunStatusHandler = async (req: any, res: Response) => {
       VOIDED: ["ARCHIVED"],
       ARCHIVED: [],
     };
+
+    const privilegedTransitions = ["APPROVED", "PROCESSING", "PAID", "VOIDED"];
+    if (privilegedTransitions.includes(status)) {
+      const userRole = authReq.user?.role;
+      if (!userRole || !(PAYROLL_APPROVE_ROLES as readonly string[]).includes(userRole)) {
+        return res.status(403).json({ error: "Only Admin, Office Manager, or Super Admin can approve, process, pay, or void pay runs" });
+      }
+    }
 
     const [existing] = await db.select().from(payRuns)
       .where(and(eq(payRuns.id, req.params.id), eq(payRuns.organizationId, orgId)));

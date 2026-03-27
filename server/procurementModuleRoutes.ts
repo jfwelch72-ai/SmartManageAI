@@ -1107,6 +1107,11 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
       .where(and(eq(purchaseOrders.id, req.params.id), eq(purchaseOrders.orgId, orgId))).limit(1);
     if (!po) { res.status(404).json({ error: "PO not found" }); return; }
 
+    const receivableStatuses = ["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL"];
+    if (!receivableStatuses.includes(po.status)) {
+      res.status(400).json({ error: `Receipts can only be recorded for POs in ${receivableStatuses.join(", ")} status (currently ${po.status})` }); return;
+    }
+
     const parsed = receiptCreateSchema.safeParse(req.body);
     if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
 
