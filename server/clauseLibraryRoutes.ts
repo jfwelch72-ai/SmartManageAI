@@ -20,10 +20,16 @@ function canView(role?: string) {
   return VIEW_ROLES.includes(role || "");
 }
 
+function extractOrgId(req: AuthRequest): string | null {
+  const filter = getOrgIdForFilter(req);
+  if (filter.mustDenyAccess) return null;
+  return filter.orgId || req.user?.organizationId || null;
+}
+
 router.get("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canView(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const clauses = await db.select().from(contractClauses)
@@ -40,7 +46,7 @@ router.get("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, 
 router.post("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const { title, category, content, isRequired, isDefault, sortOrder } = req.body;
@@ -70,7 +76,7 @@ router.post("/api/clause-library/clauses", requireAuth, async (req: AuthRequest,
 router.patch("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const [existing] = await db.select().from(contractClauses)
@@ -101,7 +107,7 @@ router.patch("/api/clause-library/clauses/:id", requireAuth, async (req: AuthReq
 router.delete("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const [existing] = await db.select().from(contractClauses)
@@ -119,7 +125,7 @@ router.delete("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRe
 router.get("/api/clause-library/templates", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canView(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const templates = await db.select().from(contractTemplates)
@@ -136,7 +142,7 @@ router.get("/api/clause-library/templates", requireAuth, async (req: AuthRequest
 router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canView(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const [template] = await db.select().from(contractTemplates)
@@ -161,7 +167,7 @@ router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthReq
 router.post("/api/clause-library/templates", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const { name, description, contractType, clauseIds, defaultPaymentTerms, defaultRetentionPercent, defaultInsuranceRequirements } = req.body;
@@ -189,7 +195,7 @@ router.post("/api/clause-library/templates", requireAuth, async (req: AuthReques
 router.patch("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const [existing] = await db.select().from(contractTemplates)
@@ -222,7 +228,7 @@ router.patch("/api/clause-library/templates/:id", requireAuth, async (req: AuthR
 router.delete("/api/clause-library/templates/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const [existing] = await db.select().from(contractTemplates)
@@ -240,7 +246,7 @@ router.delete("/api/clause-library/templates/:id", requireAuth, async (req: Auth
 router.post("/api/clause-library/templates/:id/apply/:contractId", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!canManage(req.user?.role)) { res.status(403).json({ error: "Access denied" }); return; }
-    const orgId = getOrgIdForFilter(req);
+    const orgId = extractOrgId(req);
     if (!orgId) { res.status(400).json({ error: "Organization required" }); return; }
 
     const [template] = await db.select().from(contractTemplates)
