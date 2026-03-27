@@ -1,11 +1,19 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar as CalendarIcon, User, Search, X, Filter } from "lucide-react";
+import { Plus, CheckCircle2, Circle, XCircle, AlertCircle, Calendar as CalendarIcon, User, Search, X, Filter, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { FormDatePicker } from "@/components/ui/date-picker";
 import { format, parseISO } from "date-fns";
 import {
@@ -64,6 +72,8 @@ export default function Tasks() {
   const [dismissDialogOpen, setDismissDialogOpen] = useState(false);
   const [dismissReason, setDismissReason] = useState("");
   const [dismissingTaskId, setDismissingTaskId] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const form = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
@@ -148,39 +158,96 @@ export default function Tasks() {
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case "CRITICAL": return "destructive";
-      case "HIGH": return "destructive";
-      case "MEDIUM": return "default";
-      case "LOW": return "secondary";
-      default: return "default";
-    }
-  };
-
   const getCategoryLabel = (category: string) => {
     return category.replace(/_/g, " ");
   };
 
-  // Filter tasks based on search, priority, and category
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "COMPLETED":
+        return <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-800" data-testid="badge-completed">Completed</Badge>;
+      case "IN_PROGRESS":
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-800" data-testid="badge-in-progress">In Progress</Badge>;
+      case "DISMISSED":
+        return <Badge className="bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700" data-testid="badge-dismissed">Dismissed</Badge>;
+      default:
+        return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-200 dark:border-yellow-800" data-testid="badge-pending">Open</Badge>;
+    }
+  };
+
+  const getPriorityBadge = (priority: string) => {
+    switch (priority) {
+      case "CRITICAL":
+        return <Badge className="bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-200 dark:border-red-800" data-testid="badge-critical">Critical</Badge>;
+      case "HIGH":
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900 dark:text-orange-200 dark:border-orange-800" data-testid="badge-high">High</Badge>;
+      case "MEDIUM":
+        return <Badge className="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800" data-testid="badge-medium">Medium</Badge>;
+      case "LOW":
+        return <Badge variant="secondary" data-testid="badge-low">Low</Badge>;
+      default:
+        return <Badge variant="secondary">{priority}</Badge>;
+    }
+  };
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else {
+        setSortColumn(null);
+        setSortDirection("asc");
+      }
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) return <ArrowUpDown className="h-3 w-3 ml-1" />;
+    return sortDirection === "asc" ? <ArrowUp className="h-3 w-3 ml-1" /> : <ArrowDown className="h-3 w-3 ml-1" />;
+  };
+
+  const PRIORITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  const STATUS_ORDER: Record<string, number> = { PENDING: 0, IN_PROGRESS: 1, COMPLETED: 2, DISMISSED: 3 };
+
   const filteredTasks = useMemo(() => {
-    return (tasks as any[]).filter(task => {
-      // Search filter
+    const filtered = (tasks as any[]).filter(task => {
       const matchesSearch = 
         task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         task.description?.toLowerCase().includes(searchTerm.toLowerCase());
       
       if (searchTerm && !matchesSearch) return false;
-      
-      // Priority filter
       if (priorityFilter !== "ALL" && task.priority !== priorityFilter) return false;
-      
-      // Category filter
       if (categoryFilter !== "ALL" && task.category !== categoryFilter) return false;
       
       return true;
     });
-  }, [tasks, searchTerm, priorityFilter, categoryFilter]);
+
+    if (sortColumn) {
+      filtered.sort((a: any, b: any) => {
+        let cmp = 0;
+        switch (sortColumn) {
+          case "title":
+            cmp = (a.title || "").localeCompare(b.title || "");
+            break;
+          case "status":
+            cmp = (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99);
+            break;
+          case "priority":
+            cmp = (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99);
+            break;
+          case "dueDate":
+            cmp = (a.dueDate || "9999").localeCompare(b.dueDate || "9999");
+            break;
+        }
+        return sortDirection === "desc" ? -cmp : cmp;
+      });
+    }
+
+    return filtered;
+  }, [tasks, searchTerm, priorityFilter, categoryFilter, sortColumn, sortDirection]);
 
   const hasActiveFilters = searchTerm || priorityFilter !== "ALL" || categoryFilter !== "ALL" || statusFilter !== null;
 
@@ -518,7 +585,7 @@ export default function Tasks() {
         )}
       </div>
 
-      {/* Tasks List */}
+      {/* Tasks Table */}
       {isLoading ? (
         <div className="text-center py-8" data-testid="loading-tasks">Loading tasks...</div>
       ) : filteredTasks.length === 0 ? (
@@ -532,96 +599,136 @@ export default function Tasks() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {filteredTasks.map((task: any) => (
-            <Card key={task.id} data-testid={`task-card-${task.id}`}>
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 space-y-1">
-                    <div className="flex items-center gap-2">
+        <div className="rounded-md border overflow-x-auto" data-testid="tasks-table-container">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>
+                  <button
+                    className="flex items-center font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-foreground"
+                    onClick={() => handleSort("title")}
+                    data-testid="sort-task-name"
+                  >
+                    Task Name
+                    {getSortIcon("title")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    className="flex items-center font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-foreground"
+                    onClick={() => handleSort("status")}
+                    data-testid="sort-status"
+                  >
+                    Status
+                    {getSortIcon("status")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    className="flex items-center font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-foreground"
+                    onClick={() => handleSort("priority")}
+                    data-testid="sort-priority"
+                  >
+                    Priority
+                    {getSortIcon("priority")}
+                  </button>
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider">Category</TableHead>
+                <TableHead className="text-xs uppercase tracking-wider">Assignee</TableHead>
+                <TableHead>
+                  <button
+                    className="flex items-center font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-foreground"
+                    onClick={() => handleSort("dueDate")}
+                    data-testid="sort-due-date"
+                  >
+                    Due Date
+                    {getSortIcon("dueDate")}
+                  </button>
+                </TableHead>
+                <TableHead className="text-xs uppercase tracking-wider text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTasks.map((task: any) => (
+                <TableRow key={task.id} data-testid={`task-row-${task.id}`}>
+                  <TableCell className="font-medium max-w-[300px]">
+                    <div className="flex items-center gap-2" data-testid={`task-title-${task.id}`}>
                       {getStatusIcon(task.status)}
-                      <CardTitle className="text-base" data-testid={`task-title-${task.id}`}>
-                        {task.title}
-                      </CardTitle>
+                      <span className="truncate">{task.title}</span>
                     </div>
-                    {task.description && (
-                      <CardDescription data-testid={`task-description-${task.id}`}>
-                        {task.description}
-                      </CardDescription>
+                  </TableCell>
+                  <TableCell data-testid={`task-status-${task.id}`}>
+                    {getStatusBadge(task.status)}
+                  </TableCell>
+                  <TableCell data-testid={`task-priority-${task.id}`}>
+                    {getPriorityBadge(task.priority)}
+                  </TableCell>
+                  <TableCell data-testid={`task-category-${task.id}`}>
+                    <span className="text-sm text-muted-foreground">{getCategoryLabel(task.category)}</span>
+                  </TableCell>
+                  <TableCell data-testid={`task-assignee-${task.id}`}>
+                    {task.assignedToFirstName ? (
+                      <div className="flex items-center gap-1 text-sm">
+                        <User className="h-3 w-3 text-muted-foreground" />
+                        <span>{task.assignedToFirstName} {task.assignedToLastName}</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
                     )}
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant={getPriorityColor(task.priority) as any} data-testid={`task-priority-${task.id}`}>
-                      {task.priority}
-                    </Badge>
-                    <Badge variant="outline" data-testid={`task-category-${task.id}`}>
-                      {getCategoryLabel(task.category)}
-                    </Badge>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mt-2">
-                  {task.projectName && (
-                    <div className="flex items-center gap-1" data-testid={`task-project-${task.id}`}>
-                      <span className="font-medium">{task.projectCode}</span>
+                  </TableCell>
+                  <TableCell data-testid={`task-due-date-${task.id}`}>
+                    {task.dueDate ? (
+                      <div className="flex items-center gap-1 text-sm">
+                        <CalendarIcon className="h-3 w-3 text-muted-foreground" />
+                        <span>{new Date(task.dueDate).toLocaleDateString()}</span>
+                      </div>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {task.status === "PENDING" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "IN_PROGRESS" })}
+                          disabled={updateStatusMutation.isPending}
+                          data-testid={`button-start-task-${task.id}`}
+                        >
+                          Start Working
+                        </Button>
+                      )}
+                      {task.status === "IN_PROGRESS" && (
+                        <>
+                          <Button
+                            size="sm"
+                            onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "COMPLETED" })}
+                            disabled={updateStatusMutation.isPending}
+                            data-testid={`button-complete-task-${task.id}`}
+                          >
+                            Mark Complete
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setDismissingTaskId(task.id);
+                              setDismissDialogOpen(true);
+                            }}
+                            disabled={updateStatusMutation.isPending}
+                            data-testid={`button-dismiss-task-${task.id}`}
+                          >
+                            Dismiss
+                          </Button>
+                        </>
+                      )}
                     </div>
-                  )}
-                  {task.assignedToFirstName && (
-                    <div className="flex items-center gap-1" data-testid={`task-assignee-${task.id}`}>
-                      <User className="h-3 w-3" />
-                      {task.assignedToFirstName} {task.assignedToLastName}
-                    </div>
-                  )}
-                  {task.dueDate && (
-                    <div className="flex items-center gap-1" data-testid={`task-due-date-${task.id}`}>
-                      <CalendarIcon className="h-3 w-3" />
-                      {new Date(task.dueDate).toLocaleDateString()}
-                    </div>
-                  )}
-                </div>
-
-                {task.status === "PENDING" && (
-                  <div className="flex gap-2 mt-3">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "IN_PROGRESS" })}
-                      disabled={updateStatusMutation.isPending}
-                      data-testid={`button-start-task-${task.id}`}
-                    >
-                      Start Working
-                    </Button>
-                  </div>
-                )}
-
-                {task.status === "IN_PROGRESS" && (
-                  <div className="flex gap-2 mt-3">
-                    <Button
-                      size="sm"
-                      onClick={() => updateStatusMutation.mutate({ taskId: task.id, status: "COMPLETED" })}
-                      disabled={updateStatusMutation.isPending}
-                      data-testid={`button-complete-task-${task.id}`}
-                    >
-                      Mark Complete
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setDismissingTaskId(task.id);
-                        setDismissDialogOpen(true);
-                      }}
-                      disabled={updateStatusMutation.isPending}
-                      data-testid={`button-dismiss-task-${task.id}`}
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                )}
-              </CardHeader>
-            </Card>
-          ))}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
