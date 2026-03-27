@@ -14,7 +14,7 @@ router.get("/:projectId/drawing-sets", requireAuth, async (req: AuthRequest, res
     if (!orgId) return;
 
     const [proj] = await db.select({ id: projects.id }).from(projects)
-      .where(and(eq(projects.id, req.params.projectId), eq(projects.organizationId, orgId)));
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, orgId)));
     if (!proj) return res.status(404).json({ error: "Project not found" });
 
     const sets = await db.select().from(drawingSets)
@@ -38,7 +38,7 @@ router.post("/:projectId/drawing-sets", requireAuth, requireRole("SUPER_ADMIN", 
     if (!orgId) return;
 
     const [proj] = await db.select({ id: projects.id }).from(projects)
-      .where(and(eq(projects.id, req.params.projectId), eq(projects.organizationId, orgId)));
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, orgId)));
     if (!proj) return res.status(404).json({ error: "Project not found" });
 
     const { name, description } = req.body;
