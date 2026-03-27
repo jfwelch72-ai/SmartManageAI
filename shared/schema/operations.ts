@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum } from "./enums";
+import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteTypeEnum, notificationTypeEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, contracts, crmOrganisations, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -2649,4 +2649,110 @@ export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
 });
 export type InsertLeaveRequest = z.infer<typeof insertLeaveRequestSchema>;
 export type LeaveRequest = typeof leaveRequests.$inferSelect;
+
+// ─── ASSET HANDOVER ───────────────────────────────────────────────────────────
+
+export const assetHandoverItems = pgTable("asset_handover_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  category: text("category").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  status: handoverItemStatusEnum("status").notNull().default("PENDING"),
+  documentUrl: text("document_url"),
+  documentFilename: text("document_filename"),
+  completedAt: timestamp("completed_at"),
+  completedById: varchar("completed_by_id").references(() => users.id),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("handover_items_project_id_idx").on(table.projectId),
+  statusIdx: index("handover_items_status_idx").on(table.status),
+}));
+
+export const insertHandoverItemSchema = createInsertSchema(assetHandoverItems).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertHandoverItem = z.infer<typeof insertHandoverItemSchema>;
+export type HandoverItem = typeof assetHandoverItems.$inferSelect;
+
+export const assetHandoverSignoffs = pgTable("asset_handover_signoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  role: handoverSignoffRoleEnum("role").notNull(),
+  signedByUserId: varchar("signed_by_user_id").notNull().references(() => users.id),
+  signedByName: text("signed_by_name").notNull(),
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+  notes: text("notes"),
+}, (table) => ({
+  projectIdIdx: index("handover_signoffs_project_id_idx").on(table.projectId),
+}));
+
+export const insertHandoverSignoffSchema = createInsertSchema(assetHandoverSignoffs).omit({
+  id: true,
+  signedAt: true,
+});
+export type InsertHandoverSignoff = z.infer<typeof insertHandoverSignoffSchema>;
+export type HandoverSignoff = typeof assetHandoverSignoffs.$inferSelect;
+
+// ─── MAINTENANCE LOGS ─────────────────────────────────────────────────────────
+
+export const maintenanceLogs = pgTable("maintenance_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  date: timestamp("date").notNull(),
+  type: assetMaintenanceTypeEnum("type").notNull(),
+  system: maintenanceSystemEnum("system").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  cost: decimal("cost", { precision: 12, scale: 2 }),
+  vendorName: text("vendor_name"),
+  documentUrl: text("document_url"),
+  documentFilename: text("document_filename"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("maintenance_logs_project_id_idx").on(table.projectId),
+  typeIdx: index("maintenance_logs_type_idx").on(table.type),
+  systemIdx: index("maintenance_logs_system_idx").on(table.system),
+  dateIdx: index("maintenance_logs_date_idx").on(table.date),
+}));
+
+export const insertMaintenanceLogSchema = createInsertSchema(maintenanceLogs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertMaintenanceLog = z.infer<typeof insertMaintenanceLogSchema>;
+export type MaintenanceLog = typeof maintenanceLogs.$inferSelect;
+
+export const maintenanceRecurringSchedules = pgTable("maintenance_recurring_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  system: maintenanceSystemEnum("system").notNull(),
+  frequency: recurringFrequencyEnum("frequency").notNull(),
+  description: text("description"),
+  nextDueDate: timestamp("next_due_date"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").notNull().references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdIdx: index("maint_recurring_project_id_idx").on(table.projectId),
+  activeIdx: index("maint_recurring_active_idx").on(table.isActive),
+}));
+
+export const insertMaintenanceRecurringScheduleSchema = createInsertSchema(maintenanceRecurringSchedules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertMaintenanceRecurringSchedule = z.infer<typeof insertMaintenanceRecurringScheduleSchema>;
+export type MaintenanceRecurringSchedule = typeof maintenanceRecurringSchedules.$inferSelect;
 

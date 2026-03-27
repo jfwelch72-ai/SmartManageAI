@@ -98,6 +98,7 @@ interface WarrantyTabProps {
   projectId: string;
   projectCode: string;
   userRole: string;
+  handoverComplete?: boolean;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -218,16 +219,18 @@ function allowedTransitions(status: CaseStatus, role: string): CaseStatus[] {
 
 // ─── Empty State ──────────────────────────────────────────────────────────────
 
-function EmptyState({ onAdd, canAdd }: { onAdd: () => void; canAdd: boolean }) {
+function EmptyState({ onAdd, canAdd, handoverComplete }: { onAdd: () => void; canAdd: boolean; handoverComplete?: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <ShieldCheck className="w-12 h-12 text-muted-foreground mb-4 opacity-40" />
       <h3 className="text-lg font-semibold mb-1">No Warranty Cases</h3>
       <p className="text-muted-foreground text-sm mb-6 max-w-sm">
-        Track defects, warranty claims, callbacks, and recalls for this project after construction.
+        {handoverComplete === false
+          ? "Complete the asset handover signoff process to enable warranty case tracking."
+          : "Track defects, warranty claims, callbacks, and recalls for this project after construction."}
       </p>
       {canAdd && (
-        <Button onClick={onAdd} data-testid="button-add-warranty-case">
+        <Button onClick={onAdd} disabled={handoverComplete === false} data-testid="button-add-warranty-case">
           <Plus className="w-4 h-4 mr-2" /> Log Warranty Case
         </Button>
       )}
@@ -1068,7 +1071,7 @@ function CreateCaseDialog({
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export function WarrantyTab({ projectId, projectCode, userRole }: WarrantyTabProps) {
+export function WarrantyTab({ projectId, projectCode, userRole, handoverComplete }: WarrantyTabProps) {
   const [searchQ, setSearchQ] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterType, setFilterType] = useState("all");
@@ -1115,8 +1118,62 @@ export function WarrantyTab({ projectId, projectCode, userRole }: WarrantyTabPro
   const PRIORITY_ORDER: Record<string, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
   const sorted = [...cases].sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 99) - (PRIORITY_ORDER[b.priority] ?? 99));
 
+  const WARRANTY_PERIODS = [
+    { name: "General Contractor Warranty", years: 1, color: "bg-blue-500" },
+    { name: "Mechanical Systems (HVAC/Plumbing)", years: 2, color: "bg-cyan-500" },
+    { name: "Roofing Warranty", years: 5, color: "bg-orange-500" },
+    { name: "Structural Warranty", years: 10, color: "bg-purple-500" },
+  ];
+
+  const now = new Date();
+  const handoverSignoffs = useQuery<Array<{ id: string; role: string; signedAt: string }>>({
+    queryKey: ["/api/projects", projectCode, "handover", "signoffs"],
+    queryFn: () => apiRequest("GET", `/api/projects/${projectCode}/handover/signoffs`).then(r => r.json()),
+    enabled: !!projectCode,
+  });
+
+  const hasContractorSignoff = handoverSignoffs.data?.some(s => s.role === "CONTRACTOR");
+  const hasOwnerSignoff = handoverSignoffs.data?.some(s => s.role === "OWNER");
+  const dualSignoffComplete = hasContractorSignoff && hasOwnerSignoff;
+
+  const latestSignoffDate = dualSignoffComplete
+    ? new Date(Math.max(...handoverSignoffs.data!.map(s => new Date(s.signedAt).getTime())))
+    : null;
+
+  const warrantyPeriodData = latestSignoffDate
+    ? WARRANTY_PERIODS.map(wp => {
+        const expiresAt = new Date(latestSignoffDate);
+        expiresAt.setFullYear(expiresAt.getFullYear() + wp.years);
+        const totalDays = wp.years * 365.25;
+        const elapsed = (now.getTime() - latestSignoffDate.getTime()) / (1000 * 60 * 60 * 24);
+        const remaining = Math.ceil((expiresAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const pctUsed = Math.min(100, Math.max(0, (elapsed / totalDays) * 100));
+        return { ...wp, expiresAt, remaining, pctUsed, expired: remaining < 0 };
+      })
+    : [];
+
+  const casesWithTarget = cases.filter(c => c.targetResolutionDate && c.status !== "CLOSED" && c.status !== "REJECTED");
+  const overdueCases = casesWithTarget
+    .map(c => ({ ...c, daysRemaining: Math.ceil((new Date(c.targetResolutionDate!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) }))
+    .filter(c => c.daysRemaining < 0)
+    .sort((a, b) => a.daysRemaining - b.daysRemaining);
+
   return (
     <div className="space-y-4" data-testid="warranty-tab">
+      {handoverComplete === false && (
+        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20" data-testid="card-warranty-handover-pending">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-amber-600" />
+              <div>
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Handover Not Yet Complete</p>
+                <p className="text-xs text-amber-700 dark:text-amber-400">Warranty tracking activates after both contractor and owner sign off on the asset handover. Complete the handover signoff process to enable warranty case creation.</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
@@ -1130,7 +1187,7 @@ export function WarrantyTab({ projectId, projectCode, userRole }: WarrantyTabPro
             <FileDown className="w-4 h-4 mr-1" /> Export
           </Button>
           {isManager && (
-            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-add-warranty-case-header">
+            <Button size="sm" onClick={() => setShowCreate(true)} disabled={handoverComplete === false} data-testid="button-add-warranty-case-header">
               <Plus className="w-4 h-4 mr-1" /> Log Case
             </Button>
           )}
@@ -1139,6 +1196,60 @@ export function WarrantyTab({ projectId, projectCode, userRole }: WarrantyTabPro
 
       {/* Stats */}
       {cases.length > 0 && <StatsBar cases={cases} />}
+
+      {warrantyPeriodData.length > 0 && (
+        <Card data-testid="card-warranty-timeline">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-muted-foreground" />
+              Warranty Period Expirations
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Starting from handover date: {latestSignoffDate ? fmtDate(latestSignoffDate.toISOString()) : "—"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {warrantyPeriodData.map(wp => (
+              <div key={wp.name} className="space-y-1" data-testid={`warranty-period-${wp.name.replace(/\s+/g, "-").toLowerCase()}`}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{wp.name}</span>
+                  <span className={`text-xs font-semibold ${wp.expired ? "text-red-600" : wp.remaining <= 90 ? "text-amber-600" : "text-green-600"}`}>
+                    {wp.expired ? `Expired ${Math.abs(wp.remaining)} days ago` : `${wp.remaining} days remaining`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all ${wp.expired ? "bg-red-500" : wp.remaining <= 90 ? "bg-amber-500" : wp.color}`} style={{ width: `${wp.pctUsed}%` }} />
+                  </div>
+                  <span className="text-xs text-muted-foreground w-24 text-right">
+                    Expires {fmtDate(wp.expiresAt.toISOString())}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {overdueCases.length > 0 && (
+        <Card className="border-red-200" data-testid="card-overdue-cases">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-4 h-4" />
+              Overdue Cases ({overdueCases.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {overdueCases.map(c => (
+              <div key={c.id} className="flex items-center gap-3 p-2 rounded-md bg-red-50 dark:bg-red-950/20 text-sm" data-testid={`overdue-case-${c.id}`}>
+                <span className="font-medium flex-1">{c.title}</span>
+                <span className="text-xs text-red-600">Overdue by {Math.abs(c.daysRemaining)} days</span>
+                <span className="text-xs text-muted-foreground">{fmtDate(c.targetResolutionDate)}</span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
@@ -1184,7 +1295,7 @@ export function WarrantyTab({ projectId, projectCode, userRole }: WarrantyTabPro
           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       ) : cases.length === 0 ? (
-        <EmptyState onAdd={() => setShowCreate(true)} canAdd={isManager} />
+        <EmptyState onAdd={() => setShowCreate(true)} canAdd={isManager} handoverComplete={handoverComplete} />
       ) : (
         <div className="space-y-2">
           {sorted.map((wc) => (

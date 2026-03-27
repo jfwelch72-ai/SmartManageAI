@@ -50,6 +50,9 @@ import {
   XCircle,
   FileText,
   Archive,
+  Building2,
+  Wrench,
+  ClipboardCheck,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
@@ -91,6 +94,8 @@ import ProjectPayrollTab from "@/components/project-tabs/ProjectPayrollTab";
 import ProjectEquipmentTab from "@/components/project-tabs/ProjectEquipmentTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
+import AssetHandoverTab from "@/components/AssetHandoverTab";
+import MaintenanceLogsTab from "@/components/MaintenanceLogsTab";
 import ContractsTab from "@/components/project-tabs/ContractsTab";
 import FinancialsTab from "@/components/project-tabs/FinancialsTab";
 import SafetyTrainingTab from "@/components/project-tabs/SafetyTrainingTab";
@@ -150,7 +155,7 @@ interface MaterialBudgetSummary {
   alertsTriggered: number;
 }
 
-type TabGroup = "General" | "Field Operations" | "Documents & Communication" | "Resources & Workforce" | "Financial" | "AI";
+type TabGroup = "General" | "Field Operations" | "Documents & Communication" | "Resources & Workforce" | "Financial" | "Asset Management" | "AI";
 
 const TAB_GROUP_ORDER: TabGroup[] = [
   "General",
@@ -158,6 +163,7 @@ const TAB_GROUP_ORDER: TabGroup[] = [
   "Documents & Communication",
   "Resources & Workforce",
   "Financial",
+  "Asset Management",
   "AI",
 ];
 
@@ -178,7 +184,10 @@ interface TabGroupEntry {
 function buildTabConfigs(
   userRole: string | undefined,
   canAccessSOV: boolean,
+  projectStatus?: string,
 ): TabConfig[] {
+  const isProjectComplete = projectStatus === "COMPLETE" || projectStatus === "CLOSED";
+  const showAssetMgmt = isProjectComplete || hasManagementAccess(userRole);
   return [
     {
       value: "overview",
@@ -237,11 +246,25 @@ function buildTabConfigs(
       group: "Field Operations",
     },
     {
+      value: "asset-handover",
+      label: "Handover",
+      icon: ClipboardCheck,
+      visible: showAssetMgmt,
+      group: "Asset Management",
+    },
+    {
       value: "warranty",
       label: "Warranty",
       icon: ShieldCheck,
-      visible: hasManagementAccess(userRole),
-      group: "Field Operations",
+      visible: showAssetMgmt,
+      group: "Asset Management",
+    },
+    {
+      value: "maintenance-logs",
+      label: "Maintenance",
+      icon: Wrench,
+      visible: showAssetMgmt,
+      group: "Asset Management",
     },
     {
       value: "safety-training",
@@ -453,13 +476,20 @@ export default function ProjectDetailPage() {
     enabled: !!project?.id,
   });
 
+  const { data: handoverSignoffs = [] } = useQuery<Array<{ id: string; role: string; signedByName: string; signedAt: string }>>({
+    queryKey: ["/api/projects", projectCode, "handover", "signoffs"],
+    queryFn: () => apiRequest("GET", `/api/projects/${projectCode}/handover/signoffs`).then(r => r.json()),
+    enabled: !!projectCode && (project?.status === "COMPLETE" || project?.status === "CLOSED" || hasManagementAccess(user?.role)),
+  });
+  const handoverComplete = handoverSignoffs.some(s => s.role === "CONTRACTOR") && handoverSignoffs.some(s => s.role === "OWNER");
+
   const canAccessSOV =
     user?.role === "ADMIN" ||
     user?.role === "MANAGER" ||
     user?.role === "SUPERINTENDENT" ||
     user?.role === "OFFICE_MANAGER" ||
     canAccessFinancialsPerms === true;
-  const tabConfigs = buildTabConfigs(user?.role, canAccessSOV);
+  const tabConfigs = buildTabConfigs(user?.role, canAccessSOV, project?.status);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
   const groupedTabs = groupTabs(visibleTabs);
 
@@ -649,6 +679,27 @@ export default function ProjectDetailPage() {
               </AlertDescription>
             </Alert>
           )}
+
+        {project.status === "COMPLETE" && hasManagementAccess(user?.role) && (
+          <Alert className="mb-6 border-blue-200 bg-blue-50 dark:bg-blue-950/20" data-testid="alert-handover-prompt">
+            <Building2 className="h-4 w-4 text-blue-600" />
+            <AlertTitle className="text-blue-800 dark:text-blue-300">Project Complete — Begin Asset Handover</AlertTitle>
+            <AlertDescription className="flex items-center justify-between gap-4 flex-wrap">
+              <span className="text-blue-700 dark:text-blue-400">
+                This project is complete. Start the handover process to transfer keys, documents, and equipment to the owner.
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleSetActiveTab("asset-handover")}
+                data-testid="button-go-to-handover"
+              >
+                <ClipboardCheck className="h-4 w-4 mr-2" />
+                Start Handover
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {materialBudgetSummary && materialBudgetSummary.alertsTriggered > 0 && (
           <Alert
@@ -975,11 +1026,29 @@ export default function ProjectDetailPage() {
             />
           </TabsContent>
 
+          <TabsContent value="asset-handover">
+            <AssetHandoverTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+            />
+          </TabsContent>
+
           <TabsContent value="warranty">
             <WarrantyTab
               projectId={project.id}
               projectCode={project.code}
               userRole={user?.role ?? "VIEWER"}
+              handoverComplete={handoverComplete}
+            />
+          </TabsContent>
+
+          <TabsContent value="maintenance-logs">
+            <MaintenanceLogsTab
+              projectId={project.id}
+              projectCode={project.code}
+              userRole={user?.role ?? "VIEWER"}
+              handoverComplete={handoverComplete}
             />
           </TabsContent>
 

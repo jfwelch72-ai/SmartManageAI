@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import {
   warrantyCases, warrantyTasks, warrantyDocuments, projects,
+  assetHandoverSignoffs,
   insertWarrantyCaseSchema, insertWarrantyTaskSchema, insertWarrantyDocumentSchema,
   type WarrantyCase, type WarrantyTask, type WarrantyDocument,
 } from "@shared/schema";
@@ -165,6 +166,15 @@ router.post(
       if (!project) return res.status(404).json({ error: "Project not found" });
       if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
         return res.status(403).json({ error: "Access denied" });
+      }
+
+      const signoffs = await db.select({ role: assetHandoverSignoffs.role })
+        .from(assetHandoverSignoffs)
+        .where(eq(assetHandoverSignoffs.projectId, project.id));
+      const hasContractor = signoffs.some(s => s.role === "CONTRACTOR");
+      const hasOwner = signoffs.some(s => s.role === "OWNER");
+      if (!hasContractor || !hasOwner) {
+        return res.status(403).json({ error: "Handover must be completed (both contractor and owner signoff) before warranty cases can be created." });
       }
 
       const userId = req.user!.id;

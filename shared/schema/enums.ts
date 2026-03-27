@@ -613,3 +613,9 @@ export const overheadCostFrequencyEnum = pgEnum("overhead_cost_frequency", [
 export const overheadCostActionEnum = pgEnum("overhead_cost_action", [
   "CREATE", "UPDATE", "DELETE",
 ]);
+
+export const handoverItemStatusEnum = pgEnum("handover_item_status", ["PENDING", "COMPLETE", "NOT_APPLICABLE"]);
+export const handoverSignoffRoleEnum = pgEnum("handover_signoff_role", ["CONTRACTOR", "OWNER"]);
+export const assetMaintenanceTypeEnum = pgEnum("asset_maintenance_type", ["PREVENTIVE", "CORRECTIVE", "EMERGENCY"]);
+export const maintenanceSystemEnum = pgEnum("maintenance_system", ["HVAC", "PLUMBING", "ELECTRICAL", "ROOFING", "STRUCTURAL", "FIRE_PROTECTION", "ELEVATOR", "LANDSCAPING", "GENERAL", "OTHER"]);
+export const recurringFrequencyEnum = pgEnum("recurring_frequency", ["WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
