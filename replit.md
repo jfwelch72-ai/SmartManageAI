@@ -69,6 +69,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Custom Line Styles & Measurement Grouping**: Custom line styles and grouped measurements with color coding and aggregated totals.
 *   **Leave Management Module**: Employee self-service and manager/HR views for leave management.
 *   **AIA Progress Billing Engine**: Full AIA G702/G703 progress billing system based on SOV module.
+*   **T&M Workflow Enhancements**: Client digital sign-off (name + signature pad capture) on T&M tickets, automatic billing lock (read-only mode when INVOICED/BILLED), and configurable auto-invoice creation (per-project `autoInvoice` setting that auto-creates/appends DRAFT invoices when tickets are approved for billing with notifications to billing-role users).
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**

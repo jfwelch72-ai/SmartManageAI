@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
 import { useTMTickets, useSubmitTMTicket, useApproveTMTicket, useRejectTMTicket, useDeleteTMTicket, type TMTicket } from "@/hooks/use-data";
-import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Send } from "lucide-react";
+import { Plus, ChevronDown, ChevronRight, FileText, CheckCircle, XCircle, Send, Lock } from "lucide-react";
 import { format } from "date-fns";
 import TMTicketDialog from "@/components/tm/TMTicketDialog";
 import TMTicketDetail from "@/components/tm/TMTicketDetail";
@@ -188,12 +188,18 @@ export default function TMTicketsSection({ projectId, projectCode, userRole }: T
                 </CollapsibleTrigger>
 
                 <div className="flex items-center gap-2 px-4 pb-3">
-                  {ticket.status === "DRAFT" && canCreate && (
+                  {(ticket.billingStatus === "INVOICED" || ticket.billingStatus === "BILLED") && (
+                    <Badge variant="outline" className="text-amber-600 border-amber-300" data-testid={`badge-locked-${ticket.id}`}>
+                      <Lock className="w-3 h-3 mr-1" />
+                      Locked — {ticket.billingStatus === "BILLED" ? "Billed" : "Invoiced"}
+                    </Badge>
+                  )}
+                  {ticket.billingStatus !== "INVOICED" && ticket.billingStatus !== "BILLED" && ticket.status === "DRAFT" && canCreate && (
                     <Button variant="default" size="sm" onClick={(e) => { e.stopPropagation(); handleSubmit(ticket.id); }} disabled={submitMutation.isPending} data-testid={`button-quick-submit-${ticket.id}`}>
                       <Send className="w-4 h-4 mr-2" /> Submit for Approval
                     </Button>
                   )}
-                  {ticket.status === "SUBMITTED" && canApprove && (
+                  {ticket.billingStatus !== "INVOICED" && ticket.billingStatus !== "BILLED" && ticket.status === "SUBMITTED" && canApprove && (
                     <>
                       <Button size="sm" onClick={(e) => { e.stopPropagation(); handleApprove(ticket.id); }} disabled={approveMutation.isPending} data-testid={`button-quick-approve-${ticket.id}`}>
                         <CheckCircle className="w-4 h-4 mr-2" /> Approve

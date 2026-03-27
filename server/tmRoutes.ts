@@ -3,7 +3,7 @@ import { db } from "./db";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
-import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
+import { notifyApprovers, notifySubmitter, getApproverUserIds, notifyUsers } from "./services/approvalNotificationService";
 import { 
   tmTickets, 
   tmTicketLaborEntries,
@@ -14,6 +14,14 @@ import {
   users,
   auditLog,
 } from "@shared/schema";
+
+// ========================================
+// T&M Billing Lock Helper
+// ========================================
+
+function isTicketLocked(billingStatus: string): boolean {
+  return billingStatus === "INVOICED" || billingStatus === "BILLED";
+}
 
 // ========================================
 // T&M Approval Routes (from tmApprovalRoutes.ts)
@@ -37,6 +45,10 @@ function registerTMApprovalRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
+      }
+
       if (ticket.status !== "DRAFT" && ticket.status !== "REJECTED") {
         return res.status(400).json({ error: "Ticket is already submitted or approved" });
       }
@@ -95,6 +107,10 @@ function registerTMApprovalRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
+      }
+
       if (ticket.status !== "SUBMITTED") {
         return res.status(400).json({ error: "Only submitted tickets can be approved" });
       }
@@ -153,6 +169,10 @@ function registerTMApprovalRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
+      }
+
       if (ticket.status !== "SUBMITTED") {
         return res.status(400).json({ error: "Only submitted tickets can be rejected" });
       }
@@ -209,6 +229,10 @@ function registerTMApprovalRoutes(app: Express) {
       
       if (!ticket) {
         return res.status(404).json({ error: "T&M ticket not found" });
+      }
+
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
       }
       
       const [updatedTicket] = await db.update(tmTickets)
@@ -342,7 +366,91 @@ function registerTMInvoiceRoutes(app: Express) {
         ipAddress: req.ip || "unknown",
       });
 
-      res.json(updated);
+      const project = await db.query.projects.findFirst({ where: eq(projects.id, ticket.projectId) });
+      if (project?.autoInvoice && project.gcOrganizationId) {
+        try {
+          await db.transaction(async (tx) => {
+            const existingDraft = await tx.query.tmInvoices.findFirst({
+              where: and(
+                eq(tmInvoices.projectId, project.id),
+                eq(tmInvoices.status, "DRAFT"),
+              ),
+            });
+
+            if (existingDraft) {
+              const draftTickets = await tx.query.tmTickets.findMany({
+                where: eq(tmTickets.invoiceId, existingDraft.id),
+              });
+              const newSubtotal = draftTickets.reduce((sum, t) => sum + Number(t.grandTotal || 0), 0) + Number(ticket.grandTotal || 0);
+              const taxRate = Number(existingDraft.taxRate || 0);
+              const newTax = newSubtotal * (taxRate / 100);
+              const newTotal = newSubtotal + newTax;
+
+              await tx.update(tmInvoices)
+                .set({
+                  subtotal: String(newSubtotal),
+                  taxAmount: String(newTax),
+                  total: String(newTotal),
+                  updatedAt: new Date(),
+                })
+                .where(eq(tmInvoices.id, existingDraft.id));
+
+              await tx.update(tmTickets)
+                .set({
+                  billingStatus: "INVOICED",
+                  invoiceId: existingDraft.id,
+                  updatedAt: new Date(),
+                })
+                .where(eq(tmTickets.id, ticketId));
+            } else {
+              const existingInvoices = await tx.query.tmInvoices.findMany({
+                where: eq(tmInvoices.organizationId, project.gcOrganizationId!),
+              });
+              const invoiceNumber = `TM-${String(existingInvoices.length + 1).padStart(5, "0")}`;
+              const subtotal = Number(ticket.grandTotal || 0);
+
+              const [newInvoice] = await tx.insert(tmInvoices).values({
+                organizationId: project.gcOrganizationId!,
+                projectId: project.id,
+                invoiceNumber,
+                invoiceDate: new Date().toISOString().split("T")[0],
+                clientName: project.clientName || "Client",
+                subtotal: String(subtotal),
+                taxRate: "0",
+                taxAmount: "0",
+                total: String(subtotal),
+                status: "DRAFT",
+                createdById: req.user!.id,
+              }).returning();
+
+              await tx.update(tmTickets)
+                .set({
+                  billingStatus: "INVOICED",
+                  invoiceId: newInvoice.id,
+                  updatedAt: new Date(),
+                })
+                .where(eq(tmTickets.id, ticketId));
+            }
+          });
+
+          const billingRoles = ["ADMIN", "MANAGER", "OFFICE_MANAGER"] as const;
+          const billingUserIds = await getApproverUserIds(project.gcOrganizationId, req.user!.id, billingRoles);
+          if (billingUserIds.length > 0) {
+            await notifyUsers(billingUserIds, {
+              type: "TM_INVOICE_AUTO_CREATED",
+              title: "Draft Invoice Auto-Created",
+              message: `A draft invoice has been auto-created/updated for project ${project.name} — ticket ${ticket.ticketNumber} was added`,
+              relatedEntityId: project.id,
+              relatedEntityType: "project",
+            });
+          }
+        } catch (autoInvoiceError) {
+          console.error("Auto-invoice error (non-fatal):", autoInvoiceError);
+        }
+      }
+
+      const finalTicket = await db.query.tmTickets.findFirst({ where: eq(tmTickets.id, ticketId) });
+      res.json(finalTicket || updated);
     } catch (error) {
       console.error("Error approving ticket for billing:", error);
       res.status(500).json({ error: "Failed to approve ticket for billing" });
@@ -543,6 +651,66 @@ function registerTMInvoiceRoutes(app: Express) {
     } catch (error) {
       console.error("Error fetching invoice:", error);
       res.status(500).json({ error: "Failed to fetch invoice" });
+    }
+  });
+
+  app.post("/api/tm-tickets/:ticketId/client-signoff", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { ticketId } = req.params;
+      const { clientName, signature } = req.body;
+
+      if (!clientName || !signature) {
+        return res.status(400).json({ error: "Client name and signature are required" });
+      }
+
+      const ticket = await db.query.tmTickets.findFirst({ where: eq(tmTickets.id, ticketId) });
+      if (!ticket) {
+        return res.status(404).json({ error: "T&M ticket not found" });
+      }
+
+      if (ticket.clientSignoffAt) {
+        return res.status(400).json({ error: "Client sign-off has already been recorded for this ticket" });
+      }
+
+      if (ticket.status !== "SUBMITTED" && ticket.status !== "APPROVED") {
+        return res.status(400).json({ error: "Ticket must be in SUBMITTED or APPROVED status for client sign-off" });
+      }
+
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
+      }
+
+      if (typeof clientName !== "string" || clientName.length > 200) {
+        return res.status(400).json({ error: "Client name must be a string under 200 characters" });
+      }
+
+      if (typeof signature !== "string" || signature.length > 500000) {
+        return res.status(400).json({ error: "Signature data is too large" });
+      }
+
+      const [updated] = await db.update(tmTickets)
+        .set({
+          clientSignoffName: clientName.trim(),
+          clientSignoffSignature: signature,
+          clientSignoffAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(tmTickets.id, ticketId))
+        .returning();
+
+      await db.insert(auditLog).values({
+        userId: req.user!.id,
+        action: "UPDATE",
+        entityType: "tm_ticket",
+        entityId: ticketId,
+        newValue: JSON.stringify({ action: "client_signoff", clientName }),
+        ipAddress: req.ip || "unknown",
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error saving client sign-off:", error);
+      res.status(500).json({ error: "Failed to save client sign-off" });
     }
   });
 
@@ -942,6 +1110,10 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be modified" });
+      }
+
       if (ticket.status !== "DRAFT" && ticket.status !== "REJECTED") {
         return res.status(400).json({ error: "Cannot edit a submitted or approved ticket" });
       }
@@ -1038,6 +1210,10 @@ export function registerTMTicketRoutes(app: Express) {
         return res.status(404).json({ error: "T&M ticket not found" });
       }
       
+      if (isTicketLocked(ticket.billingStatus)) {
+        return res.status(400).json({ error: "Ticket is locked — it has been billed and cannot be deleted" });
+      }
+
       if (ticket.status !== "DRAFT" && req.user!.role !== "ADMIN") {
         return res.status(400).json({ error: "Only draft tickets can be deleted" });
       }

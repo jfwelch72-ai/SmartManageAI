@@ -38,6 +38,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "BID_SUBMITTED", "BID_STATUS_CHANGED", "BID_ASSIGNED", "BID_DUE_DATE_APPROACHING",
   "LEAVE_APPROVED", "LEAVE_DENIED",
   "BUDGET_ALERT",
+  "TM_INVOICE_AUTO_CREATED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

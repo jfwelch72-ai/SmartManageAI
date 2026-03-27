@@ -1,15 +1,27 @@
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { TMTicket } from "@/hooks/use-data";
 import { format } from "date-fns";
-import { CheckCircle, XCircle, Send, Trash2, DollarSign, Users, Wrench, Package, Printer } from "lucide-react";
+import { CheckCircle, XCircle, Send, Trash2, DollarSign, Users, Wrench, Package, Printer, Lock, PenLine } from "lucide-react";
+import SignaturePad from "./SignaturePad";
 
 const formatCurrency = (value: string | number) => {
   const num = typeof value === "string" ? parseFloat(value) : value;
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(num || 0);
 };
+
+function isTicketLocked(billingStatus: string | undefined): boolean {
+  return billingStatus === "INVOICED" || billingStatus === "BILLED";
+}
 
 interface TMTicketDetailProps {
   ticket: TMTicket;
@@ -29,9 +41,46 @@ export default function TMTicketDetail({
   onSubmit, onApprove, onReject, onDelete, onViewPDF,
   submitPending, approvePending,
 }: TMTicketDetailProps) {
+  const { toast } = useToast();
+  const locked = isTicketLocked(ticket.billingStatus);
+  const [signoffName, setSignoffName] = useState("");
+  const [signoffSignature, setSignoffSignature] = useState<string | null>(null);
+  const [showSignoff, setShowSignoff] = useState(false);
+
+  const signoffMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/tm-tickets/${ticket.id}/client-signoff`, {
+        clientName: signoffName,
+        signature: signoffSignature,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", ticket.projectId, "tm-tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tm-tickets", ticket.id] });
+      toast({ title: "Client sign-off recorded successfully" });
+      setShowSignoff(false);
+      setSignoffName("");
+      setSignoffSignature(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to save client sign-off", variant: "destructive" });
+    },
+  });
+
+  const canSignoff = (ticket.status === "SUBMITTED" || ticket.status === "APPROVED") && !locked && !ticket.clientSignoffAt;
+
   return (
     <div className="px-4 pb-4 border-t">
       <div className="py-4 space-y-4">
+        {locked && (
+          <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-md" data-testid="badge-locked">
+            <Lock className="w-4 h-4 text-amber-600" />
+            <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+              Locked — {ticket.billingStatus === "BILLED" ? "Billed" : "Invoiced"}
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-4 text-sm">
           <div>
             <span className="text-muted-foreground">Work Date:</span>{" "}
@@ -174,8 +223,92 @@ export default function TMTicketDetail({
           </div>
         )}
 
+        <div className="border-t pt-4 space-y-3">
+          <h4 className="text-sm font-medium flex items-center gap-2">
+            <PenLine className="w-4 h-4" /> Client Sign-off
+          </h4>
+          {ticket.clientSignoffAt ? (
+            <div className="bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-md p-4 space-y-2" data-testid="signoff-completed">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-green-600" />
+                <span className="text-sm font-medium text-green-700 dark:text-green-400">Signed by {ticket.clientSignoffName}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Signed on {format(new Date(ticket.clientSignoffAt), "MMMM d, yyyy 'at' h:mm a")}
+              </p>
+              {ticket.clientSignoffSignature && (
+                <div className="mt-2">
+                  <img
+                    src={ticket.clientSignoffSignature}
+                    alt="Client signature"
+                    className="border rounded bg-white max-w-[300px] h-auto"
+                    data-testid="img-client-signature"
+                  />
+                </div>
+              )}
+            </div>
+          ) : canSignoff ? (
+            <>
+              {!showSignoff ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSignoff(true)}
+                  data-testid="button-start-signoff"
+                >
+                  <PenLine className="w-4 h-4 mr-2" />
+                  Capture Client Sign-off
+                </Button>
+              ) : (
+                <div className="border rounded-md p-4 space-y-4 bg-muted/30" data-testid="signoff-form">
+                  <div className="space-y-2">
+                    <Label htmlFor="signoff-name">Client Representative Name</Label>
+                    <Input
+                      id="signoff-name"
+                      value={signoffName}
+                      onChange={(e) => setSignoffName(e.target.value)}
+                      placeholder="Enter full name"
+                      data-testid="input-signoff-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Signature</Label>
+                    <SignaturePad onSignatureChange={setSignoffSignature} />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => signoffMutation.mutate()}
+                      disabled={!signoffName || !signoffSignature || signoffMutation.isPending}
+                      data-testid="button-confirm-signoff"
+                    >
+                      {signoffMutation.isPending ? "Saving..." : "Confirm Sign-off"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowSignoff(false);
+                        setSignoffName("");
+                        setSignoffSignature(null);
+                      }}
+                      data-testid="button-cancel-signoff"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {locked ? "Ticket is locked" : "Sign-off available when ticket is submitted or approved"}
+            </p>
+          )}
+        </div>
+
         <div className="flex justify-end gap-2 pt-2 border-t">
-          {(ticket.status === "DRAFT" || ticket.status === "REJECTED") && canCreate && (
+          {!locked && (ticket.status === "DRAFT" || ticket.status === "REJECTED") && canCreate && (
             <>
               <Button
                 variant="outline"
@@ -209,7 +342,7 @@ export default function TMTicketDetail({
             </>
           )}
 
-          {ticket.status === "SUBMITTED" && canApprove && (
+          {!locked && ticket.status === "SUBMITTED" && canApprove && (
             <>
               <Button
                 variant="outline"

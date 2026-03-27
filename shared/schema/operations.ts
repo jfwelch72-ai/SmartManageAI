@@ -397,6 +397,11 @@ export const tmTickets = pgTable("tm_tickets", {
   rejectedById: varchar("rejected_by_id").references(() => users.id),
   rejectionReason: text("rejection_reason"),
   
+  // Client digital sign-off
+  clientSignoffName: text("client_signoff_name"),
+  clientSignoffSignature: text("client_signoff_signature"),
+  clientSignoffAt: timestamp("client_signoff_at"),
+
   // Signed document upload
   signedDocumentUrl: text("signed_document_url"),
   signedDocumentFileName: text("signed_document_file_name"),

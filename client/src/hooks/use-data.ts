@@ -1859,8 +1859,12 @@ export interface TMTicket {
   totalMaterialCost: string;
   grandTotal: string;
   rejectionReason: string | null;
+  clientSignoffName: string | null;
+  clientSignoffSignature: string | null;
+  clientSignoffAt: string | null;
   signedDocumentUrl: string | null;
   costCode: string | null;
+  billingStatus: string;
   location: string | null;
   createdById: string;
   createdByName: string | null;

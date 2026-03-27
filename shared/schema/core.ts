@@ -353,6 +353,7 @@ export const projects = pgTable("projects", {
   geofenceRadius: integer("geofence_radius"),
   budgetAlertThreshold: decimal("budget_alert_threshold", { precision: 5, scale: 2 }).default("80"),
   budgetCriticalThreshold: decimal("budget_critical_threshold", { precision: 5, scale: 2 }).default("95"),
+  autoInvoice: boolean("auto_invoice").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
