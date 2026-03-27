@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, users, aiTakeoffAnalyses, projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, vendorPricebooks, vendorPricebookItems, aiCoDrafts, organizations, projects, takeoffSheets, changeOrders, organizationSowItems, projectInspections, projectDelays, scopeItems, media, aiInsights, aiGanttRecommendations, aiVendorComparisons, equipment as equipmentTable, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum, masterSowItems, hustlerOrganizations, unitsOfMeasure } from "@shared/schema";
 import { logInfo, logError, logWarn } from "./utils/logger";
-import { eq, desc, and, sql, gte, asc } from "drizzle-orm";
+import { eq, desc, and, sql, gte, asc, isNotNull } from "drizzle-orm";
 import {
   runAIAnalysis,
   getLatestAIRun,
@@ -1675,6 +1675,7 @@ async function processJobsiteBatch(batchId: string, user: { id?: string; organiz
 
   if (!batch) throw new Error("Batch not found");
 
+  try {
   await db.update(jobsiteAnalysisBatches)
     .set({ status: "PROCESSING" })
     .where(eq(jobsiteAnalysisBatches.id, batchId));
@@ -1844,6 +1845,16 @@ Return your analysis as JSON with this exact structure:
       updatedAt: new Date(),
     })
     .where(eq(jobsiteAnalysisBatches.id, batchId));
+  } catch (processingError) {
+    console.error(`processJobsiteBatch uncaught error for batch ${batchId}:`, processingError);
+    await db.update(jobsiteAnalysisBatches)
+      .set({
+        status: "FAILED",
+        errorMessage: processingError instanceof Error ? processingError.message : "Unexpected processing error",
+        updatedAt: new Date(),
+      })
+      .where(eq(jobsiteAnalysisBatches.id, batchId));
+  }
 }
 
 // POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos with AI Vision
@@ -2088,7 +2099,10 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
     const { uploadIntents } = await import("@shared/schema");
     const orgIntents = await db.select({ objectKey: uploadIntents.objectKey })
       .from(uploadIntents)
-      .where(eq(uploadIntents.organizationId, organizationId));
+      .where(and(
+        eq(uploadIntents.organizationId, organizationId),
+        isNotNull(uploadIntents.confirmedAt),
+      ));
     const validObjectKeys = new Set(orgIntents.map(i => i.objectKey));
 
     const validatedPhotos = photos.filter(p => {
