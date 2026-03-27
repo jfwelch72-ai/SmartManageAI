@@ -58,12 +58,18 @@ interface AnalysisResult {
 interface AnalysisBatch {
   id: string;
   projectId: string;
-  batchDate: string;
-  photoCount: number;
-  analysisStatus: "QUEUED" | "PROCESSING" | "COMPLETE" | "FAILED";
+  analysisDate: string;
+  batchDate?: string;
+  photoCount?: number;
+  status: string;
+  analysisStatus?: string;
+  analysisTypes?: string[];
   safetyScore?: number;
   progressScore?: number;
-  createdBy: string;
+  summaryJson?: string;
+  createdByUserId?: string;
+  createdBy?: string;
+  createdAt?: string;
   completedAt?: string;
 }
 
@@ -351,13 +357,13 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                       {batches.slice(0, 5).map(batch => (
                         <div key={batch.id} className="flex items-center justify-between p-3 rounded-lg border hover-elevate">
                           <div>
-                            <p className="font-medium text-sm">{batch.photoCount} photos analyzed</p>
+                            <p className="font-medium text-sm">{batch.photoCount || 0} photos analyzed</p>
                             <p className="text-xs text-muted-foreground">
-                              {format(parseISO(batch.batchDate), "MMM d, yyyy h:mm a")}
+                              {format(parseISO(batch.analysisDate || batch.createdAt || new Date().toISOString()), "MMM d, yyyy")}
                             </p>
                           </div>
-                          <Badge variant={batch.analysisStatus === "COMPLETE" ? "secondary" : "outline"}>
-                            {batch.analysisStatus}
+                          <Badge variant={(batch.status || batch.analysisStatus) === "COMPLETE" ? "secondary" : "outline"}>
+                            {batch.status || batch.analysisStatus}
                           </Badge>
                         </div>
                       ))}
@@ -512,9 +518,9 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                             <Camera className="w-5 h-5 text-primary" />
                           </div>
                           <div>
-                            <p className="font-medium">{batch.photoCount} photos</p>
+                            <p className="font-medium">{batch.photoCount || 0} photos</p>
                             <p className="text-sm text-muted-foreground">
-                              {format(parseISO(batch.batchDate), "MMMM d, yyyy 'at' h:mm a")}
+                              {format(parseISO(batch.analysisDate || batch.createdAt || new Date().toISOString()), "MMMM d, yyyy")}
                             </p>
                           </div>
                         </div>
@@ -526,10 +532,10 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                             </div>
                           )}
                           <Badge variant={
-                            batch.analysisStatus === "COMPLETE" ? "secondary" :
-                            batch.analysisStatus === "FAILED" ? "destructive" : "outline"
+                            (batch.status || batch.analysisStatus) === "COMPLETE" ? "secondary" :
+                            (batch.status || batch.analysisStatus) === "FAILED" ? "destructive" : "outline"
                           }>
-                            {batch.analysisStatus}
+                            {batch.status || batch.analysisStatus}
                           </Badge>
                         </div>
                       </div>
