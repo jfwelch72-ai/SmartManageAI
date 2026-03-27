@@ -206,6 +206,24 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  if (type === "DOCUMENT_REVISION_CREATED") {
+    let actionUrl = `${baseUrl}/projects`;
+    if (notification.relatedEntityType === "drawingRevision" && notification.relatedEntityId) {
+      const parts = notification.relatedEntityId.split(":");
+      if (parts.length === 2) {
+        actionUrl = `${baseUrl}/projects/${parts[0]}?tab=plans&documentId=${parts[1]}`;
+      } else {
+        actionUrl = `${baseUrl}/projects/${notification.relatedEntityId}`;
+      }
+    }
+    return {
+      subject: `New Drawing Revision — SmartManageAI`,
+      body: notification.message,
+      actionUrl,
+      actionText: "View in Plans",
+    };
+  }
+
   if (type === "DEADLINE_WARNING" || type === "REMINDER") {
     return {
       subject: `${notification.title} — SmartManageAI`,

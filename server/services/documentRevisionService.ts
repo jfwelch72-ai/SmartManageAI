@@ -1,7 +1,9 @@
 import { db } from "../db";
-import { documentRevisions } from "@shared/schema";
+import { documentRevisions, planDocuments, users } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
+import { eventBus } from "../events/eventBus";
+import type { DocumentRevisionCreatedEvent } from "../events/eventTypes";
 
 export async function createRevision(
   orgId: string,
@@ -50,6 +52,56 @@ export async function createRevision(
   }).returning();
 
   logInfo("Document revision created", { revisionId: revision.id, documentId, revisionNumber: nextRevisionNumber, orgId });
+
+  try {
+    const { projects } = await import("@shared/schema");
+    const [doc] = await db.select({ title: planDocuments.title, projectId: planDocuments.projectId })
+      .from(planDocuments)
+      .where(eq(planDocuments.id, documentId))
+      .limit(1);
+
+    if (doc) {
+      let uploaderName: string | null = null;
+      let projectCode = "";
+
+      const [userRow] = await db.select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, createdByUserId))
+        .limit(1);
+      if (userRow) {
+        uploaderName = [userRow.firstName, userRow.lastName].filter(Boolean).join(" ") || null;
+      }
+
+      const [proj] = await db.select({ code: projects.code })
+        .from(projects)
+        .where(eq(projects.id, doc.projectId))
+        .limit(1);
+      if (proj) projectCode = proj.code;
+
+      const event: DocumentRevisionCreatedEvent = {
+        type: "document.revision_created",
+        version: 1,
+        orgId,
+        actorId: createdByUserId,
+        timestamp: new Date(),
+        payload: {
+          documentId,
+          revisionId: revision.id,
+          revisionNumber: nextRevisionNumber,
+          projectId: doc.projectId,
+          projectCode,
+          documentTitle: doc.title,
+          sourceType: sourceType,
+          uploadedByUserId: createdByUserId,
+          uploadedByName: uploaderName,
+        },
+      };
+      await eventBus.emit(event);
+    }
+  } catch (err) {
+    logError("Failed to emit document.revision_created event", { error: String(err), documentId });
+  }
+
   return revision;
 }
 

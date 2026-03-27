@@ -209,7 +209,8 @@ export type DomainEvent =
   | BudgetAlertTriggeredEvent
   | CrmOpportunityCreatedEvent
   | CrmOpportunityStageChangedEvent
-  | CrmActivityCreatedEvent;
+  | CrmActivityCreatedEvent
+  | DocumentRevisionCreatedEvent;
 
 export interface BudgetAlertTriggeredEvent extends EventEnvelope {
   type: "budget.alert_triggered";
@@ -250,6 +251,21 @@ export interface CrmActivityCreatedEvent extends EventEnvelope {
   };
 }
 
+export interface DocumentRevisionCreatedEvent extends EventEnvelope {
+  type: "document.revision_created";
+  payload: {
+    documentId: string;
+    revisionId: string;
+    revisionNumber: number;
+    projectId: string;
+    projectCode: string;
+    documentTitle: string;
+    sourceType: string;
+    uploadedByUserId: string;
+    uploadedByName: string | null;
+  };
+}
+
 export type DomainEventType = DomainEvent["type"];
 
 export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
@@ -275,4 +291,5 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "crm.opportunity_created",
   "crm.opportunity_stage_changed",
   "crm.activity_created",
+  "document.revision_created",
 ];

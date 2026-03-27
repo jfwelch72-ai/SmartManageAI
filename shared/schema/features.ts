@@ -7388,3 +7388,37 @@ export const contractRiskAnalyses = pgTable("contract_risk_analyses", {
 
 export type ContractRiskAnalysis = typeof contractRiskAnalyses.$inferSelect;
 
+export const drawingSets = pgTable("drawing_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("drawing_sets_project_idx").on(table.projectId),
+  orgIdx: index("drawing_sets_org_idx").on(table.organizationId),
+}));
+
+export const insertDrawingSetSchema = createInsertSchema(drawingSets).omit({ id: true, createdAt: true });
+export type InsertDrawingSet = z.infer<typeof insertDrawingSetSchema>;
+export type DrawingSet = typeof drawingSets.$inferSelect;
+
+export const drawingSetItems = pgTable("drawing_set_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  drawingSetId: varchar("drawing_set_id").notNull().references(() => drawingSets.id, { onDelete: "cascade" }),
+  sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  revisionId: varchar("revision_id"),
+  pinnedAt: timestamp("pinned_at").notNull().defaultNow(),
+}, (table) => ({
+  setIdx: index("drawing_set_items_set_idx").on(table.drawingSetId),
+  sheetIdx: index("drawing_set_items_sheet_idx").on(table.sheetId),
+  uniqueSetSheet: unique("drawing_set_items_set_sheet").on(table.drawingSetId, table.sheetId),
+}));
+
+export const insertDrawingSetItemSchema = createInsertSchema(drawingSetItems).omit({ id: true, pinnedAt: true });
+export type InsertDrawingSetItem = z.infer<typeof insertDrawingSetItemSchema>;
+export type DrawingSetItem = typeof drawingSetItems.$inferSelect;
+

@@ -11,7 +11,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2
+  Building2, Layers
 } from "lucide-react";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
 import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
@@ -35,6 +35,7 @@ import { useAuth } from "@/hooks/use-auth";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import LibraryPanel from "@/components/LibraryPanel";
+import DrawingSetsPanel from "@/components/DrawingSetsPanel";
 import ReportsPage from "@/pages/reports";
 
 interface PlansTabProps {
@@ -42,7 +43,7 @@ interface PlansTabProps {
   project: any;
 }
 
-type SubTab = "plans" | "addenda" | "libraries" | "reports";
+type SubTab = "plans" | "addenda" | "libraries" | "reports" | "drawing-sets";
 
 interface DocGroup {
   name: string;
@@ -60,6 +61,31 @@ const DEFAULT_GROUPS: DocGroup[] = [
   { name: "Supporting Documents", expanded: true, types: ["OTHER"] },
 ];
 
+interface DrawingSetInfo {
+  id: string;
+  projectId: string;
+  organizationId: string;
+  name: string;
+  description: string | null;
+  isPrimary: boolean;
+  createdByUserId: string | null;
+  createdAt: string;
+}
+
+interface DrawingSetItemInfo {
+  id: string;
+  drawingSetId: string;
+  sheetId: string;
+  revisionId: string | null;
+  pinnedAt: string;
+}
+
+interface SheetStatusData {
+  pinnedSheetIds: string[];
+  newerSheetIds: string[];
+  pinnedToLatestMap: Record<string, string | null>;
+}
+
 export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -75,7 +101,18 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [documentType, setDocumentType] = useState<string>("OTHER");
   const [searchQuery, setSearchQuery] = useState("");
   const [groups, setGroups] = useState(DEFAULT_GROUPS);
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const urlDocIdRef = useRef<string | null>(null);
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const docId = params.get("documentId");
+      if (docId) {
+        urlDocIdRef.current = docId;
+        return docId;
+      }
+    }
+    return null;
+  });
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [sheetFolderGroups, setSheetFolderGroups] = useState<Record<string, boolean>>({ Plans: true, "Supporting Documents": true });
@@ -84,7 +121,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [renameSheetId, setRenameSheetId] = useState<string | null>(null);
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
-  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(urlDocIdRef.current);
   const [panelWidth, setPanelWidth] = useState(256);
   const isResizingRef = useRef(false);
   const resizeStartXRef = useRef(0);
@@ -114,11 +151,91 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [storeyAssocSheetId, setStoreyAssocSheetId] = useState<string | null>(null);
   const [storeyAssocStoreyId, setStoreyAssocStoreyId] = useState<string>("");
   const [storeyAssocStoreyName, setStoreyAssocStoreyName] = useState<string>("");
+  const [activeDrawingSetId, setActiveDrawingSetId] = useState<string | null>(null);
+  const [showAllSheets, setShowAllSheets] = useState(true);
 
   const { data: categories = [] } = useQuery<QuantityCategory[]>({
     queryKey: ["/api/projects", project?.id, "takeoff", "categories"],
     enabled: !!project?.id,
   });
+
+  const { data: drawingSetsData = [] } = useQuery<DrawingSetInfo[]>({
+    queryKey: ["/api/projects", project?.id, "drawing-sets"],
+    enabled: !!project?.id,
+  });
+
+  const primarySet = useMemo(() => drawingSetsData.find(s => s.isPrimary) || null, [drawingSetsData]);
+
+  const effectiveSetId = activeDrawingSetId || primarySet?.id || null;
+
+  const { data: activeSetItems = [] } = useQuery<DrawingSetItemInfo[]>({
+    queryKey: ["/api/projects", "drawing-sets", effectiveSetId, "items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${effectiveSetId}/items`);
+      if (!res.ok) throw new Error("Failed to load items");
+      return res.json();
+    },
+    enabled: !!effectiveSetId,
+  });
+
+  const { data: sheetStatus } = useQuery<SheetStatusData>({
+    queryKey: ["/api/projects", "drawing-sets", effectiveSetId, "sheet-status"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${effectiveSetId}/sheet-status`);
+      if (!res.ok) throw new Error("Failed to load sheet status");
+      return res.json();
+    },
+    enabled: !!effectiveSetId,
+  });
+
+  const pinnedSheetIdSet = useMemo(() => new Set(sheetStatus?.pinnedSheetIds || []), [sheetStatus]);
+  const newerSheetIdSet = useMemo(() => new Set(sheetStatus?.newerSheetIds || []), [sheetStatus]);
+
+  const activeSetItemMap = useMemo(() => {
+    const map = new Map<string, DrawingSetItemInfo>();
+    for (const item of activeSetItems) {
+      map.set(item.sheetId, item);
+    }
+    return map;
+  }, [activeSetItems]);
+
+  const isSheetPinned = useCallback((sheet: TakeoffSheet): boolean => {
+    if (!effectiveSetId) return false;
+    return pinnedSheetIdSet.has(sheet.id);
+  }, [effectiveSetId, pinnedSheetIdSet]);
+
+  const sheetHasNewerRevision = useCallback((sheet: TakeoffSheet): boolean => {
+    if (!effectiveSetId) return false;
+    return newerSheetIdSet.has(sheet.id);
+  }, [effectiveSetId, newerSheetIdSet]);
+
+  const isSheetNotInCurrentSet = useCallback((sheet: TakeoffSheet): boolean => {
+    if (!effectiveSetId || pinnedSheetIdSet.size === 0) return false;
+    if (pinnedSheetIdSet.has(sheet.id)) return false;
+    const pinnedNames = new Set<string>();
+    for (const sid of pinnedSheetIdSet) {
+      const s = sheets.find(sh => sh.id === sid);
+      if (s?.sheetName) pinnedNames.add(s.sheetName);
+    }
+    return !pinnedNames.has(sheet.sheetName || "");
+  }, [effectiveSetId, pinnedSheetIdSet, sheets]);
+
+  const displaySheets = useMemo(() => {
+    if (!effectiveSetId || activeSetItemMap.size === 0) return sheets;
+    if (!showAllSheets) {
+      return sheets.filter(s => activeSetItemMap.has(s.id) || pinnedSheetIdSet.has(s.id));
+    }
+    const pinned: TakeoffSheet[] = [];
+    const rest: TakeoffSheet[] = [];
+    for (const s of sheets) {
+      if (activeSetItemMap.has(s.id) || pinnedSheetIdSet.has(s.id)) {
+        pinned.push(s);
+      } else {
+        rest.push(s);
+      }
+    }
+    return [...pinned, ...rest];
+  }, [sheets, effectiveSetId, activeSetItemMap, pinnedSheetIdSet, showAllSheets]);
 
   const isIfcFile = (fileName: string) => {
     return fileName?.toLowerCase().endsWith(".ifc");
@@ -254,13 +371,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     for (const name of SHEET_FOLDER_NAMES) {
       result[name] = [];
     }
-    for (const sheet of sheets) {
+    for (const sheet of displaySheets) {
       const group = (sheet as any).folderGroup || "Plans";
       if (!result[group]) result[group] = [];
       result[group].push(sheet);
     }
     return result;
-  }, [sheets]);
+  }, [displaySheets]);
 
   const handleSheetDragStart = useCallback((e: any, sheetId: string) => {
     setDraggedSheetId(sheetId);
@@ -661,6 +778,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
           Libraries
         </Button>
         <Button
+          variant={subTab === "drawing-sets" ? "default" : "ghost"}
+          size="sm"
+          onClick={() => setSubTab("drawing-sets")}
+          data-testid="tab-drawing-sets"
+        >
+          Drawing Sets
+        </Button>
+        <Button
           variant={subTab === "reports" ? "default" : "ghost"}
           size="sm"
           onClick={() => setSubTab("reports")}
@@ -669,6 +794,18 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
           Reports
         </Button>
       </div>
+
+      {subTab === "drawing-sets" && project && (
+        <div className="flex-1 overflow-auto p-4">
+          <DrawingSetsPanel
+            projectId={project.id}
+            sheets={sheets}
+            userRole={user?.role || ""}
+            onSetActive={setActiveDrawingSetId}
+            activeSetId={activeDrawingSetId}
+          />
+        </div>
+      )}
 
       {subTab === "addenda" && project && (
         <div className="flex-1 overflow-auto p-4">
@@ -1102,6 +1239,39 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                     ))
                   )}
 
+                  {effectiveSetId && (
+                    <div className="mx-2 my-1 p-1.5 rounded border border-amber-300 bg-amber-50/50 dark:bg-amber-900/10" data-testid="banner-active-drawing-set">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                          <Layers className="w-3 h-3" />
+                          {drawingSetsData.find(s => s.id === effectiveSetId)?.name || "Drawing Set"}
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-5 text-[10px] px-1.5"
+                            onClick={() => setShowAllSheets(!showAllSheets)}
+                            data-testid="button-toggle-all-sheets"
+                          >
+                            {showAllSheets ? "Pinned Only" : "Show All"}
+                          </Button>
+                          {activeDrawingSetId && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-4 w-4"
+                              onClick={() => { setActiveDrawingSetId(null); setShowAllSheets(false); }}
+                              data-testid="button-clear-active-set"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {sheets.length > 0 && (
                     <>
                       <Separator className="my-2" />
@@ -1184,6 +1354,21 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                         />
                                       ) : (
                                         <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
+                                      )}
+                                      {sheetHasNewerRevision(sheet) && (
+                                        <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400" data-testid={`badge-newer-revision-${sheet.id}`}>
+                                          Newer
+                                        </Badge>
+                                      )}
+                                      {isSheetPinned(sheet) && !sheetHasNewerRevision(sheet) && (
+                                        <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-green-50 text-green-600 border-green-300 dark:bg-green-900/20 dark:text-green-400" data-testid={`badge-pinned-${sheet.id}`}>
+                                          Pinned
+                                        </Badge>
+                                      )}
+                                      {isSheetNotInCurrentSet(sheet) && (
+                                        <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-gray-50 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" data-testid={`badge-not-in-set-${sheet.id}`}>
+                                          Not in set
+                                        </Badge>
                                       )}
                                       {(sheet as any).folderGroup === "BIM" && (
                                         <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-sheet-${sheet.id}`}>BIM</Badge>

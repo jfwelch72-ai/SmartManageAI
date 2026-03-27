@@ -14,6 +14,7 @@ import type {
   BidAssignedEvent,
   BidDueDateApproachingEvent,
   BudgetAlertTriggeredEvent,
+  DocumentRevisionCreatedEvent,
 } from "../eventTypes";
 
 type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
@@ -231,6 +232,58 @@ export function registerNotificationListener(): void {
       );
     } catch (err) {
       logError("notificationListener: budget.alert_triggered failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("document.revision_created", async (event: DocumentRevisionCreatedEvent) => {
+    try {
+      const { projects, projectEmployeeRates } = await import("@shared/schema");
+
+      const [project] = await db
+        .select({
+          estimatorId: projects.estimatorId,
+          superintendentId: projects.superintendentId,
+          projectManagerId: projects.projectManagerId,
+          code: projects.code,
+        })
+        .from(projects)
+        .where(eq(projects.id, event.payload.projectId))
+        .limit(1);
+
+      const adminIds = await getAdminUserIds(event.orgId);
+      const recipientIds = new Set(adminIds);
+
+      if (project) {
+        if (project.estimatorId) recipientIds.add(project.estimatorId);
+        if (project.superintendentId) recipientIds.add(project.superintendentId);
+        if (project.projectManagerId) recipientIds.add(project.projectManagerId);
+      }
+
+      const teamRows = await db
+        .select({ userId: projectEmployeeRates.userId })
+        .from(projectEmployeeRates)
+        .where(eq(projectEmployeeRates.projectId, event.payload.projectId));
+      for (const row of teamRows) {
+        recipientIds.add(row.userId);
+      }
+
+      recipientIds.delete(event.actorId);
+
+      const projectCode = event.payload.projectCode || project?.code || "";
+      const uploaderLabel = event.payload.uploadedByName || "A team member";
+      const entityRef = projectCode
+        ? `${projectCode}:${event.payload.documentId}`
+        : event.payload.documentId;
+      await insertNotifications(
+        Array.from(recipientIds),
+        "DOCUMENT_REVISION_CREATED",
+        "New Drawing Revision",
+        `${uploaderLabel} uploaded revision #${event.payload.revisionNumber} for "${event.payload.documentTitle}" (${event.payload.sourceType})`,
+        entityRef,
+        "drawingRevision"
+      );
+    } catch (err) {
+      logError("notificationListener: document.revision_created failed", { error: String(err) });
     }
   });
 }

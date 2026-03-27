@@ -97,11 +97,20 @@ export function getNotificationDestination(notification: {
       return "/crm";
 
     case "TASK_MENTIONED":
-      // Routes to /projects?taskId=<id> so the task detail panel opens in context
       if (relatedEntityId) {
         return `/projects?taskId=${relatedEntityId}`;
       }
       return "/projects";
+
+    case "DOCUMENT_REVISION_CREATED":
+      if (relatedEntityType === "drawingRevision" && relatedEntityId) {
+        const parts = relatedEntityId.split(":");
+        if (parts.length === 2) {
+          return `/projects/${parts[0]}?tab=plans&documentId=${parts[1]}`;
+        }
+        return `/projects/${relatedEntityId}`;
+      }
+      return getProjectDestination();
 
     case "GENERAL":
     default:

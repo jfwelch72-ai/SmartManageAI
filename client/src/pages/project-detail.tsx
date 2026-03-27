@@ -431,7 +431,9 @@ function groupTabs(tabs: TabConfig[]): TabGroupEntry[] {
 
 export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
-  const [activeTab, setActiveTab] = useState("overview");
+  const searchParams = new URLSearchParams(window.location.search);
+  const urlTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(urlTab || "overview");
   const [activeCategory, setActiveCategory] = useState<TabGroup>("General");
   const [financialSubTab, setFinancialSubTab] = useState("live-financials");
   const [, params] = useRoute("/projects/:code");
@@ -440,7 +442,6 @@ export default function ProjectDetailPage() {
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
   const canAccessFinancialsPerms = useFeaturePermission("canAccessFinancials");
 
-  const searchParams = new URLSearchParams(window.location.search);
   const fromCFO = searchParams.get("from") === "cfo";
   const backPath = fromCFO ? "/cfo" : "/projects";
   const backLabel = fromCFO ? "Back to CFO" : "Back to Projects";
