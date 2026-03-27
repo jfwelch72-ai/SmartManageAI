@@ -7422,3 +7422,125 @@ export const insertDrawingSetItemSchema = createInsertSchema(drawingSetItems).om
 export type InsertDrawingSetItem = z.infer<typeof insertDrawingSetItemSchema>;
 export type DrawingSetItem = typeof drawingSetItems.$inferSelect;
 
+// ==================== Toolbox Talks ====================
+
+export const toolboxTalkTopics = pgTable("toolbox_talk_topics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  content: text("content"),
+  category: text("category").notNull(),
+  attachments: text("attachments"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertToolboxTalkTopicSchema = createInsertSchema(toolboxTalkTopics).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertToolboxTalkTopic = z.infer<typeof insertToolboxTalkTopicSchema>;
+export type ToolboxTalkTopic = typeof toolboxTalkTopics.$inferSelect;
+
+export const toolboxTalkScheduled = pgTable("toolbox_talk_scheduled", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  topicId: varchar("topic_id").notNull().references(() => toolboxTalkTopics.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  scheduledDate: text("scheduled_date").notNull(),
+  presenter: text("presenter"),
+  presenterId: varchar("presenter_id").references(() => users.id),
+  status: text("status").notNull().default("SCHEDULED"),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertToolboxTalkScheduledSchema = createInsertSchema(toolboxTalkScheduled).omit({ id: true, createdAt: true });
+export type InsertToolboxTalkScheduled = z.infer<typeof insertToolboxTalkScheduledSchema>;
+export type ToolboxTalkScheduled = typeof toolboxTalkScheduled.$inferSelect;
+
+export const toolboxTalkAttendance = pgTable("toolbox_talk_attendance", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduledTalkId: varchar("scheduled_talk_id").notNull().references(() => toolboxTalkScheduled.id, { onDelete: "cascade" }),
+  employeeId: varchar("employee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  signedAt: timestamp("signed_at").notNull().defaultNow(),
+  signature: text("signature"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertToolboxTalkAttendanceSchema = createInsertSchema(toolboxTalkAttendance).omit({ id: true, createdAt: true, signedAt: true });
+export type InsertToolboxTalkAttendance = z.infer<typeof insertToolboxTalkAttendanceSchema>;
+export type ToolboxTalkAttendance = typeof toolboxTalkAttendance.$inferSelect;
+
+// ==================== Safety Checklists ====================
+
+export const safetyChecklistTemplates = pgTable("safety_checklist_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  itemsJson: text("items_json").notNull().default("[]"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertSafetyChecklistTemplateSchema = createInsertSchema(safetyChecklistTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSafetyChecklistTemplate = z.infer<typeof insertSafetyChecklistTemplateSchema>;
+export type SafetyChecklistTemplate = typeof safetyChecklistTemplates.$inferSelect;
+
+export const safetyChecklistInstances = pgTable("safety_checklist_instances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => safetyChecklistTemplates.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  completedBy: varchar("completed_by").notNull().references(() => users.id),
+  completedByName: text("completed_by_name"),
+  status: text("status").notNull().default("IN_PROGRESS"),
+  responsesJson: text("responses_json").notNull().default("[]"),
+  notes: text("notes"),
+  photoUrls: text("photo_urls"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertSafetyChecklistInstanceSchema = createInsertSchema(safetyChecklistInstances).omit({ id: true, createdAt: true });
+export type InsertSafetyChecklistInstance = z.infer<typeof insertSafetyChecklistInstanceSchema>;
+export type SafetyChecklistInstance = typeof safetyChecklistInstances.$inferSelect;
+
+// ==================== OSHA Incident Reporting ====================
+
+export const oshaIncidents = pgTable("osha_incidents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  caseNumber: text("case_number").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  employeeName: text("employee_name").notNull(),
+  employeeJobTitle: text("employee_job_title"),
+  dateOfInjury: text("date_of_injury").notNull(),
+  timeOfEvent: text("time_of_event"),
+  locationOfIncident: text("location_of_incident"),
+  eventDescription: text("event_description").notNull(),
+  injuryIllnessType: text("injury_illness_type").notNull(),
+  bodyPartAffected: text("body_part_affected").notNull(),
+  objectOrSubstance: text("object_or_substance"),
+  treatmentType: text("treatment_type").notNull(),
+  hospitalName: text("hospital_name"),
+  wasHospitalized: boolean("was_hospitalized").notNull().default(false),
+  daysAwayFromWork: integer("days_away_from_work").default(0),
+  daysOfRestrictedDuty: integer("days_of_restricted_duty").default(0),
+  classification: text("classification").notNull(),
+  isRecordable: boolean("is_recordable").notNull().default(true),
+  resultedInDeath: boolean("resulted_in_death").notNull().default(false),
+  reportedBy: varchar("reported_by").references(() => users.id),
+  reportedByName: text("reported_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertOshaIncidentSchema = createInsertSchema(oshaIncidents).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOshaIncident = z.infer<typeof insertOshaIncidentSchema>;
+export type OshaIncident = typeof oshaIncidents.$inferSelect;
+

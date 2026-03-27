@@ -156,6 +156,7 @@ import clientPortalRoutes from "./clientPortalRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
 import safetyTrainingRoutes from "./safetyTrainingRoutes";
+import safetyWorkflowRoutes from "./safetyWorkflowRoutes";
 import profitabilityAlertRoutes from "./profitabilityAlertRoutes";
 import costLedgerRoutes from "./costLedgerRoutes";
 import hiringRoutes from "./hiringRoutes";
@@ -311,6 +312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Safety Training routes
   app.use(safetyTrainingRoutes);
+  app.use(safetyWorkflowRoutes);
   app.use(profitabilityAlertRoutes);
   app.use(costLedgerRoutes);
 

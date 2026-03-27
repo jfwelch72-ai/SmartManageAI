@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { ShieldCheck, AlertTriangle, CheckCircle2, AlertCircle } from "lucide-react";
+import { ShieldCheck, AlertTriangle, CheckCircle2, AlertCircle, MessageSquare, ClipboardList, FileWarning } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,25 @@ interface SafetySummaryData {
   overdueItems: OverdueItem[];
 }
 
+interface ToolboxTalksSummary {
+  total: number;
+  completed: number;
+  upcoming: number;
+  overdue: number;
+}
+
+interface ChecklistsSummary {
+  templates: number;
+  completed: number;
+  inProgress: number;
+}
+
+interface OshaSummary {
+  year: string;
+  totalIncidents: number;
+  recordableIncidents: number;
+}
+
 function getDaysOverdueColor(days: number): string {
   if (days >= 14) return "text-red-600 dark:text-red-400";
   if (days >= 7) return "text-orange-600 dark:text-orange-400";
@@ -45,6 +64,21 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
       if (!res.ok) throw new Error("Failed to fetch safety summary");
       return res.json();
     },
+    refetchInterval: 300000,
+  });
+
+  const { data: talksSummary } = useQuery<ToolboxTalksSummary>({
+    queryKey: ["/api/toolbox-talks/summary"],
+    refetchInterval: 300000,
+  });
+
+  const { data: checklistsSummary } = useQuery<ChecklistsSummary>({
+    queryKey: ["/api/safety-checklists/summary"],
+    refetchInterval: 300000,
+  });
+
+  const { data: oshaSummary } = useQuery<OshaSummary>({
+    queryKey: ["/api/osha-incidents/summary"],
     refetchInterval: 300000,
   });
 
@@ -171,6 +205,41 @@ export function SafetyAlertsWidget({ config }: WidgetComponentProps) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {(talksSummary || checklistsSummary || oshaSummary) && (
+              <div className="grid grid-cols-3 gap-2 pt-1 border-t">
+                {talksSummary && (
+                  <div className="text-center py-1.5" data-testid="metric-toolbox-talks">
+                    <div className="flex items-center justify-center gap-1 mb-0.5">
+                      <MessageSquare className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground">Talks</span>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums">{talksSummary.completed}/{talksSummary.total}</p>
+                    {talksSummary.overdue > 0 && <p className="text-[10px] text-red-600">{talksSummary.overdue} overdue</p>}
+                  </div>
+                )}
+                {checklistsSummary && (
+                  <div className="text-center py-1.5" data-testid="metric-checklists">
+                    <div className="flex items-center justify-center gap-1 mb-0.5">
+                      <ClipboardList className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground">Checklists</span>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums">{checklistsSummary.completed}</p>
+                    {checklistsSummary.inProgress > 0 && <p className="text-[10px] text-amber-600">{checklistsSummary.inProgress} in progress</p>}
+                  </div>
+                )}
+                {oshaSummary && (
+                  <div className="text-center py-1.5" data-testid="metric-osha-incidents">
+                    <div className="flex items-center justify-center gap-1 mb-0.5">
+                      <FileWarning className="w-3 h-3 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground">OSHA</span>
+                    </div>
+                    <p className="text-sm font-bold tabular-nums">{oshaSummary.recordableIncidents}</p>
+                    <p className="text-[10px] text-muted-foreground">{oshaSummary.year} recordable</p>
+                  </div>
+                )}
               </div>
             )}
 
