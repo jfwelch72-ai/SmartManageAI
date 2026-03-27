@@ -1550,8 +1550,18 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
     if (eventType) {
       conditions.push(eq(calendarEvents.eventType, eventType as any));
     }
+    const creatorUsers = db
+      .select({
+        id: users.id,
+        organizationId: users.organizationId,
+      })
+      .from(users)
+      .as("creator_users");
+
     if (shouldFilter && orgId) {
-      conditions.push(eq(users.organizationId, orgId));
+      conditions.push(
+        sql`(${users.organizationId} = ${orgId} OR ${creatorUsers.organizationId} = ${orgId})`
+      );
     }
     
     const eventsWithUser = await db
@@ -1574,6 +1584,7 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
       })
       .from(calendarEvents)
       .leftJoin(users, eq(calendarEvents.userId, users.id))
+      .leftJoin(creatorUsers, eq(calendarEvents.createdById, creatorUsers.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(calendarEvents.startDate);
 
@@ -1658,7 +1669,7 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =
       }
     }
 
-    const insertData = { ...validationResult.data, createdById: req.user!.id };
+    const insertData = { ...validationResult.data, createdById: req.user!.id, userId: req.user!.id };
     const [newEvent] = await db.insert(calendarEvents).values([insertData]).returning();
 
     res.status(201).json(newEvent);
