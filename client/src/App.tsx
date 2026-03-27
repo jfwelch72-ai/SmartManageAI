@@ -137,6 +137,7 @@ const TalentPoolPage = lazy(() => import("@/pages/talent-pool"));
 const ContractsPage = lazy(() => import("@/pages/contracts"));
 const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
 const ProgressBillingPage = lazy(() => import("@/pages/progress-billing"));
+const WipReportPage = lazy(() => import("@/pages/wip-report"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -265,6 +266,7 @@ function Router() {
       <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} permission={RoutePermissions.TM_DAILY} />} />
       <Route path="/tm-billing" component={() => <ProtectedRoute component={TMBillingPage} permission={RoutePermissions.TM_BILLING} featurePerm="canAccessFinancials" />} />
       <Route path="/progress-billing" component={() => <ProtectedRoute component={ProgressBillingPage} permission={RoutePermissions.PROGRESS_BILLING} featurePerm="canAccessFinancials" />} />
+      <Route path="/wip-report" component={() => <ProtectedRoute component={WipReportPage} permission={RoutePermissions.CFO} featurePerm="canAccessFinancials" />} />
       <Route path="/time-clock-manager" component={() => <ProtectedRoute component={TimeClockManagerPage} permission={RoutePermissions.TIME_CLOCK_MANAGER} featurePerm="canManagePayroll" />} />
       <Route path="/ai-pm" component={() => <ProtectedRoute component={AIPMDashboard} permission={RoutePermissions.AI_PM} featurePerm="canUseAiFeatures" />} />
       <Route path="/cfo" component={() => <ProtectedRoute component={CFODashboard} permission={RoutePermissions.CFO} featurePerm={["canAccessFinancials", "canUseAiFeatures"]} />} />

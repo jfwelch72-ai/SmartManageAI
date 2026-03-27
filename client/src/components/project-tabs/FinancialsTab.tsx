@@ -1,5 +1,5 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, BarChart3, TrendingUp, FileEdit, FileSpreadsheet, Receipt, CreditCard, Activity } from "lucide-react";
+import { DollarSign, BarChart3, TrendingUp, FileEdit, FileSpreadsheet, Receipt, CreditCard, Activity, PieChart } from "lucide-react";
 import { FeaturePermissions, hasFinancialAccess } from "@/lib/rbac";
 import BudgetTab from "./BudgetTab";
 import CostLedgerTab from "./CostLedgerTab";
@@ -9,6 +9,7 @@ import SovTab from "./SovTab";
 import ReceiptsTab from "./ReceiptsTab";
 import BillingTab from "./BillingTab";
 import ProductionRatesTab from "./ProductionRatesTab";
+import RevenueWipTab from "./RevenueWipTab";
 import type { ChangeOrder, Project } from "@shared/schema";
 
 interface FinancialsTabProps {
@@ -88,6 +89,12 @@ export default function FinancialsTab({
       icon: Activity,
       visible: hasFinancialAccess(userRole),
     },
+    {
+      value: "revenue-wip",
+      label: "Revenue & WIP",
+      icon: PieChart,
+      visible: hasFinancialAccess(userRole),
+    },
   ];
 
   const visibleSubTabs = subTabs.filter((t) => t.visible);
@@ -157,6 +164,10 @@ export default function FinancialsTab({
 
       <TabsContent value="production-rates">
         <ProductionRatesTab projectId={project.id} projectCode={projectCode} />
+      </TabsContent>
+
+      <TabsContent value="revenue-wip">
+        <RevenueWipTab projectId={project.id} projectCode={projectCode} />
       </TabsContent>
     </Tabs>
   );

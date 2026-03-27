@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { DollarSign, Sparkles, RefreshCw, Download } from "lucide-react";
+import { DollarSign, Sparkles, RefreshCw, Download, PieChart } from "lucide-react";
 import { useLocation } from "wouter";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -210,6 +210,16 @@ export default function CFODashboard() {
               </span>
             </Button>
             <AIAnalysisButton showDropdown={true} variant="outline" size="sm" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLocation("/wip-report")}
+              data-testid="cfo-wip-report"
+            >
+              <PieChart className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline">WIP Report</span>
+              <span className="sm:hidden">WIP</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"

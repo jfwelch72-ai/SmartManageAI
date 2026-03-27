@@ -7544,3 +7544,33 @@ export const insertOshaIncidentSchema = createInsertSchema(oshaIncidents).omit({
 export type InsertOshaIncident = z.infer<typeof insertOshaIncidentSchema>;
 export type OshaIncident = typeof oshaIncidents.$inferSelect;
 
+export const revenueRecognition = pgTable("revenue_recognition", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  snapshotDate: date("snapshot_date").notNull(),
+  contractValue: decimal("contract_value", { precision: 14, scale: 2 }).notNull().default("0"),
+  changeOrderAdjustments: decimal("change_order_adjustments", { precision: 14, scale: 2 }).notNull().default("0"),
+  adjustedContractValue: decimal("adjusted_contract_value", { precision: 14, scale: 2 }).notNull().default("0"),
+  costsToDate: decimal("costs_to_date", { precision: 14, scale: 2 }).notNull().default("0"),
+  estimatedTotalCost: decimal("estimated_total_cost", { precision: 14, scale: 2 }).notNull().default("0"),
+  percentComplete: decimal("percent_complete", { precision: 7, scale: 4 }).notNull().default("0"),
+  earnedRevenue: decimal("earned_revenue", { precision: 14, scale: 2 }).notNull().default("0"),
+  billingsToDate: decimal("billings_to_date", { precision: 14, scale: 2 }).notNull().default("0"),
+  overUnderBilling: decimal("over_under_billing", { precision: 14, scale: 2 }).notNull().default("0"),
+  grossProfit: decimal("gross_profit", { precision: 14, scale: 2 }).notNull().default("0"),
+  grossProfitPercent: decimal("gross_profit_percent", { precision: 7, scale: 4 }).notNull().default("0"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("rev_rec_project_idx").on(table.projectId),
+  orgIdx: index("rev_rec_org_idx").on(table.organizationId),
+  periodIdx: index("rev_rec_period_idx").on(table.period),
+  snapshotIdx: index("rev_rec_snapshot_idx").on(table.snapshotDate),
+}));
+
+export const insertRevenueRecognitionSchema = createInsertSchema(revenueRecognition).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertRevenueRecognition = z.infer<typeof insertRevenueRecognitionSchema>;
+export type RevenueRecognition = typeof revenueRecognition.$inferSelect;
+

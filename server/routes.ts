@@ -167,6 +167,7 @@ import leaveRoutes from "./leaveRoutes";
 import contractRoutes from "./contractRoutes";
 import clauseLibraryRoutes from "./clauseLibraryRoutes";
 import assetManagementRoutes from "./assetManagementRoutes";
+import revenueRecognitionRoutes from "./revenueRecognitionRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
@@ -315,6 +316,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(safetyWorkflowRoutes);
   app.use(profitabilityAlertRoutes);
   app.use(costLedgerRoutes);
+  app.use(revenueRecognitionRoutes);
 
   // Register Hiring Module routes
   app.use("/api/hiring", hiringRoutes);

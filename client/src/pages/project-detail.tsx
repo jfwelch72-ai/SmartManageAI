@@ -520,6 +520,7 @@ export default function ProjectDetailPage() {
     "receipts": "receipts",
     "billing": "billing",
     "production-rates": "production-rates",
+    "revenue-wip": "revenue-wip",
   };
 
   const findCategoryForTab = (tabValue: string): TabGroup | undefined => {
