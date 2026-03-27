@@ -13,7 +13,9 @@ import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
-import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown, CalendarDays } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -24,6 +26,7 @@ import {
   useApprovePurchaseRequest, useRejectPurchaseRequest, useConvertPRToPO, useDeletePurchaseRequest,
   usePurchaseOrders, usePurchaseOrderDetail, useCreatePurchaseOrder, useUpdatePurchaseOrder,
   useSubmitPurchaseOrder, useApprovePurchaseOrder, useRejectPurchaseOrder, useSendPurchaseOrder, useDeletePurchaseOrder,
+  useBulkApprovePurchaseOrders, useProcurementSummary, useDeliverySchedule,
   useCreatePOReceipt, useProcurementReceipts,
   useVendorInvoices, useCreateVendorInvoice, useUpdateVendorInvoice,
   useCreateInvoiceMatch, useResolveMatchDiscrepancy,
@@ -32,7 +35,9 @@ import {
   type ProcurementPO, type ProcurementPOItem, type ProcurementPOReceipt, type ProcurementPOInvoice,
   type ProcurementInvoice,
   type ProcurementReceipt, type ProcurementReceiptItem, type InvoicePayment,
+  type DeliveryScheduleItem,
 } from "@/hooks/use-data";
+import { useAuth } from "@/hooks/use-auth";
 import type { Project } from "@shared/schema";
 
 const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"];
@@ -76,6 +81,7 @@ interface LineItem {
   unitCost?: string;
   category?: string;
   costCode?: string;
+  expectedDeliveryDate?: string;
 }
 
 interface VendorRef { id: string; name: string; }
@@ -453,8 +459,39 @@ function ProjectPurchaseRequestsTab({ projectId }: { projectId: string }) {
   );
 }
 
+function computeCommittedCost(po: PurchaseOrder): number {
+  const COMMITTED_STATUSES = ["APPROVED", "SENT", "PARTIAL", "FULFILLED"];
+  if (!COMMITTED_STATUSES.includes(po.status)) return 0;
+  return parseFloat(po.totalCost || "0");
+}
+
+function ProcurementSummaryBar({ projectId }: { projectId?: string }) {
+  const { data: summary } = useProcurementSummary(projectId);
+  if (!summary) return null;
+  return (
+    <div className="grid grid-cols-3 gap-4 mb-4" data-testid="procurement-summary-bar">
+      <div className="p-3 border rounded-md">
+        <p className="text-xs text-muted-foreground">Total Committed</p>
+        <p className="text-lg font-semibold" data-testid="text-total-committed">{fmtCurrency(summary.totalCommitted)}</p>
+      </div>
+      <div className="p-3 border rounded-md">
+        <p className="text-xs text-muted-foreground">Total Invoiced</p>
+        <p className="text-lg font-semibold" data-testid="text-total-invoiced">{fmtCurrency(summary.totalInvoiced)}</p>
+      </div>
+      <div className="p-3 border rounded-md">
+        <p className="text-xs text-muted-foreground">Total Paid</p>
+        <p className="text-lg font-semibold" data-testid="text-total-paid">{fmtCurrency(summary.totalPaid)}</p>
+      </div>
+    </div>
+  );
+}
+
+const APPROVE_ROLES = ["ADMIN", "MANAGER"];
+
 function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   const { toast } = useToast();
+  const { permissionRole } = useAuth();
+  const canApprove = APPROVE_ROLES.includes(permissionRole || "");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const { data: pos = [], isLoading } = usePurchaseOrders({
@@ -471,20 +508,47 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
   const rejectPOMutation = useRejectPurchaseOrder();
   const sendMutation = useSendPurchaseOrder();
   const deleteMutation = useDeletePurchaseOrder();
+  const bulkApproveMutation = useBulkApprovePurchaseOrders();
 
   const [showCreate, setShowCreate] = useState(false);
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
   const [rejectingPOId, setRejectingPOId] = useState<string | null>(null);
   const [rejectPONotes, setRejectPONotes] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({ vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
 
-  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
     const updated = [...lineItems];
     updated[i] = { ...updated[i], [field]: value };
     setLineItems(updated);
+  };
+
+  const pendingPOs = useMemo(() => pos.filter((po: PurchaseOrder) => po.status === "PENDING_APPROVAL"), [pos]);
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (selectedIds.size === pendingPOs.length && pendingPOs.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingPOs.map((po: PurchaseOrder) => po.id)));
+    }
+  };
+  const handleBulkApprove = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    try {
+      await bulkApproveMutation.mutateAsync(ids);
+      toast({ title: `${ids.length} PO(s) approved` });
+      setSelectedIds(new Set());
+    } catch { toast({ title: "Bulk approve failed", variant: "destructive" }); }
   };
 
   const handleCreate = async () => {
@@ -494,12 +558,13 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
       await createMutation.mutateAsync({
         projectId, vendorId: form.vendorId || null,
         terms: form.terms || null, deliveryAddress: form.deliveryAddress || null,
-        neededByDate: form.neededByDate || null, notes: form.notes || null, items: validItems,
+        neededByDate: form.neededByDate || null, notes: form.notes || null,
+        items: validItems.map(li => ({ ...li, expectedDeliveryDate: li.expectedDeliveryDate || null })),
       });
       toast({ title: "Purchase order created" });
       setShowCreate(false);
       setForm({ vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
-      setLineItems([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+      setLineItems([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
     } catch { toast({ title: "Failed to create PO", variant: "destructive" }); }
   };
 
@@ -508,9 +573,22 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Purchase Orders</CardTitle>
-          <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-new-po"><Plus className="w-4 h-4 mr-2" />New PO</Button>
+          <div className="flex items-center gap-2">
+            {canApprove && selectedIds.size > 0 && (
+              <Button size="sm" variant="default" onClick={handleBulkApprove} disabled={bulkApproveMutation.isPending} data-testid="button-bulk-approve">
+                <Check className="h-3.5 w-3.5 mr-1" />{bulkApproveMutation.isPending ? "Approving..." : `Approve (${selectedIds.size})`}
+              </Button>
+            )}
+            {canApprove && pendingPOs.length > 0 && (
+              <Button size="sm" variant="outline" onClick={toggleSelectAll} data-testid="button-select-all-po">
+                {selectedIds.size === pendingPOs.length ? "Deselect All" : `Select All Pending (${pendingPOs.length})`}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-new-po"><Plus className="w-4 h-4 mr-2" />New PO</Button>
+          </div>
         </CardHeader>
         <CardContent>
+          <ProcurementSummaryBar projectId={projectId} />
           <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PO_STATUSES} placeholder="Search by PO number or vendor..." />
           {isLoading ? (
             <div className="text-center py-8 text-muted-foreground">Loading...</div>
@@ -519,18 +597,28 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
           ) : (
             <>
             <div className="space-y-3">
-              {pagedPOs.map((po: PurchaseOrder) => (
+              {pagedPOs.map((po: PurchaseOrder) => {
+                const committed = computeCommittedCost(po);
+                return (
                 <div key={po.id} className="p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedPOId(po.id)} data-testid={`po-${po.id}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs text-muted-foreground">{po.poNumber}</span>
-                        <Badge variant={PO_STATUS_VARIANT[po.status] || "outline"}>{statusLabel(po.status)}</Badge>
-                      </div>
-                      <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                        {po.vendor && <span>{po.vendor.name}</span>}
-                        <span>Needed: {fmtDate(po.neededByDate)}</span>
-                        <span>Total: {fmtCurrency(po.totalCost)}</span>
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                      {canApprove && po.status === "PENDING_APPROVAL" && (
+                        <div onClick={e => e.stopPropagation()} className="pt-1">
+                          <Checkbox checked={selectedIds.has(po.id)} onCheckedChange={() => toggleSelect(po.id)} data-testid={`checkbox-po-${po.id}`} />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-xs text-muted-foreground">{po.poNumber}</span>
+                          <Badge variant={PO_STATUS_VARIANT[po.status] || "outline"}>{statusLabel(po.status)}</Badge>
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                          {po.vendor && <span>{po.vendor.name}</span>}
+                          <span>Needed: {fmtDate(po.neededByDate)}</span>
+                          <span>Total: {fmtCurrency(po.totalCost)}</span>
+                          {committed > 0 && <span className="text-green-600 font-medium">Committed: {fmtCurrency(String(committed))}</span>}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
@@ -573,7 +661,8 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
             <PaginationControls rangeStart={poStart} rangeEnd={poEnd} totalItems={poTotal} hasPrev={poHasPrev} hasNext={poHasNext} onPrev={poPrev} onNext={poNext} />
             </>
@@ -642,9 +731,15 @@ function ProjectPurchaseOrdersTab({ projectId }: { projectId: string }) {
                     )}
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Cost Code</Label>
-                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateLineItem(i, "costCode", val)} data-testid={`input-po-line-costcode-${i}`} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Cost Code</Label>
+                    <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateLineItem(i, "costCode", val)} data-testid={`input-po-line-costcode-${i}`} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Expected Delivery</Label>
+                    <Input type="date" value={li.expectedDeliveryDate || ""} onChange={e => updateLineItem(i, "expectedDeliveryDate", e.target.value)} data-testid={`input-po-line-delivery-${i}`} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -774,11 +869,12 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
     setEditLineItems(po.items?.map((item: POItem) => ({
       description: item.description, quantity: item.quantity || "", unit: item.unit || "",
       unitCost: item.unitCost || "", costCode: item.costCode || "",
-    })) || [{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+      expectedDeliveryDate: item.expectedDeliveryDate?.split("T")[0] || "",
+    })) || [{ description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
     setShowEditDialog(true);
   };
 
-  const addEditLineItem = () => setEditLineItems([...editLineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const addEditLineItem = () => setEditLineItems([...editLineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
   const removeEditLineItem = (i: number) => setEditLineItems(editLineItems.filter((_, idx) => idx !== i));
   const updateEditLineItem = (i: number, field: string, value: string) => {
     const updated = [...editLineItems];
@@ -794,7 +890,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
         data: {
           vendorId: editForm.vendorId || null, terms: editForm.terms || null, deliveryAddress: editForm.deliveryAddress || null,
           neededByDate: editForm.neededByDate || null, notes: editForm.notes || null,
-          items: validItems,
+          items: validItems.map(li => ({ ...li, expectedDeliveryDate: li.expectedDeliveryDate || null })),
         },
       });
       toast({ title: "Purchase order updated" });
@@ -911,6 +1007,7 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
                             <p className="font-medium">{item.description}</p>
                             <p className="text-muted-foreground">{item.quantity} {item.unit} @ {fmtCurrency(item.unitCost)}</p>
                             {item.costCode && <p className="text-xs text-blue-500">Cost Code: {item.costCode}</p>}
+                            {item.expectedDeliveryDate && <p className="text-xs text-orange-500">Delivery: {fmtDate(item.expectedDeliveryDate)}</p>}
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">Received: {received}/{ordered}</p>
@@ -1097,9 +1194,15 @@ function ProjectPODetailSheet({ poId, onClose }: { poId: string; onClose: () => 
                     )}
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Cost Code</Label>
-                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateEditLineItem(i, "costCode", val)} data-testid={`input-edit-po-line-costcode-${i}`} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Cost Code</Label>
+                    <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateEditLineItem(i, "costCode", val)} data-testid={`input-edit-po-line-costcode-${i}`} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Expected Delivery</Label>
+                    <Input type="date" value={li.expectedDeliveryDate || ""} onChange={e => updateEditLineItem(i, "expectedDeliveryDate", e.target.value)} data-testid={`input-edit-po-line-delivery-${i}`} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -1811,6 +1914,89 @@ function ProjectInvoiceDetailSheet({ invoice, onClose }: { invoice: InvoiceRow |
   );
 }
 
+function ProjectDeliveryScheduleTab({ projectId }: { projectId: string }) {
+  const { data: items = [], isLoading } = useDeliverySchedule({ projectId });
+  const [dateFilter, setDateFilter] = useState<string>("all");
+
+  const filteredItems = useMemo(() => {
+    if (dateFilter === "all") return items;
+    const now = new Date();
+    if (dateFilter === "overdue") return items.filter((i: DeliveryScheduleItem) => new Date(i.expectedDeliveryDate) < now);
+    if (dateFilter === "thisWeek") {
+      const weekEnd = new Date(now);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      return items.filter((i: DeliveryScheduleItem) => {
+        const d = new Date(i.expectedDeliveryDate);
+        return d >= now && d <= weekEnd;
+      });
+    }
+    if (dateFilter === "thisMonth") {
+      const monthEnd = new Date(now);
+      monthEnd.setDate(monthEnd.getDate() + 30);
+      return items.filter((i: DeliveryScheduleItem) => {
+        const d = new Date(i.expectedDeliveryDate);
+        return d >= now && d <= monthEnd;
+      });
+    }
+    return items;
+  }, [items, dateFilter]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5" /> Delivery Schedule</CardTitle>
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="w-[180px]" data-testid="select-delivery-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Upcoming</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-md" />)}
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No delivery dates scheduled.</div>
+        ) : (
+          <div className="space-y-2">
+            {filteredItems.map((item: DeliveryScheduleItem, idx: number) => {
+              const isOverdue = new Date(item.expectedDeliveryDate) < new Date();
+              return (
+                <div key={`${item.poId}-${item.itemId}-${idx}`} className={`p-3 border rounded-md flex items-center justify-between ${isOverdue ? "border-destructive/50 bg-destructive/5" : ""}`} data-testid={`delivery-item-${idx}`}>
+                  <div>
+                    <p className="font-medium text-sm">{item.description}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-1">
+                      <span className="font-mono">PO: {item.poNumber}</span>
+                      {item.vendorName && <span>Vendor: {item.vendorName}</span>}
+                      <span>{item.quantity} {item.unit}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-medium ${isOverdue ? "text-destructive" : "text-foreground"}`}>
+                      {fmtDate(item.expectedDeliveryDate)}
+                    </p>
+                    {isOverdue && <Badge variant="destructive" className="text-[10px] mt-1">Overdue</Badge>}
+                    <Badge variant="outline" className="text-[10px] mt-1 ml-1">{item.poStatus}</Badge>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ProcurementTab({ projectCode, project }: ProcurementTabProps) {
   return (
     <div className="space-y-4">
@@ -1820,6 +2006,7 @@ export default function ProcurementTab({ projectCode, project }: ProcurementTabP
           <TabsTrigger value="orders" data-testid="tab-project-po"><Package className="h-4 w-4 mr-1" />Orders</TabsTrigger>
           <TabsTrigger value="receipts" data-testid="tab-project-receipts"><Truck className="h-4 w-4 mr-1" />Receipts</TabsTrigger>
           <TabsTrigger value="invoices" data-testid="tab-project-invoices"><FileText className="h-4 w-4 mr-1" />Invoices</TabsTrigger>
+          <TabsTrigger value="delivery-schedule" data-testid="tab-project-delivery-schedule"><CalendarDays className="h-4 w-4 mr-1" />Delivery Schedule</TabsTrigger>
         </TabsList>
 
         <TabsContent value="requests">
@@ -1833,6 +2020,9 @@ export default function ProcurementTab({ projectCode, project }: ProcurementTabP
         </TabsContent>
         <TabsContent value="invoices">
           <ProjectInvoicesTab projectId={project.id} />
+        </TabsContent>
+        <TabsContent value="delivery-schedule">
+          <ProjectDeliveryScheduleTab projectId={project.id} />
         </TabsContent>
       </Tabs>
     </div>

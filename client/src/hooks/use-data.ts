@@ -666,6 +666,7 @@ export interface ProcurementPOItem {
   unitCost: string | null;
   quantityReceived: string | number | null;
   costCode: string | null;
+  expectedDeliveryDate: string | null;
 }
 
 export interface ProcurementPO {
@@ -878,24 +879,28 @@ export function usePurchaseOrderDetail(id: string | null) {
 
 export function useCreatePurchaseOrder() {
   return useMutation({
-    mutationFn: async (data: { projectId: string; vendorId?: string | null; terms?: string | null; deliveryAddress?: string | null; neededByDate?: string | null; notes?: string | null; items?: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null; costCode?: string | null }[] }) => {
+    mutationFn: async (data: { projectId: string; vendorId?: string | null; terms?: string | null; deliveryAddress?: string | null; neededByDate?: string | null; notes?: string | null; items?: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null; costCode?: string | null; expectedDeliveryDate?: string | null }[] }) => {
       const response = await apiRequest("POST", "/api/procurement-module/orders", data);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/delivery-schedule"] });
     },
   });
 }
 
 export function useUpdatePurchaseOrder() {
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<{ vendorId: string | null; terms: string | null; deliveryAddress: string | null; neededByDate: string | null; notes: string | null; items: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null; costCode?: string | null }[] }> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<{ vendorId: string | null; terms: string | null; deliveryAddress: string | null; neededByDate: string | null; notes: string | null; items: { description: string; quantity?: string | null; unit?: string | null; unitCost?: string | null; costCode?: string | null; expectedDeliveryDate?: string | null }[] }> }) => {
       const response = await apiRequest("PATCH", `/api/procurement-module/orders/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/delivery-schedule"] });
     },
   });
 }
@@ -956,6 +961,80 @@ export function useDeletePurchaseOrder() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+    },
+  });
+}
+
+export function useBulkApprovePurchaseOrders() {
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const response = await apiRequest("POST", "/api/procurement-module/orders/bulk-approve", { ids });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-module/delivery-schedule"] });
+    },
+  });
+}
+
+export interface ProcurementSummary {
+  totalPOs: number;
+  totalValue: string;
+  committedCost: string;
+  pendingApproval: number;
+  totalCommitted: string;
+  totalInvoiced: string;
+  totalPaid: string;
+}
+
+export function useProcurementSummary(projectId?: string) {
+  const params = new URLSearchParams();
+  if (projectId) params.set("projectId", projectId);
+  const qs = params.toString();
+  const url = `/api/procurement-module/summary${qs ? `?${qs}` : ""}`;
+  return useQuery<ProcurementSummary>({
+    queryKey: ["/api/procurement-module/summary", projectId ?? "all"],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch procurement summary");
+      return res.json();
+    },
+  });
+}
+
+export interface DeliveryScheduleItem {
+  itemId: string;
+  description: string;
+  quantity: string | null;
+  unit: string | null;
+  unitCost: string | null;
+  quantityReceived: string | null;
+  expectedDeliveryDate: string;
+  poId: string;
+  poNumber: string;
+  poStatus: string;
+  projectId: string;
+  projectName: string | null;
+  projectCode: string | null;
+  vendorName: string | null;
+  vendorId: string | null;
+}
+
+export function useDeliverySchedule(filters?: { projectId?: string; from?: string; to?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.projectId) params.set("projectId", filters.projectId);
+  if (filters?.from) params.set("from", filters.from);
+  if (filters?.to) params.set("to", filters.to);
+  const qs = params.toString();
+  const url = `/api/procurement-module/delivery-schedule${qs ? `?${qs}` : ""}`;
+  return useQuery<DeliveryScheduleItem[]>({
+    queryKey: ["/api/procurement-module/delivery-schedule", filters?.projectId ?? "all", filters?.from ?? "", filters?.to ?? ""],
+    queryFn: async () => {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch delivery schedule");
+      return res.json();
     },
   });
 }

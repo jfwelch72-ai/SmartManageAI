@@ -2154,6 +2154,7 @@ export const purchaseOrderItems = pgTable("purchase_order_items", {
   unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
   quantityReceived: decimal("quantity_received", { precision: 10, scale: 2 }).default("0"),
   costCode: text("cost_code"),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
 });
 
 export const poReceipts = pgTable("po_receipts", {

@@ -14,7 +14,9 @@ import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { CostCodeCombobox } from "@/components/CostCodeCombobox";
-import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, Trash2, Send, Check, X, ArrowRight, Package, FileText, Truck, ClipboardCheck, Search, DollarSign, AlertCircle, Edit, Upload, Loader2, ChevronsLeft, ChevronsRight, ChevronDown, Calendar, CalendarDays } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -25,6 +27,7 @@ import {
   useApprovePurchaseRequest, useRejectPurchaseRequest, useConvertPRToPO, useDeletePurchaseRequest,
   usePurchaseOrders, usePurchaseOrderDetail, useCreatePurchaseOrder, useUpdatePurchaseOrder,
   useSubmitPurchaseOrder, useApprovePurchaseOrder, useRejectPurchaseOrder, useSendPurchaseOrder, useDeletePurchaseOrder,
+  useBulkApprovePurchaseOrders, useProcurementSummary, useDeliverySchedule,
   useCreatePOReceipt, useProcurementReceipts,
   useVendorInvoices, useCreateVendorInvoice,
   useCreateInvoiceMatch, useResolveMatchDiscrepancy, useUpdateVendorInvoice,
@@ -33,6 +36,7 @@ import {
   type ProcurementPO, type ProcurementPOItem, type ProcurementPOReceipt, type ProcurementPOInvoice,
   type ProcurementInvoice,
   type ProcurementReceipt, type ProcurementReceiptItem, type InvoicePayment,
+  type DeliveryScheduleItem,
 } from "@/hooks/use-data";
 
 const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"];
@@ -76,6 +80,7 @@ interface LineItem {
   unitCost?: string;
   category?: string;
   costCode?: string;
+  expectedDeliveryDate?: string;
 }
 
 interface ProjectRef { id: string; name: string; code?: string | null; }
@@ -506,8 +511,39 @@ function PurchaseRequestsTab() {
   );
 }
 
+function computeCommittedCost(po: PurchaseOrder): number {
+  const committedStatuses = ["APPROVED", "SENT", "PARTIAL", "FULFILLED"];
+  if (!committedStatuses.includes(po.status)) return 0;
+  return parseFloat(po.totalCost || "0");
+}
+
+function ProcurementSummaryBar({ projectId }: { projectId?: string }) {
+  const { data: summary } = useProcurementSummary(projectId);
+  if (!summary) return null;
+  return (
+    <div className="grid grid-cols-3 gap-4 mb-4" data-testid="procurement-summary-bar">
+      <div className="p-3 border rounded-md">
+        <p className="text-xs text-muted-foreground">Total Committed</p>
+        <p className="text-lg font-semibold" data-testid="text-total-committed">{fmtCurrency(summary.totalCommitted)}</p>
+      </div>
+      <div className="p-3 border rounded-md">
+        <p className="text-xs text-muted-foreground">Total Invoiced</p>
+        <p className="text-lg font-semibold" data-testid="text-total-invoiced">{fmtCurrency(summary.totalInvoiced)}</p>
+      </div>
+      <div className="p-3 border rounded-md">
+        <p className="text-xs text-muted-foreground">Total Paid</p>
+        <p className="text-lg font-semibold" data-testid="text-total-paid">{fmtCurrency(summary.totalPaid)}</p>
+      </div>
+    </div>
+  );
+}
+
+const APPROVE_ROLES = ["ADMIN", "MANAGER"];
+
 function PurchaseOrdersTab() {
   const { toast } = useToast();
+  const { permissionRole } = useAuth();
+  const canApprove = APPROVE_ROLES.includes(permissionRole || "");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [projectFilter, setProjectFilter] = useState("ALL");
@@ -527,14 +563,37 @@ function PurchaseOrdersTab() {
   const rejectPOMutation = useRejectPurchaseOrder();
   const sendMutation = useSendPurchaseOrder();
   const deleteMutation = useDeletePurchaseOrder();
+  const bulkApproveMutation = useBulkApprovePurchaseOrders();
 
   const [showCreate, setShowCreate] = useState(false);
   const [selectedPOId, setSelectedPOId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [form, setForm] = useState({ projectId: "", vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
-  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const [lineItems, setLineItems] = useState<LineItem[]>([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
 
-  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const pendingPOs = useMemo(() => pos.filter(po => po.status === "PENDING_APPROVAL"), [pos]);
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const toggleSelectAll = () => {
+    if (selectedIds.size === pendingPOs.length) setSelectedIds(new Set());
+    else setSelectedIds(new Set(pendingPOs.map(po => po.id)));
+  };
+  const handleBulkApprove = async () => {
+    if (selectedIds.size === 0) return;
+    try {
+      await bulkApproveMutation.mutateAsync([...selectedIds]);
+      toast({ title: `${selectedIds.size} PO(s) approved` });
+      setSelectedIds(new Set());
+    } catch { toast({ title: "Failed to bulk approve", variant: "destructive" }); }
+  };
+
+  const addLineItem = () => setLineItems([...lineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
   const removeLineItem = (i: number) => setLineItems(lineItems.filter((_, idx) => idx !== i));
   const updateLineItem = (i: number, field: string, value: string) => {
     const updated = [...lineItems];
@@ -550,24 +609,40 @@ function PurchaseOrdersTab() {
       await createMutation.mutateAsync({
         projectId: form.projectId, vendorId: form.vendorId || null,
         terms: form.terms || null, deliveryAddress: form.deliveryAddress || null,
-        neededByDate: form.neededByDate || null, notes: form.notes || null, items: validItems,
+        neededByDate: form.neededByDate || null, notes: form.notes || null,
+        items: validItems.map(li => ({ ...li, expectedDeliveryDate: li.expectedDeliveryDate || null })),
       });
       toast({ title: "Purchase order created" });
       setShowCreate(false);
       setForm({ projectId: "", vendorId: "", terms: "", deliveryAddress: "", neededByDate: "", notes: "" });
-      setLineItems([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+      setLineItems([{ description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
     } catch { toast({ title: "Failed to create PO", variant: "destructive" }); }
   };
 
   return (
     <>
+      <ProcurementSummaryBar projectId={projectFilter !== "ALL" ? projectFilter : undefined} />
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-4">
           <CardTitle className="flex items-center gap-2"><Package className="h-5 w-5" /> Purchase Orders</CardTitle>
-          <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-new-po"><Plus className="w-4 h-4 mr-2" />New PO</Button>
+          <div className="flex items-center gap-2">
+            {canApprove && selectedIds.size > 0 && (
+              <Button size="sm" variant="default" onClick={handleBulkApprove} disabled={bulkApproveMutation.isPending} data-testid="button-bulk-approve">
+                <Check className="h-3.5 w-3.5 mr-1" />
+                {bulkApproveMutation.isPending ? "Approving..." : `Bulk Approve (${selectedIds.size})`}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-new-po"><Plus className="w-4 h-4 mr-2" />New PO</Button>
+          </div>
         </CardHeader>
         <CardContent>
           <FilterBar search={search} onSearch={setSearch} status={statusFilter} onStatus={setStatusFilter} statuses={PO_STATUSES} placeholder="Search by PO number, vendor, or project..." projectId={projectFilter} onProjectChange={setProjectFilter} projects={projectsList} />
+          {canApprove && pendingPOs.length > 0 && (
+            <div className="flex items-center gap-2 mb-3 text-sm text-muted-foreground">
+              <Checkbox checked={selectedIds.size === pendingPOs.length && pendingPOs.length > 0} onCheckedChange={toggleSelectAll} data-testid="checkbox-select-all-po" />
+              <span>Select all pending ({pendingPOs.length})</span>
+            </div>
+          )}
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-md" />)}
@@ -577,19 +652,29 @@ function PurchaseOrdersTab() {
           ) : (
             <>
             <div className="space-y-3">
-              {pagedPOs.map((po: PurchaseOrder) => (
+              {pagedPOs.map((po: PurchaseOrder) => {
+                const committed = computeCommittedCost(po);
+                return (
                 <div key={po.id} className="p-4 border rounded-md gap-3 cursor-pointer hover:bg-muted/50 transition-colors" onClick={() => setSelectedPOId(po.id)} data-testid={`po-${po.id}`}>
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-mono text-xs text-muted-foreground">{po.poNumber}</span>
-                        <Badge variant={PO_STATUS_VARIANT[po.status] || "outline"}>{statusLabel(po.status)}</Badge>
-                      </div>
-                      <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
-                        {po.vendor && <span>{po.vendor.name}</span>}
-                        {po.project && <span>{po.project.name}</span>}
-                        <span>Needed: {fmtDate(po.neededByDate)}</span>
-                        <span>Total: {fmtCurrency(po.totalCost)}</span>
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
+                      {canApprove && po.status === "PENDING_APPROVAL" && (
+                        <div className="pt-1" onClick={e => e.stopPropagation()}>
+                          <Checkbox checked={selectedIds.has(po.id)} onCheckedChange={() => toggleSelect(po.id)} data-testid={`checkbox-po-${po.id}`} />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-xs text-muted-foreground">{po.poNumber}</span>
+                          <Badge variant={PO_STATUS_VARIANT[po.status] || "outline"}>{statusLabel(po.status)}</Badge>
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 text-sm text-muted-foreground">
+                          {po.vendor && <span>{po.vendor.name}</span>}
+                          {po.project && <span>{po.project.name}</span>}
+                          <span>Needed: {fmtDate(po.neededByDate)}</span>
+                          <span>Total: {fmtCurrency(po.totalCost)}</span>
+                          {committed > 0 && <span className="text-primary font-medium" data-testid={`text-committed-${po.id}`}>Committed: {fmtCurrency(committed)}</span>}
+                        </div>
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
@@ -632,7 +717,8 @@ function PurchaseOrdersTab() {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
             <PaginationControls rangeStart={poStart} rangeEnd={poEnd} totalItems={poTotal} hasPrev={poHasPrev} hasNext={poHasNext} onPrev={poPrev} onNext={poNext} />
             </>
@@ -708,9 +794,15 @@ function PurchaseOrdersTab() {
                     )}
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Cost Code</Label>
-                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateLineItem(i, "costCode", val)} data-testid={`input-po-line-costcode-${i}`} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Cost Code</Label>
+                    <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateLineItem(i, "costCode", val)} data-testid={`input-po-line-costcode-${i}`} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Expected Delivery</Label>
+                    <Input type="date" value={li.expectedDeliveryDate || ""} onChange={e => updateLineItem(i, "expectedDeliveryDate", e.target.value)} data-testid={`input-po-line-delivery-${i}`} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -836,11 +928,12 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
     setEditLineItems(po.items?.map((item: POItem) => ({
       description: item.description, quantity: item.quantity || "", unit: item.unit || "",
       unitCost: item.unitCost || "", costCode: item.costCode || "",
-    })) || [{ description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+      expectedDeliveryDate: item.expectedDeliveryDate?.split("T")[0] || "",
+    })) || [{ description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
     setShowEditDialog(true);
   };
 
-  const addEditLineItem = () => setEditLineItems([...editLineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "" }]);
+  const addEditLineItem = () => setEditLineItems([...editLineItems, { description: "", quantity: "", unit: "", unitCost: "", costCode: "", expectedDeliveryDate: "" }]);
   const removeEditLineItem = (i: number) => setEditLineItems(editLineItems.filter((_, idx) => idx !== i));
   const updateEditLineItem = (i: number, field: string, value: string) => {
     const updated = [...editLineItems];
@@ -856,7 +949,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
         data: {
           vendorId: editForm.vendorId || null, terms: editForm.terms || null, deliveryAddress: editForm.deliveryAddress || null,
           neededByDate: editForm.neededByDate || null, notes: editForm.notes || null,
-          items: validItems,
+          items: validItems.map(li => ({ ...li, expectedDeliveryDate: li.expectedDeliveryDate || null })),
         },
       });
       toast({ title: "Purchase order updated" });
@@ -980,6 +1073,7 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                             <p className="font-medium">{item.description}</p>
                             <p className="text-muted-foreground">{item.quantity} {item.unit} @ {fmtCurrency(item.unitCost)}</p>
                             {item.costCode && <p className="text-xs text-blue-500">Cost Code: {item.costCode}</p>}
+                            {item.expectedDeliveryDate && <p className="text-xs text-orange-500">Delivery: {fmtDate(item.expectedDeliveryDate)}</p>}
                           </div>
                           <div className="text-right">
                             <p className="text-xs text-muted-foreground">Received: {received}/{ordered}</p>
@@ -1166,9 +1260,15 @@ function PODetailSheet({ poId, onClose }: { poId: string; onClose: () => void })
                     )}
                   </div>
                 </div>
-                <div>
-                  <Label className="text-xs">Cost Code</Label>
-                  <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateEditLineItem(i, "costCode", val)} data-testid={`input-edit-po-line-costcode-${i}`} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs">Cost Code</Label>
+                    <CostCodeCombobox value={li.costCode || ""} onChange={(val) => updateEditLineItem(i, "costCode", val)} data-testid={`input-edit-po-line-costcode-${i}`} />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Expected Delivery</Label>
+                    <Input type="date" value={li.expectedDeliveryDate || ""} onChange={e => updateEditLineItem(i, "expectedDeliveryDate", e.target.value)} data-testid={`input-edit-po-line-delivery-${i}`} />
+                  </div>
                 </div>
               </div>
             ))}
@@ -1889,6 +1989,90 @@ function ReceiptsTab() {
   );
 }
 
+function DeliveryScheduleTab() {
+  const { data: items = [], isLoading } = useDeliverySchedule();
+  const [dateFilter, setDateFilter] = useState<string>("all");
+
+  const filteredItems = useMemo(() => {
+    if (dateFilter === "all") return items;
+    const now = new Date();
+    if (dateFilter === "overdue") return items.filter((i: DeliveryScheduleItem) => new Date(i.expectedDeliveryDate) < now);
+    if (dateFilter === "thisWeek") {
+      const weekEnd = new Date(now);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      return items.filter((i: DeliveryScheduleItem) => {
+        const d = new Date(i.expectedDeliveryDate);
+        return d >= now && d <= weekEnd;
+      });
+    }
+    if (dateFilter === "thisMonth") {
+      const monthEnd = new Date(now);
+      monthEnd.setDate(monthEnd.getDate() + 30);
+      return items.filter((i: DeliveryScheduleItem) => {
+        const d = new Date(i.expectedDeliveryDate);
+        return d >= now && d <= monthEnd;
+      });
+    }
+    return items;
+  }, [items, dateFilter]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2"><CalendarDays className="h-5 w-5" /> Delivery Schedule</CardTitle>
+          <Select value={dateFilter} onValueChange={setDateFilter}>
+            <SelectTrigger className="w-[180px]" data-testid="select-delivery-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Upcoming</SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-md" />)}
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">No delivery dates scheduled.</div>
+        ) : (
+          <div className="space-y-2">
+            {filteredItems.map((item: DeliveryScheduleItem, idx: number) => {
+              const isOverdue = new Date(item.expectedDeliveryDate) < new Date();
+              return (
+                <div key={`${item.poId}-${item.itemId}-${idx}`} className={`p-3 border rounded-md flex items-center justify-between ${isOverdue ? "border-destructive/50 bg-destructive/5" : ""}`} data-testid={`delivery-item-${idx}`}>
+                  <div>
+                    <p className="font-medium text-sm">{item.description}</p>
+                    <div className="flex flex-wrap gap-x-3 text-xs text-muted-foreground mt-1">
+                      <span className="font-mono">PO: {item.poNumber}</span>
+                      {item.vendorName && <span>Vendor: {item.vendorName}</span>}
+                      {item.projectName && <span>Project: {item.projectName}</span>}
+                      <span>{item.quantity} {item.unit}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-sm font-medium ${isOverdue ? "text-destructive" : "text-foreground"}`}>
+                      {fmtDate(item.expectedDeliveryDate)}
+                    </p>
+                    {isOverdue && <Badge variant="destructive" className="text-[10px] mt-1">Overdue</Badge>}
+                    <Badge variant="outline" className="text-[10px] mt-1 ml-1">{item.poStatus}</Badge>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ProcurementModulePage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -1903,6 +2087,7 @@ export default function ProcurementModulePage() {
           <TabsTrigger value="orders" data-testid="tab-po"><Package className="h-4 w-4 mr-1" />Orders</TabsTrigger>
           <TabsTrigger value="receipts" data-testid="tab-receipts"><Truck className="h-4 w-4 mr-1" />Receipts</TabsTrigger>
           <TabsTrigger value="invoices" data-testid="tab-invoices"><FileText className="h-4 w-4 mr-1" />Invoices</TabsTrigger>
+          <TabsTrigger value="delivery-schedule" data-testid="tab-delivery-schedule"><CalendarDays className="h-4 w-4 mr-1" />Delivery Schedule</TabsTrigger>
         </TabsList>
 
         <TabsContent value="requests">
@@ -1916,6 +2101,9 @@ export default function ProcurementModulePage() {
         </TabsContent>
         <TabsContent value="invoices">
           <InvoicesTab />
+        </TabsContent>
+        <TabsContent value="delivery-schedule">
+          <DeliveryScheduleTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -9,7 +9,7 @@ import {
   projects, users,
 } from "@shared/schema";
 import { crmOrganisations } from "@shared/schema";
-import { eq, and, desc, sql, ilike, or, type SQL } from "drizzle-orm";
+import { eq, and, desc, asc, sql, ilike, or, gte, lte, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
@@ -579,6 +579,7 @@ const poCreateSchema = z.object({
     unit: z.string().nullable().optional(),
     unitCost: z.string().nullable().optional(),
     costCode: z.string().nullable().optional(),
+    expectedDeliveryDate: z.string().nullable().optional(),
   })).optional(),
 });
 
@@ -639,6 +640,7 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
             unit: item.unit || null,
             unitCost: item.unitCost || null,
             costCode: item.costCode || null,
+            expectedDeliveryDate: item.expectedDeliveryDate ? new Date(item.expectedDeliveryDate) : null,
           });
         }
       }
@@ -697,6 +699,7 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
             unit: item.unit || null,
             unitCost: item.unitCost || null,
             costCode: item.costCode || null,
+            expectedDeliveryDate: item.expectedDeliveryDate ? new Date(item.expectedDeliveryDate) : null,
           });
           const q = parseFloat(item.quantity || "0");
           const u = parseFloat(item.unitCost || "0");
@@ -852,6 +855,209 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
     res.json(updated);
   } catch (error) {
     console.error("Send PO error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── BULK APPROVE ────────────────────────────────────────────────────────────
+
+router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireRole(...APPROVE_ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const schema = z.object({ ids: z.array(z.string()).min(1) });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ error: "Invalid input: ids array required" }); return; }
+
+    const { ids } = parsed.data;
+
+    const posToApprove = await db.select().from(purchaseOrders)
+      .where(and(
+        eq(purchaseOrders.orgId, orgId),
+        sql`${purchaseOrders.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`
+      ));
+
+    if (posToApprove.length !== ids.length) {
+      res.status(400).json({ error: "Some PO IDs were not found in your organization" }); return;
+    }
+
+    const nonPending = posToApprove.filter(po => po.status !== "PENDING_APPROVAL");
+    if (nonPending.length > 0) {
+      res.status(400).json({ error: `${nonPending.length} PO(s) are not in PENDING_APPROVAL status: ${nonPending.map(po => po.poNumber).join(", ")}` }); return;
+    }
+
+    const approved = await db.transaction(async (tx) => {
+      const results = [];
+      for (const po of posToApprove) {
+        const [updated] = await tx.update(purchaseOrders)
+          .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
+          .where(eq(purchaseOrders.id, po.id)).returning();
+        results.push(updated);
+      }
+      return results;
+    });
+
+    for (const po of posToApprove) {
+      const [prLink] = po.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
+        .from(purchaseRequests).where(eq(purchaseRequests.id, po.prId)).limit(1) : [null];
+      if (prLink) {
+        notifySubmitter(prLink.requestedById, {
+          type: "PROCUREMENT_PO_APPROVED",
+          title: "Purchase Order Approved",
+          message: `Purchase order ${po.poNumber} has been approved.`,
+          relatedEntityId: po.id,
+          relatedEntityType: "PURCHASE_ORDER",
+        }).catch(() => {});
+      }
+
+      if (po.projectId) {
+        import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(po.projectId!)).catch(e => console.error("Budget alert eval after bulk PO approval:", e));
+      }
+    }
+
+    res.json({ approved: approved.length, orders: approved });
+  } catch (error) {
+    console.error("Bulk approve POs error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── PROCUREMENT SUMMARY ─────────────────────────────────────────────────────
+
+router.get("/api/procurement-module/summary", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const conditions: SQL[] = [eq(purchaseOrders.orgId, orgId)];
+    if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
+
+    const allPOs = await db.select({
+      id: purchaseOrders.id,
+      status: purchaseOrders.status,
+    }).from(purchaseOrders).where(and(...conditions));
+
+    const poIds = allPOs.map(po => po.id);
+    let totalCommitted = 0;
+    let totalValue = 0;
+
+    if (poIds.length > 0) {
+      const allItems = await db.select({
+        poId: purchaseOrderItems.poId,
+        quantity: purchaseOrderItems.quantity,
+        unitCost: purchaseOrderItems.unitCost,
+      }).from(purchaseOrderItems)
+        .where(sql`${purchaseOrderItems.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
+
+      const committedStatuses = ["APPROVED", "SENT", "PARTIAL", "FULFILLED"];
+      const committedPOIdSet = new Set(allPOs.filter(po => committedStatuses.includes(po.status)).map(po => po.id));
+
+      for (const item of allItems) {
+        const q = parseFloat(String(item.quantity || "0"));
+        const u = parseFloat(String(item.unitCost || "0"));
+        if (!isNaN(q) && !isNaN(u)) {
+          const itemTotal = q * u;
+          totalValue += itemTotal;
+          if (committedPOIdSet.has(item.poId)) totalCommitted += itemTotal;
+        }
+      }
+    }
+
+    let totalInvoiced = 0;
+    let totalPaid = 0;
+
+    if (poIds.length > 0) {
+      const invoices = await db.select({
+        id: vendorInvoices.id,
+        totalAmount: vendorInvoices.totalAmount,
+      }).from(vendorInvoices)
+        .where(sql`${vendorInvoices.poId} IN (${sql.join(poIds.map(id => sql`${id}`), sql`, `)})`);
+
+      for (const inv of invoices) {
+        totalInvoiced += parseFloat(String(inv.totalAmount || "0"));
+      }
+
+      const invIds = invoices.map(inv => inv.id);
+      if (invIds.length > 0) {
+        const payments = await db.select({
+          amount: invoicePayments.amount,
+        }).from(invoicePayments)
+          .where(sql`${invoicePayments.invoiceId} IN (${sql.join(invIds.map(id => sql`${id}`), sql`, `)})`);
+
+        for (const p of payments) {
+          totalPaid += parseFloat(String(p.amount || "0"));
+        }
+      }
+    }
+
+    const totalPOs = allPOs.length;
+    const pendingApproval = allPOs.filter(po => po.status === "PENDING_APPROVAL").length;
+
+    res.json({
+      totalPOs,
+      totalValue: totalValue.toFixed(2),
+      committedCost: totalCommitted.toFixed(2),
+      pendingApproval,
+      totalCommitted: totalCommitted.toFixed(2),
+      totalInvoiced: totalInvoiced.toFixed(2),
+      totalPaid: totalPaid.toFixed(2),
+    });
+  } catch (error) {
+    console.error("Procurement summary error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ─── DELIVERY SCHEDULE ────────────────────────────────────────────────────────
+
+router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) { res.status(403).json({ error: "No organization" }); return; }
+
+    const conditions: SQL[] = [eq(purchaseOrders.orgId, orgId)];
+    if (req.query.projectId) conditions.push(eq(purchaseOrders.projectId, String(req.query.projectId)));
+
+    const itemConditions: SQL[] = [sql`${purchaseOrderItems.expectedDeliveryDate} IS NOT NULL`];
+    if (req.query.from) {
+      itemConditions.push(gte(purchaseOrderItems.expectedDeliveryDate, new Date(String(req.query.from))));
+    }
+    if (req.query.to) {
+      itemConditions.push(lte(purchaseOrderItems.expectedDeliveryDate, new Date(String(req.query.to))));
+    }
+
+    const projectAlias = db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).as("proj");
+    const vendorAlias = db.select({ id: crmOrganisations.id, name: crmOrganisations.name }).from(crmOrganisations).as("vendor");
+
+    const deliveries = await db.select({
+      itemId: purchaseOrderItems.id,
+      description: purchaseOrderItems.description,
+      quantity: purchaseOrderItems.quantity,
+      unit: purchaseOrderItems.unit,
+      unitCost: purchaseOrderItems.unitCost,
+      quantityReceived: purchaseOrderItems.quantityReceived,
+      expectedDeliveryDate: purchaseOrderItems.expectedDeliveryDate,
+      poId: purchaseOrders.id,
+      poNumber: purchaseOrders.poNumber,
+      poStatus: purchaseOrders.status,
+      projectId: purchaseOrders.projectId,
+      projectName: projectAlias.name,
+      projectCode: projectAlias.code,
+      vendorName: vendorAlias.name,
+      vendorId: vendorAlias.id,
+    })
+      .from(purchaseOrderItems)
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.poId, purchaseOrders.id))
+      .leftJoin(projectAlias, eq(purchaseOrders.projectId, projectAlias.id))
+      .leftJoin(vendorAlias, eq(purchaseOrders.vendorId, vendorAlias.id))
+      .where(and(...conditions, ...itemConditions))
+      .orderBy(asc(purchaseOrderItems.expectedDeliveryDate))
+      .limit(500);
+
+    res.json(deliveries);
+  } catch (error) {
+    console.error("Delivery schedule error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
