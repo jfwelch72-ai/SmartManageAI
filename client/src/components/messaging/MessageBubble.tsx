@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { Loader2, Edit2, Trash2, Smile, Check } from "lucide-react";
+import { Loader2, Edit2, Trash2, Smile, Check, FileQuestion, ArrowRightLeft, CheckSquare } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,9 +8,15 @@ import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { AttachmentRenderer } from "./AttachmentRenderer";
 import { VoicePlayer } from "./VoicePlayer";
-import { getInitials, type Message, type MessageReaction } from "./types";
+import { getInitials, type Message, type MessageReaction, type EntityLink } from "./types";
 
 const CURATED_EMOJIS = ["👍", "❤️", "😂", "😮", "🎉", "✅"] as const;
+
+const ENTITY_CONFIG = {
+  RFI: { icon: FileQuestion, label: "RFI", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800" },
+  CHANGE_ORDER: { icon: ArrowRightLeft, label: "CO", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border-amber-200 dark:border-amber-800" },
+  TASK: { icon: CheckSquare, label: "Task", color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-800" },
+} as const;
 
 interface MessageBubbleProps {
   message: Message;
@@ -28,6 +34,7 @@ interface MessageBubbleProps {
   onDelete: (id: string) => void;
   onPickerToggle: (id: string) => void;
   onReact: (messageId: string, emoji: string) => void;
+  onEntityClick?: (entityType: string, entityId: string, link?: EntityLink) => void;
   renderContent: (content: string) => React.ReactNode;
 }
 
@@ -47,6 +54,7 @@ export function MessageBubble({
   onDelete,
   onPickerToggle,
   onReact,
+  onEntityClick,
   renderContent,
 }: MessageBubbleProps) {
   const isEditing = editingMessageId === message.id;
@@ -143,6 +151,34 @@ export function MessageBubble({
               </p>
             )}
           </>
+        )}
+
+        {/* ── Entity link badges ── */}
+        {(message.entityLinks?.length ?? 0) > 0 && (
+          <div className={cn("flex flex-wrap gap-1 mt-1", isOwn && "justify-end")}>
+            {message.entityLinks.map((link: EntityLink) => {
+              const config = ENTITY_CONFIG[link.entityType];
+              const Icon = config.icon;
+              const displayText = link.identifier
+                ? `${link.identifier}${link.label ? `: ${link.label}` : ""}`
+                : config.label;
+              return (
+                <button
+                  key={`${link.entityType}-${link.entityId}`}
+                  onClick={() => onEntityClick?.(link.entityType, link.entityId, link)}
+                  className={cn(
+                    "inline-flex items-center gap-1 text-[10px] font-medium rounded-full px-2 py-0.5 border cursor-pointer hover:opacity-80 transition-opacity max-w-[200px]",
+                    config.color
+                  )}
+                  title={link.label || config.label}
+                  data-testid={`entity-badge-${link.entityType}-${link.entityId}`}
+                >
+                  <Icon className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{displayText}</span>
+                </button>
+              );
+            })}
+          </div>
         )}
 
         {/* ── Reactions row ── */}

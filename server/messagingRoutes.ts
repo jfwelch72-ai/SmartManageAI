@@ -34,9 +34,12 @@ const messagingSetup = (async () => {
     messages,
     messageReactions,
     messageReadReceipts,
+    messageEntityLinks,
     organizations,
     tasks,
     notifications,
+    rfis,
+    changeOrders,
   } = await import("@shared/schema");
 
   // ── Helper: ensure user is a participant (or auto-join for org channels) ──
@@ -557,15 +560,16 @@ const messagingSetup = (async () => {
         .reverse()
         .map(m => ({ ...m.message, sender: m.sender }));
 
-      // Attach reactions to each message
       const messageIds = messagesWithSenders.map(m => m.id);
       const reactionMap = await loadReactions(messageIds);
-      const messagesWithReactions = messagesWithSenders.map(m => ({
+      const entityLinkMap = await loadEntityLinks(messageIds);
+      const messagesWithExtras = messagesWithSenders.map(m => ({
         ...m,
         reactions: reactionMap.get(m.id) ?? [],
+        entityLinks: entityLinkMap.get(m.id) ?? [],
       }));
 
-      res.json({ messages: messagesWithReactions, hasMore });
+      res.json({ messages: messagesWithExtras, hasMore });
     } catch (error) {
       console.error("Get messages error:", error);
       res.status(500).json({ error: "Internal server error" });
@@ -578,7 +582,7 @@ const messagingSetup = (async () => {
       const userId = req.user!.id;
       const orgId = req.user!.organizationId;
       const conversationId = req.params.id;
-      const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl, voiceDurationSeconds, mentionedTaskIds } = req.body;
+      const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl, voiceDurationSeconds, mentionedTaskIds, entityLinks } = req.body;
 
       if (!content?.trim() && !attachmentUrl && !voiceUrl) {
         res.status(400).json({ error: "Message content or attachment is required" });
@@ -630,10 +634,31 @@ const messagingSetup = (async () => {
         .where(eq(users.id, userId))
         .limit(1);
 
-      const fullMessage = { ...newMessage, sender };
+      let insertedEntityLinks: { id: string; entityType: string; entityId: string }[] = [];
+      if (Array.isArray(entityLinks) && entityLinks.length > 0 && orgId) {
+        const validEntityTypes = ["RFI", "CHANGE_ORDER", "TASK"] as const;
+        type ValidType = typeof validEntityTypes[number];
+        const candidateLinks = entityLinks
+          .filter((l: { entityType: string; entityId: string }) => (validEntityTypes as readonly string[]).includes(l.entityType) && l.entityId);
+        const validatedLinks = await validateEntityLinksOrg(candidateLinks, orgId);
+        const linkValues = validatedLinks.map((l) => ({
+          messageId: newMessage.id,
+          entityType: l.entityType as ValidType,
+          entityId: l.entityId,
+        }));
+        if (linkValues.length > 0) {
+          insertedEntityLinks = await db.insert(messageEntityLinks).values(linkValues).onConflictDoNothing().returning();
+        }
+      }
+
+      let enrichedEntityLinks = insertedEntityLinks;
+      if (insertedEntityLinks.length > 0) {
+        const enrichedMap = await loadEntityLinks([newMessage.id]);
+        enrichedEntityLinks = enrichedMap.get(newMessage.id) || insertedEntityLinks;
+      }
+      const fullMessage = { ...newMessage, sender, reactions: [], entityLinks: enrichedEntityLinks };
 
       if (orgId) {
-        // Fetch participant IDs to scope SSE emission to conversation members only
         const participants = await db
           .select({ userId: conversationParticipants.userId })
           .from(conversationParticipants)
@@ -1238,7 +1263,98 @@ const messagingSetup = (async () => {
     return result;
   }
 
-  // ── Helper: fetch participant IDs for SSE fan-out ──
+  async function loadEntityLinks(messageIds: string[]): Promise<Map<string, { id: string; entityType: string; entityId: string; label?: string; identifier?: string; projectCode?: string }[]>> {
+    if (messageIds.length === 0) return new Map();
+    const rows = await db
+      .select({
+        id: messageEntityLinks.id,
+        messageId: messageEntityLinks.messageId,
+        entityType: messageEntityLinks.entityType,
+        entityId: messageEntityLinks.entityId,
+      })
+      .from(messageEntityLinks)
+      .where(inArray(messageEntityLinks.messageId, messageIds));
+
+    const rfiIds = rows.filter(r => r.entityType === "RFI").map(r => r.entityId);
+    const coIds = rows.filter(r => r.entityType === "CHANGE_ORDER").map(r => r.entityId);
+    const taskIds = rows.filter(r => r.entityType === "TASK").map(r => r.entityId);
+
+    const entityMeta = new Map<string, { label: string; identifier: string; projectCode?: string }>();
+
+    if (rfiIds.length > 0) {
+      const rfiRows = await db.select({ id: rfis.id, rfiNumber: rfis.rfiNumber, subject: rfis.subject, projectId: rfis.projectId }).from(rfis).where(inArray(rfis.id, rfiIds));
+      const projectIds = [...new Set(rfiRows.map(r => r.projectId).filter(Boolean))] as string[];
+      const projectCodes = new Map<string, string>();
+      if (projectIds.length > 0) {
+        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.projectCode }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
+        for (const p of projRows) if (p.projectCode) projectCodes.set(p.id, p.projectCode);
+      }
+      for (const r of rfiRows) entityMeta.set(r.id, { label: r.subject, identifier: r.rfiNumber, projectCode: r.projectId ? projectCodes.get(r.projectId) : undefined });
+    }
+    if (coIds.length > 0) {
+      const coRows = await db.select({ id: changeOrders.id, changeOrderNumber: changeOrders.changeOrderNumber, description: changeOrders.description, projectId: changeOrders.projectId }).from(changeOrders).where(inArray(changeOrders.id, coIds));
+      const projectIds = [...new Set(coRows.map(r => r.projectId).filter(Boolean))] as string[];
+      const projectCodes = new Map<string, string>();
+      if (projectIds.length > 0) {
+        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.projectCode }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
+        for (const p of projRows) if (p.projectCode) projectCodes.set(p.id, p.projectCode);
+      }
+      for (const r of coRows) entityMeta.set(r.id, { label: r.description || "Change Order", identifier: `CO ${r.changeOrderNumber}`, projectCode: r.projectId ? projectCodes.get(r.projectId) : undefined });
+    }
+    if (taskIds.length > 0) {
+      const taskRows = await db.select({ id: tasks.id, title: tasks.title, projectId: tasks.projectId }).from(tasks).where(inArray(tasks.id, taskIds));
+      const projectIds = [...new Set(taskRows.map(r => r.projectId).filter(Boolean))] as string[];
+      const projectCodes = new Map<string, string>();
+      if (projectIds.length > 0) {
+        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.projectCode }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
+        for (const p of projRows) if (p.projectCode) projectCodes.set(p.id, p.projectCode);
+      }
+      for (const r of taskRows) entityMeta.set(r.id, { label: r.title, identifier: "Task", projectCode: r.projectId ? projectCodes.get(r.projectId) : undefined });
+    }
+
+    const result = new Map<string, { id: string; entityType: string; entityId: string; label?: string; identifier?: string; projectCode?: string }[]>();
+    for (const row of rows) {
+      if (!result.has(row.messageId)) result.set(row.messageId, []);
+      const meta = entityMeta.get(row.entityId);
+      result.get(row.messageId)!.push({
+        id: row.id,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        label: meta?.label,
+        identifier: meta?.identifier,
+        projectCode: meta?.projectCode,
+      });
+    }
+    return result;
+  }
+
+  async function validateEntityLinksOrg(links: { entityType: string; entityId: string }[], orgId: string): Promise<{ entityType: string; entityId: string }[]> {
+    if (links.length === 0) return [];
+
+    const rfiIds = links.filter(l => l.entityType === "RFI").map(l => l.entityId);
+    const coIds = links.filter(l => l.entityType === "CHANGE_ORDER").map(l => l.entityId);
+    const taskIds = links.filter(l => l.entityType === "TASK").map(l => l.entityId);
+
+    const validEntityIds = new Set<string>();
+
+    if (rfiIds.length > 0) {
+      const rows = await db.select({ id: rfis.id }).from(rfis).where(and(inArray(rfis.id, rfiIds), eq(rfis.organizationId, orgId)));
+      for (const r of rows) validEntityIds.add(r.id);
+    }
+    if (coIds.length > 0) {
+      const rows = await db.select({ id: changeOrders.id }).from(changeOrders)
+        .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
+        .where(and(inArray(changeOrders.id, coIds), eq(projectsTable.organizationId, orgId)));
+      for (const r of rows) validEntityIds.add(r.id);
+    }
+    if (taskIds.length > 0) {
+      const rows = await db.select({ id: tasks.id }).from(tasks).where(and(inArray(tasks.id, taskIds), eq(tasks.organizationId, orgId)));
+      for (const r of rows) validEntityIds.add(r.id);
+    }
+
+    return links.filter(l => validEntityIds.has(l.entityId));
+  }
+
   async function fetchParticipantIds(conversationId: string): Promise<Set<string>> {
     const rows = await db
       .select({ userId: conversationParticipants.userId })
@@ -1286,11 +1402,13 @@ const messagingSetup = (async () => {
         .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
         .from(users).where(eq(users.id, updated.senderId)).limit(1);
 
-      // Preserve existing reactions — do not wipe them on edit
       const reactionMap = await loadReactions([msgId]);
       const reactions = reactionMap.get(msgId) ?? [];
 
-      const updatedMsg = { ...updated, sender, reactions };
+      const entityLinkMap = await loadEntityLinks([msgId]);
+      const entityLinks = entityLinkMap.get(msgId) ?? [];
+
+      const updatedMsg = { ...updated, sender, reactions, entityLinks };
 
       if (orgId) {
         const participantUserIds = await fetchParticipantIds(msg.conversationId);
@@ -1491,6 +1609,376 @@ const messagingSetup = (async () => {
 
     emitTyping(orgId, conversationId, participantUserIds, userId, firstName, lastName);
     res.status(204).end();
+  });
+
+  // ── ENTITY SEARCH — search RFIs, Change Orders, and Tasks for the entity link picker ──
+  router.get("/api/entity-project/:entityType/:entityId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+      const { entityType, entityId } = req.params;
+
+      let projectCode: string | null = null;
+      if (entityType === "RFI") {
+        const [rfi] = await db.select({ projectId: rfis.projectId }).from(rfis)
+          .where(and(eq(rfis.id, entityId), eq(rfis.organizationId, orgId))).limit(1);
+        if (rfi?.projectId) {
+          const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
+            .where(eq(projectsTable.id, rfi.projectId)).limit(1);
+          projectCode = proj?.projectCode || null;
+        }
+      } else if (entityType === "CHANGE_ORDER") {
+        const [co] = await db.select({ projectId: changeOrders.projectId }).from(changeOrders)
+          .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
+          .where(and(eq(changeOrders.id, entityId), eq(projectsTable.organizationId, orgId))).limit(1);
+        if (co?.projectId) {
+          const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
+            .where(eq(projectsTable.id, co.projectId)).limit(1);
+          projectCode = proj?.projectCode || null;
+        }
+      } else if (entityType === "TASK") {
+        const [task] = await db.select({ projectId: tasks.projectId }).from(tasks)
+          .where(and(eq(tasks.id, entityId), eq(tasks.organizationId, orgId))).limit(1);
+        if (task?.projectId) {
+          const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
+            .where(eq(projectsTable.id, task.projectId)).limit(1);
+          projectCode = proj?.projectCode || null;
+        }
+      }
+
+      res.json({ projectCode });
+    } catch (error) {
+      console.error("Entity project lookup error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/entity-search", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      const q = ((req.query.q as string) || "").trim();
+      const entityType = req.query.type as string | undefined;
+      const results: { entityType: string; entityId: string; label: string; identifier: string }[] = [];
+
+      if (!entityType || entityType === "RFI") {
+        const rfiConditions: SQL<unknown>[] = [eq(rfis.organizationId, orgId)];
+        if (q) rfiConditions.push(or(ilike(rfis.subject, `%${q}%`), ilike(rfis.rfiNumber, `%${q}%`)) as SQL<unknown>);
+        const rfiResults = await db
+          .select({ id: rfis.id, rfiNumber: rfis.rfiNumber, subject: rfis.subject })
+          .from(rfis)
+          .where(and(...rfiConditions))
+          .limit(5);
+        for (const r of rfiResults) {
+          results.push({ entityType: "RFI", entityId: r.id, label: r.subject, identifier: r.rfiNumber });
+        }
+      }
+
+      if (!entityType || entityType === "CHANGE_ORDER") {
+        const coConditions: SQL<unknown>[] = [eq(projectsTable.organizationId, orgId)];
+        if (q) coConditions.push(or(ilike(changeOrders.description, `%${q}%`), ilike(changeOrders.changeOrderNumber, `%${q}%`)) as SQL<unknown>);
+        const coResults = await db
+          .select({ id: changeOrders.id, changeOrderNumber: changeOrders.changeOrderNumber, description: changeOrders.description })
+          .from(changeOrders)
+          .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
+          .where(and(...coConditions))
+          .limit(5);
+        for (const r of coResults) {
+          results.push({ entityType: "CHANGE_ORDER", entityId: r.id, label: r.description || "Change Order", identifier: r.changeOrderNumber });
+        }
+      }
+
+      if (!entityType || entityType === "TASK") {
+        const taskConditions: SQL<unknown>[] = [eq(tasks.organizationId, orgId)];
+        if (q) taskConditions.push(ilike(tasks.title, `%${q}%`));
+        const taskResults = await db
+          .select({ id: tasks.id, title: tasks.title })
+          .from(tasks)
+          .where(and(...taskConditions))
+          .limit(5);
+        for (const r of taskResults) {
+          results.push({ entityType: "TASK", entityId: r.id, label: r.title, identifier: `Task` });
+        }
+      }
+
+      res.json(results);
+    } catch (error) {
+      console.error("Entity search error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── ADD ENTITY LINKS to a message ──
+  router.post("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const { msgId } = req.params;
+      const { links } = req.body;
+
+      if (!Array.isArray(links) || links.length === 0) {
+        return res.status(400).json({ error: "links array is required" });
+      }
+
+      const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+
+      const isMember = await ensureParticipant(msg.conversationId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(403).json({ error: "No organization" });
+
+      const validTypes: readonly string[] = ["RFI", "CHANGE_ORDER", "TASK"];
+      type ValidEntityType = "RFI" | "CHANGE_ORDER" | "TASK";
+      const candidateLinks = links
+        .filter((l: { entityType: string; entityId: string }) => validTypes.includes(l.entityType) && l.entityId);
+
+      const validatedLinks = await validateEntityLinksOrg(candidateLinks, orgId);
+      if (validatedLinks.length === 0) return res.status(400).json({ error: "No valid links provided" });
+
+      const values = validatedLinks.map((l) => ({
+        messageId: msgId,
+        entityType: l.entityType as ValidEntityType,
+        entityId: l.entityId,
+      }));
+
+      const inserted = await db.insert(messageEntityLinks).values(values).onConflictDoNothing().returning();
+      res.status(201).json(inserted);
+    } catch (error) {
+      console.error("Add entity links error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── REMOVE an entity link from a message ──
+  router.delete("/api/messages/:msgId/entity-links/:linkId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const { msgId, linkId } = req.params;
+
+      const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+
+      const isMember = await ensureParticipant(msg.conversationId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      await db.delete(messageEntityLinks).where(and(eq(messageEntityLinks.id, linkId), eq(messageEntityLinks.messageId, msgId)));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Remove entity link error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/messages/:msgId/entity-links", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const { msgId } = req.params;
+
+      const [msg] = await db.select().from(messages).where(eq(messages.id, msgId)).limit(1);
+      if (!msg) return res.status(404).json({ error: "Message not found" });
+
+      const isMember = await ensureParticipant(msg.conversationId, userId);
+      if (!isMember) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      const links = await db.select().from(messageEntityLinks).where(eq(messageEntityLinks.messageId, msgId));
+      res.json(links);
+    } catch (error) {
+      console.error("Get entity links error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/entity-messages/:entityType/:entityId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      const { entityType, entityId } = req.params;
+      const validTypes = ["RFI", "CHANGE_ORDER", "TASK"];
+      if (!validTypes.includes(entityType)) return res.status(400).json({ error: "Invalid entity type" });
+
+      const userConversations = await db
+        .select({ conversationId: conversationParticipants.conversationId })
+        .from(conversationParticipants)
+        .where(eq(conversationParticipants.userId, userId));
+      const userConvIds = userConversations.map(c => c.conversationId);
+
+      if (userConvIds.length === 0) return res.json([]);
+
+      const linkedMessages = await db
+        .select({
+          message: messages,
+          sender: {
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            role: users.role,
+          },
+          link: messageEntityLinks,
+          conversationName: conversations.name,
+          conversationId: conversations.id,
+        })
+        .from(messageEntityLinks)
+        .innerJoin(messages, eq(messageEntityLinks.messageId, messages.id))
+        .innerJoin(users, eq(messages.senderId, users.id))
+        .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+        .where(and(
+          eq(messageEntityLinks.entityType, entityType as "RFI" | "CHANGE_ORDER" | "TASK"),
+          eq(messageEntityLinks.entityId, entityId),
+          eq(conversations.organizationId, orgId),
+          inArray(messages.conversationId, userConvIds)
+        ))
+        .orderBy(desc(messages.createdAt))
+        .limit(50);
+
+      const result = linkedMessages.map(m => ({
+        ...m.message,
+        sender: m.sender,
+        reactions: [],
+        entityLinks: [m.link],
+        conversationName: m.conversationName,
+        conversationId: m.conversationId,
+      }));
+
+      res.json(result);
+    } catch (error) {
+      console.error("Get entity messages error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── GET or CREATE entity-scoped conversation thread ──
+  router.get("/api/entity-conversation/:entityType/:entityId", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+      const { entityType, entityId } = req.params;
+      const validTypes = ["RFI", "CHANGE_ORDER", "TASK"];
+      if (!validTypes.includes(entityType) || !entityId) {
+        return res.status(400).json({ error: "entityType and entityId are required" });
+      }
+      const entityFieldCondition =
+        entityType === "RFI" ? eq(conversations.rfiId, entityId) :
+        entityType === "CHANGE_ORDER" ? eq(conversations.changeOrderId, entityId) :
+        eq(conversations.taskId, entityId);
+      const [existing] = await db.select({ id: conversations.id }).from(conversations)
+        .where(and(eq(conversations.organizationId, orgId), entityFieldCondition)).limit(1);
+      if (existing) {
+        await db.insert(conversationParticipants)
+          .values({ conversationId: existing.id, userId, isAdmin: false })
+          .onConflictDoNothing();
+      }
+      res.json(existing || null);
+    } catch (error) {
+      console.error("Entity conversation lookup error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.post("/api/entity-conversation", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+      const { entityType, entityId } = req.body;
+      const validTypes = ["RFI", "CHANGE_ORDER", "TASK"];
+      if (!validTypes.includes(entityType) || !entityId) {
+        return res.status(400).json({ error: "entityType and entityId are required" });
+      }
+
+      const entityFieldCondition =
+        entityType === "RFI" ? eq(conversations.rfiId, entityId) :
+        entityType === "CHANGE_ORDER" ? eq(conversations.changeOrderId, entityId) :
+        eq(conversations.taskId, entityId);
+
+      const [existing] = await db
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.organizationId, orgId), entityFieldCondition))
+        .limit(1);
+
+      if (existing) {
+        await db.insert(conversationParticipants)
+          .values({ conversationId: existing.id, userId, isAdmin: false })
+          .onConflictDoNothing();
+        return res.json(existing);
+      }
+
+      let entityName = "Discussion";
+      let entityVerified = false;
+      if (entityType === "RFI") {
+        const [rfi] = await db.select({ rfiNumber: rfis.rfiNumber, subject: rfis.subject, organizationId: rfis.organizationId }).from(rfis).where(eq(rfis.id, entityId)).limit(1);
+        if (rfi && rfi.organizationId === orgId) {
+          entityName = `${rfi.rfiNumber}: ${rfi.subject}`;
+          entityVerified = true;
+        }
+      } else if (entityType === "CHANGE_ORDER") {
+        const [co] = await db
+          .select({ changeOrderNumber: changeOrders.changeOrderNumber, description: changeOrders.description, orgId: projectsTable.organizationId })
+          .from(changeOrders)
+          .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
+          .where(eq(changeOrders.id, entityId)).limit(1);
+        if (co && co.orgId === orgId) {
+          entityName = `CO ${co.changeOrderNumber}: ${co.description || "Change Order"}`;
+          entityVerified = true;
+        }
+      } else if (entityType === "TASK") {
+        const [task] = await db.select({ title: tasks.title, organizationId: tasks.organizationId }).from(tasks).where(eq(tasks.id, entityId)).limit(1);
+        if (task && task.organizationId === orgId) {
+          entityName = `Task: ${task.title}`;
+          entityVerified = true;
+        }
+      }
+
+      if (!entityVerified) {
+        return res.status(404).json({ error: "Entity not found or does not belong to your organization" });
+      }
+
+      const baseValues = {
+        type: "GROUP" as const,
+        name: entityName,
+        organizationId: orgId,
+        createdById: userId,
+        isCompanyChannel: false,
+        rfiId: entityType === "RFI" ? entityId : null,
+        changeOrderId: entityType === "CHANGE_ORDER" ? entityId : null,
+        taskId: entityType === "TASK" ? entityId : null,
+      };
+
+      const [raceCheck] = await db
+        .select()
+        .from(conversations)
+        .where(and(eq(conversations.organizationId, orgId), entityFieldCondition))
+        .limit(1);
+
+      if (raceCheck) {
+        await db.insert(conversationParticipants)
+          .values({ conversationId: raceCheck.id, userId, isAdmin: false })
+          .onConflictDoNothing();
+        return res.json(raceCheck);
+      }
+
+      const [newConversation] = await db
+        .insert(conversations)
+        .values(baseValues)
+        .returning();
+
+      await db.insert(conversationParticipants).values({
+        conversationId: newConversation.id,
+        userId,
+        isAdmin: true,
+      });
+
+      res.status(201).json(newConversation);
+    } catch (error) {
+      console.error("Entity conversation error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
   });
 })();
 

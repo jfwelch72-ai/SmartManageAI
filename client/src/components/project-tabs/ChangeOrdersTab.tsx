@@ -79,6 +79,19 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     }
   }, [sovCoLinkedData]);
 
+  useEffect(() => {
+    if (changeOrders.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkCoId = params.get("coId");
+    if (deepLinkCoId) {
+      const found = changeOrders.find(co => co.id === deepLinkCoId);
+      if (found) {
+        setSelectedChangeOrder(found);
+        setShowViewDialog(true);
+      }
+    }
+  }, [changeOrders]);
+
   const addToSovMutation = useMutation({
     mutationFn: async (coId: string) => {
       const res = await apiRequest("POST", `/api/change-orders/${coId}/add-to-sov`, {});

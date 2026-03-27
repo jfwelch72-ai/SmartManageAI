@@ -5,7 +5,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { MessageBubble } from "./MessageBubble";
 import { MessageComposer } from "./MessageComposer";
-import { type Message, type MessageReaction, type TaskMention, type Conversation } from "./types";
+import { type Message, type MessageReaction, type TaskMention, type Conversation, type EntitySearchResult, type EntityLink } from "./types";
 import { cn } from "@/lib/utils";
 
 interface MessageListProps {
@@ -39,6 +39,7 @@ interface MessageListProps {
   uploadingVoice: boolean;
   uploadProgress: number;
   pendingTaskIds: string[];
+  pendingEntityLinks: EntitySearchResult[];
   mentionQuery: string | null;
   mentionResults: TaskMention[];
   mentionSelectedIdx: number;
@@ -52,6 +53,8 @@ interface MessageListProps {
   onStopRecording: () => void;
   onMentionSelect: (task: TaskMention) => void;
   onRemovePendingTask: (id: string) => void;
+  onAddEntityLink: (entity: EntitySearchResult) => void;
+  onRemoveEntityLink: (entityType: string, entityId: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 
   // Scroll refs
@@ -86,6 +89,7 @@ export function MessageList({
   uploadingVoice,
   uploadProgress,
   pendingTaskIds,
+  pendingEntityLinks,
   mentionQuery,
   mentionResults,
   mentionSelectedIdx,
@@ -99,12 +103,41 @@ export function MessageList({
   onStopRecording,
   onMentionSelect,
   onRemovePendingTask,
+  onAddEntityLink,
+  onRemoveEntityLink,
   textareaRef,
   messagesEndRef,
   scrollContainerRef,
   sentinelRef,
 }: MessageListProps) {
   const [, setLocation] = useLocation();
+
+  const handleEntityClick = async (entityType: string, entityId: string, link?: EntityLink) => {
+    if (entityType === "TASK") {
+      setLocation(`/tasks?taskId=${entityId}`);
+      return;
+    }
+    let projectCode = link?.projectCode;
+    if (!projectCode) {
+      try {
+        const res = await fetch(`/api/entity-project/${entityType}/${entityId}`, { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          projectCode = data.projectCode;
+        }
+      } catch (err) {
+        console.error("Entity project lookup failed:", err);
+      }
+    }
+    if (!projectCode) return;
+    if (entityType === "RFI") {
+      setLocation(`/projects/${projectCode}?tab=rfis&rfiId=${entityId}`);
+    } else if (entityType === "CHANGE_ORDER") {
+      setLocation(`/projects/${projectCode}?tab=change-orders&coId=${entityId}`);
+    } else {
+      setLocation(`/projects/${projectCode}`);
+    }
+  };
 
   const renderContent = (content: string) => {
     const parts = content.split(/(@\[[^\]]*\]\([^)]+\))/g);
@@ -209,6 +242,7 @@ export function MessageList({
                   onDelete={onDelete}
                   onPickerToggle={onPickerToggle}
                   onReact={onReact}
+                  onEntityClick={handleEntityClick}
                   renderContent={renderContent}
                 />
               );
@@ -227,6 +261,7 @@ export function MessageList({
         uploadingVoice={uploadingVoice}
         uploadProgress={uploadProgress}
         pendingTaskIds={pendingTaskIds}
+        pendingEntityLinks={pendingEntityLinks}
         mentionQuery={mentionQuery}
         mentionResults={mentionResults}
         mentionSelectedIdx={mentionSelectedIdx}
@@ -240,6 +275,8 @@ export function MessageList({
         onStopRecording={onStopRecording}
         onMentionSelect={onMentionSelect}
         onRemovePendingTask={onRemovePendingTask}
+        onAddEntityLink={onAddEntityLink}
+        onRemoveEntityLink={onRemoveEntityLink}
         textareaRef={textareaRef}
       />
     </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,6 +68,19 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
       return res.json();
     },
   });
+
+  useEffect(() => {
+    if (rfis.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkRfiId = params.get("rfiId");
+    if (deepLinkRfiId) {
+      const found = rfis.find(r => r.id === deepLinkRfiId);
+      if (found) {
+        setSelectedRFI(found);
+        setShowDetailDialog(true);
+      }
+    }
+  }, [rfis]);
 
   const openDetail = (rfi: RFI) => { setSelectedRFI(rfi); setShowDetailDialog(true); };
 

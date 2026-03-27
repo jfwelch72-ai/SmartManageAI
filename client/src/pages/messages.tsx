@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearch, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -6,7 +7,7 @@ import { useMessagingEvents } from "@/hooks/use-messaging-events";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2 } from "lucide-react";
+import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { Sidebar } from "@/components/messaging/Sidebar";
@@ -18,12 +19,23 @@ import {
   type Message,
   type MessageReaction,
   type TaskMention,
+  type EntitySearchResult,
 } from "@/components/messaging/types";
 
 export function TeamMessagesContent() {
   const { user } = useAuth();
+  const searchString = useSearch();
+  const [, navigate] = useLocation();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const convId = params.get("conversation");
+    if (convId) {
+      setSelectedConversationId(convId);
+    }
+  }, [searchString]);
 
   // ── Message composer state ──
   const [messageInput, setMessageInput] = useState("");
@@ -40,6 +52,7 @@ export function TeamMessagesContent() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionAnchor, setMentionAnchor] = useState<number>(0);
   const [pendingTaskIds, setPendingTaskIds] = useState<string[]>([]);
+  const [pendingEntityLinks, setPendingEntityLinks] = useState<EntitySearchResult[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mentionSelectedIdx, setMentionSelectedIdx] = useState(0);
 
@@ -187,6 +200,7 @@ export function TeamMessagesContent() {
       voiceUrl?: string;
       voiceDurationSeconds?: number;
       mentionedTaskIds?: string[];
+      entityLinks?: { entityType: string; entityId: string }[];
     }) => {
       const { conversationId, ...body } = payload;
       const response = await apiRequest("POST", `/api/conversations/${conversationId}/messages`, body);
@@ -197,6 +211,7 @@ export function TeamMessagesContent() {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       setMessageInput("");
       setPendingTaskIds([]);
+      setPendingEntityLinks([]);
     },
   });
 
@@ -347,6 +362,9 @@ export function TeamMessagesContent() {
       conversationId: selectedConversationId,
       content: messageInput,
       mentionedTaskIds: pendingTaskIds.length > 0 ? pendingTaskIds : undefined,
+      entityLinks: pendingEntityLinks.length > 0
+        ? pendingEntityLinks.map(e => ({ entityType: e.entityType, entityId: e.entityId }))
+        : undefined,
     });
   };
 
@@ -388,6 +406,9 @@ export function TeamMessagesContent() {
         attachmentName: data.name,
         attachmentType: data.type,
         attachmentSize: data.size ?? fileSize,
+        entityLinks: pendingEntityLinks.length > 0
+          ? pendingEntityLinks.map(e => ({ entityType: e.entityType, entityId: e.entityId }))
+          : undefined,
       });
     } catch (err) {
       console.error("File upload failed:", err);
@@ -537,9 +558,54 @@ export function TeamMessagesContent() {
                     {renderConvIcon(selectedConversation)}
                   </div>
                   <div className="min-w-0">
-                    <h2 className="font-semibold text-sm leading-tight truncate" data-testid="text-conversation-name">
-                      {getConversationName(selectedConversation)}
-                    </h2>
+                    <div className="flex items-center gap-1.5">
+                      <h2 className="font-semibold text-sm leading-tight truncate" data-testid="text-conversation-name">
+                        {getConversationName(selectedConversation)}
+                      </h2>
+                      {selectedConversation.rfiId && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/entity-project/RFI/${selectedConversation.rfiId}`, { credentials: "include" });
+                              if (res.ok) {
+                                const { projectCode } = await res.json();
+                                if (projectCode) navigate(`/projects/${projectCode}?tab=rfis&rfiId=${selectedConversation.rfiId}`);
+                              }
+                            } catch (err) { console.error("Entity project lookup failed:", err); }
+                          }}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800 cursor-pointer hover:opacity-80 transition-opacity"
+                          data-testid="badge-entity-rfi"
+                        >
+                          <FileQuestion className="w-3 h-3" /> RFI
+                        </button>
+                      )}
+                      {selectedConversation.changeOrderId && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch(`/api/entity-project/CHANGE_ORDER/${selectedConversation.changeOrderId}`, { credentials: "include" });
+                              if (res.ok) {
+                                const { projectCode } = await res.json();
+                                if (projectCode) navigate(`/projects/${projectCode}?tab=change-orders&coId=${selectedConversation.changeOrderId}`);
+                              }
+                            } catch (err) { console.error("Entity project lookup failed:", err); }
+                          }}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 cursor-pointer hover:opacity-80 transition-opacity"
+                          data-testid="badge-entity-co"
+                        >
+                          <ArrowRightLeft className="w-3 h-3" /> CO
+                        </button>
+                      )}
+                      {selectedConversation.taskId && (
+                        <button
+                          onClick={() => { navigate(`/tasks?taskId=${selectedConversation.taskId}`); }}
+                          className="inline-flex items-center gap-0.5 text-[10px] font-medium rounded-full px-1.5 py-0.5 bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border border-green-200 dark:border-green-800 cursor-pointer hover:opacity-80 transition-opacity"
+                          data-testid="badge-entity-task"
+                        >
+                          <CheckSquare className="w-3 h-3" /> Task
+                        </button>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground truncate">
                       {getConvSubtitle(selectedConversation)}
                     </p>
@@ -579,6 +645,7 @@ export function TeamMessagesContent() {
                   uploadingVoice={uploadingVoice}
                   uploadProgress={uploadProgress}
                   pendingTaskIds={pendingTaskIds}
+                  pendingEntityLinks={pendingEntityLinks}
                   mentionQuery={mentionQuery}
                   mentionResults={mentionResults}
                   mentionSelectedIdx={mentionSelectedIdx}
@@ -592,6 +659,11 @@ export function TeamMessagesContent() {
                   onStopRecording={stopRecording}
                   onMentionSelect={insertTaskMention}
                   onRemovePendingTask={(id) => setPendingTaskIds(prev => prev.filter(tid => tid !== id))}
+                  onAddEntityLink={(entity) => setPendingEntityLinks(prev => {
+                    if (prev.some(e => e.entityType === entity.entityType && e.entityId === entity.entityId)) return prev;
+                    return [...prev, entity];
+                  })}
+                  onRemoveEntityLink={(entityType, entityId) => setPendingEntityLinks(prev => prev.filter(e => !(e.entityType === entityType && e.entityId === entityId)))}
                   textareaRef={textareaRef}
                   messagesEndRef={messagesEndRef}
                   scrollContainerRef={scrollContainerRef}

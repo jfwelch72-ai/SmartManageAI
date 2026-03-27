@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
@@ -441,6 +441,7 @@ export default function ProjectDetailPage() {
   const backPath = fromCFO ? "/cfo" : "/projects";
   const backLabel = fromCFO ? "Back to CFO" : "Back to Projects";
 
+
   const projectCode = params?.code || "";
   const { data: project, isLoading: projectLoading } = useProject(projectCode);
   const { data: scopeItems = [], isLoading: scopeLoading } =
@@ -492,6 +493,18 @@ export default function ProjectDetailPage() {
   const tabConfigs = buildTabConfigs(user?.role, canAccessSOV, project?.status);
   const visibleTabs = tabConfigs.filter((t) => t.visible);
   const groupedTabs = groupTabs(visibleTabs);
+
+  useEffect(() => {
+    const currentParams = new URLSearchParams(window.location.search);
+    const urlTab = currentParams.get("tab");
+    if (urlTab && visibleTabs.length > 0) {
+      const matched = visibleTabs.find(t => t.value === urlTab);
+      if (matched) {
+        setActiveTab(urlTab);
+        if (matched.group) setActiveCategory(matched.group);
+      }
+    }
+  }, [visibleTabs]);
 
   const financialSubTabMap: Record<string, string> = {
     "financials": "live-financials",

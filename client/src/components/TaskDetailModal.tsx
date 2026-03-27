@@ -39,6 +39,7 @@ import {
   Quote,
 } from "lucide-react";
 import { format } from "date-fns";
+import { EntityDiscussion } from "@/components/messaging/EntityDiscussion";
 
 interface TaskData {
   id: string;
@@ -455,6 +456,8 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
                 )}
               </CollapsibleContent>
             </Collapsible>
+
+            {task && <EntityDiscussion entityType="TASK" entityId={task.id} />}
 
             <div className="mt-4" data-testid="task-detail-comments-section">
               <div className="flex items-center gap-1 text-sm font-semibold mb-3">

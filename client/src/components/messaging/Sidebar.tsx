@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Input } from "@/components/ui/input";
@@ -9,10 +10,61 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2 } from "lucide-react";
+import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
 import { getInitials, type User, type Channel, type Conversation, type ChannelRow } from "./types";
 import { cn } from "@/lib/utils";
+
+function EntityBadge({ conversation }: { conversation: Conversation }) {
+  const [, setLocation] = useLocation();
+
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (conversation.taskId) {
+      setLocation(`/tasks?taskId=${conversation.taskId}`);
+    } else if (conversation.rfiId || conversation.changeOrderId) {
+      try {
+        const entityType = conversation.rfiId ? "RFI" : "CHANGE_ORDER";
+        const entityId = conversation.rfiId || conversation.changeOrderId;
+        const res = await fetch(`/api/entity-project/${entityType}/${entityId}`, { credentials: "include" });
+        if (res.ok) {
+          const { projectCode } = await res.json();
+          if (projectCode) {
+            const tab = conversation.rfiId ? "rfis" : "change-orders";
+            const param = conversation.rfiId ? `rfiId=${entityId}` : `coId=${entityId}`;
+            setLocation(`/projects/${projectCode}?tab=${tab}&${param}`);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Entity project lookup failed:", err);
+      }
+    }
+  };
+
+  if (conversation.rfiId) {
+    return (
+      <button onClick={handleClick} title="View RFI" data-testid={`sidebar-entity-badge-rfi-${conversation.rfiId}`}>
+        <FileQuestion className="w-3 h-3 text-blue-500 shrink-0 hover:opacity-70 transition-opacity" />
+      </button>
+    );
+  }
+  if (conversation.changeOrderId) {
+    return (
+      <button onClick={handleClick} title="View Change Order" data-testid={`sidebar-entity-badge-co-${conversation.changeOrderId}`}>
+        <ArrowRightLeft className="w-3 h-3 text-amber-500 shrink-0 hover:opacity-70 transition-opacity" />
+      </button>
+    );
+  }
+  if (conversation.taskId) {
+    return (
+      <button onClick={handleClick} title="View Task" data-testid={`sidebar-entity-badge-task-${conversation.taskId}`}>
+        <CheckSquare className="w-3 h-3 text-green-500 shrink-0 hover:opacity-70 transition-opacity" />
+      </button>
+    );
+  }
+  return null;
+}
 
 interface SidebarProps {
   currentUserId?: string;
@@ -243,6 +295,7 @@ export function Sidebar({
               >
                 <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
                 <span className="flex-1 truncate">{c.name}</span>
+                <EntityBadge conversation={c} />
                 {c.unreadCount > 0 && (
                   <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
                 )}
@@ -280,6 +333,7 @@ export function Sidebar({
                   >
                     <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
                     <span className="flex-1 truncate">{c.channelSlug ?? c.name}</span>
+                    {!unjoined && <EntityBadge conversation={c as Conversation} />}
                     {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
                     {!unjoined && (c as Conversation).unreadCount > 0 && (
                       <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
@@ -308,6 +362,7 @@ export function Sidebar({
                   >
                     <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
                     <span className="flex-1 truncate">{c.channelSlug ?? c.name}</span>
+                    {!unjoined && <EntityBadge conversation={c as Conversation} />}
                     {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
                     {!unjoined && (c as Conversation).unreadCount > 0 && (
                       <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>

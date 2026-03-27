@@ -44,6 +44,7 @@ export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING",
 
 // Messaging enums
 export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROUP", "COMPANY"]);
+export const messageEntityTypeEnum = pgEnum("message_entity_type", ["RFI", "CHANGE_ORDER", "TASK"]);
 export const messageStatusEnum = pgEnum("message_status", ["SENT", "DELIVERED", "READ"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
 export const domainEventStatusEnum = pgEnum("domain_event_status", ["PENDING", "PROCESSED", "FAILED"]);

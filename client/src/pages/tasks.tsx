@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
@@ -95,6 +95,19 @@ export default function Tasks() {
   const {  data: tasks = [], isLoading } = useQuery({
     queryKey: statusFilter ? [`/api/tasks?status=${statusFilter}`] : ["/api/tasks"],
   });
+
+  useEffect(() => {
+    if (tasks.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const deepLinkTaskId = params.get("taskId");
+    if (deepLinkTaskId) {
+      const found = (tasks as Record<string, unknown>[]).find((t: Record<string, unknown>) => t.id === deepLinkTaskId);
+      if (found) {
+        setSelectedTask(found);
+        setIsDetailModalOpen(true);
+      }
+    }
+  }, [tasks]);
 
   // Fetch projects for dropdown
   const { data: projects = [] } = useQuery<{ data: Array<{ id: string; code: string; name: string }>; pagination: any }, Error, Array<{ id: string; code: string; name: string }>>({

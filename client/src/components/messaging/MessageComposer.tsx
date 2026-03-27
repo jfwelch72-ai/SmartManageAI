@@ -1,12 +1,13 @@
-import { useRef } from "react";
-import { Loader2, Paperclip, Mic, MicOff, Send, AtSign, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Loader2, Paperclip, Mic, MicOff, Send, AtSign, X, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { MentionAutocomplete } from "./MentionAutocomplete";
-import type { TaskMention } from "./types";
+import { EntityLinkPicker, ENTITY_ICONS, ENTITY_LABELS, ENTITY_COLORS } from "./EntityLinkPicker";
+import type { TaskMention, EntitySearchResult } from "./types";
 
 interface MessageComposerProps {
   messageInput: string;
@@ -16,6 +17,7 @@ interface MessageComposerProps {
   uploadingVoice: boolean;
   uploadProgress: number;
   pendingTaskIds: string[];
+  pendingEntityLinks: EntitySearchResult[];
   mentionQuery: string | null;
   mentionResults: TaskMention[];
   mentionSelectedIdx: number;
@@ -30,6 +32,8 @@ interface MessageComposerProps {
   onStopRecording: () => void;
   onMentionSelect: (task: TaskMention) => void;
   onRemovePendingTask: (id: string) => void;
+  onAddEntityLink: (entity: EntitySearchResult) => void;
+  onRemoveEntityLink: (entityType: string, entityId: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 }
 
@@ -45,6 +49,7 @@ export function MessageComposer({
   uploadingVoice,
   uploadProgress,
   pendingTaskIds,
+  pendingEntityLinks,
   mentionQuery,
   mentionResults,
   mentionSelectedIdx,
@@ -59,9 +64,12 @@ export function MessageComposer({
   onStopRecording,
   onMentionSelect,
   onRemovePendingTask,
+  onAddEntityLink,
+  onRemoveEntityLink,
   textareaRef,
 }: MessageComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [entityPickerOpen, setEntityPickerOpen] = useState(false);
 
   return (
     <div className="p-3 border-t shrink-0">
@@ -81,6 +89,17 @@ export function MessageComposer({
         </div>
       )}
 
+      {/* Entity link picker dropdown */}
+      <EntityLinkPicker
+        open={entityPickerOpen}
+        onClose={() => setEntityPickerOpen(false)}
+        onSelect={(entity) => {
+          onAddEntityLink(entity);
+          setEntityPickerOpen(false);
+        }}
+        selectedEntities={pendingEntityLinks}
+      />
+
       {/* Task mention dropdown */}
       {mentionQuery !== null && (
         <MentionAutocomplete
@@ -88,6 +107,29 @@ export function MessageComposer({
           selectedIdx={mentionSelectedIdx}
           onSelect={onMentionSelect}
         />
+      )}
+
+      {/* Pending entity link badges */}
+      {pendingEntityLinks.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {pendingEntityLinks.map(entity => {
+            const Icon = ENTITY_ICONS[entity.entityType];
+            return (
+              <Badge
+                key={`${entity.entityType}-${entity.entityId}`}
+                variant="secondary"
+                className={cn("gap-1 text-xs", ENTITY_COLORS[entity.entityType])}
+                data-testid={`badge-pending-entity-${entity.entityType}-${entity.entityId}`}
+              >
+                <Icon className="w-2.5 h-2.5" />
+                {ENTITY_LABELS[entity.entityType]} {entity.identifier}
+                <button onClick={() => onRemoveEntityLink(entity.entityType, entity.entityId)}>
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </Badge>
+            );
+          })}
+        </div>
       )}
 
       {/* Pending task mentions */}
@@ -178,6 +220,24 @@ export function MessageComposer({
             </Button>
           </TooltipTrigger>
           <TooltipContent>{isRecording ? "Stop recording" : "Record voice message"}</TooltipContent>
+        </Tooltip>
+
+        {/* Link entity */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="icon"
+              variant={entityPickerOpen ? "secondary" : "ghost"}
+              className="h-9 w-9 shrink-0"
+              onClick={() => setEntityPickerOpen(!entityPickerOpen)}
+              disabled={isRecording}
+              data-testid="button-link-entity"
+            >
+              <Link2 className="w-4 h-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Link RFI, Change Order, or Task</TooltipContent>
         </Tooltip>
 
         {/* Text input */}

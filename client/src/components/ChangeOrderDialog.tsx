@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChangeOrderFiles } from "./ChangeOrderFiles";
+import { EntityDiscussion } from "@/components/messaging/EntityDiscussion";
 import { ChangeOrderFileUploader } from "./ChangeOrderFileUploader";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1506,6 +1507,8 @@ export function ChangeOrderDialog({
             </>
           )}
         </div>
+
+        {changeOrder && <EntityDiscussion entityType="CHANGE_ORDER" entityId={changeOrder.id} />}
 
         <DialogFooter className="flex-wrap gap-2">
           {isEditing ? (

@@ -28,6 +28,7 @@ import {
 import { format } from "date-fns";
 import type { RFI, ActivityEntry, ChangeOrder, RFIEditForm } from "@/hooks/useRfiMutations";
 import { getStatusBadge, getPriorityBadge, DEFAULT_EDIT_FORM } from "@/hooks/useRfiMutations";
+import { EntityDiscussion } from "@/components/messaging/EntityDiscussion";
 
 const RFI_CATEGORIES = [
   { value: "DESIGN_CLARIFICATION", label: "Design Clarification" },
@@ -664,6 +665,8 @@ export default function RfiDetailDialog({
                       </Button>
                     )}
                   </div>
+
+                  <EntityDiscussion entityType="RFI" entityId={rfi.id} />
 
                   <div className="border-t pt-4 space-y-4">
                     <h3 className="font-medium flex items-center gap-2" data-testid={`${p}text-activity-header`}>

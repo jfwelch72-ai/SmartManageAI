@@ -26,6 +26,9 @@ export interface Conversation {
   channelSlug: string | null;
   projectId: string | null;
   crewId: string | null;
+  rfiId: string | null;
+  changeOrderId: string | null;
+  taskId: string | null;
   isCompanyChannel: boolean;
   isArchived: boolean;
   createdAt: string;
@@ -53,6 +56,22 @@ export interface MessageReaction {
   userIds: string[];
 }
 
+export interface EntityLink {
+  id: string;
+  entityType: "RFI" | "CHANGE_ORDER" | "TASK";
+  entityId: string;
+  label?: string;
+  identifier?: string;
+  projectCode?: string;
+}
+
+export interface EntitySearchResult {
+  entityType: "RFI" | "CHANGE_ORDER" | "TASK";
+  entityId: string;
+  label: string;
+  identifier: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -69,6 +88,7 @@ export interface Message {
   editedAt: string | null;
   isDeleted: boolean;
   reactions: MessageReaction[];
+  entityLinks: EntityLink[];
   createdAt: string;
   sender: User;
 }
