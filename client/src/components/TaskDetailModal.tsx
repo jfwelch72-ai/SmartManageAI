@@ -16,7 +16,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   X,
   ChevronDown,
@@ -27,7 +26,6 @@ import {
   Calendar,
   Clock,
   MessageSquare,
-  Activity,
   FileText,
   CheckSquare,
   Bold,
@@ -98,13 +96,6 @@ interface AttachmentData {
   createdAt: string;
 }
 
-interface ActivityData {
-  action: string;
-  timestamp: string;
-  userId: string | null;
-  userName?: string;
-}
-
 interface TaskDetailModalProps {
   task: TaskData;
   open: boolean;
@@ -119,7 +110,7 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
   const [subtasksOpen, setSubtasksOpen] = useState(true);
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newComment, setNewComment] = useState("");
-  const [activeTab, setActiveTab] = useState("comments");
+  const attachmentFileRef = useRef<HTMLInputElement>(null);
   const commentFileRef = useRef<HTMLInputElement>(null);
 
   const { data: subtasks = [], isLoading: subtasksLoading } = useQuery<SubtaskData[]>({
@@ -147,16 +138,6 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
     queryFn: async () => {
       const res = await fetch(`/api/tasks/${task.id}/attachments`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch attachments");
-      return res.json();
-    },
-    enabled: !!task?.id && open,
-  });
-
-  const { data: activityLog = [], isLoading: activityLoading } = useQuery<ActivityData[]>({
-    queryKey: ["/api/tasks", task?.id, "activity"],
-    queryFn: async () => {
-      const res = await fetch(`/api/tasks/${task.id}/activity`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch activity");
       return res.json();
     },
     enabled: !!task?.id && open,
@@ -339,12 +320,17 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
                   <Paperclip className="h-4 w-4" />
                   Attachments ({attachments.length})
                 </CollapsibleTrigger>
-                <label>
-                  <input type="file" className="hidden" onChange={handleFileUpload} data-testid="input-attachment-file" />
-                  <Button size="sm" variant="outline" asChild className="cursor-pointer" data-testid="button-add-attachment">
-                    <span><Plus className="h-3 w-3 mr-1" /> Add</span>
+                <div>
+                  <input type="file" ref={attachmentFileRef} className="hidden" onChange={handleFileUpload} data-testid="input-attachment-file" />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => attachmentFileRef.current?.click()}
+                    data-testid="button-add-attachment"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add
                   </Button>
-                </label>
+                </div>
               </div>
               <CollapsibleContent className="mt-2">
                 {attachmentsLoading ? (
@@ -444,114 +430,82 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
               </CollapsibleContent>
             </Collapsible>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-              <TabsList className="w-full justify-start" data-testid="task-detail-tabs">
-                <TabsTrigger value="comments" className="gap-1" data-testid="tab-comments">
-                  <MessageSquare className="h-3 w-3" />
-                  Comments
-                </TabsTrigger>
-                <TabsTrigger value="activity" className="gap-1" data-testid="tab-activity">
-                  <Activity className="h-3 w-3" />
-                  Activity Log
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="comments" className="mt-3" data-testid="tab-content-comments">
-                {commentsLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading comments...</p>
-                ) : comments.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4" data-testid="empty-comments">No comments yet</p>
-                ) : (
-                  <div className="space-y-3 mb-4 max-h-[200px] overflow-y-auto">
-                    {comments.map((comment) => (
-                      <div key={comment.id} className="p-3 rounded-md border bg-muted/20" data-testid={`comment-${comment.id}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
-                            {comment.createdByFirstName?.[0]}{comment.createdByLastName?.[0]}
-                          </div>
-                          <span className="text-sm font-medium">
-                            {comment.createdByFirstName} {comment.createdByLastName}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(comment.createdAt), "MMM d, yyyy 'at' h:mm a")}
-                          </span>
+            <div className="mt-4" data-testid="task-detail-comments-section">
+              <div className="flex items-center gap-1 text-sm font-semibold mb-3">
+                <MessageSquare className="h-4 w-4" />
+                Comments
+              </div>
+              {commentsLoading ? (
+                <p className="text-sm text-muted-foreground">Loading comments...</p>
+              ) : comments.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4" data-testid="empty-comments">No comments yet</p>
+              ) : (
+                <div className="space-y-3 mb-4 max-h-[200px] overflow-y-auto">
+                  {comments.map((comment) => (
+                    <div key={comment.id} className="p-3 rounded-md border bg-muted/20" data-testid={`comment-${comment.id}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium text-primary">
+                          {comment.createdByFirstName?.[0]}{comment.createdByLastName?.[0]}
                         </div>
-                        <p className="text-sm pl-8">{comment.content}</p>
+                        <span className="text-sm font-medium">
+                          {comment.createdByFirstName} {comment.createdByLastName}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(comment.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
-                <div className="space-y-0">
-                  <div className="flex items-center gap-0.5 p-1.5 border border-b-0 rounded-t-md bg-muted/30" data-testid="comment-toolbar">
-                    {toolbarButtons.map(({ icon: Icon, label }) => (
-                      <button
-                        key={label}
-                        type="button"
-                        title={label}
-                        className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                        data-testid={`toolbar-${label.toLowerCase().replace(/\s+/g, "-")}`}
-                      >
-                        <Icon className="h-3.5 w-3.5" />
-                      </button>
-                    ))}
-                  </div>
-                  <Textarea
-                    placeholder="Write a comment..."
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    className="min-h-[80px] text-sm rounded-t-none border-t-0"
-                    data-testid="input-new-comment"
-                  />
-                  <div className="flex items-center justify-between mt-2">
-                    <div>
-                      <input type="file" ref={commentFileRef} className="hidden" onChange={handleFileUpload} data-testid="input-comment-attachment" />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => commentFileRef.current?.click()}
-                        data-testid="button-attach-files"
-                      >
-                        <Paperclip className="h-3 w-3 mr-1" />
-                        Attach Files
-                      </Button>
+                      <p className="text-sm pl-8">{comment.content}</p>
                     </div>
+                  ))}
+                </div>
+              )}
+              <div className="space-y-0">
+                <div className="flex items-center gap-0.5 p-1.5 border border-b-0 rounded-t-md bg-muted/30" data-testid="comment-toolbar">
+                  {toolbarButtons.map(({ icon: Icon, label }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      title={label}
+                      className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      data-testid={`toolbar-${label.toLowerCase().replace(/\s+/g, "-")}`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </button>
+                  ))}
+                </div>
+                <Textarea
+                  placeholder="Write a comment..."
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  className="min-h-[80px] text-sm rounded-t-none border-t-0"
+                  data-testid="input-new-comment"
+                />
+                <div className="flex items-center justify-between mt-4">
+                  <div>
+                    <input type="file" ref={commentFileRef} className="hidden" onChange={handleFileUpload} data-testid="input-comment-attachment" />
                     <Button
                       size="sm"
-                      disabled={!newComment.trim() || addCommentMutation.isPending}
-                      onClick={() => {
-                        if (newComment.trim()) addCommentMutation.mutate(newComment.trim());
-                      }}
-                      data-testid="button-add-comment"
+                      variant="outline"
+                      onClick={() => commentFileRef.current?.click()}
+                      data-testid="button-attach-files"
                     >
-                      {addCommentMutation.isPending ? "Adding..." : "Add Comment"}
+                      <Paperclip className="h-3 w-3 mr-1" />
+                      Attach Files
                     </Button>
                   </div>
+                  <Button
+                    size="sm"
+                    disabled={!newComment.trim() || addCommentMutation.isPending}
+                    onClick={() => {
+                      if (newComment.trim()) addCommentMutation.mutate(newComment.trim());
+                    }}
+                    data-testid="button-add-comment"
+                  >
+                    {addCommentMutation.isPending ? "Adding..." : "Add Comment"}
+                  </Button>
                 </div>
-              </TabsContent>
-
-              <TabsContent value="activity" className="mt-3" data-testid="tab-content-activity">
-                {activityLoading ? (
-                  <p className="text-sm text-muted-foreground">Loading activity...</p>
-                ) : activityLog.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4" data-testid="empty-activity">No activity yet</p>
-                ) : (
-                  <div className="space-y-3">
-                    {activityLog.map((item, index) => (
-                      <div key={index} className="flex items-start gap-3" data-testid={`activity-${index}`}>
-                        <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
-                        <div>
-                          <p className="text-sm">{item.action}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {item.userName && `${item.userName} — `}
-                            {format(new Date(item.timestamp), "MMM d, yyyy 'at' h:mm a")}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+              </div>
+            </div>
           </div>
 
           <div className="w-full md:w-[260px] flex-shrink-0 p-6 overflow-y-auto bg-muted/20" data-testid="task-detail-sidebar">
