@@ -27,7 +27,7 @@ async function verifyOrgOwnership(
   const [row] = await db
     .select({ id: table.id })
     .from(table)
-    .where(and(eq(table.id, id), eq(table.organizationId, orgId)));
+    .where(and(eq(table.id, id), eq(table.gcOrganizationId, orgId)));
   if (!row) return `${label} not found or does not belong to your organization`;
   return null;
 }
