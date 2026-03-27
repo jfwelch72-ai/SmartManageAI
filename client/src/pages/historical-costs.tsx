@@ -8,6 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Database, Search, Filter, Plus, Trash2, TrendingUp, DollarSign, Calendar, BarChart3 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -85,6 +89,7 @@ export default function HistoricalCostsPage() {
   const [endDate, setEndDate] = useState("");
   const [activeTab, setActiveTab] = useState<"aggregated" | "detail">("aggregated");
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [deleteRecordId, setDeleteRecordId] = useState<string | null>(null);
 
   const buildParams = () => {
     const params = new URLSearchParams();
@@ -446,10 +451,7 @@ export default function HistoricalCostsPage() {
                               size="icon"
                               variant="ghost"
                               className="h-7 w-7 text-destructive"
-                              onClick={() => {
-                                if (confirm("Delete this cost record?"))
-                                  deleteCostMutation.mutate(record.id);
-                              }}
+                              onClick={() => setDeleteRecordId(record.id)}
                               disabled={deleteCostMutation.isPending}
                               data-testid={`button-delete-cost-${record.id}`}
                             >
@@ -670,6 +672,37 @@ export default function HistoricalCostsPage() {
             </Form>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={!!deleteRecordId} onOpenChange={(open) => { if (!open) setDeleteRecordId(null); }}>
+          <AlertDialogContent data-testid="dialog-delete-cost-record">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Cost Record</AlertDialogTitle>
+              <AlertDialogDescription>
+                {(() => {
+                  const rec = detailData.find(r => r.id === deleteRecordId);
+                  return rec
+                    ? `Are you sure you want to delete the record "${rec.description}"? This action cannot be undone.`
+                    : "Are you sure you want to delete this cost record? This action cannot be undone.";
+                })()}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="button-cancel-delete-cost">Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteRecordId) {
+                    deleteCostMutation.mutate(deleteRecordId);
+                    setDeleteRecordId(null);
+                  }
+                }}
+                data-testid="button-confirm-delete-cost"
+              >
+                Delete
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );
