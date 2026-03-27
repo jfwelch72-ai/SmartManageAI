@@ -181,18 +181,6 @@ export function useCreateCalendarEvent() {
   });
 }
 
-export function useApproveTimeOff() {
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await apiRequest("POST", `/api/calendar/events/${id}/approve`);
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/calendar/events"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications"] });
-    },
-  });
-}
 
 // Notifications
 export function useNotifications() {

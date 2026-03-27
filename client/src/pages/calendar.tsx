@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,24 +9,46 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/use-auth";
-import { useLocation, useSearch } from "wouter";
-import { useCalendarEvents, useCreateCalendarEvent, useApproveTimeOff } from "@/hooks/use-data";
+import { useCalendarEvents, useCreateCalendarEvent } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Calendar as CalendarIcon, CheckCircle, X } from "lucide-react";
+import { Plus, Calendar as CalendarIcon } from "lucide-react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, isWithinInterval, startOfDay, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
+const EVENT_TYPE_LABELS: Record<string, string> = {
+  MEETING: "Meeting",
+  PROJECT_DEADLINE: "Project Deadline",
+  PROJECT_MILESTONE: "Milestone",
+  NETWORKING_EVENT: "Networking Event",
+  PROJECT_START: "Project Start",
+  PROJECT_PHASE: "Project Phase",
+};
+
+function getEventBadgeVariant(eventType: string): "default" | "secondary" | "outline" {
+  switch (eventType) {
+    case "TIME_OFF_APPROVED":
+      return "default";
+    case "MILESTONE":
+    case "PROJECT_DEADLINE":
+      return "outline";
+    default:
+      return "secondary";
+  }
+}
+
+function getEventLabel(eventType: string): string {
+  if (eventType === "TIME_OFF_APPROVED") return "Approved Leave";
+  return EVENT_TYPE_LABELS[eventType] || eventType.replace(/_/g, " ");
+}
+
 export default function CalendarPage() {
-  const [, setLocation] = useLocation();
-  const searchParams = useSearch();
-  const { user, logout, organizationName } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showRequestDialog, setShowRequestDialog] = useState(false);
-  const [viewFilter, setViewFilter] = useState<string | null>(null);
-  
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -34,25 +56,14 @@ export default function CalendarPage() {
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("17:00");
   const [allDay, setAllDay] = useState(false);
-  const [eventType, setEventType] = useState<string>("TIME_OFF_REQUEST");
+  const [eventType, setEventType] = useState<string>("MEETING");
   const [selectedEvent, setSelectedEvent] = useState<any>(null);
   const [showEventDetail, setShowEventDetail] = useState(false);
   const [selectedDayEvents, setSelectedDayEvents] = useState<any[]>([]);
   const [showDayEventsDialog, setShowDayEventsDialog] = useState(false);
 
-  // Check URL for view parameter
-  useEffect(() => {
-    const params = new URLSearchParams(searchParams);
-    if (params.get("view") === "timeoff") {
-      setViewFilter("TIME_OFF_REQUEST");
-    } else {
-      setViewFilter(null);
-    }
-  }, [searchParams]);
-
   const { data: events = [], isLoading } = useCalendarEvents();
   const createEvent = useCreateCalendarEvent();
-  const approveTimeOff = useApproveTimeOff();
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -85,34 +96,14 @@ export default function CalendarPage() {
       setStartTime("09:00");
       setEndTime("17:00");
       setAllDay(false);
+      setEventType("MEETING");
     } catch (error) {
       toast({ title: "Error", description: "Failed to create event", variant: "destructive" });
     }
   };
 
-  const handleApprove = async (id: string) => {
-    try {
-      await approveTimeOff.mutateAsync(id);
-      toast({ title: "Success", description: "Time-off request approved" });
-    } catch (error) {
-      toast({ title: "Error", description: "Failed to approve request", variant: "destructive" });
-    }
-  };
-
-  const canApprove = ["ADMIN", "MANAGER"].includes(user?.role || "");
-
-  // Filter events based on viewFilter
-  const filteredEvents = viewFilter 
-    ? events.filter(event => event.eventType === viewFilter)
-    : events;
-
-  // Get pending time-off requests for display
-  const pendingTimeOffRequests = events.filter(
-    event => event.eventType === "TIME_OFF_REQUEST" && !event.approvedById
-  );
-
   const getEventsForDay = (date: Date) => {
-    return filteredEvents.filter(event => {
+    return events.filter(event => {
       const eventStart = new Date(event.startDate);
       const eventEnd = event.endDate ? new Date(event.endDate) : eventStart;
       return isWithinInterval(date, { start: eventStart, end: eventEnd }) || isSameDay(date, eventStart);
@@ -124,29 +115,12 @@ export default function CalendarPage() {
       <main className="mx-auto max-w-full px-4 sm:px-6 py-6 sm:py-8">
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">
-              {viewFilter === "TIME_OFF_REQUEST" ? "Pending Time-Off Requests" : "Calendar & Time-Off"}
+            <h1 className="text-2xl font-bold text-foreground" data-testid="text-calendar-title">
+              Calendar
             </h1>
             <p className="text-sm text-muted-foreground">
-              {viewFilter === "TIME_OFF_REQUEST" 
-                ? `${pendingTimeOffRequests.length} pending request${pendingTimeOffRequests.length !== 1 ? 's' : ''} awaiting approval`
-                : "Manage time-off requests, networking events, and project milestones"}
+              Manage meetings, milestones, deadlines, and events
             </p>
-            {viewFilter && (
-              <div className="flex items-center gap-2 mt-2">
-                <Badge variant="secondary" className="gap-1">
-                  Showing: Time-Off Requests Only
-                  <X 
-                    className="w-3 h-3 cursor-pointer" 
-                    onClick={() => {
-                      setViewFilter(null);
-                      setLocation("/calendar", { replace: true });
-                    }}
-                    data-testid="button-clear-calendar-filter"
-                  />
-                </Badge>
-              </div>
-            )}
           </div>
 
           <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
@@ -168,8 +142,9 @@ export default function CalendarPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="TIME_OFF_REQUEST">Time Off Request</SelectItem>
-                      <SelectItem value="NETWORKING_EVENT">Networking Event</SelectItem>
+                      {Object.entries(EVENT_TYPE_LABELS).map(([key, label]) => (
+                        <SelectItem key={key} value={key}>{label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -179,7 +154,7 @@ export default function CalendarPage() {
                     id="event-title"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Holiday vacation"
+                    placeholder="Team standup, project review..."
                     data-testid="input-event-title"
                   />
                 </div>
@@ -297,68 +272,6 @@ export default function CalendarPage() {
           </Dialog>
         </div>
 
-        {/* Show pending time-off requests list when filter is active */}
-        {viewFilter === "TIME_OFF_REQUEST" && pendingTimeOffRequests.length > 0 && (
-          <Card className="mb-6" data-testid="card-pending-requests-list">
-            <CardHeader>
-              <CardTitle className="text-lg">Pending Requests Awaiting Approval</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {pendingTimeOffRequests.map(request => (
-                  <div 
-                    key={request.id}
-                    className="flex items-center justify-between p-3 bg-muted rounded-md"
-                    data-testid={`pending-request-${request.id}`}
-                  >
-                    <div className="flex-1">
-                      <div className="font-medium">{request.title}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {format(new Date(request.startDate), "MMM d, yyyy")}
-                        {request.endDate && ` - ${format(new Date(request.endDate), "MMM d, yyyy")}`}
-                      </div>
-                      {request.description && (
-                        <div className="text-sm text-muted-foreground mt-1">{request.description}</div>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setCurrentDate(new Date(request.startDate))}
-                        data-testid={`button-goto-date-${request.id}`}
-                      >
-                        View on Calendar
-                      </Button>
-                      {canApprove && (
-                        <Button
-                          size="sm"
-                          onClick={() => handleApprove(request.id)}
-                          disabled={approveTimeOff.isPending}
-                          data-testid={`button-approve-${request.id}`}
-                        >
-                          <CheckCircle className="w-4 h-4 mr-1" />
-                          Approve
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {viewFilter === "TIME_OFF_REQUEST" && pendingTimeOffRequests.length === 0 && (
-          <Card className="mb-6">
-            <CardContent className="py-8 text-center">
-              <CheckCircle className="w-12 h-12 mx-auto text-green-500 mb-3" />
-              <h3 className="text-lg font-medium mb-1">All Caught Up!</h3>
-              <p className="text-muted-foreground">There are no pending time-off requests to review.</p>
-            </CardContent>
-          </Card>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <Card>
@@ -414,11 +327,7 @@ export default function CalendarPage() {
                           {dayEvents.slice(0, 2).map(event => (
                             <Badge
                               key={event.id}
-                              variant={
-                                event.eventType === "TIME_OFF_APPROVED" ? "default" :
-                                event.eventType === "TIME_OFF_REQUEST" ? "destructive" :
-                                "secondary"
-                              }
+                              variant={getEventBadgeVariant(event.eventType)}
                               className="text-xs block truncate cursor-pointer hover-elevate active-elevate-2"
                               onClick={() => {
                                 setSelectedEvent(event);
@@ -482,14 +391,10 @@ export default function CalendarPage() {
                                 <span className="font-medium text-sm">{event.title}</span>
                               </div>
                               <Badge
-                                variant={
-                                  event.eventType === "TIME_OFF_APPROVED" ? "default" :
-                                  event.eventType === "TIME_OFF_REQUEST" ? "destructive" :
-                                  "secondary"
-                                }
+                                variant={getEventBadgeVariant(event.eventType)}
                                 className="text-xs"
                               >
-                                {event.eventType.replace(/_/g, " ")}
+                                {getEventLabel(event.eventType)}
                               </Badge>
                               <p className="text-xs text-muted-foreground mt-2">
                                 {format(new Date(event.startDate), "MMM d")} - {event.endDate ? format(new Date(event.endDate), "MMM d, yyyy") : ""}
@@ -498,18 +403,6 @@ export default function CalendarPage() {
                                 <p className="text-xs text-muted-foreground mt-1">{event.description}</p>
                               )}
                             </div>
-                            {canApprove && event.eventType === "TIME_OFF_REQUEST" && (
-                              <Button
-                                size="sm"
-                                variant="default"
-                                onClick={() => handleApprove(event.id)}
-                                disabled={approveTimeOff.isPending}
-                                data-testid={`button-approve-${event.id}`}
-                              >
-                                <CheckCircle className="w-4 h-4 mr-1" />
-                                Approve
-                              </Button>
-                            )}
                           </div>
                         </Card>
                       ))}
@@ -520,7 +413,6 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {/* Event Detail Dialog */}
         <Dialog open={showEventDetail} onOpenChange={setShowEventDetail}>
           <DialogContent data-testid="dialog-event-detail">
             <DialogHeader>
@@ -531,22 +423,16 @@ export default function CalendarPage() {
                 <div>
                   <Label className="text-sm font-medium">Event Type</Label>
                   <div className="mt-1">
-                    <Badge
-                      variant={
-                        selectedEvent.eventType === "TIME_OFF_APPROVED" ? "default" :
-                        selectedEvent.eventType === "TIME_OFF_REQUEST" ? "destructive" :
-                        "secondary"
-                      }
-                    >
-                      {selectedEvent.eventType.replace(/_/g, " ")}
+                    <Badge variant={getEventBadgeVariant(selectedEvent.eventType)}>
+                      {getEventLabel(selectedEvent.eventType)}
                     </Badge>
                   </div>
                 </div>
 
-                {(selectedEvent.eventType === "TIME_OFF_REQUEST" || selectedEvent.eventType === "TIME_OFF_APPROVED") && selectedEvent.requesteeName && (
+                {selectedEvent.eventType === "TIME_OFF_APPROVED" && selectedEvent.requesteeName && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-sm font-medium">Requested By</Label>
+                      <Label className="text-sm font-medium">Employee</Label>
                       <p className="mt-1 text-sm text-muted-foreground" data-testid="text-requestee-name">
                         {selectedEvent.requesteeName}
                       </p>
@@ -604,20 +490,6 @@ export default function CalendarPage() {
               </div>
             )}
             <DialogFooter>
-              {canApprove && selectedEvent?.eventType === "TIME_OFF_REQUEST" && (
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    handleApprove(selectedEvent.id);
-                    setShowEventDetail(false);
-                  }}
-                  disabled={approveTimeOff.isPending}
-                  data-testid="button-approve-event-detail"
-                >
-                  <CheckCircle className="w-4 h-4 mr-2" />
-                  Approve Request
-                </Button>
-              )}
               <Button variant="outline" onClick={() => setShowEventDetail(false)}>
                 Close
               </Button>
@@ -625,7 +497,6 @@ export default function CalendarPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Day Events Dialog - Shows all events for a specific day */}
         <Dialog open={showDayEventsDialog} onOpenChange={setShowDayEventsDialog}>
           <DialogContent data-testid="dialog-day-events">
             <DialogHeader>
@@ -651,14 +522,10 @@ export default function CalendarPage() {
                         <span className="font-medium text-sm">{event.title}</span>
                       </div>
                       <Badge
-                        variant={
-                          event.eventType === "TIME_OFF_APPROVED" ? "default" :
-                          event.eventType === "TIME_OFF_REQUEST" ? "destructive" :
-                          "secondary"
-                        }
+                        variant={getEventBadgeVariant(event.eventType)}
                         className="text-xs"
                       >
-                        {event.eventType.replace(/_/g, " ")}
+                        {getEventLabel(event.eventType)}
                       </Badge>
                       <p className="text-xs text-muted-foreground mt-2">
                         {!event.allDay && (

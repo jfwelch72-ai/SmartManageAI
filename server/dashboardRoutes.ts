@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
-import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments } from "@shared/schema";
+import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest, requireRoleOrFeature, hashPassword, verifyPassword, revokeUserTokens } from "./auth";
 import { eq, and, sql, gte, lte, desc, asc } from "drizzle-orm";
 import { z } from "zod";
@@ -1080,15 +1080,14 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
       if (shouldFilter && orgId) {
         const pendingTimeOffResult = await db
           .select({ count: sql<number>`count(*)::int` })
-          .from(calendarEvents)
-          .innerJoin(users, eq(calendarEvents.userId, users.id))
-          .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL AND ${users.organizationId} = ${orgId}`);
+          .from(leaveRequests)
+          .where(and(eq(leaveRequests.status, "PENDING"), eq(leaveRequests.organizationId, orgId)));
         pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
       } else {
         const pendingTimeOffResult = await db
           .select({ count: sql<number>`count(*)::int` })
-          .from(calendarEvents)
-          .where(sql`${calendarEvents.eventType} = 'TIME_OFF_REQUEST' AND ${calendarEvents.approvedById} IS NULL`);
+          .from(leaveRequests)
+          .where(eq(leaveRequests.status, "PENDING"));
         pendingTimeOffCount = pendingTimeOffResult[0]?.count || 0;
       }
 

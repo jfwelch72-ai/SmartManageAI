@@ -84,12 +84,12 @@ export function OutstandingItemsWidget() {
           {stats?.pendingTimeOffCount ? (
             <div
               className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer"
-              onClick={() => setLocation("/calendar?view=timeoff")}
+              onClick={() => setLocation("/leave-management")}
               data-testid="outstanding-timeoff"
             >
               <div className="flex items-center gap-2">
                 <CalendarClock className="w-4 h-4 text-blue-500" />
-                <span className="text-sm">Time-Off Requests</span>
+                <span className="text-sm">Pending Leave Requests</span>
               </div>
               <Badge variant="secondary">{stats.pendingTimeOffCount}</Badge>
             </div>

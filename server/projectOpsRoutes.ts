@@ -1638,72 +1638,18 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =
       return;
     }
 
+    if (validationResult.data.eventType === "TIME_OFF_REQUEST" || validationResult.data.eventType === "TIME_OFF_APPROVED") {
+      res.status(400).json({ error: "Time-off events are managed through the Leave Management module" });
+      return;
+    }
+
     const insertData = { ...validationResult.data, createdById: req.user!.id };
     const [newEvent] = await db.insert(calendarEvents).values([insertData]).returning();
-    
-    if (newEvent.eventType === "TIME_OFF_REQUEST") {
-      const adminsAndManagers = await db
-        .select()
-        .from(users)
-        .where(sql`${users.role} IN ('ADMIN', 'MANAGER')`);
-      
-      const notificationsToCreate = adminsAndManagers.map(user => ({
-        userId: user.id,
-        type: "TIME_OFF_REQUEST" as const,
-        title: "Time Off Request",
-        message: `${req.user!.firstName} ${req.user!.lastName} requested time off: ${newEvent.title}`,
-        relatedEntityId: newEvent.id,
-        relatedEntityType: "calendarEvent",
-      }));
-
-      if (notificationsToCreate.length > 0) {
-        await insertNotifications(notificationsToCreate);
-      }
-    }
 
     res.status(201).json(newEvent);
   } catch (error: any) {
     console.error("Create calendar event error:", error);
     res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/api/calendar/events/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
-  try {
-    const [event] = await db
-      .update(calendarEvents)
-      .set({
-        eventType: "TIME_OFF_APPROVED",
-        approvedById: req.user!.id,
-        approvedAt: new Date(),
-      })
-      .where(eq(calendarEvents.id, req.params.id))
-      .returning();
-
-    if (!event) {
-      res.status(404).json({ error: "Calendar event not found" });
-      return;
-    }
-
-    if (event.userId) {
-      await insertNotification({
-        userId: event.userId,
-        type: "GENERAL",
-        title: "Time Off Approved",
-        message: `Your time off request has been approved: ${event.title}`,
-        relatedEntityId: event.id,
-        relatedEntityType: "calendarEvent",
-      });
-    }
-
-    res.json(event);
-  } catch (error: any) {
-    console.error("Approve time-off error:", error);
-    if (error.message === "Calendar event not found") {
-      res.status(404).json({ error: "Calendar event not found" });
-    } else {
-      res.status(500).json({ error: "Internal server error" });
-    }
   }
 });
 
