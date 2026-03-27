@@ -69,9 +69,9 @@ function fmtCurrency(amount: string | number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(num);
 }
 
-function fmtDate(dateStr: string | null): string {
+function fmtDate(dateStr: string | null, includeTime = false): string {
   if (!dateStr) return "—";
-  try { return format(new Date(dateStr), "MMM d, yyyy"); } catch { return "—"; }
+  try { return format(new Date(dateStr), includeTime ? "MMM d, yyyy h:mm a" : "MMM d, yyyy"); } catch { return "—"; }
 }
 
 function ResponseDueCountdown({ dueDate }: { dueDate: string }) {
@@ -429,7 +429,7 @@ export function PortalChangeOrdersTab({ changeOrders, projectId, email, onRefres
                         >
                           <div className="flex items-center justify-between mb-1">
                             <span className="font-medium text-xs">{c.authorName}</span>
-                            <span className="text-xs text-muted-foreground">{fmtDate(c.createdAt)}</span>
+                            <span className="text-xs text-muted-foreground">{fmtDate(c.createdAt, true)}</span>
                           </div>
                           <p className="whitespace-pre-wrap">{c.message}</p>
                         </div>

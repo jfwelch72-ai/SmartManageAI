@@ -86,6 +86,20 @@ interface PortalData {
     submittedAt: string | null;
     approvedAt: string | null;
     clientResponseDueDate: string | null;
+    createdAt: string;
+    costBreakdown?: {
+      labor?: number;
+      material?: number;
+      equipment?: number;
+      subcontractor?: number;
+      total?: number;
+    } | null;
+    attachments?: Array<{
+      id: string;
+      fileName: string;
+      fileType: string | null;
+      fileSize: number | null;
+    }>;
   }>;
   payments?: Array<{
     id: string;
