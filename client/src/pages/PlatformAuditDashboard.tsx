@@ -298,7 +298,7 @@ function CrossOrgAuditLogTab() {
         <CardDescription>Search and filter audit entries across all organizations</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           <Select value={action || "all"} onValueChange={(v) => { setAction(v === "all" ? "" : v); setPage(1); }}>
             <SelectTrigger data-testid="select-crossaudit-action">
               <SelectValue placeholder="Action" />
@@ -425,8 +425,8 @@ function CrossOrgAuditLogTab() {
             </ScrollArea>
 
             {data && data.totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4">
-                <div className="text-sm text-muted-foreground">
+              <div className="flex flex-col sm:flex-row items-center justify-between pt-4 gap-2">
+                <div className="text-xs sm:text-sm text-muted-foreground">
                   Page {data.page} of {data.totalPages}
                 </div>
                 <div className="flex gap-2">
@@ -437,7 +437,7 @@ function CrossOrgAuditLogTab() {
                     disabled={page <= 1}
                     data-testid="button-crossaudit-prev"
                   >
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                    <ChevronLeft className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Previous</span><span className="sm:hidden">Prev</span>
                   </Button>
                   <Button
                     variant="outline"
@@ -496,7 +496,7 @@ export default function PlatformAuditDashboard() {
 
   if (user?.role !== 'SUPER_ADMIN') {
     return (
-      <div className="min-h-screen bg-background p-6">
+      <div className="min-h-screen bg-background px-3 sm:px-6 py-4 sm:py-6">
         <Alert variant="destructive">
           <Shield className="h-4 w-4" />
           <AlertTitle>Access Denied</AlertTitle>
@@ -510,14 +510,14 @@ export default function PlatformAuditDashboard() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background p-6 space-y-6">
+      <div className="min-h-screen bg-background px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Platform Security Audit</h1>
-            <p className="text-muted-foreground">Loading audit results...</p>
+            <h1 className="text-xl sm:text-2xl font-bold">Platform Security Audit</h1>
+            <p className="text-muted-foreground text-sm">Loading audit results...</p>
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <Card key={i}>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
@@ -536,13 +536,13 @@ export default function PlatformAuditDashboard() {
 
   if (!report) {
     return (
-      <div className="min-h-screen bg-background p-6 space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="min-h-screen bg-background px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Platform Security Audit</h1>
-            <p className="text-muted-foreground">No audit report available</p>
+            <h1 className="text-xl sm:text-2xl font-bold">Platform Security Audit</h1>
+            <p className="text-muted-foreground text-sm">No audit report available</p>
           </div>
-          <Button onClick={() => runAuditMutation.mutate()} disabled={runAuditMutation.isPending}>
+          <Button onClick={() => runAuditMutation.mutate()} disabled={runAuditMutation.isPending} className="w-full sm:w-auto">
             <RefreshCw className={`h-4 w-4 mr-2 ${runAuditMutation.isPending ? 'animate-spin' : ''}`} />
             Run Audit
           </Button>
@@ -571,12 +571,13 @@ export default function PlatformAuditDashboard() {
             <Shield className="h-6 w-6" />
             Platform Security Audit
           </h1>
-          <p className="text-muted-foreground flex items-center gap-2 text-sm sm:text-base">
-            <Clock className="h-4 w-4" />
-            Last run: {new Date(report.timestamp).toLocaleString()} | 
-            Git: {report.gitCommit} | 
-            Duration: {report.duration}ms
-          </p>
+          <div className="text-muted-foreground text-xs sm:text-sm mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {new Date(report.timestamp).toLocaleString()}</span>
+            <span className="hidden sm:inline">|</span>
+            <span>Git: {report.gitCommit}</span>
+            <span className="hidden sm:inline">|</span>
+            <span>Duration: {report.duration}ms</span>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <DropdownMenu>
@@ -608,43 +609,45 @@ export default function PlatformAuditDashboard() {
         </div>
       </div>
 
-      <div className={`p-4 rounded-lg ${overallStatus === 'healthy' ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'}`}>
+      <div className={`p-3 sm:p-4 rounded-lg ${overallStatus === 'healthy' ? 'bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800'}`}>
         <div className="flex items-center gap-3">
           {overallStatus === 'healthy' ? (
-            <CheckCircle className="h-8 w-8 text-green-600" />
+            <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-green-600 shrink-0" />
           ) : (
-            <XCircle className="h-8 w-8 text-red-600" />
+            <XCircle className="h-6 w-6 sm:h-8 sm:w-8 text-red-600 shrink-0" />
           )}
-          <div>
-            <h2 className="text-xl font-bold" data-testid="text-overall-status">
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-xl font-bold" data-testid="text-overall-status">
               {overallStatus === 'healthy' ? 'All Checks Passed' : `${report.summary.failed} Check(s) Failed`}
             </h2>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-xs sm:text-sm text-muted-foreground">
               {report.summary.passed} passed, {report.summary.warnings} warnings, {report.summary.skipped} skipped out of {report.summary.total} total checks
             </p>
           </div>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {Object.entries(report.categories).map(([category, stats]) => (
           <CategoryCard key={category} category={category} stats={stats!} />
         ))}
       </div>
 
       <Tabs defaultValue={failedChecks.length > 0 ? 'failed' : 'all'} className="space-y-4">
-        <TabsList className="flex flex-wrap">
-          <TabsTrigger value="all">All Checks ({report.summary.total})</TabsTrigger>
-          <TabsTrigger value="failed" className={failedChecks.length > 0 ? 'text-red-600' : ''}>
-            Failed ({failedChecks.length})
-          </TabsTrigger>
-          <TabsTrigger value="warnings" className={warningChecks.length > 0 ? 'text-yellow-600' : ''}>
-            Warnings ({warningChecks.length})
-          </TabsTrigger>
-          <TabsTrigger value="crossorg-audit" data-testid="tab-crossorg-audit">
-            <FileText className="h-4 w-4 mr-1.5" /> Cross-Org Audit Logs
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
+            <TabsTrigger value="all" className="text-xs sm:text-sm">All ({report.summary.total})</TabsTrigger>
+            <TabsTrigger value="failed" className={`text-xs sm:text-sm ${failedChecks.length > 0 ? 'text-red-600' : ''}`}>
+              Failed ({failedChecks.length})
+            </TabsTrigger>
+            <TabsTrigger value="warnings" className={`text-xs sm:text-sm ${warningChecks.length > 0 ? 'text-yellow-600' : ''}`}>
+              Warnings ({warningChecks.length})
+            </TabsTrigger>
+            <TabsTrigger value="crossorg-audit" data-testid="tab-crossorg-audit" className="text-xs sm:text-sm">
+              <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" /> Audit Logs
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="all">
           <Card>
@@ -656,14 +659,14 @@ export default function PlatformAuditDashboard() {
               <ScrollArea className="h-[400px]">
                 <div className="space-y-2">
                   {report.checks.map((check, i) => (
-                    <div key={check.id} className="flex items-center justify-between p-2 rounded hover:bg-muted/50">
+                    <div key={check.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-2 rounded hover:bg-muted/50 gap-1 sm:gap-2">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{check.name}</p>
+                        <p className="font-medium text-sm truncate">{check.name}</p>
                         {check.message && (
                           <p className="text-xs text-muted-foreground truncate">{check.message}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <Badge variant="outline" className="text-xs">{check.category}</Badge>
                         <StatusBadge status={check.status} />
                       </div>
