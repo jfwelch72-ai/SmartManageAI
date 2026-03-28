@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections, platformAnnouncements, announcementDismissals, globalWorkflowTemplates, equipment, contracts } from "@shared/schema";
 import { requireAuth, type AuthRequest, hashPassword, generateToken } from "./auth";
-import { eq, count, desc, sql, and, gte, lte, isNotNull, like, ilike, sum } from "drizzle-orm";
+import { eq, count, desc, sql, and, gte, lte, isNotNull, like, ilike, sum, inArray, or } from "drizzle-orm";
 import crypto from "crypto";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { logAudit } from "./auditLogger";
@@ -1577,6 +1577,458 @@ router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, as
   } catch (error: any) {
     console.error("Platform monitoring audit logs error:", error.message);
     res.status(500).json({ error: "Failed to fetch audit logs" });
+  }
+});
+
+// ========================================
+// Platform Announcements
+// ========================================
+
+router.get("/platform/announcements", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const all = await db.select().from(platformAnnouncements).orderBy(desc(platformAnnouncements.createdAt));
+    res.json(all);
+  } catch (error: any) {
+    console.error("Get announcements error:", error.message);
+    res.status(500).json({ error: "Failed to fetch announcements" });
+  }
+});
+
+router.post("/platform/announcements", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { title, message, targetOrgIds, isActive, expiresAt } = req.body;
+    if (!title || !message) {
+      return res.status(400).json({ error: "Title and message are required" });
+    }
+    const [announcement] = await db.insert(platformAnnouncements).values({
+      title,
+      message,
+      targetOrgIds: targetOrgIds && targetOrgIds.length > 0 ? targetOrgIds : null,
+      isActive: isActive !== undefined ? isActive : true,
+      expiresAt: expiresAt ? new Date(expiresAt) : null,
+      createdById: req.user!.id,
+    }).returning();
+    res.status(201).json(announcement);
+  } catch (error: any) {
+    console.error("Create announcement error:", error.message);
+    res.status(500).json({ error: "Failed to create announcement" });
+  }
+});
+
+router.patch("/platform/announcements/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (req.body.title !== undefined) updates.title = req.body.title;
+    if (req.body.message !== undefined) updates.message = req.body.message;
+    if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;
+    if (req.body.expiresAt !== undefined) updates.expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+    if (req.body.targetOrgIds !== undefined) updates.targetOrgIds = req.body.targetOrgIds && req.body.targetOrgIds.length > 0 ? req.body.targetOrgIds : null;
+
+    const [updated] = await db.update(platformAnnouncements).set(updates).where(eq(platformAnnouncements.id, id)).returning();
+    if (!updated) return res.status(404).json({ error: "Announcement not found" });
+    res.json(updated);
+  } catch (error: any) {
+    console.error("Update announcement error:", error.message);
+    res.status(500).json({ error: "Failed to update announcement" });
+  }
+});
+
+router.delete("/platform/announcements/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    await db.delete(platformAnnouncements).where(eq(platformAnnouncements.id, id));
+    res.json({ message: "Announcement deleted" });
+  } catch (error: any) {
+    console.error("Delete announcement error:", error.message);
+    res.status(500).json({ error: "Failed to delete announcement" });
+  }
+});
+
+router.get("/platform/announcements/active", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const now = new Date();
+    const active = await db.select().from(platformAnnouncements)
+      .where(and(
+        eq(platformAnnouncements.isActive, true),
+        or(
+          sql`${platformAnnouncements.expiresAt} IS NULL`,
+          gte(platformAnnouncements.expiresAt, now)
+        )
+      ))
+      .orderBy(desc(platformAnnouncements.createdAt));
+
+    const orgId = req.user?.organizationId;
+    const filtered = active.filter(a => {
+      if (!a.targetOrgIds || a.targetOrgIds.length === 0) return true;
+      return orgId && a.targetOrgIds.includes(orgId);
+    });
+
+    const dismissed = await db.select({ announcementId: announcementDismissals.announcementId })
+      .from(announcementDismissals)
+      .where(eq(announcementDismissals.userId, req.user!.id));
+    const dismissedIds = new Set(dismissed.map(d => d.announcementId));
+
+    const result = filtered.filter(a => !dismissedIds.has(a.id));
+    res.json(result);
+  } catch (error: any) {
+    console.error("Get active announcements error:", error.message);
+    res.status(500).json({ error: "Failed to fetch active announcements" });
+  }
+});
+
+router.post("/platform/announcements/:id/dismiss", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    await db.insert(announcementDismissals).values({
+      announcementId: id,
+      userId: req.user!.id,
+    }).onConflictDoNothing();
+    res.json({ message: "Announcement dismissed" });
+  } catch (error: any) {
+    console.error("Dismiss announcement error:", error.message);
+    res.status(500).json({ error: "Failed to dismiss announcement" });
+  }
+});
+
+// ========================================
+// Read-Only Org Data Browser
+// ========================================
+
+router.get("/platform/organizations/:orgId/projects", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const orgProjects = await db.select({
+      id: projects.id,
+      name: projects.name,
+      status: projects.status,
+      projectNumber: projects.projectNumber,
+      clientName: projects.clientName,
+      contractAmount: projects.contractAmount,
+      budgetAmount: projects.budgetAmount,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+      createdAt: projects.createdAt,
+    }).from(projects)
+      .innerJoin(users, or(
+        eq(projects.estimatorId, users.id),
+        eq(projects.superintendentId, users.id),
+        eq(projects.projectManagerId, users.id)
+      ))
+      .where(eq(users.organizationId, orgId))
+      .orderBy(desc(projects.createdAt));
+
+    const uniqueProjects = Array.from(new Map(orgProjects.map(p => [p.id, p])).values());
+    res.json(uniqueProjects);
+  } catch (error: any) {
+    console.error("Get org projects error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organization projects" });
+  }
+});
+
+router.get("/platform/organizations/:orgId/bids", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const orgBids = await db.select({
+      id: bids.id,
+      projectName: bids.projectName,
+      status: bids.status,
+      bidAmount: bids.bidAmount,
+      clientName: bids.clientName,
+      bidDate: bids.bidDate,
+      createdAt: bids.createdAt,
+    }).from(bids)
+      .innerJoin(users, eq(bids.estimatorId, users.id))
+      .where(eq(users.organizationId, orgId))
+      .orderBy(desc(bids.createdAt));
+
+    res.json(orgBids);
+  } catch (error: any) {
+    console.error("Get org bids error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organization bids" });
+  }
+});
+
+router.get("/platform/organizations/:orgId/contracts", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const orgContracts = await db.select({
+      id: contracts.id,
+      contractNumber: contracts.contractNumber,
+      contractType: contracts.contractType,
+      status: contracts.status,
+      contractValue: contracts.contractValue,
+      effectiveDate: contracts.effectiveDate,
+      expirationDate: contracts.expirationDate,
+      createdAt: contracts.createdAt,
+    }).from(contracts)
+      .where(eq(contracts.organizationId, orgId))
+      .orderBy(desc(contracts.createdAt));
+
+    res.json(orgContracts);
+  } catch (error: any) {
+    console.error("Get org contracts error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organization contracts" });
+  }
+});
+
+router.get("/platform/organizations/:orgId/equipment", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const orgEquipment = await db.select({
+      id: equipment.id,
+      name: equipment.name,
+      equipmentCode: equipment.equipmentCode,
+      type: equipment.type,
+      status: equipment.status,
+      make: equipment.make,
+      model: equipment.model,
+      currentHours: equipment.currentHours,
+      purchasePrice: equipment.purchasePrice,
+    }).from(equipment)
+      .where(eq(equipment.organizationId, orgId))
+      .orderBy(equipment.name);
+
+    res.json(orgEquipment);
+  } catch (error: any) {
+    console.error("Get org equipment error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organization equipment" });
+  }
+});
+
+router.get("/platform/organizations/:orgId/financials", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const financials = await db.execute(sql`
+      WITH org_users AS (
+        SELECT id FROM users WHERE organization_id = ${orgId}
+      ),
+      org_projects AS (
+        SELECT id, contract_amount, budget_amount FROM projects
+        WHERE estimator_id IN (SELECT id FROM org_users)
+          OR superintendent_id IN (SELECT id FROM org_users)
+          OR project_manager_id IN (SELECT id FROM org_users)
+      ),
+      org_bids AS (
+        SELECT id, bid_amount FROM bids WHERE estimator_id IN (SELECT id FROM org_users)
+      )
+      SELECT
+        COALESCE(SUM(p.contract_amount), 0)::text AS total_contract_value,
+        COALESCE(SUM(p.budget_amount), 0)::text AS total_budget,
+        (SELECT COUNT(*) FROM org_projects)::int AS project_count,
+        COALESCE(SUM(b.bid_amount), 0)::text AS total_bid_value,
+        (SELECT COUNT(*) FROM org_bids)::int AS bid_count,
+        (SELECT COUNT(*) FROM pay_runs WHERE organization_id = ${orgId})::int AS payroll_runs
+      FROM org_projects p
+      FULL OUTER JOIN org_bids b ON false
+    `);
+
+    const row = financials.rows[0] || {};
+    res.json({
+      totalContractValue: row.total_contract_value || "0",
+      totalBudget: row.total_budget || "0",
+      projectCount: row.project_count || 0,
+      totalBidValue: row.total_bid_value || "0",
+      bidCount: row.bid_count || 0,
+      payrollRuns: row.payroll_runs || 0,
+    });
+  } catch (error: any) {
+    console.error("Get org financials error:", error.message);
+    res.status(500).json({ error: "Failed to fetch organization financials" });
+  }
+});
+
+// ========================================
+// Global Workflow Templates
+// ========================================
+
+router.get("/platform/workflow-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const templates = await db.select().from(globalWorkflowTemplates).orderBy(desc(globalWorkflowTemplates.updatedAt));
+    res.json(templates);
+  } catch (error: any) {
+    console.error("Get global workflow templates error:", error.message);
+    res.status(500).json({ error: "Failed to fetch workflow templates" });
+  }
+});
+
+router.post("/platform/workflow-templates", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { name, description, entityType, isPublished, templateData } = req.body;
+    if (!name || !entityType || !templateData) {
+      return res.status(400).json({ error: "Name, entityType, and templateData are required" });
+    }
+    const [template] = await db.insert(globalWorkflowTemplates).values({
+      name,
+      description: description || null,
+      entityType,
+      isPublished: isPublished || false,
+      templateData,
+      createdById: req.user!.id,
+    }).returning();
+    res.status(201).json(template);
+  } catch (error: any) {
+    console.error("Create global workflow template error:", error.message);
+    res.status(500).json({ error: "Failed to create workflow template" });
+  }
+});
+
+router.patch("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (req.body.name !== undefined) updates.name = req.body.name;
+    if (req.body.description !== undefined) updates.description = req.body.description;
+    if (req.body.entityType !== undefined) updates.entityType = req.body.entityType;
+    if (req.body.isPublished !== undefined) updates.isPublished = req.body.isPublished;
+    if (req.body.templateData !== undefined) updates.templateData = req.body.templateData;
+
+    const [updated] = await db.update(globalWorkflowTemplates).set(updates).where(eq(globalWorkflowTemplates.id, id)).returning();
+    if (!updated) return res.status(404).json({ error: "Template not found" });
+    res.json(updated);
+  } catch (error: any) {
+    console.error("Update global workflow template error:", error.message);
+    res.status(500).json({ error: "Failed to update workflow template" });
+  }
+});
+
+router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    await db.delete(globalWorkflowTemplates).where(eq(globalWorkflowTemplates.id, id));
+    res.json({ message: "Template deleted" });
+  } catch (error: any) {
+    console.error("Delete global workflow template error:", error.message);
+    res.status(500).json({ error: "Failed to delete workflow template" });
+  }
+});
+
+// ========================================
+// Data Export & Deletion
+// ========================================
+
+router.get("/platform/organizations/:orgId/export", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+    if (!org) return res.status(404).json({ error: "Organization not found" });
+
+    const orgUsers = await db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      role: users.role,
+      isActive: users.isActive,
+      createdAt: users.createdAt,
+    }).from(users).where(eq(users.organizationId, orgId));
+
+    const userIds = orgUsers.map(u => u.id);
+
+    let orgProjects: any[] = [];
+    let orgBids: any[] = [];
+    let orgTasks: any[] = [];
+    let orgEquipment: any[] = [];
+    let orgContracts: any[] = [];
+
+    if (userIds.length > 0) {
+      orgProjects = await db.select().from(projects).where(
+        or(
+          inArray(projects.estimatorId, userIds),
+          inArray(projects.superintendentId, userIds),
+          inArray(projects.projectManagerId, userIds)
+        )
+      );
+
+      orgBids = await db.select().from(bids).where(inArray(bids.estimatorId, userIds));
+    }
+
+    orgTasks = await db.select().from(tasks).where(eq(tasks.organizationId, orgId));
+    orgEquipment = await db.select().from(equipment).where(eq(equipment.organizationId, orgId));
+    orgContracts = await db.select().from(contracts).where(eq(contracts.organizationId, orgId));
+
+    const financialSummary = await db.execute(sql`
+      SELECT
+        COALESCE((SELECT SUM(contract_amount) FROM projects WHERE estimator_id = ANY(${userIds}) OR superintendent_id = ANY(${userIds}) OR project_manager_id = ANY(${userIds})), 0)::text AS total_contract_value,
+        COALESCE((SELECT SUM(bid_amount) FROM bids WHERE estimator_id = ANY(${userIds})), 0)::text AS total_bid_value,
+        (SELECT COUNT(*) FROM pay_runs WHERE organization_id = ${orgId})::int AS payroll_runs
+    `);
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      organization: org,
+      users: orgUsers,
+      projects: orgProjects,
+      bids: orgBids,
+      tasks: orgTasks,
+      equipment: orgEquipment,
+      contracts: orgContracts,
+      financialSummary: financialSummary.rows[0] || {},
+    };
+
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", `attachment; filename="org-${org.slug}-export-${new Date().toISOString().split('T')[0]}.json"`);
+    res.json(exportData);
+  } catch (error: any) {
+    console.error("Data export error:", error.message);
+    res.status(500).json({ error: "Failed to export organization data" });
+  }
+});
+
+router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const { confirmationName } = req.body;
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+    if (!org) return res.status(404).json({ error: "Organization not found" });
+
+    if (confirmationName !== org.name) {
+      return res.status(400).json({ error: "Organization name does not match. Please type the exact organization name to confirm deletion." });
+    }
+
+    const orgUsers = await db.select({ id: users.id }).from(users).where(eq(users.organizationId, orgId));
+    const userIds = orgUsers.map(u => u.id);
+
+    await db.transaction(async (tx) => {
+      await tx.delete(tasks).where(eq(tasks.organizationId, orgId));
+      await tx.delete(equipment).where(eq(equipment.organizationId, orgId));
+      await tx.delete(organizationSowItems).where(eq(organizationSowItems.organizationId, orgId));
+      await tx.delete(organizationWorkTypes).where(eq(organizationWorkTypes.organizationId, orgId));
+      await tx.delete(contracts).where(eq(contracts.organizationId, orgId));
+
+      if (userIds.length > 0) {
+        await tx.delete(notifications).where(inArray(notifications.userId, userIds));
+        await tx.delete(messages).where(inArray(messages.senderId, userIds));
+        await tx.delete(conversationParticipants).where(inArray(conversationParticipants.userId, userIds));
+        await tx.delete(passwordResetTokens).where(inArray(passwordResetTokens.userId, userIds));
+        await tx.delete(announcementDismissals).where(inArray(announcementDismissals.userId, userIds));
+
+        await tx.execute(sql`DELETE FROM bids WHERE estimator_id = ANY(${userIds})`);
+        await tx.execute(sql`DELETE FROM projects WHERE estimator_id = ANY(${userIds}) OR superintendent_id = ANY(${userIds}) OR project_manager_id = ANY(${userIds})`);
+      }
+
+      await tx.delete(organizationSubscriptions).where(eq(organizationSubscriptions.organizationId, orgId));
+      await tx.delete(users).where(eq(users.organizationId, orgId));
+      await tx.delete(organizations).where(eq(organizations.id, orgId));
+    });
+
+    await logAudit({
+      action: "DELETE",
+      entityType: "organizations",
+      entityId: orgId,
+      userId: req.user!.id,
+      oldValue: JSON.stringify({ name: org.name, slug: org.slug }),
+      newValue: JSON.stringify({ fullDataDeletion: true, deletedAt: new Date().toISOString() }),
+    }, req);
+
+    console.log(`COMPLIANCE: Full data deletion for org "${org.name}" (${orgId}) by admin: ${req.user!.email}`);
+    res.json({ message: `All data for organization "${org.name}" has been permanently deleted` });
+  } catch (error: any) {
+    console.error("Data deletion error:", error.message);
+    res.status(500).json({ error: "Failed to delete organization data. The operation was rolled back." });
   }
 });
 

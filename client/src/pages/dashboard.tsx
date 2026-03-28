@@ -2,6 +2,7 @@ import { DashboardEditMode, EditModeIndicator } from "@/components/DashboardEdit
 import { ThemePicker } from "@/components/ThemePicker";
 import { DashboardGrid } from "@/components/DashboardGrid";
 import { WidgetLibrary } from "@/components/WidgetLibrary";
+import { AnnouncementBanner } from "@/components/AnnouncementBanner";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Plus, Sun, Moon, Sunset } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ export default function DashboardPage() {
           </div>
         </div>
         
+        <AnnouncementBanner />
         <EditModeIndicator />
 
         {isLoadingLayout ? (

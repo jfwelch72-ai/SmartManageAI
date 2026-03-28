@@ -54,6 +54,7 @@ import {
   Users,
   Crown,
   BarChart3,
+  Megaphone,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -175,6 +176,7 @@ export function AppSidebar() {
                         {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
                         {item.href === "/admin/audit" && <FileSearch className="w-4 h-4" />}
                         {item.href === "/admin/monitoring" && <BarChart3 className="w-4 h-4" />}
+                        {item.href === "/admin/announcements" && <Megaphone className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>

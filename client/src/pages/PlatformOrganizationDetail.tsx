@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck } from "lucide-react";
+import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck, Download, Trash2, Gavel, HardHat } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -171,6 +171,64 @@ export default function PlatformOrganizationDetail() {
       return res.json();
     },
     enabled: !!orgId,
+  });
+
+  const [deleteConfirmName, setDeleteConfirmName] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const { data: orgProjects, isLoading: projectsLoading } = useQuery<any[]>({
+    queryKey: ["/api/platform/organizations", orgId, "projects"],
+    enabled: !!orgId,
+  });
+
+  const { data: orgBids, isLoading: bidsLoading } = useQuery<any[]>({
+    queryKey: ["/api/platform/organizations", orgId, "bids"],
+    enabled: !!orgId,
+  });
+
+  const { data: orgContracts, isLoading: contractsLoading } = useQuery<any[]>({
+    queryKey: ["/api/platform/organizations", orgId, "contracts"],
+    enabled: !!orgId,
+  });
+
+  const { data: orgEquipment, isLoading: equipmentLoading } = useQuery<any[]>({
+    queryKey: ["/api/platform/organizations", orgId, "equipment"],
+    enabled: !!orgId,
+  });
+
+  const { data: orgFinancials, isLoading: financialsLoading } = useQuery<any>({
+    queryKey: ["/api/platform/organizations", orgId, "financials"],
+    enabled: !!orgId,
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/platform/organizations/${orgId}/export`, { credentials: "include" });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `org-export-${orgId}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onSuccess: () => toast({ title: "Export downloaded" }),
+    onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (confirmationName: string) => {
+      const res = await apiRequest("POST", `/api/platform/organizations/${orgId}/delete-all-data`, { confirmationName });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/organizations"] });
+      toast({ title: "Organization data deleted", description: "All data has been permanently removed." });
+      setDeleteDialogOpen(false);
+      window.location.href = "/admin/organizations";
+    },
+    onError: (e: Error) => toast({ title: "Deletion failed", description: e.message, variant: "destructive" }),
   });
 
   const [activityPage, setActivityPage] = useState(1);
@@ -343,6 +401,14 @@ export default function PlatformOrganizationDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending} data-testid="button-export-org">
+            <Download className="h-4 w-4 mr-2" />
+            {exportMutation.isPending ? "Exporting..." : "Export Data"}
+          </Button>
+          <Button variant="destructive" onClick={() => { setDeleteConfirmName(""); setDeleteDialogOpen(true); }} data-testid="button-delete-org">
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete All Data
+          </Button>
           <Button variant="outline" onClick={openEditDialog} data-testid="button-edit-org">
             <Pencil className="h-4 w-4 mr-2" />
             Edit Organization
@@ -509,6 +575,26 @@ export default function PlatformOrganizationDetail() {
           <TabsTrigger value="db-usage" data-testid="tab-org-db-usage">
             <Database className="h-4 w-4 mr-2" />
             DB Usage
+          </TabsTrigger>
+          <TabsTrigger value="projects" data-testid="tab-org-projects">
+            <FolderKanban className="h-4 w-4 mr-2" />
+            Projects
+          </TabsTrigger>
+          <TabsTrigger value="bids" data-testid="tab-org-bids">
+            <FileText className="h-4 w-4 mr-2" />
+            Bids
+          </TabsTrigger>
+          <TabsTrigger value="contracts" data-testid="tab-org-contracts">
+            <Gavel className="h-4 w-4 mr-2" />
+            Contracts
+          </TabsTrigger>
+          <TabsTrigger value="equipment" data-testid="tab-org-equipment">
+            <HardHat className="h-4 w-4 mr-2" />
+            Equipment
+          </TabsTrigger>
+          <TabsTrigger value="financials" data-testid="tab-org-financials">
+            <DollarSign className="h-4 w-4 mr-2" />
+            Financials
           </TabsTrigger>
         </TabsList>
 
@@ -803,7 +889,251 @@ export default function PlatformOrganizationDetail() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          <TabsContent value="projects">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FolderKanban className="h-5 w-5" />
+                  Projects (Read-Only)
+                </CardTitle>
+                <CardDescription>All projects associated with this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {projectsLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Contract Amount</TableHead>
+                        <TableHead>Created</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orgProjects?.map((p: any) => (
+                        <TableRow key={p.id} data-testid={`row-org-project-${p.id}`}>
+                          <TableCell className="font-medium">{p.name}</TableCell>
+                          <TableCell><Badge variant="secondary">{p.status}</Badge></TableCell>
+                          <TableCell>{p.clientName || "-"}</TableCell>
+                          <TableCell>{p.contractAmount ? `$${Number(p.contractAmount).toLocaleString()}` : "-"}</TableCell>
+                          <TableCell>{p.createdAt ? format(new Date(p.createdAt), "MMM d, yyyy") : "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(!orgProjects || orgProjects.length === 0) && (
+                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No projects found</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="bids">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Bids (Read-Only)
+                </CardTitle>
+                <CardDescription>All bids associated with this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {bidsLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Project Name</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Bid Amount</TableHead>
+                        <TableHead>Bid Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orgBids?.map((b: any) => (
+                        <TableRow key={b.id} data-testid={`row-org-bid-${b.id}`}>
+                          <TableCell className="font-medium">{b.projectName}</TableCell>
+                          <TableCell><Badge variant="secondary">{b.status}</Badge></TableCell>
+                          <TableCell>{b.clientName || "-"}</TableCell>
+                          <TableCell>{b.bidAmount ? `$${Number(b.bidAmount).toLocaleString()}` : "-"}</TableCell>
+                          <TableCell>{b.bidDate ? format(new Date(b.bidDate), "MMM d, yyyy") : "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(!orgBids || orgBids.length === 0) && (
+                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No bids found</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="contracts">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Gavel className="h-5 w-5" />
+                  Contracts (Read-Only)
+                </CardTitle>
+                <CardDescription>All contracts associated with this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {contractsLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Contract #</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Value</TableHead>
+                        <TableHead>Effective Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orgContracts?.map((c: any) => (
+                        <TableRow key={c.id} data-testid={`row-org-contract-${c.id}`}>
+                          <TableCell className="font-mono font-medium">{c.contractNumber || "-"}</TableCell>
+                          <TableCell>{c.contractType || "-"}</TableCell>
+                          <TableCell><Badge variant="secondary">{c.status}</Badge></TableCell>
+                          <TableCell>{c.contractValue ? `$${Number(c.contractValue).toLocaleString()}` : "-"}</TableCell>
+                          <TableCell>{c.effectiveDate ? format(new Date(c.effectiveDate), "MMM d, yyyy") : "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(!orgContracts || orgContracts.length === 0) && (
+                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No contracts found</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="equipment">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <HardHat className="h-5 w-5" />
+                  Equipment (Read-Only)
+                </CardTitle>
+                <CardDescription>All equipment registered to this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {equipmentLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Make / Model</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {orgEquipment?.map((e: any) => (
+                        <TableRow key={e.id} data-testid={`row-org-equipment-${e.id}`}>
+                          <TableCell className="font-medium">{e.name}</TableCell>
+                          <TableCell className="font-mono">{e.equipmentCode || "-"}</TableCell>
+                          <TableCell>{e.type || "-"}</TableCell>
+                          <TableCell><Badge variant="secondary">{e.status}</Badge></TableCell>
+                          <TableCell>{[e.make, e.model].filter(Boolean).join(" ") || "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                      {(!orgEquipment || orgEquipment.length === 0) && (
+                        <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">No equipment found</TableCell></TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="financials">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Financial Summary (Read-Only)
+                </CardTitle>
+                <CardDescription>High-level financial overview for this organization</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {financialsLoading ? <Skeleton className="h-40 w-full" /> : orgFinancials ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-lg border bg-card" data-testid="metric-total-contract-value">
+                      <div className="text-2xl font-bold">${Number(orgFinancials.totalContractValue || 0).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Total Contract Value</div>
+                    </div>
+                    <div className="p-4 rounded-lg border bg-card" data-testid="metric-total-budget">
+                      <div className="text-2xl font-bold">${Number(orgFinancials.totalBudget || 0).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Total Budget</div>
+                    </div>
+                    <div className="p-4 rounded-lg border bg-card" data-testid="metric-project-count">
+                      <div className="text-2xl font-bold">{orgFinancials.projectCount}</div>
+                      <div className="text-xs text-muted-foreground">Projects</div>
+                    </div>
+                    <div className="p-4 rounded-lg border bg-card" data-testid="metric-total-bid-value">
+                      <div className="text-2xl font-bold">${Number(orgFinancials.totalBidValue || 0).toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">Total Bid Value</div>
+                    </div>
+                    <div className="p-4 rounded-lg border bg-card" data-testid="metric-bid-count">
+                      <div className="text-2xl font-bold">{orgFinancials.bidCount}</div>
+                      <div className="text-xs text-muted-foreground">Bids</div>
+                    </div>
+                    <div className="p-4 rounded-lg border bg-card" data-testid="metric-payroll-runs">
+                      <div className="text-2xl font-bold">{orgFinancials.payrollRuns}</div>
+                      <div className="text-xs text-muted-foreground">Payroll Runs</div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-center py-8">Failed to load financial data</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+
+        <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-destructive">Delete All Organization Data</DialogTitle>
+              <DialogDescription>
+                This action is irreversible. All users, projects, bids, tasks, equipment, and associated data for <strong>{organization.name}</strong> will be permanently deleted.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>Type the organization name to confirm:</Label>
+                <Input
+                  value={deleteConfirmName}
+                  onChange={e => setDeleteConfirmName(e.target.value)}
+                  placeholder={organization.name}
+                  data-testid="input-delete-confirm-name"
+                />
+              </div>
+              {deleteConfirmName && deleteConfirmName !== organization.name && (
+                <p className="text-sm text-destructive">Name does not match</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+              <Button
+                variant="destructive"
+                disabled={deleteConfirmName !== organization.name || deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(deleteConfirmName)}
+                data-testid="button-confirm-delete-org"
+              >
+                {deleteMutation.isPending ? "Deleting..." : "Permanently Delete All Data"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">

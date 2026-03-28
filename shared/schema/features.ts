@@ -7728,3 +7728,50 @@ export const insertProjectRiskSchema = createInsertSchema(projectRisks).omit({ i
 export type InsertProjectRisk = z.infer<typeof insertProjectRiskSchema>;
 export type ProjectRisk = typeof projectRisks.$inferSelect;
 
+export const platformAnnouncements = pgTable("platform_announcements", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  targetOrgIds: text("target_org_ids").array(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdById: text("created_by_id").references(() => users.id),
+}, (table) => ({
+  activeIdx: index("platform_announcements_active_idx").on(table.isActive),
+}));
+
+export const insertPlatformAnnouncementSchema = createInsertSchema(platformAnnouncements).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPlatformAnnouncement = z.infer<typeof insertPlatformAnnouncementSchema>;
+export type PlatformAnnouncement = typeof platformAnnouncements.$inferSelect;
+
+export const globalWorkflowTemplates = pgTable("global_workflow_templates", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  entityType: varchar("entity_type", { length: 50 }).notNull(),
+  isPublished: boolean("is_published").default(false).notNull(),
+  templateData: json("template_data").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdById: text("created_by_id").references(() => users.id),
+}, (table) => ({
+  publishedIdx: index("global_workflow_templates_published_idx").on(table.isPublished),
+}));
+
+export const insertGlobalWorkflowTemplateSchema = createInsertSchema(globalWorkflowTemplates).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertGlobalWorkflowTemplate = z.infer<typeof insertGlobalWorkflowTemplateSchema>;
+export type GlobalWorkflowTemplate = typeof globalWorkflowTemplates.$inferSelect;
+
+export const announcementDismissals = pgTable("announcement_dismissals", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  announcementId: text("announcement_id").notNull().references(() => platformAnnouncements.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  dismissedAt: timestamp("dismissed_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueDismissal: unique("announcement_dismissal_unique").on(table.announcementId, table.userId),
+  announcementIdx: index("announcement_dismissals_ann_idx").on(table.announcementId),
+  userIdx: index("announcement_dismissals_user_idx").on(table.userId),
+}));
+
