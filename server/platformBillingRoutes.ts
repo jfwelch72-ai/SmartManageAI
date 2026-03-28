@@ -325,7 +325,7 @@ router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, a
       updates.planTier = planTier;
     }
 
-    if (status && ["active", "trialing", "past_due", "canceled"].includes(status)) {
+    if (status && ["active", "trialing", "past_due", "canceled", "paused"].includes(status)) {
       changes.push(`status: ${subscription.status} → ${status}`);
       updates.status = status;
     }
@@ -497,6 +497,160 @@ router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (re
   } catch (error: any) {
     console.error("Create subscription error:", error.message);
     res.status(500).json({ error: "Failed to create subscription" });
+  }
+});
+
+router.post("/platform/subscriptions/:orgId/cancel", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [subscription] = await db.select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .limit(1);
+
+    if (!subscription) return res.status(404).json({ error: "Subscription not found" });
+
+    if (subscription.status === "canceled") {
+      return res.status(400).json({ error: "Subscription is already canceled" });
+    }
+
+    const oldStatus = subscription.status;
+    const [updated] = await db.update(organizationSubscriptions)
+      .set({ status: "canceled", updatedAt: new Date() })
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "subscription",
+      entityId: orgId,
+      action: "UPDATE",
+      oldValue: JSON.stringify({ status: oldStatus }),
+      newValue: JSON.stringify({ status: "canceled", action: "cancel" }),
+    }, req);
+
+    await db.insert(subscriptionEvents).values({
+      organizationId: orgId,
+      eventType: "canceled",
+      previousValue: oldStatus,
+      newValue: "canceled",
+      description: `Subscription canceled (was ${oldStatus})`,
+      performedBy: req.user!.id,
+    });
+
+    res.json({ subscription: updated, message: "Subscription has been canceled" });
+  } catch (error: any) {
+    console.error("Cancel subscription error:", error.message);
+    res.status(500).json({ error: "Failed to cancel subscription" });
+  }
+});
+
+router.post("/platform/subscriptions/:orgId/pause", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [subscription] = await db.select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .limit(1);
+
+    if (!subscription) return res.status(404).json({ error: "Subscription not found" });
+
+    if (subscription.status === "canceled") {
+      return res.status(400).json({ error: "Cannot pause a canceled subscription" });
+    }
+
+    if (subscription.status === "paused") {
+      return res.status(400).json({ error: "Subscription is already paused" });
+    }
+
+    const oldStatus = subscription.status;
+    const [updated] = await db.update(organizationSubscriptions)
+      .set({ status: "paused", updatedAt: new Date() })
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "subscription",
+      entityId: orgId,
+      action: "UPDATE",
+      oldValue: JSON.stringify({ status: oldStatus }),
+      newValue: JSON.stringify({ status: "paused", action: "pause" }),
+    }, req);
+
+    await db.insert(subscriptionEvents).values({
+      organizationId: orgId,
+      eventType: "status_change",
+      previousValue: oldStatus,
+      newValue: "paused",
+      description: `Subscription paused (was ${oldStatus})`,
+      performedBy: req.user!.id,
+    });
+
+    res.json({ subscription: updated, message: "Subscription has been paused" });
+  } catch (error: any) {
+    console.error("Pause subscription error:", error.message);
+    res.status(500).json({ error: "Failed to pause subscription" });
+  }
+});
+
+router.post("/platform/subscriptions/:orgId/downgrade", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const { targetPlan } = req.body;
+
+    const validPlans = ["free", "starter", "professional", "enterprise"] as const;
+    type PlanTier = typeof validPlans[number];
+    const planOrder: readonly string[] = validPlans;
+    if (!targetPlan || !planOrder.includes(targetPlan)) {
+      return res.status(400).json({ error: "Valid target plan is required (free, starter, professional, enterprise)" });
+    }
+    const typedTargetPlan: PlanTier = targetPlan as PlanTier;
+
+    const [subscription] = await db.select()
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .limit(1);
+
+    if (!subscription) return res.status(404).json({ error: "Subscription not found" });
+
+    const currentIndex = planOrder.indexOf(subscription.planTier);
+    const targetIndex = planOrder.indexOf(targetPlan);
+
+    if (targetIndex >= currentIndex) {
+      return res.status(400).json({ error: "Target plan must be lower than the current plan for a downgrade" });
+    }
+
+    const oldPlan = subscription.planTier;
+    const [updated] = await db.update(organizationSubscriptions)
+      .set({ planTier: typedTargetPlan, updatedAt: new Date() })
+      .where(eq(organizationSubscriptions.organizationId, orgId))
+      .returning();
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "subscription",
+      entityId: orgId,
+      action: "UPDATE",
+      oldValue: JSON.stringify({ planTier: oldPlan }),
+      newValue: JSON.stringify({ planTier: targetPlan, action: "downgrade" }),
+    }, req);
+
+    await db.insert(subscriptionEvents).values({
+      organizationId: orgId,
+      eventType: "plan_change",
+      previousValue: oldPlan,
+      newValue: targetPlan,
+      description: `Plan downgraded from ${oldPlan} to ${targetPlan}`,
+      performedBy: req.user!.id,
+    });
+
+    res.json({ subscription: updated, message: `Subscription downgraded from ${oldPlan} to ${targetPlan}` });
+  } catch (error: any) {
+    console.error("Downgrade subscription error:", error.message);
+    res.status(500).json({ error: "Failed to downgrade subscription" });
   }
 });
 

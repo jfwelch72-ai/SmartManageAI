@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
 import { db } from "./db";
-import { users } from "@shared/schema";
+import { users, organizations } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { generateToken, setAuthCookie } from "./auth";
 import express from "express";
@@ -221,6 +221,14 @@ router.get(
         return;
       }
 
+      if (user.role !== "SUPER_ADMIN" && user.organizationId) {
+        const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId)).limit(1);
+        if (org && !org.isActive) {
+          res.redirect("/login?error=org_suspended");
+          return;
+        }
+      }
+
       const token = generateToken(user.id, user.tokenVersion ?? 0);
       setAuthCookie(res, token);
       res.redirect(getRedirectPath(user));
@@ -359,6 +367,14 @@ router.post(
       if (!user) {
         res.redirect("/login?error=apple_no_email");
         return;
+      }
+
+      if (user.role !== "SUPER_ADMIN" && user.organizationId) {
+        const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId)).limit(1);
+        if (org && !org.isActive) {
+          res.redirect("/login?error=org_suspended");
+          return;
+        }
       }
 
       const token = generateToken(user.id, user.tokenVersion ?? 0);

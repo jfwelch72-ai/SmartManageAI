@@ -50,6 +50,7 @@ import {
   authMiddleware, 
   requireAuth, 
   requireRole, 
+  requireActiveOrganization,
   hashPassword, 
   verifyPassword, 
   generateToken, 
@@ -178,6 +179,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Apply auth middleware to all routes
   app.use(authMiddleware);
+
+  // Check org suspension for all authenticated requests (SUPER_ADMIN bypasses)
+  app.use(requireActiveOrganization);
 
   // Apply general API rate limiter to all API routes BEFORE registering any routes
   app.use("/api", apiLimiter);

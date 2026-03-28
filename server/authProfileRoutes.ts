@@ -197,6 +197,14 @@ const upload = multer({
         await db.update(users).set({ failedLoginAttempts: 0, lockedUntil: null, updatedAt: new Date() }).where(eq(users.id, user.id));
       }
 
+      if (user.role !== "SUPER_ADMIN" && user.organizationId) {
+        const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId)).limit(1);
+        if (org && !org.isActive) {
+          res.status(403).json({ error: "Your organization has been suspended. Please contact support.", suspended: true });
+          return;
+        }
+      }
+
       const token = generateToken(user.id, user.tokenVersion);
       setAuthCookie(res, token);
 

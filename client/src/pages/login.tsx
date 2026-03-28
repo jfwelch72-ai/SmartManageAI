@@ -50,6 +50,7 @@ export default function LoginPage() {
         apple_failed: "Apple sign-in failed. Please try again.",
         apple_not_configured: "Apple sign-in is not configured yet.",
         apple_no_email: "Could not retrieve your email from Apple.",
+        org_suspended: "Your organization has been suspended. Please contact support.",
       };
       toast({
         title: "Sign-in Error",

@@ -310,6 +310,13 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
       return res.status(403).json({ error: "User account is deactivated" });
     }
 
+    if (existingUser.role !== "SUPER_ADMIN" && existingUser.organizationId) {
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, existingUser.organizationId)).limit(1);
+      if (org && !org.isActive) {
+        return res.status(403).json({ error: "Your organization has been suspended. Please contact support.", suspended: true });
+      }
+    }
+
     const token = generateToken(existingUser.id, existingUser.tokenVersion ?? 0);
     setAuthCookie(res, token);
 

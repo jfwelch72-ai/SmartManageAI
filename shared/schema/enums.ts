@@ -235,7 +235,7 @@ export const organizationDocumentVisibilityEnum = pgEnum("organization_document_
 
 // Subscription & Billing Enums
 export const planTierEnum = pgEnum("plan_tier", ["free", "starter", "professional", "enterprise"]);
-export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled"]);
+export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "paused"]);
 export const billingProviderEnum = pgEnum("billing_provider", ["stripe", "manual"]);
 export const addonStatusEnum = pgEnum("addon_status", ["active", "inactive"]);
 export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision", "integration_qbo", "integration_esign", "ai_governance_pack"]);

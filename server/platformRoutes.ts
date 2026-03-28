@@ -402,6 +402,183 @@ router.post("/platform/organizations/:orgId/work-types", requireAuth, requireSup
   }
 });
 
+router.post("/platform/organizations/:orgId/suspend", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+    const { action } = req.body;
+
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    let newStatus: boolean;
+    if (action === "suspend") {
+      newStatus = false;
+    } else if (action === "reactivate") {
+      newStatus = true;
+    } else {
+      newStatus = !org.isActive;
+    }
+
+    if (org.isActive === newStatus) {
+      return res.status(400).json({
+        error: newStatus ? "Organization is already active" : "Organization is already suspended",
+      });
+    }
+
+    const [updated] = await db.update(organizations)
+      .set({ isActive: newStatus, updatedAt: new Date() })
+      .where(eq(organizations.id, orgId))
+      .returning();
+
+    await logAudit({
+      action: "UPDATE",
+      entityType: "organizations",
+      entityId: orgId,
+      userId: req.user!.id,
+      oldValue: JSON.stringify({ isActive: org.isActive }),
+      newValue: JSON.stringify({ isActive: newStatus, action: newStatus ? "reactivated" : "suspended" }),
+    }, req);
+
+    res.json({
+      organization: updated,
+      message: newStatus
+        ? `Organization "${org.name}" has been reactivated`
+        : `Organization "${org.name}" has been suspended`,
+    });
+  } catch (error: any) {
+    console.error("Org suspend/reactivate error:", error.message);
+    res.status(500).json({ error: "Failed to update organization status" });
+  }
+});
+
+router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+    const { role } = req.body;
+
+    const validRoles = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "OFFICE_MANAGER", "HOURLY_EMPLOYEE", "MAINTENANCE_MANAGER", "VENDOR", "HUSTLER", "SALES", "MARKETING", "SAFETY_MANAGER", "HR_MANAGER", "EQUIPMENT_MANAGER", "PROJECT_ENGINEER", "PROCUREMENT_MANAGER", "DISPATCHER"];
+    if (!role || !validRoles.includes(role)) {
+      return res.status(400).json({ error: "Invalid role. Must be one of: " + validRoles.join(", ") });
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.role === "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Cannot change the role of a platform administrator" });
+    }
+
+    if (user.role === "ADMIN" && role !== "ADMIN" && user.organizationId) {
+      const adminCount = await db.select({ count: sql<number>`count(*)::int` })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, user.organizationId),
+          eq(users.role, "ADMIN"),
+          eq(users.isActive, true)
+        ));
+      if (adminCount[0].count <= 1) {
+        return res.status(400).json({ error: "Cannot change role: this is the last admin in the organization" });
+      }
+    }
+
+    const oldRole = user.role;
+    const [updated] = await db.update(users)
+      .set({ role, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    await logAudit({
+      action: "UPDATE",
+      entityType: "users",
+      entityId: userId,
+      userId: req.user!.id,
+      oldValue: JSON.stringify({ role: oldRole }),
+      newValue: JSON.stringify({ role, email: user.email }),
+    }, req);
+
+    const { passwordHash: _, tokenVersion: _tv, ...userWithoutSensitive } = updated;
+    res.json({ user: userWithoutSensitive, message: `Role changed from ${oldRole} to ${role}` });
+  } catch (error: any) {
+    console.error("Change user role error:", error.message);
+    res.status(500).json({ error: "Failed to change user role" });
+  }
+});
+
+router.post("/platform/users/:userId/transfer", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { userId } = req.params;
+    const { targetOrganizationId } = req.body;
+
+    if (!targetOrganizationId) {
+      return res.status(400).json({ error: "Target organization ID is required" });
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (user.role === "SUPER_ADMIN") {
+      return res.status(403).json({ error: "Cannot transfer a platform administrator" });
+    }
+
+    const [targetOrg] = await db.select().from(organizations).where(eq(organizations.id, targetOrganizationId)).limit(1);
+    if (!targetOrg) {
+      return res.status(404).json({ error: "Target organization not found" });
+    }
+
+    if (user.organizationId === targetOrganizationId) {
+      return res.status(400).json({ error: "User is already in this organization" });
+    }
+
+    if (user.role === "ADMIN" && user.organizationId) {
+      const [adminCount] = await db.select({ count: count() })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, user.organizationId),
+          eq(users.role, "ADMIN"),
+          eq(users.isActive, true)
+        ));
+
+      if (adminCount.count <= 1) {
+        return res.status(400).json({ error: "Cannot transfer the last admin out of an organization. Assign another admin first." });
+      }
+    }
+
+    const oldOrgId = user.organizationId;
+    const [updated] = await db.update(users)
+      .set({ organizationId: targetOrganizationId, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+
+    const oldOrgName = oldOrgId
+      ? (await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, oldOrgId)).limit(1))?.[0]?.name || "Unknown"
+      : "None";
+
+    await logAudit({
+      action: "UPDATE",
+      entityType: "users",
+      entityId: userId,
+      userId: req.user!.id,
+      oldValue: JSON.stringify({ organizationId: oldOrgId, organizationName: oldOrgName }),
+      newValue: JSON.stringify({ organizationId: targetOrganizationId, organizationName: targetOrg.name, email: user.email }),
+    }, req);
+
+    const { passwordHash: _, tokenVersion: _tv, ...userWithoutSensitive } = updated;
+    res.json({
+      user: userWithoutSensitive,
+      message: `User transferred from "${oldOrgName}" to "${targetOrg.name}"`,
+    });
+  } catch (error: any) {
+    console.error("Transfer user error:", error.message);
+    res.status(500).json({ error: "Failed to transfer user" });
+  }
+});
+
 router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
   try {
     const { orgId } = req.params;

@@ -28,6 +28,9 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Pause,
+  Ban,
+  ArrowDown,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -46,6 +49,7 @@ export function statusBadgeVariant(status: string) {
     case "trialing": return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
     case "past_due": return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
     case "canceled": return "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
+    case "paused": return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
     default: return "bg-gray-100 text-gray-800";
   }
 }
@@ -56,6 +60,7 @@ export function statusIcon(status: string) {
     case "trialing": return <Clock className="w-3 h-3" />;
     case "past_due": return <AlertTriangle className="w-3 h-3" />;
     case "canceled": return <XCircle className="w-3 h-3" />;
+    case "paused": return <Clock className="w-3 h-3" />;
     default: return null;
   }
 }
@@ -97,6 +102,7 @@ export function SubscriptionDetailDialog({
   const [newStatus, setNewStatus] = useState("");
   const [confirmAction, setConfirmAction] = useState<{ type: string; label: string } | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [downgradePlan, setDowngradePlan] = useState("");
 
   const { data, isLoading } = useQuery<SubDetailData>({
     queryKey: ["/api/platform/subscriptions", orgId],
@@ -157,6 +163,55 @@ export function SubscriptionDetailDialog({
     },
   });
 
+  const cancelSubscription = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/platform/subscriptions/${orgId}/cancel`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Subscription Canceled", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/subscriptions"] });
+      setConfirmAction(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Cancel Failed", description: err.message, variant: "destructive" });
+      setConfirmAction(null);
+    },
+  });
+
+  const pauseSubscription = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/platform/subscriptions/${orgId}/pause`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Subscription Paused", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/subscriptions"] });
+      setConfirmAction(null);
+    },
+    onError: (err: any) => {
+      toast({ title: "Pause Failed", description: err.message, variant: "destructive" });
+      setConfirmAction(null);
+    },
+  });
+
+  const downgradeSubscription = useMutation({
+    mutationFn: async (targetPlan: string) => {
+      const res = await apiRequest("POST", `/api/platform/subscriptions/${orgId}/downgrade`, { targetPlan });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Subscription Downgraded", description: data.message });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/subscriptions"] });
+      setConfirmAction(null);
+      setDowngradePlan("");
+    },
+    onError: (err: any) => {
+      toast({ title: "Downgrade Failed", description: err.message, variant: "destructive" });
+      setConfirmAction(null);
+    },
+  });
+
   const deleteSubscription = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("DELETE", `/api/platform/subscriptions/${orgId}`);
@@ -192,6 +247,12 @@ export function SubscriptionDetailDialog({
       updateSubscription.mutate({ status: newStatus });
     } else if (confirmAction?.type === "delete") {
       deleteSubscription.mutate();
+    } else if (confirmAction?.type === "cancel") {
+      cancelSubscription.mutate();
+    } else if (confirmAction?.type === "pause") {
+      pauseSubscription.mutate();
+    } else if (confirmAction?.type === "downgrade") {
+      downgradeSubscription.mutate(downgradePlan);
     }
   };
 
@@ -301,6 +362,7 @@ export function SubscriptionDetailDialog({
                           <SelectItem value="trialing">Trialing</SelectItem>
                           <SelectItem value="past_due">Past Due</SelectItem>
                           <SelectItem value="canceled">Canceled</SelectItem>
+                          <SelectItem value="paused">Paused</SelectItem>
                         </SelectContent>
                       </Select>
                       <Button
@@ -337,6 +399,68 @@ export function SubscriptionDetailDialog({
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <ArrowDown className="w-4 h-4" /> Subscription Lifecycle
+                    </h4>
+                    <div className="space-y-3">
+                      {sub.status !== "paused" && sub.status !== "canceled" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setConfirmAction({ type: "pause", label: `Pause subscription for ${data?.organization?.name || "this organization"}` })}
+                          disabled={pauseSubscription.isPending}
+                          data-testid="button-pause-subscription"
+                        >
+                          <Pause className="w-4 h-4 mr-2" /> Pause Subscription
+                        </Button>
+                      )}
+                      {sub.status !== "canceled" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive border-destructive/50 hover:bg-destructive/10 ml-2"
+                          onClick={() => setConfirmAction({ type: "cancel", label: `Cancel subscription for ${data?.organization?.name || "this organization"}` })}
+                          disabled={cancelSubscription.isPending}
+                          data-testid="button-cancel-subscription"
+                        >
+                          <Ban className="w-4 h-4 mr-2" /> Cancel Subscription
+                        </Button>
+                      )}
+                      <div className="flex items-center gap-2 mt-2">
+                        <Select value={downgradePlan} onValueChange={setDowngradePlan}>
+                          <SelectTrigger className="w-48" data-testid="select-downgrade-plan">
+                            <SelectValue placeholder="Downgrade to..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {["free", "starter", "professional", "enterprise"]
+                              .filter(p => {
+                                const planOrder = ["free", "starter", "professional", "enterprise"];
+                                return planOrder.indexOf(p) < planOrder.indexOf(sub.planTier);
+                              })
+                              .map(p => (
+                                <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
+                              ))
+                            }
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (downgradePlan) {
+                              setConfirmAction({ type: "downgrade", label: `Downgrade plan from ${sub.planTier} to ${downgradePlan}` });
+                            }
+                          }}
+                          disabled={!downgradePlan || downgradeSubscription.isPending}
+                          data-testid="button-apply-downgrade"
+                        >
+                          <ArrowDown className="w-4 h-4 mr-1" /> Downgrade
+                        </Button>
+                      </div>
                     </div>
                   </div>
 
@@ -433,13 +557,13 @@ export function SubscriptionDetailDialog({
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmAction(null)} data-testid="button-cancel-confirm">Cancel</Button>
             <Button
-              variant={confirmAction?.type === "delete" ? "destructive" : "default"}
+              variant={confirmAction?.type === "delete" || confirmAction?.type === "cancel" ? "destructive" : "default"}
               onClick={executeConfirmedAction}
-              disabled={updateSubscription.isPending || deleteSubscription.isPending}
+              disabled={updateSubscription.isPending || deleteSubscription.isPending || cancelSubscription.isPending || pauseSubscription.isPending || downgradeSubscription.isPending}
               data-testid="button-confirm-change"
             >
-              {(updateSubscription.isPending || deleteSubscription.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {confirmAction?.type === "delete" ? "Delete" : "Confirm"}
+              {(updateSubscription.isPending || deleteSubscription.isPending || cancelSubscription.isPending || pauseSubscription.isPending || downgradeSubscription.isPending) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {confirmAction?.type === "delete" ? "Delete" : confirmAction?.type === "cancel" ? "Cancel Subscription" : "Confirm"}
             </Button>
           </DialogFooter>
         </DialogContent>

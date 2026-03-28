@@ -2,7 +2,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { users, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
+import { users, organizations, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
 import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
 
@@ -147,6 +147,45 @@ export async function authMiddleware(
       isHustlerOwner,
     };
     req.user = sanitized;
+  }
+
+  next();
+}
+
+export async function requireActiveOrganization(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  if (!req.user) {
+    next();
+    return;
+  }
+
+  if (req.path === "/api/auth/logout") {
+    next();
+    return;
+  }
+
+  if (req.user.role === "SUPER_ADMIN") {
+    next();
+    return;
+  }
+
+  if (!req.user.organizationId) {
+    next();
+    return;
+  }
+
+  const [org] = await db
+    .select({ isActive: organizations.isActive })
+    .from(organizations)
+    .where(eq(organizations.id, req.user.organizationId))
+    .limit(1);
+
+  if (org && !org.isActive) {
+    res.status(403).json({
+      error: "Organization suspended",
+      message: "Your organization has been suspended. Please contact support for more information.",
+      suspended: true,
+    });
+    return;
   }
 
   next();

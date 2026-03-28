@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Mail, Building2, KeyRound, Trash2, LogIn, ShieldCheck, ShieldX, UserPlus } from "lucide-react";
+import { Search, Mail, Building2, KeyRound, Trash2, LogIn, ShieldCheck, ShieldX, UserPlus, ArrowRightLeft, UserCog } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,6 +68,10 @@ export function SupportUserLookup() {
   const [selectedRoleFilter, setSelectedRoleFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [roleChangeUser, setRoleChangeUser] = useState<User | null>(null);
+  const [newRole, setNewRole] = useState("");
+  const [transferUser, setTransferUser] = useState<User | null>(null);
+  const [targetOrgId, setTargetOrgId] = useState("");
   const [newUserForm, setNewUserForm] = useState({
     firstName: "",
     lastName: "",
@@ -165,6 +169,39 @@ export function SupportUserLookup() {
     },
     onError: (error: any) => {
       toast({ title: "Failed to login as user", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const changeRoleMutation = useMutation({
+    mutationFn: async ({ userId, role }: { userId: string; role: string }) => {
+      const res = await apiRequest("PATCH", `/api/platform/users/${userId}/role`, { role });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
+      setRoleChangeUser(null);
+      setNewRole("");
+      toast({ title: "Role updated", description: data.message });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to change role", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const transferUserMutation = useMutation({
+    mutationFn: async ({ userId, targetOrganizationId }: { userId: string; targetOrganizationId: string }) => {
+      const res = await apiRequest("POST", `/api/platform/users/${userId}/transfer`, { targetOrganizationId });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/organizations"] });
+      setTransferUser(null);
+      setTargetOrgId("");
+      toast({ title: "User transferred", description: data.message });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to transfer user", description: error.message, variant: "destructive" });
     },
   });
 
@@ -470,6 +507,40 @@ export function SupportUserLookup() {
                       {user.role !== "SUPER_ADMIN" && (
                         <Tooltip>
                           <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => { setRoleChangeUser(user); setNewRole(user.role); }}
+                              data-testid={`button-change-role-${user.id}`}
+                            >
+                              <UserCog className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Change role</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {user.role !== "SUPER_ADMIN" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => { setTransferUser(user); setTargetOrgId(""); }}
+                              data-testid={`button-transfer-user-${user.id}`}
+                            >
+                              <ArrowRightLeft className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Transfer to another org</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {user.role !== "SUPER_ADMIN" && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <Button 
                               variant="ghost" 
                               size="icon"
@@ -616,6 +687,28 @@ export function SupportUserLookup() {
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={() => { setRoleChangeUser(user); setNewRole(user.role); }}
+                      data-testid={`button-change-role-mobile-${user.id}`}
+                    >
+                      <UserCog className="h-3 w-3 mr-1" />
+                      Role
+                    </Button>
+                  )}
+                  {user.role !== "SUPER_ADMIN" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setTransferUser(user); setTargetOrgId(""); }}
+                      data-testid={`button-transfer-mobile-${user.id}`}
+                    >
+                      <ArrowRightLeft className="h-3 w-3 mr-1" />
+                      Transfer
+                    </Button>
+                  )}
+                  {user.role !== "SUPER_ADMIN" && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       disabled={impersonateUserMutation.isPending}
                       onClick={() => impersonateUserMutation.mutate(user.id)}
                       data-testid={`button-login-as-mobile-${user.id}`}
@@ -676,6 +769,114 @@ export function SupportUserLookup() {
           </div>
         )}
       </CardContent>
+
+      <Dialog open={!!roleChangeUser} onOpenChange={(v) => { if (!v) { setRoleChangeUser(null); setNewRole(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change User Role</DialogTitle>
+            <DialogDescription>
+              Change the role for <strong>{roleChangeUser?.firstName} {roleChangeUser?.lastName}</strong> ({roleChangeUser?.email})
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Current Role</Label>
+              <Badge variant="secondary">{roleLabels[roleChangeUser?.role || ""] || roleChangeUser?.role}</Badge>
+            </div>
+            <div className="space-y-2">
+              <Label>New Role</Label>
+              <Select value={newRole} onValueChange={setNewRole}>
+                <SelectTrigger data-testid="select-new-role">
+                  <SelectValue placeholder="Select a role..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ADMIN">Admin</SelectItem>
+                  <SelectItem value="MANAGER">Manager</SelectItem>
+                  <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
+                  <SelectItem value="ESTIMATOR">Estimator</SelectItem>
+                  <SelectItem value="OFFICE_MANAGER">Office Manager</SelectItem>
+                  <SelectItem value="HOURLY_EMPLOYEE">Hourly Employee</SelectItem>
+                  <SelectItem value="MAINTENANCE_MANAGER">Maintenance Manager</SelectItem>
+                  <SelectItem value="VENDOR">Vendor</SelectItem>
+                  <SelectItem value="HUSTLER">Hustler</SelectItem>
+                  <SelectItem value="SALES">Sales</SelectItem>
+                  <SelectItem value="MARKETING">Marketing</SelectItem>
+                  <SelectItem value="SAFETY_MANAGER">Safety Manager</SelectItem>
+                  <SelectItem value="HR_MANAGER">HR Manager</SelectItem>
+                  <SelectItem value="EQUIPMENT_MANAGER">Equipment Manager</SelectItem>
+                  <SelectItem value="PROJECT_ENGINEER">Project Engineer</SelectItem>
+                  <SelectItem value="PROCUREMENT_MANAGER">Procurement Manager</SelectItem>
+                  <SelectItem value="DISPATCHER">Dispatcher</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRoleChangeUser(null); setNewRole(""); }} data-testid="button-cancel-role-change">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => roleChangeUser && changeRoleMutation.mutate({ userId: roleChangeUser.id, role: newRole })}
+              disabled={!newRole || newRole === roleChangeUser?.role || changeRoleMutation.isPending}
+              data-testid="button-confirm-role-change"
+            >
+              {changeRoleMutation.isPending ? "Updating..." : "Change Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!transferUser} onOpenChange={(v) => { if (!v) { setTransferUser(null); setTargetOrgId(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transfer User to Organization</DialogTitle>
+            <DialogDescription>
+              Transfer <strong>{transferUser?.firstName} {transferUser?.lastName}</strong> ({transferUser?.email}) to a different organization.
+              {transferUser?.role === "ADMIN" && (
+                <span className="block mt-1 text-amber-600">
+                  This user is an Admin. They cannot be transferred if they are the last admin in their current organization.
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Current Organization</Label>
+              <p className="text-sm font-medium">
+                {organizations?.find(o => o.id === transferUser?.organizationId)?.name || "None"}
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Transfer To</Label>
+              <Select value={targetOrgId} onValueChange={setTargetOrgId}>
+                <SelectTrigger data-testid="select-transfer-org">
+                  <SelectValue placeholder="Select target organization..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizations
+                    ?.filter(org => org.id !== transferUser?.organizationId)
+                    .map((org) => (
+                      <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+                    ))
+                  }
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setTransferUser(null); setTargetOrgId(""); }} data-testid="button-cancel-transfer">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => transferUser && transferUserMutation.mutate({ userId: transferUser.id, targetOrganizationId: targetOrgId })}
+              disabled={!targetOrgId || transferUserMutation.isPending}
+              data-testid="button-confirm-transfer"
+            >
+              {transferUserMutation.isPending ? "Transferring..." : "Transfer User"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -7,7 +7,7 @@ import {
 } from "@simplewebauthn/server";
 type AuthenticatorTransportFuture = 'ble' | 'cable' | 'hybrid' | 'internal' | 'nfc' | 'smart-card' | 'usb';
 import { db } from "./db";
-import { passkeyCredentials, users } from "@shared/schema";
+import { passkeyCredentials, users, organizations } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import {
   generateToken,
@@ -256,6 +256,14 @@ router.post(
       if (!user || !user.isActive) {
         res.status(403).json({ error: "Account is disabled" });
         return;
+      }
+
+      if (user.role !== "SUPER_ADMIN" && user.organizationId) {
+        const [org] = await db.select().from(organizations).where(eq(organizations.id, user.organizationId)).limit(1);
+        if (org && !org.isActive) {
+          res.status(403).json({ error: "Your organization has been suspended. Please contact support.", suspended: true });
+          return;
+        }
       }
 
       const token = generateToken(user.id, user.tokenVersion ?? 0);

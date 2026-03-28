@@ -30,6 +30,7 @@ const STATUSES = [
   { value: "trialing", label: "Trialing" },
   { value: "past_due", label: "Past Due" },
   { value: "canceled", label: "Canceled" },
+  { value: "paused", label: "Paused" },
 ];
 
 export interface SubscriptionRow {

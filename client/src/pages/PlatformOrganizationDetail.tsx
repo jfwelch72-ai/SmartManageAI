@@ -8,10 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign } from "lucide-react";
+import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -211,6 +212,21 @@ export default function PlatformOrganizationDetail() {
     },
   });
 
+  const suspendOrgMutation = useMutation({
+    mutationFn: async () => {
+      const action = organization?.isActive ? "suspend" : "reactivate";
+      const res = await apiRequest("POST", `/api/platform/organizations/${orgId}/suspend`, { action });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/organizations"] });
+      toast({ title: data.organization.isActive ? "Organization Reactivated" : "Organization Suspended", description: data.message });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Action failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const openEditDialog = () => {
     if (!organization) return;
     setEditForm({
@@ -331,6 +347,47 @@ export default function PlatformOrganizationDetail() {
             <Pencil className="h-4 w-4 mr-2" />
             Edit Organization
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant={organization.isActive ? "outline" : "default"}
+                data-testid="button-toggle-suspend"
+                disabled={suspendOrgMutation.isPending}
+                className={organization.isActive ? "text-destructive border-destructive/50 hover:bg-destructive/10" : ""}
+              >
+                {organization.isActive ? (
+                  <><ShieldOff className="h-4 w-4 mr-2" /> Suspend</>
+                ) : (
+                  <><ShieldCheck className="h-4 w-4 mr-2" /> Reactivate</>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {organization.isActive ? "Suspend Organization" : "Reactivate Organization"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {organization.isActive
+                    ? `Are you sure you want to suspend "${organization.name}"? All users in this organization will be immediately blocked from logging in and will see a suspended message.`
+                    : `Are you sure you want to reactivate "${organization.name}"? All users will regain access to the platform.`}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => suspendOrgMutation.mutate()}
+                  className={organization.isActive ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : ""}
+                  data-testid="button-confirm-suspend"
+                >
+                  {organization.isActive ? "Suspend Organization" : "Reactivate Organization"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          {!organization.isActive && (
+            <Badge variant="destructive" data-testid="badge-suspended">Suspended</Badge>
+          )}
           {getStatusBadge(organization.onboardingStatus)}
           <Badge variant="outline">
             {tradeTypeLabels[organization.tradeType] || organization.tradeType}
