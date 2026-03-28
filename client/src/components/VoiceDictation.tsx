@@ -117,7 +117,22 @@ export default function VoiceDictation() {
     };
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      if (event.error !== "no-speech") {
+      if (event.error === "no-speech") {
+        // Silently ignore — user just didn't speak
+      } else if (event.error === "network") {
+        toast({
+          title: "Speech Recognition Unavailable",
+          description: "Voice recognition requires a direct browser connection. You can type your notes manually in the text box below.",
+        });
+      } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        toast({
+          title: "Microphone Access Denied",
+          description: "Please allow microphone access in your browser settings to use voice dictation.",
+          variant: "destructive",
+        });
+      } else if (event.error === "aborted") {
+        // Silently ignore — user or system stopped recording
+      } else {
         toast({ title: "Recognition error", description: event.error, variant: "destructive" });
       }
       setIsRecording(false);
