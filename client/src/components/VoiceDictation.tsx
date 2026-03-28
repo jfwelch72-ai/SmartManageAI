@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -75,8 +75,18 @@ export default function VoiceDictation() {
   }, [location]);
 
   const { data: project } = useProject(projectCode || "");
+  const { data: projectsResponse } = useQuery<{ data: { id: string; name: string; projectNumber?: string }[] }>({ queryKey: ["/api/projects"] });
+  const allProjects = projectsResponse?.data || [];
 
-  const projectId = project?.id;
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+
+  useEffect(() => {
+    if (project?.id && !selectedProjectId) {
+      setSelectedProjectId(project.id);
+    }
+  }, [project?.id]);
+
+  const projectId = selectedProjectId || project?.id;
 
   function getSpeechRecognitionConstructor(): (new () => SpeechRecognitionInstance) | null {
     const win = window as Window & { SpeechRecognition?: new () => SpeechRecognitionInstance; webkitSpeechRecognition?: new () => SpeechRecognitionInstance };
@@ -294,7 +304,7 @@ export default function VoiceDictation() {
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <Select value={outputType} onValueChange={(v: "daily_report" | "rfi") => setOutputType(v)}>
-                <SelectTrigger className="w-[180px]" data-testid="select-output-type">
+                <SelectTrigger className="w-[150px]" data-testid="select-output-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -302,23 +312,18 @@ export default function VoiceDictation() {
                   <SelectItem value="rfi">RFI Draft</SelectItem>
                 </SelectContent>
               </Select>
-              {projectCode ? (
-                <Badge variant="outline" className="text-xs" data-testid="badge-project-context">
-                  Project: {projectCode}
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="text-xs text-muted-foreground" data-testid="badge-no-project">
-                  <AlertTriangle className="h-3 w-3 mr-1" />
-                  No project selected
-                </Badge>
-              )}
+              <Select value={selectedProjectId || "__NONE__"} onValueChange={(v) => setSelectedProjectId(v === "__NONE__" ? "" : v)}>
+                <SelectTrigger className="flex-1" data-testid="select-voice-project">
+                  <SelectValue placeholder="Select project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__NONE__">No project</SelectItem>
+                  {allProjects.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.projectNumber ? `${p.projectNumber} - ` : ""}{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-
-            {!projectCode && (
-              <p className="text-xs text-muted-foreground">
-                Navigate to a project page to link voice logs to a project and auto-create reports.
-              </p>
-            )}
 
             <div className="flex justify-center">
               {isSupported && (
