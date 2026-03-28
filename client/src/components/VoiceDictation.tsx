@@ -251,19 +251,15 @@ export default function VoiceDictation() {
 
   return (
     <>
-      <Button
+      <button
         onClick={() => setIsOpen(true)}
-        size="icon"
-        className={cn(
-          "fixed w-12 h-12 rounded-full shadow-lg",
-          "bg-primary hover:bg-primary/90 text-primary-foreground",
-          "transition-all hover:scale-105"
-        )}
-        style={{ bottom: '72px', right: '24px', zIndex: 9999 }}
+        className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all hover:scale-105"
+        style={{ position: 'fixed', bottom: '80px', right: '24px', zIndex: 9999 }}
         data-testid="button-floating-mic"
       >
         <Mic className="h-5 w-5" />
-      </Button>
+        <span className="sr-only">Voice Dictation</span>
+      </button>
 
       <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
         <DialogContent className="max-w-lg">

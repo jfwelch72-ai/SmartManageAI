@@ -412,9 +412,6 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
         </main>
       </SidebarInset>
       <PushNotificationBanner />
-      <Suspense fallback={null}>
-        <VoiceDictation />
-      </Suspense>
     </SidebarProvider>
   );
 }
@@ -449,7 +446,12 @@ function AppContent() {
 function AuthGatedWidget() {
   const { user } = useAuth();
   if (!user) return null;
-  return <Suspense fallback={null}><AIAssistantWidget /></Suspense>;
+  return (
+    <Suspense fallback={null}>
+      <VoiceDictation />
+      <AIAssistantWidget />
+    </Suspense>
+  );
 }
 
 function App() {
