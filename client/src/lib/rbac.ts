@@ -835,6 +835,12 @@ export const PlatformAdminNavConfig = {
       testId: "nav-platform-audit",
       visible: (role?: string) => isSuperAdmin(role),
     },
+    {
+      href: "/admin/monitoring",
+      label: "Monitoring",
+      testId: "nav-platform-monitoring",
+      visible: (role?: string) => isSuperAdmin(role),
+    },
   ],
 };
 

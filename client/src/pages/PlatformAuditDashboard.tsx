@@ -22,8 +22,14 @@ import {
   Clock,
   Download,
   FileJson,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FileText,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,6 +39,62 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
+
+type SortDirection = "asc" | "desc";
+
+function useSortable<T>(data: T[] | undefined, defaultKey: keyof T, defaultDir: SortDirection = "desc") {
+  const [sortKey, setSortKey] = useState<keyof T>(defaultKey);
+  const [sortDir, setSortDir] = useState<SortDirection>(defaultDir);
+
+  const toggle = (key: keyof T) => {
+    if (sortKey === key) {
+      setSortDir(d => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const sorted = data ? [...data].sort((a, b) => {
+    const aVal = a[sortKey];
+    const bVal = b[sortKey];
+    if (typeof aVal === "number" && typeof bVal === "number") {
+      return sortDir === "asc" ? aVal - bVal : bVal - aVal;
+    }
+    return sortDir === "asc"
+      ? String(aVal ?? "").localeCompare(String(bVal ?? ""))
+      : String(bVal ?? "").localeCompare(String(aVal ?? ""));
+  }) : [];
+
+  return { sorted, sortKey, sortDir, toggle };
+}
+
+function AuditSortHeader({ label, field, sortKey, sortDir, onToggle }: {
+  label: string; field: string; sortKey: string; sortDir: string; onToggle: () => void;
+}) {
+  return (
+    <button onClick={onToggle} className="flex items-center gap-1 font-medium text-xs uppercase tracking-wider hover:text-foreground transition-colors" data-testid={`sort-crossaudit-${field}`}>
+      {label}
+      <ArrowUpDown className={`h-3 w-3 ${sortKey === field ? "text-foreground" : "text-muted-foreground"}`} />
+    </button>
+  );
+}
+
+interface AuditLogEntry {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  oldValue: string | null;
+  newValue: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  userName: string;
+  userEmail: string;
+  organizationId: string | null;
+  organizationName: string | null;
+}
 
 interface AuditCheck {
   id: string;
@@ -168,6 +230,232 @@ function exportAsCsv(report: AuditReport) {
   const csv = [headers.join(','), ...rows].join('\n');
   const timestamp = new Date(report.timestamp).toISOString().slice(0, 10);
   downloadFile(csv, `audit-report-${timestamp}.csv`, 'text/csv');
+}
+
+function CrossOrgAuditLogTab() {
+  const [page, setPage] = useState(1);
+  const [action, setAction] = useState("");
+  const [entityType, setEntityType] = useState("");
+  const [orgId, setOrgId] = useState("");
+  const [userId, setUserId] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const pageSize = 50;
+
+  const queryParams = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (action) queryParams.set("action", action);
+  if (entityType) queryParams.set("entityType", entityType);
+  if (orgId) queryParams.set("orgId", orgId);
+  if (userId) queryParams.set("userId", userId);
+  if (startDate) queryParams.set("startDate", startDate);
+  if (endDate) queryParams.set("endDate", endDate);
+
+  const { data, isLoading } = useQuery<{
+    entries: AuditLogEntry[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+    filters: { actions: string[]; entityTypes: string[] };
+  }>({
+    queryKey: ["/api/platform/monitoring/audit-logs", page, action, entityType, orgId, userId, startDate, endDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/platform/monitoring/audit-logs?${queryParams}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const { data: orgs } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/platform/organizations"],
+    queryFn: async () => {
+      const res = await fetch("/api/platform/organizations", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const { data: platformUsers } = useQuery<Array<{ id: string; firstName: string; lastName: string; email: string }>>({
+    queryKey: ["/api/platform/users"],
+    queryFn: async () => {
+      const res = await fetch("/api/platform/users", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const { sorted, sortKey, sortDir, toggle } = useSortable<AuditLogEntry>(
+    data?.entries, "createdAt"
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5" />
+          Cross-Organization Audit Logs
+        </CardTitle>
+        <CardDescription>Search and filter audit entries across all organizations</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <Select value={action || "all"} onValueChange={(v) => { setAction(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger data-testid="select-crossaudit-action">
+              <SelectValue placeholder="Action" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Actions</SelectItem>
+              {data?.filters.actions.map((a) => (
+                <SelectItem key={a} value={a}>{a}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={entityType || "all"} onValueChange={(v) => { setEntityType(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger data-testid="select-crossaudit-entity-type">
+              <SelectValue placeholder="Entity Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Entity Types</SelectItem>
+              {data?.filters.entityTypes.map((e) => (
+                <SelectItem key={e} value={e}>{e}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={orgId || "all"} onValueChange={(v) => { setOrgId(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger data-testid="select-crossaudit-org">
+              <SelectValue placeholder="Organization" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Organizations</SelectItem>
+              {orgs?.map((org) => (
+                <SelectItem key={org.id} value={org.id}>{org.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={userId || "all"} onValueChange={(v) => { setUserId(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger data-testid="select-crossaudit-user">
+              <SelectValue placeholder="User" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Users</SelectItem>
+              {platformUsers?.map((u) => (
+                <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.email})</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Input
+            type="date"
+            value={startDate}
+            onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+            data-testid="input-crossaudit-start-date"
+          />
+          <Input
+            type="date"
+            value={endDate}
+            onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+            data-testid="input-crossaudit-end-date"
+          />
+        </div>
+
+        {isLoading ? (
+          <Skeleton className="h-64 w-full" />
+        ) : (
+          <>
+            <div className="text-sm text-muted-foreground">
+              Showing {data?.entries.length || 0} of {data?.total.toLocaleString() || 0} entries
+            </div>
+            <ScrollArea className="h-[500px]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" data-testid="table-crossorg-audit-logs">
+                  <thead>
+                    <tr className="border-b text-left text-muted-foreground">
+                      <th className="pb-2 pr-3">
+                        <AuditSortHeader label="Time" field="createdAt" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("createdAt")} />
+                      </th>
+                      <th className="pb-2 pr-3">
+                        <AuditSortHeader label="Action" field="action" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("action")} />
+                      </th>
+                      <th className="pb-2 pr-3">
+                        <AuditSortHeader label="Entity" field="entityType" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("entityType")} />
+                      </th>
+                      <th className="pb-2 pr-3">
+                        <AuditSortHeader label="User" field="userName" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("userName")} />
+                      </th>
+                      <th className="pb-2 pr-3">
+                        <AuditSortHeader label="Organization" field="organizationName" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("organizationName")} />
+                      </th>
+                      <th className="pb-2 font-medium text-xs uppercase tracking-wider">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sorted.map((entry) => (
+                      <tr key={entry.id} className="border-b last:border-0 hover:bg-muted/50" data-testid={`row-crossaudit-${entry.id}`}>
+                        <td className="py-2 pr-3 whitespace-nowrap text-xs text-muted-foreground">
+                          {new Date(entry.createdAt).toLocaleString()}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <Badge variant={
+                            entry.action === "DELETE" ? "destructive"
+                            : entry.action === "CREATE" ? "default"
+                            : "secondary"
+                          }>{entry.action}</Badge>
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span className="font-medium">{entry.entityType}</span>
+                          <span className="text-xs text-muted-foreground ml-1 break-all">({entry.entityId.substring(0, 8)}...)</span>
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div>{entry.userName}</div>
+                          <div className="text-xs text-muted-foreground">{entry.userEmail}</div>
+                        </td>
+                        <td className="py-2 pr-3 text-sm">{entry.organizationName || "N/A"}</td>
+                        <td className="py-2 text-xs text-muted-foreground">{entry.ipAddress || "\u2014"}</td>
+                      </tr>
+                    ))}
+                    {sorted.length === 0 && (
+                      <tr><td colSpan={6} className="py-8 text-center text-muted-foreground">No audit entries found</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </ScrollArea>
+
+            {data && data.totalPages > 1 && (
+              <div className="flex items-center justify-between pt-4">
+                <div className="text-sm text-muted-foreground">
+                  Page {data.page} of {data.totalPages}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    data-testid="button-crossaudit-prev"
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(data.totalPages, p + 1))}
+                    disabled={page >= data.totalPages}
+                    data-testid="button-crossaudit-next"
+                  >
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function PlatformAuditDashboard() {
@@ -345,13 +633,16 @@ export default function PlatformAuditDashboard() {
       </div>
 
       <Tabs defaultValue={failedChecks.length > 0 ? 'failed' : 'all'} className="space-y-4">
-        <TabsList>
+        <TabsList className="flex flex-wrap">
           <TabsTrigger value="all">All Checks ({report.summary.total})</TabsTrigger>
           <TabsTrigger value="failed" className={failedChecks.length > 0 ? 'text-red-600' : ''}>
             Failed ({failedChecks.length})
           </TabsTrigger>
           <TabsTrigger value="warnings" className={warningChecks.length > 0 ? 'text-yellow-600' : ''}>
             Warnings ({warningChecks.length})
+          </TabsTrigger>
+          <TabsTrigger value="crossorg-audit" data-testid="tab-crossorg-audit">
+            <FileText className="h-4 w-4 mr-1.5" /> Cross-Org Audit Logs
           </TabsTrigger>
         </TabsList>
 
@@ -444,6 +735,10 @@ export default function PlatformAuditDashboard() {
               </ScrollArea>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="crossorg-audit">
+          <CrossOrgAuditLogTab />
         </TabsContent>
       </Tabs>
     </div>

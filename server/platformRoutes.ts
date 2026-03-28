@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
-import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema } from "@shared/schema";
+import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections } from "@shared/schema";
 import { requireAuth, type AuthRequest, hashPassword, generateToken } from "./auth";
-import { eq, count, desc, sql, and, gte, lte, isNotNull } from "drizzle-orm";
+import { eq, count, desc, sql, and, gte, lte, isNotNull, like, ilike, sum } from "drizzle-orm";
 import crypto from "crypto";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { logAudit } from "./auditLogger";
@@ -1202,6 +1202,381 @@ router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (
   } catch (error: any) {
     console.error("Permanent delete user error:", error.message);
     res.status(500).json({ error: "Failed to permanently delete user" });
+  }
+});
+
+// ========================================
+// Platform Monitoring & Observability
+// ========================================
+
+interface ApiRequestEvent {
+  timestamp: number;
+  isError: boolean;
+}
+
+const apiRequestTracker = new Map<string, ApiRequestEvent[]>();
+const MAX_EVENTS_PER_ORG = 10000;
+const MAX_EVENT_AGE_MS = 31 * 24 * 60 * 60 * 1000;
+
+export function trackApiRequest(orgId: string | null, isError: boolean) {
+  if (!orgId) return;
+  const now = Date.now();
+  const cutoff = now - MAX_EVENT_AGE_MS;
+  const events = (apiRequestTracker.get(orgId) || []).filter(e => e.timestamp >= cutoff);
+  events.push({ timestamp: now, isError });
+  if (events.length > MAX_EVENTS_PER_ORG) {
+    events.splice(0, events.length - MAX_EVENTS_PER_ORG);
+  }
+  apiRequestTracker.set(orgId, events);
+}
+
+function getApiMetricsForPeriod(orgId: string, sinceMs: number): { requests: number; errors: number } {
+  const events = apiRequestTracker.get(orgId) || [];
+  let requests = 0;
+  let errors = 0;
+  for (const e of events) {
+    if (e.timestamp >= sinceMs) {
+      requests++;
+      if (e.isError) errors++;
+    }
+  }
+  return { requests, errors };
+}
+
+router.get("/platform/monitoring/api-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const period = req.query.period as string || "7d";
+    const daysMap: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30 };
+    const days = daysMap[period] || 7;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const sinceMs = since.getTime();
+
+    const auditMetrics = await db
+      .select({
+        orgId: users.organizationId,
+        orgName: organizations.name,
+        auditedActions: count(auditLog.id),
+      })
+      .from(auditLog)
+      .innerJoin(users, eq(auditLog.userId, users.id))
+      .innerJoin(organizations, eq(users.organizationId, organizations.id))
+      .where(gte(auditLog.createdAt, since))
+      .groupBy(users.organizationId, organizations.name);
+
+    const allOrgIds = new Set<string>();
+    auditMetrics.forEach(m => { if (m.orgId) allOrgIds.add(m.orgId); });
+    apiRequestTracker.forEach((_, orgId) => allOrgIds.add(orgId));
+
+    const orgNames = new Map<string, string>();
+    auditMetrics.forEach(m => { if (m.orgId && m.orgName) orgNames.set(m.orgId, m.orgName); });
+
+    const missingOrgIds = Array.from(allOrgIds).filter(id => !orgNames.has(id));
+    if (missingOrgIds.length > 0) {
+      const missingOrgs = await db
+        .select({ id: organizations.id, name: organizations.name })
+        .from(organizations)
+        .where(sql`${organizations.id} IN (${sql.join(missingOrgIds.map(id => sql`${id}`), sql`, `)})`);
+      missingOrgs.forEach(o => orgNames.set(o.id, o.name));
+    }
+
+    const result = Array.from(allOrgIds).map(orgId => {
+      const auditRow = auditMetrics.find(m => m.orgId === orgId);
+      const periodMetrics = getApiMetricsForPeriod(orgId, sinceMs);
+      return {
+        organizationId: orgId,
+        organizationName: orgNames.get(orgId) || "Unknown",
+        auditedActions: auditRow?.auditedActions || 0,
+        totalRequests: periodMetrics.requests,
+        totalErrors: periodMetrics.errors,
+        errorRate: periodMetrics.requests > 0
+          ? Math.round((periodMetrics.errors / periodMetrics.requests) * 100 * 100) / 100
+          : 0,
+      };
+    });
+
+    res.json({
+      period,
+      since: since.toISOString(),
+      organizations: result.sort((a, b) => (b.totalRequests + b.auditedActions) - (a.totalRequests + a.auditedActions)),
+    });
+  } catch (error: any) {
+    console.error("Platform monitoring API usage error:", error.message);
+    res.status(500).json({ error: "Failed to fetch API usage metrics" });
+  }
+});
+
+router.get("/platform/monitoring/ai-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const period = req.query.period as string || "7d";
+    const daysMap: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30 };
+    const days = daysMap[period] || 7;
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+
+    const aiUsage = await db
+      .select({
+        orgId: aiActionAudit.organizationId,
+        orgName: organizations.name,
+        totalCalls: count(aiActionAudit.id),
+        totalTokensIn: sum(aiActionAudit.tokensIn),
+        totalTokensOut: sum(aiActionAudit.tokensOut),
+        totalCost: sum(aiActionAudit.costEstimate),
+      })
+      .from(aiActionAudit)
+      .innerJoin(organizations, eq(aiActionAudit.organizationId, organizations.id))
+      .where(gte(aiActionAudit.createdAt, since))
+      .groupBy(aiActionAudit.organizationId, organizations.name);
+
+    const aiRunsByOrg = await db
+      .select({
+        orgId: users.organizationId,
+        orgName: organizations.name,
+        runCount: count(aiRuns.id),
+      })
+      .from(aiRuns)
+      .innerJoin(users, eq(aiRuns.triggeredById, users.id))
+      .innerJoin(organizations, eq(users.organizationId, organizations.id))
+      .where(gte(aiRuns.createdAt, since))
+      .groupBy(users.organizationId, organizations.name);
+
+    const allOrgIds = new Set([
+      ...aiUsage.map(u => u.orgId),
+      ...aiRunsByOrg.map(r => r.orgId),
+    ]);
+
+    const merged = Array.from(allOrgIds).map(orgId => {
+      const usage = aiUsage.find(u => u.orgId === orgId);
+      const runs = aiRunsByOrg.find(r => r.orgId === orgId);
+      return {
+        organizationId: orgId,
+        organizationName: usage?.orgName || runs?.orgName || "Unknown",
+        totalCalls: usage?.totalCalls || 0,
+        tokensIn: Number(usage?.totalTokensIn) || 0,
+        tokensOut: Number(usage?.totalTokensOut) || 0,
+        totalTokens: (Number(usage?.totalTokensIn) || 0) + (Number(usage?.totalTokensOut) || 0),
+        estimatedCost: Number(usage?.totalCost) || 0,
+        aiRuns: runs?.runCount || 0,
+      };
+    });
+
+    res.json({
+      period,
+      since: since.toISOString(),
+      organizations: merged.sort((a, b) => b.totalCalls - a.totalCalls),
+    });
+  } catch (error: any) {
+    console.error("Platform monitoring AI usage error:", error.message);
+    res.status(500).json({ error: "Failed to fetch AI usage metrics" });
+  }
+});
+
+router.get("/platform/monitoring/storage-usage", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const uploadStats = await db
+      .select({
+        orgId: uploadIntents.organizationId,
+        orgName: organizations.name,
+        fileCount: count(uploadIntents.id),
+        totalSize: sum(uploadIntents.fileSize),
+      })
+      .from(uploadIntents)
+      .innerJoin(organizations, eq(uploadIntents.organizationId, organizations.id))
+      .groupBy(uploadIntents.organizationId, organizations.name);
+
+    res.json({
+      organizations: uploadStats.map((s) => ({
+        organizationId: s.orgId,
+        organizationName: s.orgName,
+        totalFiles: s.fileCount,
+        totalSizeBytes: Number(s.totalSize) || 0,
+        totalSizeMB: Math.round((Number(s.totalSize) || 0) / (1024 * 1024) * 100) / 100,
+      })).sort((a, b) => b.totalSizeBytes - a.totalSizeBytes),
+    });
+  } catch (error: any) {
+    console.error("Platform monitoring storage usage error:", error.message);
+    res.status(500).json({ error: "Failed to fetch storage usage metrics" });
+  }
+});
+
+router.get("/platform/monitoring/integration-health", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const connections = await db
+      .select({
+        id: integrationConnections.id,
+        organizationId: integrationConnections.organizationId,
+        orgName: organizations.name,
+        provider: integrationConnections.provider,
+        status: integrationConnections.status,
+        displayName: integrationConnections.displayName,
+        lastSyncAt: integrationConnections.lastSyncAt,
+        lastSyncError: integrationConnections.lastSyncError,
+        createdAt: integrationConnections.createdAt,
+      })
+      .from(integrationConnections)
+      .innerJoin(organizations, eq(integrationConnections.organizationId, organizations.id))
+      .orderBy(organizations.name, integrationConnections.provider);
+
+    const byOrg = new Map<string, {
+      organizationId: string;
+      organizationName: string;
+      connections: typeof connections;
+    }>();
+
+    for (const conn of connections) {
+      if (!byOrg.has(conn.organizationId)) {
+        byOrg.set(conn.organizationId, {
+          organizationId: conn.organizationId,
+          organizationName: conn.orgName,
+          connections: [],
+        });
+      }
+      byOrg.get(conn.organizationId)!.connections.push(conn);
+    }
+
+    const orgResults = Array.from(byOrg.values()).map((entry) => {
+      const healthy = entry.connections.filter(c => c.status === "active").length;
+      const failing = entry.connections.filter(c => c.status === "error").length;
+      const disconnected = entry.connections.filter(c => c.status === "disconnected").length;
+      const total = entry.connections.length;
+      const overallStatus = failing > 0 ? "failing"
+        : disconnected > 0 ? "partial"
+        : healthy === total ? "healthy"
+        : "unknown";
+
+      return {
+        organizationId: entry.organizationId,
+        organizationName: entry.organizationName,
+        overallStatus,
+        healthyCount: healthy,
+        failingCount: failing,
+        disconnectedCount: disconnected,
+        totalConnections: total,
+        connections: entry.connections.map(c => ({
+          id: c.id,
+          provider: c.provider,
+          status: c.status,
+          displayName: c.displayName,
+          lastSyncAt: c.lastSyncAt,
+          lastSyncError: c.lastSyncError,
+        })),
+      };
+    });
+
+    res.json({
+      organizations: orgResults,
+      platformIntegrations: {
+        sendgrid: !!process.env.SENDGRID_API_KEY,
+        objectStorage: !!process.env.PRIVATE_OBJECT_DIR,
+        openai: !!process.env.OPENAI_API_KEY,
+      },
+    });
+  } catch (error: any) {
+    console.error("Platform monitoring integration health error:", error.message);
+    res.status(500).json({ error: "Failed to fetch integration health" });
+  }
+});
+
+router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize as string) || 50));
+    const offset = (page - 1) * pageSize;
+
+    const action = req.query.action as string | undefined;
+    const entityType = req.query.entityType as string | undefined;
+    const orgId = req.query.orgId as string | undefined;
+    const userId = req.query.userId as string | undefined;
+    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
+    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
+
+    if (startDate && isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: "Invalid startDate" });
+    }
+    if (endDate && isNaN(endDate.getTime())) {
+      return res.status(400).json({ error: "Invalid endDate" });
+    }
+
+    const conditions = [];
+
+    if (action) {
+      conditions.push(sql`${auditLog.action} = ${action}`);
+    }
+    if (entityType) {
+      conditions.push(eq(auditLog.entityType, entityType));
+    }
+    if (orgId) {
+      conditions.push(eq(users.organizationId, orgId));
+    }
+    if (userId) {
+      conditions.push(eq(auditLog.userId, userId));
+    }
+    if (startDate) {
+      conditions.push(gte(auditLog.createdAt, startDate));
+    }
+    if (endDate) {
+      const endOfDay = new Date(endDate as string);
+      endOfDay.setHours(23, 59, 59, 999);
+      conditions.push(lte(auditLog.createdAt, endOfDay));
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const entries = await db
+      .select({
+        id: auditLog.id,
+        action: auditLog.action,
+        entityType: auditLog.entityType,
+        entityId: auditLog.entityId,
+        oldValue: auditLog.oldValue,
+        newValue: auditLog.newValue,
+        ipAddress: auditLog.ipAddress,
+        createdAt: auditLog.createdAt,
+        userName: sql<string>`CONCAT(${users.firstName}, ' ', ${users.lastName})`,
+        userEmail: users.email,
+        organizationId: users.organizationId,
+        organizationName: organizations.name,
+      })
+      .from(auditLog)
+      .innerJoin(users, eq(auditLog.userId, users.id))
+      .leftJoin(organizations, eq(users.organizationId, organizations.id))
+      .where(whereClause)
+      .orderBy(desc(auditLog.createdAt))
+      .limit(pageSize)
+      .offset(offset);
+
+    const [totalResult] = await db
+      .select({ count: count() })
+      .from(auditLog)
+      .innerJoin(users, eq(auditLog.userId, users.id))
+      .leftJoin(organizations, eq(users.organizationId, organizations.id))
+      .where(whereClause);
+
+    const actionTypes = await db
+      .selectDistinct({ action: auditLog.action })
+      .from(auditLog)
+      .orderBy(auditLog.action);
+
+    const entityTypes = await db
+      .selectDistinct({ entityType: auditLog.entityType })
+      .from(auditLog)
+      .orderBy(auditLog.entityType);
+
+    res.json({
+      entries,
+      total: totalResult.count,
+      page,
+      pageSize,
+      totalPages: Math.ceil(totalResult.count / pageSize),
+      filters: {
+        actions: actionTypes.map(a => a.action),
+        entityTypes: entityTypes.map(e => e.entityType),
+      },
+    });
+  } catch (error: any) {
+    console.error("Platform monitoring audit logs error:", error.message);
+    res.status(500).json({ error: "Failed to fetch audit logs" });
   }
 });
 

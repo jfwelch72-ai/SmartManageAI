@@ -44,6 +44,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Libraries System**: Reusable library management for custom items, assemblies, and saved takeoffs.
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
+*   **Platform Monitoring & Observability**: Super Admin monitoring dashboard with API usage tracking (per-org audited actions + live in-memory request/error counters), AI usage analytics (calls, tokens, costs per org), object storage usage per org, platform integration health checks, and cross-organization audit log viewer with filters for action, entity type, org, and date range. Located at `/admin/monitoring`.
 *   **Feature Permissions System**: Granular per-user feature access control.
 *   **WCAG Compliance**: Theme picker colors meet WCAG AA contrast ratio.
 *   **Contractor Onboarding Library**: Hard-coded reference data for trades, scopes, materials, formulas, and grammar.

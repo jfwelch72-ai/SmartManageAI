@@ -53,6 +53,7 @@ import {
   FileSearch,
   Users,
   Crown,
+  BarChart3,
 } from "lucide-react";
 import { useState } from "react";
 import { useEntitlements } from "@/hooks/useEntitlements";
@@ -173,6 +174,7 @@ export function AppSidebar() {
                         {item.href === "/admin/analytics" && <Briefcase className="w-4 h-4" />}
                         {item.href === "/admin/support" && <Shield className="w-4 h-4" />}
                         {item.href === "/admin/audit" && <FileSearch className="w-4 h-4" />}
+                        {item.href === "/admin/monitoring" && <BarChart3 className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>

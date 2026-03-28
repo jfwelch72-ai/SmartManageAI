@@ -72,6 +72,7 @@ const PlatformOrganizationDetail = lazy(() => import("@/pages/PlatformOrganizati
 const PlatformAnalytics = lazy(() => import("@/pages/PlatformAnalytics"));
 const PlatformSupportTools = lazy(() => import("@/pages/PlatformSupportTools"));
 const PlatformAuditDashboard = lazy(() => import("@/pages/PlatformAuditDashboard"));
+const PlatformMonitoring = lazy(() => import("@/pages/PlatformMonitoring"));
 const PlatformSubscriptions = lazy(() => import("@/pages/PlatformSubscriptions"));
 const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
 const MobileSyncPage = lazy(() => import("@/pages/mobile-sync"));
@@ -361,6 +362,7 @@ function Router() {
       <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalytics} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/support" component={() => <ProtectedRoute component={PlatformSupportTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/audit" component={() => <ProtectedRoute component={PlatformAuditDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/monitoring" component={() => <ProtectedRoute component={PlatformMonitoring} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       
       {/* Hustler invite acceptance (public) */}
       <Route path="/hustler/accept-invite/:token" component={AcceptHustlerInvitePage} />

@@ -81,7 +81,7 @@ import notesRoutes from "./notesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
 import { registerTMTicketRoutes } from "./tmRoutes";
-import platformRoutes from "./platformRoutes";
+import platformRoutes, { trackApiRequest } from "./platformRoutes";
 import platformBillingRoutes from "./platformBillingRoutes";
 import calculatorRoutes from "./calculatorRoutes";
 import organizationDocumentRoutes from "./organizationDocumentRoutes";
@@ -185,6 +185,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Apply general API rate limiter to all API routes BEFORE registering any routes
   app.use("/api", apiLimiter);
+
+  app.use("/api", (req: any, res, next) => {
+    const orgId = req.user?.organizationId || null;
+    res.on("finish", () => {
+      trackApiRequest(orgId, res.statusCode >= 400);
+    });
+    next();
+  });
 
   // Register time-clock routes (now protected by rate limiter)
   app.use(timeClockRoutes);
