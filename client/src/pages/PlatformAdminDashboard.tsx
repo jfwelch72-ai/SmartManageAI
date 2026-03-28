@@ -99,14 +99,14 @@ export default function PlatformAdminDashboard() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <main className="p-6 space-y-6">
+        <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Platform Administration</h1>
-              <p className="text-muted-foreground">Monitor and manage all organizations</p>
+              <h1 className="text-xl sm:text-2xl font-bold">Platform Administration</h1>
+              <p className="text-muted-foreground text-sm">Monitor and manage all organizations</p>
             </div>
           </div>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             {[1, 2, 3, 4].map((i) => (
               <Card key={i}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
@@ -126,15 +126,15 @@ export default function PlatformAdminDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="p-6 space-y-6">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-platform-admin-title">Platform Administration</h1>
-          <p className="text-muted-foreground">Monitor and manage all organizations on the platform</p>
+          <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-platform-admin-title">Platform Administration</h1>
+          <p className="text-muted-foreground text-sm">Monitor and manage all organizations on the platform</p>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">Total Organizations</CardTitle>
@@ -229,7 +229,7 @@ export default function PlatformAdminDashboard() {
           <CardDescription>Real-time infrastructure status</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
             <div className="flex items-center gap-3">
               <Database className="h-5 w-5 text-muted-foreground" />
               <div>
@@ -292,7 +292,7 @@ export default function PlatformAdminDashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2">
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -352,7 +352,7 @@ export default function PlatformAdminDashboard() {
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
         <Link href="/admin/organizations">
           <Card className="hover-elevate cursor-pointer transition-colors">
             <CardHeader>

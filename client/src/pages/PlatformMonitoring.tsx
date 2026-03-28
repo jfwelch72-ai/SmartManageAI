@@ -769,7 +769,8 @@ export default function PlatformMonitoring() {
       </div>
 
       <Tabs defaultValue="api" className="space-y-4">
-        <TabsList className="flex flex-wrap">
+        <div className="overflow-x-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
+        <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
           <TabsTrigger value="api" data-testid="tab-api-usage">
             <Activity className="h-4 w-4 mr-1.5" /> API Usage
           </TabsTrigger>
@@ -786,6 +787,7 @@ export default function PlatformMonitoring() {
             <FileText className="h-4 w-4 mr-1.5" /> Audit Logs
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="api">
           <ApiUsageTab />

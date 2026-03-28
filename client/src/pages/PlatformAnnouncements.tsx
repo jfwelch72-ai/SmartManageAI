@@ -138,8 +138,8 @@ export default function PlatformAnnouncements() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="p-6 space-y-6">
-        <div className="flex items-center gap-4">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <Link href="/admin">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
@@ -147,10 +147,10 @@ export default function PlatformAnnouncements() {
             </Button>
           </Link>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold" data-testid="text-announcements-title">Platform Announcements</h1>
-            <p className="text-muted-foreground">Manage platform-wide announcements shown to all organizations</p>
+            <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-announcements-title">Platform Announcements</h1>
+            <p className="text-muted-foreground text-sm">Manage platform-wide announcements shown to all organizations</p>
           </div>
-          <Button onClick={openCreate} data-testid="button-create-announcement">
+          <Button onClick={openCreate} className="w-full sm:w-auto" data-testid="button-create-announcement">
             <Plus className="h-4 w-4 mr-2" />
             New Announcement
           </Button>
@@ -170,6 +170,7 @@ export default function PlatformAnnouncements() {
             ) : !announcements?.length ? (
               <p className="text-muted-foreground text-center py-8">No announcements yet. Create one to get started.</p>
             ) : (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -229,6 +230,7 @@ export default function PlatformAnnouncements() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>

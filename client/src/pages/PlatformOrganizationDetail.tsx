@@ -380,24 +380,25 @@ export default function PlatformOrganizationDetail() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="p-6 space-y-6">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/admin/organizations">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
-              Back to Organizations
+              <span className="hidden sm:inline">Back to Organizations</span>
+              <span className="sm:hidden">Back</span>
           </Button>
         </Link>
       </div>
 
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-4">
-          <div className="h-16 w-16 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Building2 className="h-8 w-8 text-primary" />
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="h-12 w-12 sm:h-16 sm:w-16 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <Building2 className="h-6 w-6 sm:h-8 sm:w-8 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold" data-testid="text-org-name">{organization.name}</h1>
-            <p className="text-muted-foreground">{organization.slug}</p>
+            <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-org-name">{organization.name}</h1>
+            <p className="text-muted-foreground text-sm">{organization.slug}</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -461,7 +462,7 @@ export default function PlatformOrganizationDetail() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">Users</CardTitle>
@@ -557,7 +558,8 @@ export default function PlatformOrganizationDetail() {
       )}
 
       <Tabs defaultValue="users" className="space-y-4">
-        <TabsList>
+        <div className="overflow-x-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
+        <TabsList className="inline-flex w-auto min-w-full sm:min-w-0">
           <TabsTrigger value="users" data-testid="tab-org-users">
             <Users className="h-4 w-4 mr-2" />
             Users ({orgUsers.length})
@@ -597,6 +599,7 @@ export default function PlatformOrganizationDetail() {
             Financials
           </TabsTrigger>
         </TabsList>
+        </div>
 
         <TabsContent value="users">
           <Card>
@@ -605,6 +608,7 @@ export default function PlatformOrganizationDetail() {
               <CardDescription>All users belonging to this organization</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -651,6 +655,7 @@ export default function PlatformOrganizationDetail() {
                   )}
                 </TableBody>
               </Table>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -665,6 +670,7 @@ export default function PlatformOrganizationDetail() {
               {sowLoading ? (
                 <Skeleton className="h-40 w-full" />
               ) : (
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -698,6 +704,7 @@ export default function PlatformOrganizationDetail() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -713,6 +720,7 @@ export default function PlatformOrganizationDetail() {
               {workTypesLoading ? (
                 <Skeleton className="h-40 w-full" />
               ) : (
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -744,6 +752,7 @@ export default function PlatformOrganizationDetail() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -768,6 +777,7 @@ export default function PlatformOrganizationDetail() {
                   </p>
                 ) : (
                   <>
+                    <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -794,6 +804,7 @@ export default function PlatformOrganizationDetail() {
                         ))}
                       </TableBody>
                     </Table>
+                    </div>
                     {activityData.total > activityData.limit && (
                       <div className="flex items-center justify-between mt-4">
                         <span className="text-xs text-muted-foreground" data-testid="text-activity-pagination">
@@ -901,6 +912,7 @@ export default function PlatformOrganizationDetail() {
               </CardHeader>
               <CardContent>
                 {projectsLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -926,6 +938,7 @@ export default function PlatformOrganizationDetail() {
                       )}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -942,6 +955,7 @@ export default function PlatformOrganizationDetail() {
               </CardHeader>
               <CardContent>
                 {bidsLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -967,6 +981,7 @@ export default function PlatformOrganizationDetail() {
                       )}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -983,6 +998,7 @@ export default function PlatformOrganizationDetail() {
               </CardHeader>
               <CardContent>
                 {contractsLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1008,6 +1024,7 @@ export default function PlatformOrganizationDetail() {
                       )}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1024,6 +1041,7 @@ export default function PlatformOrganizationDetail() {
               </CardHeader>
               <CardContent>
                 {equipmentLoading ? <Skeleton className="h-40 w-full" /> : (
+                  <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1049,6 +1067,7 @@ export default function PlatformOrganizationDetail() {
                       )}
                     </TableBody>
                   </Table>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1065,7 +1084,7 @@ export default function PlatformOrganizationDetail() {
               </CardHeader>
               <CardContent>
                 {financialsLoading ? <Skeleton className="h-40 w-full" /> : orgFinancials ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                     <div className="p-4 rounded-lg border bg-card" data-testid="metric-total-contract-value">
                       <div className="text-2xl font-bold">${Number(orgFinancials.totalContractValue || 0).toLocaleString()}</div>
                       <div className="text-xs text-muted-foreground">Total Contract Value</div>

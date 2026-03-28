@@ -175,6 +175,7 @@ function WorkflowTemplatesSection() {
           ) : !templates?.length ? (
             <p className="text-muted-foreground text-center py-8">No global workflow templates yet.</p>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -219,6 +220,7 @@ function WorkflowTemplatesSection() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -300,8 +302,8 @@ export default function PlatformSupportTools() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="p-6 space-y-6">
-        <div className="flex items-center gap-4">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div className="flex items-center gap-3 sm:gap-4">
           <Link href="/admin">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
@@ -309,8 +311,8 @@ export default function PlatformSupportTools() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold" data-testid="text-support-title">Support Tools</h1>
-            <p className="text-muted-foreground">Backend support tools for resolving user issues</p>
+            <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-support-title">Support Tools</h1>
+            <p className="text-muted-foreground text-sm">Backend support tools for resolving user issues</p>
           </div>
         </div>
 

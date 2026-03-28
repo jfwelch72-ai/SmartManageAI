@@ -81,9 +81,9 @@ export default function PlatformAnalytics() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="p-6 space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div className="flex items-center gap-4">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             <Link href="/admin">
               <Button variant="ghost" size="sm" data-testid="button-back-admin">
                 <ChevronLeft className="h-4 w-4 mr-1" />
@@ -91,12 +91,12 @@ export default function PlatformAnalytics() {
               </Button>
             </Link>
             <div>
-              <h1 className="text-2xl font-bold" data-testid="text-analytics-title">Platform Analytics</h1>
-              <p className="text-muted-foreground">Usage metrics and activity across all organizations</p>
+              <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-analytics-title">Platform Analytics</h1>
+              <p className="text-muted-foreground text-sm">Usage metrics and activity across all organizations</p>
             </div>
           </div>
           <Select value={days} onValueChange={(v) => { setDays(v); setActivityPage(1); }}>
-            <SelectTrigger className="w-[160px]" data-testid="select-date-range">
+            <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-date-range">
               <SelectValue placeholder="Time period" />
             </SelectTrigger>
             <SelectContent>
@@ -108,7 +108,7 @@ export default function PlatformAnalytics() {
         </div>
 
         {isLoading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <Card key={i}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
@@ -123,7 +123,7 @@ export default function PlatformAnalytics() {
           </div>
         ) : (
           <>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
                   <CardTitle className="text-sm font-medium">MRR</CardTitle>
@@ -302,6 +302,7 @@ export default function PlatformAnalytics() {
                 </div>
               </CardHeader>
               <CardContent>
+                <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -331,6 +332,7 @@ export default function PlatformAnalytics() {
                     )}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
           </>

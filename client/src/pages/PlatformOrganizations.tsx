@@ -121,8 +121,8 @@ export default function PlatformOrganizations() {
 
   return (
     <div className="min-h-screen bg-background">
-      <main className="p-6 space-y-6">
-        <div className="flex items-center gap-4">
+      <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
           <Link href="/admin">
             <Button variant="ghost" size="sm">
               <ChevronLeft className="h-4 w-4 mr-1" />
@@ -130,10 +130,10 @@ export default function PlatformOrganizations() {
             </Button>
           </Link>
           <div className="flex-1">
-            <h1 className="text-2xl font-bold" data-testid="text-organizations-title">Organizations</h1>
-            <p className="text-muted-foreground">Manage all contractor companies on the platform</p>
+            <h1 className="text-xl sm:text-2xl font-bold" data-testid="text-organizations-title">Organizations</h1>
+            <p className="text-muted-foreground text-sm">Manage all contractor companies on the platform</p>
           </div>
-          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-org">
+          <Button onClick={() => setCreateDialogOpen(true)} className="w-full sm:w-auto" data-testid="button-create-org">
             <Plus className="h-4 w-4 mr-2" />
             Create Organization
           </Button>
@@ -153,7 +153,7 @@ export default function PlatformOrganizations() {
               />
             </div>
             <Select value={tradeFilter} onValueChange={setTradeFilter}>
-              <SelectTrigger className="w-[200px]" data-testid="select-trade-filter">
+              <SelectTrigger className="w-full sm:w-[200px]" data-testid="select-trade-filter">
                 <SelectValue placeholder="Filter by trade" />
               </SelectTrigger>
               <SelectContent>
@@ -175,6 +175,7 @@ export default function PlatformOrganizations() {
               ))}
             </div>
           ) : (
+            <div className="overflow-x-auto -mx-3 sm:-mx-6 px-3 sm:px-6">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -235,6 +236,7 @@ export default function PlatformOrganizations() {
                 )}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
