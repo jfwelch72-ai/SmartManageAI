@@ -355,8 +355,8 @@ export function AIAssistantWidget() {
 
       {showMilestone && milestoneData && (
         <div 
-          className="fixed bottom-24 right-6 bg-gradient-to-r from-primary/90 to-purple-500/90 text-primary-foreground rounded-lg shadow-lg p-4 max-w-xs animate-in slide-in-from-right duration-300"
-          style={{ zIndex: 9998 }}
+          className="fixed right-6 bg-gradient-to-r from-primary/90 to-purple-500/90 text-primary-foreground rounded-lg shadow-lg p-4 max-w-xs animate-in slide-in-from-right duration-300"
+          style={{ bottom: '130px', zIndex: 9998 }}
           data-testid="milestone-celebration"
         >
           <div className="flex items-center gap-3">

@@ -255,13 +255,14 @@ export default function VoiceDictation() {
         onClick={() => setIsOpen(true)}
         size="icon"
         className={cn(
-          "fixed bottom-6 right-6 z-50 h-14 w-14 rounded-full shadow-lg",
+          "fixed z-50 w-12 h-12 rounded-full shadow-lg",
           "bg-primary hover:bg-primary/90 text-primary-foreground",
           "transition-all hover:scale-105"
         )}
+        style={{ bottom: '72px', right: '24px' }}
         data-testid="button-floating-mic"
       >
-        <Mic className="h-6 w-6" />
+        <Mic className="h-5 w-5" />
       </Button>
 
       <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
