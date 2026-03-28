@@ -207,7 +207,7 @@ export default function VoiceDictation() {
           await queueOfflineRequest(
             `/api/projects/${projectId}/notes`,
             "POST",
-            { text: noteText, noteType: "DAILY_LOG" },
+            { text: noteText, noteType: "FIELD_NOTE" },
             "DAILY_REPORT"
           );
         }
@@ -225,7 +225,7 @@ export default function VoiceDictation() {
         const noteText = buildDailyReportText(transcript, aiResult);
         await apiRequest("POST", `/api/projects/${projectId}/notes`, {
           text: noteText,
-          noteType: "DAILY_LOG",
+          noteType: "FIELD_NOTE",
         });
       }
 
