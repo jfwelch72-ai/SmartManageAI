@@ -255,11 +255,11 @@ export default function VoiceDictation() {
         onClick={() => setIsOpen(true)}
         size="icon"
         className={cn(
-          "fixed z-50 w-12 h-12 rounded-full shadow-lg",
+          "fixed w-12 h-12 rounded-full shadow-lg",
           "bg-primary hover:bg-primary/90 text-primary-foreground",
           "transition-all hover:scale-105"
         )}
-        style={{ bottom: '72px', right: '24px' }}
+        style={{ bottom: '72px', right: '24px', zIndex: 9999 }}
         data-testid="button-floating-mic"
       >
         <Mic className="h-5 w-5" />
