@@ -1,7 +1,7 @@
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, type Column } from "drizzle-orm";
-import { requireAuth, requireRole, requireRoleOrFeature, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireRoleOrFeature, requireFeaturePermission, type AuthRequest } from "./auth";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { contracts, contractVersions, contractRedlines, contractApprovals, signatureRequests, type InsertContract, type Contract } from "@shared/schema";
 import { projects, domainEvents, changeOrders, users } from "@shared/schema";
@@ -21,6 +21,8 @@ interface ContractAttachment {
   stage: string;
   version: number | null;
 }
+
+router.use(requireAuth, requireFeaturePermission('canManageContracts'));
 
 const CONTRACT_MANAGE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
 const CONTRACT_VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"] as const;

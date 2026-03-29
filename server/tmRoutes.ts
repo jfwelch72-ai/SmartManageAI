@@ -1,7 +1,7 @@
 import { Express } from "express";
 import { db } from "./db";
 import { eq, and, desc, inArray } from "drizzle-orm";
-import { requireAuth, AuthRequest } from "./auth";
+import { requireAuth, requireFeaturePermission, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyApprovers, notifySubmitter, getApproverUserIds, notifyUsers } from "./services/approvalNotificationService";
 import { eventBus } from "./events";
@@ -33,7 +33,7 @@ function hasTMApprovalAccess(role: string): boolean {
 }
 
 function registerTMApprovalRoutes(app: Express) {
-  app.post("/api/tm-tickets/:ticketId/submit", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/tm-tickets/:ticketId/submit", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
     try {
       const { ticketId } = req.params;
       const userId = req.user!.id;
@@ -889,10 +889,14 @@ function hasTMCreateAccess(role: string): boolean {
 }
 
 export function registerTMTicketRoutes(app: Express) {
+  app.use("/api/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'));
+  app.use("/api/tm-billing", requireAuth, requireFeaturePermission('canAccessFinancials'));
+  app.use("/api/tm-invoices", requireAuth, requireFeaturePermission('canAccessFinancials'));
+
   registerTMApprovalRoutes(app);
   registerTMInvoiceRoutes(app);
 
-  app.get("/api/projects/:projectId/tm-tickets", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/projects/:projectId/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
     try {
       const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
       
@@ -977,7 +981,7 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:projectId/tm-tickets", requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/projects/:projectId/tm-tickets", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
       const userId = req.user!.id;
@@ -1535,7 +1539,7 @@ export function registerTMTicketRoutes(app: Express) {
     }
   });
 
-  app.get("/api/projects/:projectId/tm-summary", requireAuth, async (req: AuthRequest, res) => {
+  app.get("/api/projects/:projectId/tm-summary", requireAuth, requireFeaturePermission('canAccessTimeMaterial'), async (req: AuthRequest, res) => {
     try {
       const { projectId } = req.params;
       

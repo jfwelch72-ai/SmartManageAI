@@ -59,7 +59,21 @@ export type FeatureKey =
   | "DATA_RETENTION"
   | "PRIVACY_COMPLIANCE"
   | "SESSION_MANAGEMENT"
-  | "MODIFIER_AI_SUGGEST";
+  | "MODIFIER_AI_SUGGEST"
+  | "CONTRACTS"
+  | "HIRING_ATS"
+  | "SAFETY_TRAINING"
+  | "SUBCONTRACT_MGMT"
+  | "T_AND_M"
+  | "LEAVE_MANAGEMENT"
+  | "CPM_SCHEDULING"
+  | "BIM_VIEWER"
+  | "WORKFLOW_BUILDER"
+  | "DASHBOARD_CUSTOMIZATION"
+  | "PUNCH_LIST"
+  | "WARRANTY_MODULE"
+  | "RISK_MANAGEMENT"
+  | "ASSET_MANAGEMENT";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -80,6 +94,15 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "DOCUMENT_CONTROL",
     "PROJECT_HEALTH_SCORE",
     "MODIFIER_AI_SUGGEST",
+    "CONTRACTS",
+    "HIRING_ATS",
+    "SAFETY_TRAINING",
+    "SUBCONTRACT_MGMT",
+    "T_AND_M",
+    "LEAVE_MANAGEMENT",
+    "PUNCH_LIST",
+    "WARRANTY_MODULE",
+    "DASHBOARD_CUSTOMIZATION",
   ],
   enterprise: [
     // Scale ($579) or Hustler ($1199): Everything in Growth, plus:
@@ -105,6 +128,20 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "PRIVACY_COMPLIANCE",
     "SESSION_MANAGEMENT",
     "MODIFIER_AI_SUGGEST",
+    "CONTRACTS",
+    "HIRING_ATS",
+    "SAFETY_TRAINING",
+    "SUBCONTRACT_MGMT",
+    "T_AND_M",
+    "LEAVE_MANAGEMENT",
+    "PUNCH_LIST",
+    "WARRANTY_MODULE",
+    "DASHBOARD_CUSTOMIZATION",
+    "CPM_SCHEDULING",
+    "BIM_VIEWER",
+    "WORKFLOW_BUILDER",
+    "RISK_MANAGEMENT",
+    "ASSET_MANAGEMENT",
   ],
 };
 
@@ -396,6 +433,62 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   MODIFIER_AI_SUGGEST: {
     name: "AI Modifier Suggestions",
     description: "AI-powered scope modifier recommendations for estimating",
+  },
+  CONTRACTS: {
+    name: "Contracts Management",
+    description: "Contract creation, versioning, redlines, and approval workflows",
+  },
+  HIRING_ATS: {
+    name: "Hiring & ATS",
+    description: "Applicant tracking, job postings, candidate pipeline management",
+  },
+  SAFETY_TRAINING: {
+    name: "Safety Training",
+    description: "Safety program management and training assignment tracking",
+  },
+  SUBCONTRACT_MGMT: {
+    name: "Subcontract Management",
+    description: "Subcontractor contracts, payments, and billing schedules",
+  },
+  T_AND_M: {
+    name: "Time & Material Billing",
+    description: "T&M ticket management, approvals, and invoicing",
+  },
+  LEAVE_MANAGEMENT: {
+    name: "Leave Management",
+    description: "Employee leave requests, approvals, and balance tracking",
+  },
+  CPM_SCHEDULING: {
+    name: "CPM Scheduling",
+    description: "Critical path method scheduling and Gantt charts",
+  },
+  BIM_VIEWER: {
+    name: "BIM Viewer",
+    description: "3D building information model viewing and collaboration",
+  },
+  WORKFLOW_BUILDER: {
+    name: "Workflow Builder",
+    description: "Custom automated workflow creation and management",
+  },
+  DASHBOARD_CUSTOMIZATION: {
+    name: "Dashboard Customization",
+    description: "Custom dashboard layouts, widgets, and role-based views",
+  },
+  PUNCH_LIST: {
+    name: "Punch List",
+    description: "Project closeout punch list tracking and management",
+  },
+  WARRANTY_MODULE: {
+    name: "Warranty Module",
+    description: "Post-construction warranty tracking and claims management",
+  },
+  RISK_MANAGEMENT: {
+    name: "Risk Management",
+    description: "Project risk identification, assessment, and mitigation tracking",
+  },
+  ASSET_MANAGEMENT: {
+    name: "Asset Management",
+    description: "Company asset tracking, depreciation, and lifecycle management",
   },
 };
 

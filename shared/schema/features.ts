@@ -4305,6 +4305,15 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canManageEquipment: boolean("can_manage_equipment").notNull().default(false),
   canManageProcurement: boolean("can_manage_procurement").notNull().default(false),
   
+  // Extended permissions
+  canManageContracts: boolean("can_manage_contracts").notNull().default(false),
+  canManageHiring: boolean("can_manage_hiring").notNull().default(false),
+  canManageSafety: boolean("can_manage_safety").notNull().default(false),
+  canManageScheduling: boolean("can_manage_scheduling").notNull().default(false),
+  canAccessBidNetwork: boolean("can_access_bid_network").notNull().default(false),
+  canManageLeave: boolean("can_manage_leave").notNull().default(false),
+  canAccessTimeMaterial: boolean("can_access_time_material").notNull().default(false),
+  
   // Granted by admin
   grantedByUserId: varchar("granted_by_user_id").references(() => users.id),
   grantedAt: timestamp("granted_at"),

@@ -459,6 +459,13 @@ export interface FeaturePerms {
   canManageWebsite?: boolean;
   canManageEquipment?: boolean;
   canManageProcurement?: boolean;
+  canManageContracts?: boolean;
+  canManageHiring?: boolean;
+  canManageSafety?: boolean;
+  canManageScheduling?: boolean;
+  canAccessBidNetwork?: boolean;
+  canManageLeave?: boolean;
+  canAccessTimeMaterial?: boolean;
 }
 
 /**
@@ -534,13 +541,13 @@ export const NavigationConfig = {
       href: "/bid-network",
       label: "Bid Network",
       testId: "nav-bid-network",
-      visible: (role?: string) => canAccessBidNetworkAsGC(role),
+      visible: (role?: string, perms?: FeaturePerms) => canAccessBidNetworkAsGC(role) || perms?.canAccessBidNetwork === true,
     },
     {
       href: "/historical-costs",
       label: "Historical Costs",
       testId: "nav-historical-costs",
-      visible: (role?: string) => canAccessBids(role),
+      visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role) || perms?.canAccessFinancials === true,
     },
   ],
 
@@ -555,7 +562,7 @@ export const NavigationConfig = {
       href: "/procurement-module",
       label: "Procurement",
       testId: "nav-procurement",
-      visible: (role?: string) => hasProcurementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasProcurementAccess(role) || perms?.canManageProcurement === true,
     },
   ],
 
@@ -576,13 +583,13 @@ export const NavigationConfig = {
       href: "/tm-daily",
       label: "T&M Daily Sheets",
       testId: "nav-tm-daily",
-      visible: (role?: string) => hasManagementAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canAccessTimeMaterial === true,
     },
     {
       href: "/crews",
       label: "Crews & Skills",
       testId: "nav-crews",
-      visible: (role?: string) => isOrganizationAdmin(role),
+      visible: (role?: string, perms?: FeaturePerms) => isOrganizationAdmin(role) || perms?.canManageScheduling === true,
     },
     {
       href: "/manage-workers",
@@ -600,13 +607,13 @@ export const NavigationConfig = {
       href: "/safety-training",
       label: "Safety Training",
       testId: "nav-safety-training",
-      visible: (role?: string) => hasSafetyAccess(role) || isOrganizationAdmin(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role) || isOrganizationAdmin(role) || perms?.canManageSafety === true,
     },
     {
       href: "/leave-management",
       label: "Leave Management",
       testId: "nav-leave-management",
-      visible: (role?: string) => hasContractorAccess(role),
+      visible: (role?: string, perms?: FeaturePerms) => hasContractorAccess(role) || perms?.canManageLeave === true,
     },
   ],
 
@@ -627,13 +634,13 @@ export const NavigationConfig = {
       href: "/contracts",
       label: "Contracts",
       testId: "nav-contracts",
-      visible: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "PROJECT_ENGINEER" || perms?.canManageContracts === true,
     },
     {
       href: "/clause-library",
       label: "Clause Library",
       testId: "nav-clause-library",
-      visible: (role?: string) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "SUPER_ADMIN" || role === "ADMIN" || role === "MANAGER" || perms?.canManageContracts === true,
     },
     {
       href: "/subcontracts",
@@ -705,49 +712,49 @@ export const NavigationConfig = {
       href: "/hiring",
       label: "Dashboard",
       testId: "nav-hiring-dashboard",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/jobs",
       label: "Jobs",
       testId: "nav-hiring-jobs",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/candidates",
       label: "Candidates",
       testId: "nav-hiring-candidates",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/pipeline",
       label: "Pipeline",
       testId: "nav-hiring-pipeline",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/interviews",
       label: "Interviews",
       testId: "nav-hiring-interviews",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/tasks",
       label: "Tasks",
       testId: "nav-hiring-tasks",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/analytics",
       label: "Analytics",
       testId: "nav-hiring-analytics",
-      visible: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/settings",
       label: "Settings",
       testId: "nav-hiring-settings",
-      visible: (role?: string) => role === "ADMIN",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || perms?.canManageHiring === true,
     },
   ],
 

@@ -42,6 +42,13 @@ interface UserPermissions {
   canManageWebsite: boolean;
   canManageEquipment: boolean;
   canManageProcurement: boolean;
+  canManageContracts: boolean;
+  canManageHiring: boolean;
+  canManageSafety: boolean;
+  canManageScheduling: boolean;
+  canAccessBidNetwork: boolean;
+  canManageLeave: boolean;
+  canAccessTimeMaterial: boolean;
 }
 
 interface ColorPalette {
@@ -134,7 +141,7 @@ export function DashboardCustomizationProvider({ children }: { children: React.R
   const [isEditMode, setIsEditMode] = useState(false);
   const [localLayout, setLocalLayout] = useState<DashboardLayoutConfig | null>(null);
 
-  const { data: permissions = { canAccessFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
+  const { data: permissions = { canAccessFinancials: false, canManagePayroll: false, canAccessReports: false, canUseAiFeatures: false, canPostSocialMedia: false, canManageWebsite: false, canManageEquipment: false, canManageProcurement: false, canManageContracts: false, canManageHiring: false, canManageSafety: false, canManageScheduling: false, canAccessBidNetwork: false, canManageLeave: false, canAccessTimeMaterial: false }, isLoading: isLoadingPermissions } = useQuery<UserPermissions>({
     queryKey: ["/api/dashboard/my-permissions"],
   });
 

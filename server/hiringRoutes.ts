@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
 import { db } from "./db";
-import { requireAuth, requireRole } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission } from "./auth";
 import type { AuthRequest } from "./auth";
 import { logCreate, logUpdate, logAudit } from "./auditLogger";
 import { insertNotification } from "./services/notificationService";
@@ -113,7 +113,7 @@ async function logActivity(
 // ============================================
 // FEATURE-FLAG MIDDLEWARE
 // ============================================
-router.use(requireAuth, async (req: AuthRequest, res, next) => {
+router.use(requireAuth, requireFeaturePermission('canManageHiring'), async (req: AuthRequest, res, next) => {
   const org = req.user?.organizationId;
   if (!org) return res.status(403).json({ error: "Organization context required" });
   if (req.user?.role === "SUPER_ADMIN") return next();

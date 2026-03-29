@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "./db";
-import { requireAuth } from "./auth";
+import { requireAuth, requireFeaturePermission } from "./auth";
 import { safetyTrainings, safetyTrainingAssignments, insertSafetyTrainingSchema, insertSafetyTrainingAssignmentSchema, users, organizations } from "@shared/schema";
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -8,12 +8,14 @@ import type { AuthRequest } from "./auth";
 
 const router = Router();
 
+router.use(requireAuth, requireFeaturePermission('canManageSafety'));
+
 function isSafetyAdmin(role?: string): boolean {
   return ["ADMIN", "SUPER_ADMIN", "SAFETY_MANAGER", "HR_MANAGER", "MANAGER"].includes(role || "");
 }
 
 // GET /api/safety-training — list all training programs for org
-router.get("/api/safety-training", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/safety-training", async (req: AuthRequest, res) => {
   try {
     const orgId = req.user!.organizationId;
     const trainings = await db

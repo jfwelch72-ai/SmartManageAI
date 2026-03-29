@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { db } from "./db";
 import { leaveTypes, leaveRequests, users, calendarEvents, organizations } from "@shared/schema";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { eq, and, sql, desc, count } from "drizzle-orm";
 import { z } from "zod";
 import { insertNotification, insertNotifications } from "./services/notificationService";
 import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
+
+router.use(requireAuth, requireFeaturePermission('canManageLeave'));
 
 async function seedDefaultLeaveTypes(orgId: string) {
   const existing = await db.select({ id: leaveTypes.id }).from(leaveTypes).where(eq(leaveTypes.organizationId, orgId)).limit(1);
@@ -27,7 +29,7 @@ async function seedDefaultLeaveTypes(orgId: string) {
   );
 }
 
-router.get("/api/leave/types", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/leave/types", async (req: AuthRequest, res) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess || !orgId) {

@@ -17,7 +17,7 @@ const router = Router();
 // Routes from dashboardLayoutRoutes.ts
 // ========================================
 
-type FeaturePermissionKeys = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement';
+type FeaturePermissionKeys = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement' | 'canManageContracts' | 'canManageHiring' | 'canManageSafety' | 'canManageScheduling' | 'canAccessBidNetwork' | 'canManageLeave' | 'canAccessTimeMaterial';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean>;
 
@@ -30,6 +30,13 @@ const ALL_FALSE: PermissionSet = {
   canManageWebsite: false,
   canManageEquipment: false,
   canManageProcurement: false,
+  canManageContracts: false,
+  canManageHiring: false,
+  canManageSafety: false,
+  canManageScheduling: false,
+  canAccessBidNetwork: false,
+  canManageLeave: false,
+  canAccessTimeMaterial: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -41,6 +48,13 @@ const ALL_TRUE: PermissionSet = {
   canManageWebsite: true,
   canManageEquipment: true,
   canManageProcurement: true,
+  canManageContracts: true,
+  canManageHiring: true,
+  canManageSafety: true,
+  canManageScheduling: true,
+  canAccessBidNetwork: true,
+  canManageLeave: true,
+  canAccessTimeMaterial: true,
 };
 
 export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
@@ -55,6 +69,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canManageWebsite: false,
     canManageEquipment: true,
     canManageProcurement: true,
+    canManageContracts: true,
+    canManageHiring: true,
+    canManageSafety: true,
+    canManageScheduling: true,
+    canAccessBidNetwork: true,
+    canManageLeave: true,
+    canAccessTimeMaterial: true,
   },
   SUPERINTENDENT: {
     canAccessFinancials: true,
@@ -65,6 +86,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canManageWebsite: false,
     canManageEquipment: true,
     canManageProcurement: false,
+    canManageContracts: true,
+    canManageHiring: false,
+    canManageSafety: true,
+    canManageScheduling: true,
+    canAccessBidNetwork: false,
+    canManageLeave: false,
+    canAccessTimeMaterial: true,
   },
   ESTIMATOR: {
     canAccessFinancials: true,
@@ -75,6 +103,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canManageWebsite: false,
     canManageEquipment: false,
     canManageProcurement: false,
+    canManageContracts: false,
+    canManageHiring: false,
+    canManageSafety: false,
+    canManageScheduling: false,
+    canAccessBidNetwork: true,
+    canManageLeave: false,
+    canAccessTimeMaterial: false,
   },
   OFFICE_MANAGER: {
     canAccessFinancials: true,
@@ -85,6 +120,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canManageWebsite: false,
     canManageEquipment: false,
     canManageProcurement: false,
+    canManageContracts: false,
+    canManageHiring: true,
+    canManageSafety: false,
+    canManageScheduling: false,
+    canAccessBidNetwork: false,
+    canManageLeave: true,
+    canAccessTimeMaterial: false,
   },
   HUSTLER: {
     canAccessFinancials: true,
@@ -95,6 +137,13 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canManageWebsite: false,
     canManageEquipment: false,
     canManageProcurement: false,
+    canManageContracts: false,
+    canManageHiring: true,
+    canManageSafety: false,
+    canManageScheduling: false,
+    canAccessBidNetwork: false,
+    canManageLeave: false,
+    canAccessTimeMaterial: false,
   },
   MAINTENANCE_MANAGER: {
     ...ALL_FALSE,
@@ -111,11 +160,14 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   SAFETY_MANAGER: {
     ...ALL_FALSE,
     canAccessReports: true,
+    canManageSafety: true,
   },
   HR_MANAGER: {
     ...ALL_FALSE,
     canAccessReports: true,
     canManagePayroll: true,
+    canManageHiring: true,
+    canManageLeave: true,
   },
   SALES: {
     ...ALL_FALSE,
@@ -129,6 +181,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
   PROJECT_ENGINEER: {
     ...ALL_FALSE,
     canAccessReports: true,
+    canManageContracts: true,
   },
   DISPATCHER: { ...ALL_FALSE },
   HOURLY_EMPLOYEE: { ...ALL_FALSE },
@@ -150,6 +203,13 @@ export function mergePermissions(roleDefaults: PermissionSet, dbPerms: Partial<P
     canManageWebsite: roleDefaults.canManageWebsite || (dbPerms?.canManageWebsite ?? false),
     canManageEquipment: roleDefaults.canManageEquipment || (dbPerms?.canManageEquipment ?? false),
     canManageProcurement: roleDefaults.canManageProcurement || (dbPerms?.canManageProcurement ?? false),
+    canManageContracts: roleDefaults.canManageContracts || (dbPerms?.canManageContracts ?? false),
+    canManageHiring: roleDefaults.canManageHiring || (dbPerms?.canManageHiring ?? false),
+    canManageSafety: roleDefaults.canManageSafety || (dbPerms?.canManageSafety ?? false),
+    canManageScheduling: roleDefaults.canManageScheduling || (dbPerms?.canManageScheduling ?? false),
+    canAccessBidNetwork: roleDefaults.canAccessBidNetwork || (dbPerms?.canAccessBidNetwork ?? false),
+    canManageLeave: roleDefaults.canManageLeave || (dbPerms?.canManageLeave ?? false),
+    canAccessTimeMaterial: roleDefaults.canAccessTimeMaterial || (dbPerms?.canAccessTimeMaterial ?? false),
   };
 }
 
@@ -183,6 +243,13 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
         canManageWebsite: perm?.canManageWebsite || false,
         canManageEquipment: perm?.canManageEquipment || false,
         canManageProcurement: perm?.canManageProcurement || false,
+        canManageContracts: perm?.canManageContracts || false,
+        canManageHiring: perm?.canManageHiring || false,
+        canManageSafety: perm?.canManageSafety || false,
+        canManageScheduling: perm?.canManageScheduling || false,
+        canAccessBidNetwork: perm?.canAccessBidNetwork || false,
+        canManageLeave: perm?.canManageLeave || false,
+        canAccessTimeMaterial: perm?.canAccessTimeMaterial || false,
       };
       const effective = mergePermissions(roleDefaults, dbPerms);
       return {
@@ -220,6 +287,13 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
       canManageWebsite: z.boolean(),
       canManageEquipment: z.boolean(),
       canManageProcurement: z.boolean(),
+      canManageContracts: z.boolean(),
+      canManageHiring: z.boolean(),
+      canManageSafety: z.boolean(),
+      canManageScheduling: z.boolean(),
+      canAccessBidNetwork: z.boolean(),
+      canManageLeave: z.boolean(),
+      canAccessTimeMaterial: z.boolean(),
     });
 
     const data = schema.parse(req.body);
@@ -294,6 +368,13 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
       canManageWebsite: permission.canManageWebsite ?? false,
       canManageEquipment: permission.canManageEquipment ?? false,
       canManageProcurement: permission.canManageProcurement ?? false,
+      canManageContracts: permission.canManageContracts ?? false,
+      canManageHiring: permission.canManageHiring ?? false,
+      canManageSafety: permission.canManageSafety ?? false,
+      canManageScheduling: permission.canManageScheduling ?? false,
+      canAccessBidNetwork: permission.canAccessBidNetwork ?? false,
+      canManageLeave: permission.canManageLeave ?? false,
+      canAccessTimeMaterial: permission.canAccessTimeMaterial ?? false,
     } : null;
 
     res.json(mergePermissions(roleDefaults, dbPerms));

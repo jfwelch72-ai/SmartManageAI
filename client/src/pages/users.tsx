@@ -64,6 +64,13 @@ import {
   ChevronUp,
   CheckCircle2,
   XCircle,
+  FileText,
+  Users,
+  Shield,
+  CalendarClock,
+  Network,
+  CalendarOff,
+  Clock,
 } from "lucide-react";
 import type { SelectUser } from "@shared/schema";
 
@@ -76,6 +83,13 @@ interface PermissionSet {
   canManageWebsite: boolean;
   canManageEquipment: boolean;
   canManageProcurement: boolean;
+  canManageContracts: boolean;
+  canManageHiring: boolean;
+  canManageSafety: boolean;
+  canManageScheduling: boolean;
+  canAccessBidNetwork: boolean;
+  canManageLeave: boolean;
+  canAccessTimeMaterial: boolean;
 }
 
 interface UserWithPermissions extends SelectUser {
@@ -87,6 +101,13 @@ interface UserWithPermissions extends SelectUser {
   canManageWebsite?: boolean;
   canManageEquipment?: boolean;
   canManageProcurement?: boolean;
+  canManageContracts?: boolean;
+  canManageHiring?: boolean;
+  canManageSafety?: boolean;
+  canManageScheduling?: boolean;
+  canAccessBidNetwork?: boolean;
+  canManageLeave?: boolean;
+  canAccessTimeMaterial?: boolean;
   roleDefaults?: PermissionSet;
   effective?: PermissionSet;
   grantedAt?: string;
@@ -321,6 +342,28 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
       permissions: [
         { key: "canManageEquipment" as const, label: "Equipment", icon: Wrench, description: "Manage equipment and maintenance records" },
         { key: "canManageProcurement" as const, label: "Procurement", icon: ShoppingCart, description: "Manage procurement and vendor pricing" },
+      ],
+    },
+    {
+      label: "Contracts & Hiring",
+      permissions: [
+        { key: "canManageContracts" as const, label: "Contracts", icon: FileText, description: "Manage contracts, clause library, and approvals" },
+        { key: "canManageHiring" as const, label: "Hiring & ATS", icon: Users, description: "Manage job postings, candidates, and hiring pipeline" },
+      ],
+    },
+    {
+      label: "Safety & Leave",
+      permissions: [
+        { key: "canManageSafety" as const, label: "Safety Training", icon: Shield, description: "Manage safety programs and training assignments" },
+        { key: "canManageLeave" as const, label: "Leave Management", icon: CalendarOff, description: "Manage leave requests and approvals" },
+      ],
+    },
+    {
+      label: "Scheduling & T&M",
+      permissions: [
+        { key: "canManageScheduling" as const, label: "Scheduling & Crews", icon: CalendarClock, description: "Manage crews, scheduling, and time entries" },
+        { key: "canAccessTimeMaterial" as const, label: "T&M Billing", icon: Clock, description: "Access T&M daily sheets and billing" },
+        { key: "canAccessBidNetwork" as const, label: "Bid Network", icon: Network, description: "Access bid network and solicitations" },
       ],
     },
   ];

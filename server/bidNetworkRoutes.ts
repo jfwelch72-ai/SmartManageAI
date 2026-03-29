@@ -12,7 +12,7 @@ import {
   users
 } from "@shared/schema";
 import { eq, and, or, desc, sql, isNull, ne, inArray, like } from "drizzle-orm";
-import { requireAuth, requireRole, AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { insertNotifications } from "./services/notificationService";
 import { 
@@ -23,6 +23,8 @@ import {
 } from "./bidNetworkNotifications";
 
 const router = Router();
+
+router.use(requireAuth, requireFeaturePermission('canAccessBidNetwork'));
 
 // ============================================
 // ORGANIZATION NETWORK SETTINGS

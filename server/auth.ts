@@ -232,7 +232,7 @@ export function getEffectiveRole(user: SanitizedUser): UserRole {
   return (user.effectiveRole || user.role) as UserRole;
 }
 
-export type FeaturePermissionKey = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement';
+export type FeaturePermissionKey = 'canAccessFinancials' | 'canManagePayroll' | 'canAccessReports' | 'canUseAiFeatures' | 'canPostSocialMedia' | 'canManageWebsite' | 'canManageEquipment' | 'canManageProcurement' | 'canManageContracts' | 'canManageHiring' | 'canManageSafety' | 'canManageScheduling' | 'canAccessBidNetwork' | 'canManageLeave' | 'canAccessTimeMaterial';
 
 export function requireFeaturePermission(permKey: FeaturePermissionKey) {
   return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {

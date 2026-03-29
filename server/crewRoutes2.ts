@@ -4,14 +4,16 @@ import {
   users, crews, crewMembers, userSkills, projects,
   insertCrewSchema, conversations, conversationParticipants,
 } from "@shared/schema";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { eq, desc, sql, and, ne, inArray } from "drizzle-orm";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 
 const router = Router();
 
-router.get("/api/crews", requireAuth, async (req: AuthRequest, res) => {
+router.use(requireAuth, requireFeaturePermission('canManageScheduling'));
+
+router.get("/api/crews", async (req: AuthRequest, res) => {
   try {
     const { getOrgIdForFilter } = await import("./orgFilter");
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
