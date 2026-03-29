@@ -719,7 +719,7 @@ router.post("/photo-auto-tag", requireAuth, async (req: AuthenticatedRequest, re
       .innerJoin(projects, eq(media.projectId, projects.id))
       .where(and(
         eq(media.id, mediaId),
-        eq(projects.organizationId, req.user!.organizationId)
+        eq(projects.gcOrganizationId, req.user!.organizationId)
       ));
 
     if (!mediaItem) {
