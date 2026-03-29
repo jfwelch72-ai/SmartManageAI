@@ -927,7 +927,7 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="daily-notes">
-            <DailyNoteFeed projectId={project.id} availableUsers={allUsers} />
+            <DailyNoteFeed projectId={project.id} projectCode={projectCode} availableUsers={allUsers} />
           </TabsContent>
 
           <TabsContent value="media">

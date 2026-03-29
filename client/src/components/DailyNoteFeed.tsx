@@ -48,10 +48,11 @@ interface MaterialBudget {
 
 interface DailyNoteFeedProps {
   projectId: string;
+  projectCode?: string;
   availableUsers?: Array<{ id: string; firstName: string; lastName: string; role?: string }>;
 }
 
-export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFeedProps) {
+export default function DailyNoteFeed({ projectId, projectCode, availableUsers }: DailyNoteFeedProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   const [newNote, setNewNote] = useState("");
@@ -89,8 +90,8 @@ export default function DailyNoteFeed({ projectId, availableUsers }: DailyNoteFe
   });
 
   const { data: scopeItems = [] } = useQuery<ScopeItem[]>({
-    queryKey: ["/api/projects", projectId, "scope-items"],
-    enabled: !!projectId && showMaterialTracking,
+    queryKey: ["/api/projects", projectCode || projectId, "scope"],
+    enabled: !!(projectCode || projectId) && showMaterialTracking,
   });
 
   const { data: materialBudgets = [] } = useQuery<{ budget: MaterialBudget; scopeItem: any }[]>({
