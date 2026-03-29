@@ -421,7 +421,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       recommendation: f.recommendation || "",
       location: f.location,
       photoId: f.photoId || b.id,
-      photo: null as AnalysisResult | null,
+      photo: (f.photoId ? results.find(r => r.id === f.photoId) : null) || null as AnalysisResult | null,
       batchId: b.id,
     }));
   });
@@ -644,11 +644,20 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                   {safetyIssues.map((issue, index) => {
                     const config = SEVERITY_CONFIG[issue.severity];
                     const SeverityIcon = config.icon;
+                    const isClickable = !!issue.photo;
                     return (
                       <div 
                         key={`${issue.photoId}-${index}`}
-                        className={cn("flex items-start gap-4 p-4 rounded-lg border", issue.photo && "hover-elevate cursor-pointer")}
-                        onClick={() => issue.photo && handleReviewPhoto(issue.photo)}
+                        className={cn(
+                          "flex items-start gap-4 p-4 rounded-lg border",
+                          isClickable && "hover-elevate cursor-pointer"
+                        )}
+                        onClick={() => {
+                          if (issue.photo) {
+                            handleReviewPhoto(issue.photo);
+                          }
+                        }}
+                        data-testid={`safety-issue-${index}`}
                       >
                         <div className={cn("p-2 rounded-lg flex-shrink-0", config.color)}>
                           <SeverityIcon className="w-5 h-5" />
@@ -659,13 +668,18 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                             {issue.location && (
                               <span className="text-sm text-muted-foreground">{issue.location}</span>
                             )}
+                            {issue.category && (
+                              <span className="text-xs text-muted-foreground capitalize">{issue.category.toLowerCase().replace(/_/g, " ")}</span>
+                            )}
                           </div>
                           <p className="font-medium">{issue.description}</p>
                           {issue.recommendation && (
                             <p className="text-sm text-muted-foreground mt-1">{issue.recommendation}</p>
                           )}
                         </div>
-                        <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+                        {isClickable && (
+                          <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0 mt-1" />
+                        )}
                       </div>
                     );
                   })}
