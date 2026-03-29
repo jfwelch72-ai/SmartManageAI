@@ -5,7 +5,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, and, sql, max, inArray } from "drizzle-orm";
 import { logAudit, logCreate } from "./auditLogger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
-import { verifyOrgAccess } from "./orgFilter";
+import { verifyOrgAccess, requireOrgOwnership } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
 import { createArcSegment } from "@shared/utils/geometry";
 import { z } from "zod";
@@ -435,21 +435,29 @@ async function verifyIssueSheetAccess(sheetId: string, user: { id: string; organ
 
   if (!sheet) return { allowed: false, sheet: null, reason: "Sheet not found" };
 
+  const isSuperAdmin = user.role === "SUPER_ADMIN";
+
   if (sheet.projectId) {
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, sheet.projectId)]
+      : [eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)];
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .where(and(...projectConditions))
       .limit(1);
     if (!project) return { allowed: false, sheet, reason: "Not found" };
     return { allowed: true, sheet };
   }
 
   if (sheet.bidId) {
+    const bidConditions = isSuperAdmin
+      ? [eq(bids.id, sheet.bidId)]
+      : [eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)];
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)))
+      .where(and(...bidConditions))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Not found" };
     return { allowed: true, sheet };
@@ -562,7 +570,7 @@ router.post("/api/takeoff/issues", requireAuth, async (req: AuthRequest, res) =>
 
     const [issue] = await db.insert(takeoffIssues).values({
       sheetId,
-      organizationId: user.orgId,
+      organizationId: user.organizationId,
       issueNumber: nextNumber,
       category: category || "QUESTION",
       severity: severity || "MEDIUM",
@@ -604,7 +612,8 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
       .where(eq(takeoffIssues.id, issueId))
       .limit(1);
 
-    if (!existingIssue || existingIssue.organizationId !== user.orgId) {
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!existingIssue || (!isSuperAdmin && existingIssue.organizationId !== user.organizationId)) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
@@ -630,10 +639,13 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
     if (description !== undefined) updates.description = sanitizeText(description);
     if (category !== undefined) updates.category = category;
 
+    const updateConditions = isSuperAdmin
+      ? [eq(takeoffIssues.id, issueId)]
+      : [eq(takeoffIssues.id, issueId), eq(takeoffIssues.organizationId, user.organizationId!)];
     const [updated] = await db
       .update(takeoffIssues)
       .set(updates)
-      .where(eq(takeoffIssues.id, issueId))
+      .where(and(...updateConditions))
       .returning();
 
     if (status !== undefined && status !== existingIssue.status) {
@@ -677,12 +689,13 @@ router.delete("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReque
       .where(eq(takeoffIssues.id, issueId))
       .limit(1);
 
-    if (!existingIssue || existingIssue.organizationId !== user.orgId) {
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!existingIssue || (!isSuperAdmin && existingIssue.organizationId !== user.organizationId)) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
 
-    const isAdmin = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPER_ADMIN";
+    const isAdmin = user.role === "ADMIN" || user.role === "MANAGER" || isSuperAdmin;
     const isCreator = existingIssue.createdById === user.id;
 
     if (!isAdmin && !isCreator) {
@@ -690,7 +703,11 @@ router.delete("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReque
       return;
     }
 
-    await db.delete(takeoffIssues).where(eq(takeoffIssues.id, issueId));
+    if (isSuperAdmin) {
+      await db.delete(takeoffIssues).where(eq(takeoffIssues.id, issueId));
+    } else {
+      await db.delete(takeoffIssues).where(and(eq(takeoffIssues.id, issueId), eq(takeoffIssues.organizationId, user.organizationId!)));
+    }
     res.json({ success: true });
   } catch (error) {
     console.error("Error deleting takeoff issue:", error);
@@ -710,7 +727,8 @@ router.post("/api/takeoff/issues/:issueId/comments", requireAuth, async (req: Au
       .where(eq(takeoffIssues.id, issueId))
       .limit(1);
 
-    if (!existingIssue || existingIssue.organizationId !== user.orgId) {
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!existingIssue || (!isSuperAdmin && existingIssue.organizationId !== user.organizationId)) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
@@ -761,12 +779,13 @@ router.delete("/api/takeoff/issue-comments/:commentId", requireAuth, async (req:
       .where(eq(takeoffIssueComments.id, commentId))
       .limit(1);
 
-    if (!comment || comment.issue?.organizationId !== user.orgId) {
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!comment || (!isSuperAdmin && comment.issue?.organizationId !== user.organizationId)) {
       res.status(404).json({ error: "Comment not found" });
       return;
     }
 
-    const isAdmin = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPER_ADMIN";
+    const isAdmin = user.role === "ADMIN" || user.role === "MANAGER" || isSuperAdmin;
     if (!isAdmin && comment.authorId !== user.id) {
       res.status(403).json({ error: "Cannot delete another user's comment" });
       return;
@@ -799,15 +818,20 @@ async function verifySheetAccess(sheetId: string, user: { id: string; organizati
 
   if (!sheet) return { allowed: false, sheet: null, reason: "Sheet not found" };
 
+  const isSuperAdmin = user.role === "SUPER_ADMIN";
+
   if (sheet.projectId) {
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, sheet.projectId)]
+      : [eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)];
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .where(and(...projectConditions))
       .limit(1);
     if (!project) return { allowed: false, sheet, reason: "Sheet not found" };
 
-    if (user.role !== "ADMIN" && user.role !== "MANAGER" && user.role !== "SUPER_ADMIN" && user.role !== "ESTIMATOR") {
+    if (!isSuperAdmin && user.role !== "ADMIN" && user.role !== "MANAGER" && user.role !== "ESTIMATOR") {
       const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
       const [assignment] = await db
         .select({ id: crewProjectAssignments.id })
@@ -821,10 +845,13 @@ async function verifySheetAccess(sheetId: string, user: { id: string; organizati
   }
 
   if (sheet.bidId) {
+    const bidConditions = isSuperAdmin
+      ? [eq(bids.id, sheet.bidId)]
+      : [eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)];
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)))
+      .where(and(...bidConditions))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Sheet not found" };
     return { allowed: true, sheet };
@@ -842,7 +869,6 @@ router.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRe
   try {
     const { code } = req.params;
 
-    // Get project
     const [project] = await db
       .select()
       .from(projects)
@@ -853,6 +879,7 @@ router.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRe
       res.status(404).json({ error: "Project not found" });
       return;
     }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
     // Get contracts with subcontractor details
     const contracts = await db
@@ -893,6 +920,22 @@ router.get("/api/subcontractor-contracts/:contractId/payments", requireAuth, asy
   try {
     const { contractId } = req.params;
 
+    const [contract] = await db
+      .select({ id: subcontractorContracts.id, projectId: subcontractorContracts.projectId })
+      .from(subcontractorContracts)
+      .where(eq(subcontractorContracts.id, contractId))
+      .limit(1);
+    if (!contract) {
+      res.status(404).json({ error: "Contract not found" });
+      return;
+    }
+    const [project] = await db
+      .select({ gcOrganizationId: projects.gcOrganizationId })
+      .from(projects)
+      .where(eq(projects.id, contract.projectId))
+      .limit(1);
+    if (!project || !verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
     const payments = await db
       .select()
       .from(subcontractorPayments)
@@ -912,7 +955,6 @@ router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, re
     const { contractId } = req.params;
     const { insertSubcontractorPaymentSchema } = await import("@shared/schema");
 
-    // Verify contract exists
     const [contract] = await db
       .select()
       .from(subcontractorContracts)
@@ -923,6 +965,12 @@ router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, re
       res.status(404).json({ error: "Contract not found" });
       return;
     }
+    const [contractProject] = await db
+      .select({ gcOrganizationId: projects.gcOrganizationId })
+      .from(projects)
+      .where(eq(projects.id, contract.projectId))
+      .limit(1);
+    if (!contractProject || !verifyOrgAccess(req, res, contractProject.gcOrganizationId)) return;
 
     // Get next payment number
     const existingPayments = await db
@@ -970,6 +1018,10 @@ router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, re
 // Get all subcontractor payables (for CFO/Office Manager dashboard)
 router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
   try {
+    const user = req.user!;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const orgConditions = isSuperAdmin ? [] : [eq(projects.gcOrganizationId, user.organizationId)];
+
     const payables = await db
       .select({
         subcontractorId: subcontractors.id,
@@ -985,6 +1037,7 @@ router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async
       .innerJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
       .innerJoin(projects, eq(projects.id, subcontractorContracts.projectId))
       .leftJoin(subcontractorPayments, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+      .where(orgConditions.length > 0 ? and(...orgConditions) : undefined)
       .groupBy(subcontractorContracts.id, subcontractors.id, projects.id);
 
     res.json(payables);
@@ -1003,7 +1056,6 @@ router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequ
   try {
     const { code } = req.params;
 
-    // Get project
     const [project] = await db
       .select()
       .from(projects)
@@ -1014,6 +1066,7 @@ router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequ
       res.status(404).json({ error: "Project not found" });
       return;
     }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
     // Calculate data quality with boolean flags for each category
     const { 
@@ -1122,7 +1175,22 @@ router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequ
 router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: AuthRequest, res) => {
   try {
     const { projectId } = req.params;
+    const user = req.user!;
     const { takeoffSheets, projectPlans } = await import("@shared/schema");
+
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, projectId)]
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(...projectConditions))
+      .limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
 
     const sheets = await db
       .select({
@@ -1216,9 +1284,15 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
   try {
     const { sheetId } = req.params;
     const { takeoffSheets, projectPlans, planDocuments, bidDocuments, bids } = await import("@shared/schema");
-    const orgId = req.user!.organizationId!;
+    const orgId = req.user!.organizationId;
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
 
-    // Get the sheet
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
     const [sheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, sheetId)).limit(1);
 
     if (!sheet) {
@@ -1229,17 +1303,14 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
     const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
 
-    // Helper: resolve a GCS URL or stored objectKey into a streamable GCS File object
     async function resolveGcsFile(objectKey: string | null | undefined, gcsUrl: string | null | undefined) {
       if (objectKey && objectKey.startsWith("/objects/")) {
         return objectStorageService.getObjectEntityFile(objectKey);
       }
       const rawUrl = objectKey || gcsUrl;
       if (!rawUrl) return null;
-      // If it's a full GCS URL, parse it directly
       if (rawUrl.startsWith("https://storage.googleapis.com/")) {
         const url = new URL(rawUrl);
-        // pathname = /bucket-name/object/path
         const parts = url.pathname.split("/").filter(Boolean);
         if (parts.length < 2) return null;
         const bucketName = parts[0];
@@ -1248,7 +1319,6 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
         const [exists] = await file.exists();
         return exists ? file : null;
       }
-      // Try as a stored objectKey via the service
       try {
         return await objectStorageService.getObjectEntityFile(rawUrl);
       } catch {
@@ -1256,10 +1326,12 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
       }
     }
 
-    // --- Bid-based sheet ---
     if (sheet.bidId) {
+      const bidConditions = isSuperAdmin
+        ? [eq(bids.id, sheet.bidId)]
+        : [eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, orgId!)];
       const [bid] = await db.select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId }).from(bids)
-        .where(and(eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, orgId))).limit(1);
+        .where(and(...bidConditions)).limit(1);
       if (!bid) {
         res.status(403).json({ error: "Access denied" });
         return;
@@ -1276,11 +1348,13 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
       }
       await objectStorageService.downloadObject(gcsFile, res, 3600);
     } else if (sheet.projectId) {
-      // --- Project-based sheet ---
+      const projectConditions = isSuperAdmin
+        ? [eq(projects.id, sheet.projectId)]
+        : [eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, orgId!)];
       const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
-        .from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
-      if (!project || project.gcOrganizationId !== orgId) {
-        res.status(project ? 403 : 404).json({ error: project ? "Access denied" : "Project not found" });
+        .from(projects).where(and(...projectConditions)).limit(1);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
         return;
       }
       const [sheetWithDoc] = await db
@@ -1316,9 +1390,23 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
       return;
     }
 
+    const user = req.user!;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, projectId)]
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+    const [projectCheck] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(...projectConditions))
+      .limit(1);
+    if (!projectCheck) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
     const { planDocuments, projectPlans, takeoffSheets } = await import("@shared/schema");
 
-    // Get the document
     const [document] = await db
       .select()
       .from(planDocuments)
@@ -1444,6 +1532,21 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
       return;
     }
 
+    const user = req.user!;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, projectId)]
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+    const [projectCheck] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(...projectConditions))
+      .limit(1);
+    if (!projectCheck) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
     const { projectPlans, takeoffSheets, insertProjectPlanSchema, insertTakeoffSheetSchema } = await import("@shared/schema");
 
     // Upload plan (sequential operations with compensating cleanup)
@@ -1495,10 +1598,14 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
     const user = req.user!;
     const { takeoffMeasurements, takeoffSheets, crewProjectAssignments, crewMembers } = await import("@shared/schema");
 
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, projectId)]
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .where(and(...projectConditions))
       .limit(1);
 
     if (!project) {
@@ -1555,10 +1662,14 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
     const user = req.user!;
     const { takeoffMeasurements, takeoffSheets, bids } = await import("@shared/schema");
 
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    const bidConditions = isSuperAdmin
+      ? [eq(bids.id, bidId)]
+      : [eq(bids.id, bidId), eq(bids.gcOrganizationId, user.organizationId)];
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)
-      .where(and(eq(bids.id, bidId), eq(bids.gcOrganizationId, user.organizationId)))
+      .where(and(...bidConditions))
       .limit(1);
 
     if (!bid) {
@@ -1600,6 +1711,12 @@ router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req:
   try {
     const { sheetId } = req.params;
     const { takeoffMeasurements } = await import("@shared/schema");
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
 
     const measurements = await db
       .select()
@@ -1759,25 +1876,27 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
 
     const sheet = sheetWithProject[0];
     const orgId = req.user!.organizationId;
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
 
-    // Authorization: verify the sheet belongs to the user's organization
-    if (sheet.projectId) {
-      const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
-        .from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
-      if (!project || project.gcOrganizationId !== orgId) {
-        res.status(403).json({ error: "Access denied" });
+    if (!isSuperAdmin) {
+      if (sheet.projectId) {
+        const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
+          .from(projects).where(eq(projects.id, sheet.projectId)).limit(1);
+        if (!project || project.gcOrganizationId !== orgId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+      } else if (sheet.bidId) {
+        const [bid] = await db.select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
+          .from(bids).where(eq(bids.id, sheet.bidId)).limit(1);
+        if (!bid || bid.gcOrganizationId !== orgId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+      } else {
+        res.status(404).json({ error: "Sheet has no parent project or bid" });
         return;
       }
-    } else if (sheet.bidId) {
-      const [bid] = await db.select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
-        .from(bids).where(eq(bids.id, sheet.bidId)).limit(1);
-      if (!bid || bid.gcOrganizationId !== orgId) {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
-    } else {
-      res.status(404).json({ error: "Sheet has no parent project or bid" });
-      return;
     }
 
     // Additional authorization for non-admin/manager on project-based sheets
@@ -2333,7 +2452,6 @@ router.get("/api/projects/:code/quantity-categories", requireAuth, async (req: A
     const { code } = req.params;
     const { quantityCategories } = await import("@shared/schema");
 
-    // Get the project to find its internal ID
     const [project] = await db
       .select()
       .from(projects)
@@ -2344,6 +2462,7 @@ router.get("/api/projects/:code/quantity-categories", requireAuth, async (req: A
       res.status(404).json({ error: "Project not found" });
       return;
     }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
     const categories = await db
       .select()
@@ -2364,7 +2483,6 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
     const { code } = req.params;
     const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
 
-    // Get the project to find its internal ID
     const [project] = await db
       .select()
       .from(projects)
@@ -2375,6 +2493,7 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
       res.status(404).json({ error: "Project not found" });
       return;
     }
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
     // SECURITY: Sanitize text inputs for data integrity
     const sanitizedBody = {
@@ -2413,18 +2532,21 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
     const [existing] = await db.select().from(quantityCategories).where(eq(quantityCategories.id, id)).limit(1);
     if (!existing) { res.status(404).json({ error: "Category not found" }); return; }
 
-    if (existing.projectId) {
-      const [project] = await db.select({ id: projects.id }).from(projects)
-        .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
-        .limit(1);
-      if (!project) { res.status(403).json({ error: "Access denied" }); return; }
-    } else if (existing.bidId) {
-      const [bid] = await db.select({ id: bids.id }).from(bids)
-        .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
-        .limit(1);
-      if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
-    } else {
-      res.status(403).json({ error: "Access denied" }); return;
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+    if (!isSuperAdmin) {
+      if (existing.projectId) {
+        const [project] = await db.select({ id: projects.id }).from(projects)
+          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+          .limit(1);
+        if (!project) { res.status(403).json({ error: "Access denied" }); return; }
+      } else if (existing.bidId) {
+        const [bid] = await db.select({ id: bids.id }).from(bids)
+          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
+          .limit(1);
+        if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
+      } else {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
     }
 
     const sanitizedBody = {
@@ -2541,10 +2663,14 @@ router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, asy
     }
     const { order } = parsed.data;
 
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, projectId)]
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, req.user!.organizationId)];
     const [project] = await db
       .select({ id: projects.id })
       .from(projects)
-      .where(eq(projects.id, projectId))
+      .where(and(...projectConditions))
       .limit(1);
 
     if (!project) {
@@ -2709,18 +2835,21 @@ router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthReque
     const [existing] = await db.select().from(quantityCategories).where(eq(quantityCategories.id, id)).limit(1);
     if (!existing) { res.status(404).json({ error: "Category not found" }); return; }
 
-    if (existing.projectId) {
-      const [project] = await db.select({ id: projects.id }).from(projects)
-        .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
-        .limit(1);
-      if (!project) { res.status(403).json({ error: "Access denied" }); return; }
-    } else if (existing.bidId) {
-      const [bid] = await db.select({ id: bids.id }).from(bids)
-        .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
-        .limit(1);
-      if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
-    } else {
-      res.status(403).json({ error: "Access denied" }); return;
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+    if (!isSuperAdmin) {
+      if (existing.projectId) {
+        const [project] = await db.select({ id: projects.id }).from(projects)
+          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+          .limit(1);
+        if (!project) { res.status(403).json({ error: "Access denied" }); return; }
+      } else if (existing.bidId) {
+        const [bid] = await db.select({ id: bids.id }).from(bids)
+          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
+          .limit(1);
+        if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
+      } else {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
     }
 
     await db.delete(quantityCategories).where(eq(quantityCategories.id, id));
@@ -2839,15 +2968,27 @@ router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthReq
     const userRole = req.user!.role;
     const userId = req.user!.id;
 
+    const orgId = req.user!.organizationId;
+    const isSuperAdmin = userRole === "SUPER_ADMIN";
+
+    if (!isSuperAdmin && markup.organizationId !== orgId) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
     const isOwner = markup.createdBy === userId;
-    const isAdminOrManager = userRole === "ADMIN" || userRole === "MANAGER" || userRole === "SUPER_ADMIN";
+    const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
 
     if (!isOwner && !isAdminOrManager) {
       res.status(403).json({ error: "You can only delete your own markups" });
       return;
     }
 
-    await db.delete(takeoffMarkups).where(eq(takeoffMarkups.id, markupId));
+    if (isSuperAdmin) {
+      await db.delete(takeoffMarkups).where(eq(takeoffMarkups.id, markupId));
+    } else {
+      await db.delete(takeoffMarkups).where(and(eq(takeoffMarkups.id, markupId), eq(takeoffMarkups.organizationId, orgId!)));
+    }
 
     res.json({ success: true });
   } catch (error) {
@@ -3187,10 +3328,15 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
 
 router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const orgId = req.user!.organizationId;
-    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
     const { takeoffConditions, insertTakeoffConditionSchema } = await import("@shared/schema");
-    const body = { ...req.body, organizationId: orgId };
+    const resolvedOrgId = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
+    if (!resolvedOrgId) {
+      res.status(400).json({ error: "organizationId is required" });
+      return;
+    }
+    const body = { ...req.body, organizationId: resolvedOrgId };
     const parsed = insertTakeoffConditionSchema.parse(body);
     const [condition] = await db.insert(takeoffConditions).values(parsed).returning();
     res.json(condition);
@@ -3206,16 +3352,19 @@ router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res
 
 router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const orgId = req.user!.organizationId;
-    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
     const { takeoffConditions, insertTakeoffConditionSchema } = await import("@shared/schema");
     const { id } = req.params;
-    const [existing] = await db.select().from(takeoffConditions).where(and(eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgId))).limit(1);
+    const conditions = orgCtx.isSuperAdmin
+      ? [eq(takeoffConditions.id, id)]
+      : [eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgCtx.orgId!)];
+    const [existing] = await db.select().from(takeoffConditions).where(and(...conditions)).limit(1);
     if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
     const updateSchema = insertTakeoffConditionSchema.partial().omit({ organizationId: true });
     const validated = updateSchema.parse(req.body);
     const updateData = { ...validated, updatedAt: new Date() };
-    const [updated] = await db.update(takeoffConditions).set(updateData).where(eq(takeoffConditions.id, id)).returning();
+    const [updated] = await db.update(takeoffConditions).set(updateData).where(and(...conditions)).returning();
     res.json(updated);
   } catch (error: any) {
     if (error.name === "ZodError") {
@@ -3229,13 +3378,16 @@ router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest
 
 router.delete("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const orgId = req.user!.organizationId;
-    if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
+    const orgCtx = requireOrgOwnership(req, res);
+    if (!orgCtx) return;
     const { takeoffConditions } = await import("@shared/schema");
     const { id } = req.params;
-    const [existing] = await db.select().from(takeoffConditions).where(and(eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgId))).limit(1);
+    const conditions = orgCtx.isSuperAdmin
+      ? [eq(takeoffConditions.id, id)]
+      : [eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgCtx.orgId!)];
+    const [existing] = await db.select().from(takeoffConditions).where(and(...conditions)).limit(1);
     if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
-    await db.delete(takeoffConditions).where(eq(takeoffConditions.id, id));
+    await db.delete(takeoffConditions).where(and(...conditions));
     res.json({ success: true });
   } catch (error) {
     console.error("Error deleting condition:", error);

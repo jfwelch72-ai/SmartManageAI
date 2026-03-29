@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Response } from "express";
 import { db } from "./db";
 import { eq, and, ilike, inArray, sql, desc } from "drizzle-orm";
 import {
@@ -16,25 +16,26 @@ import {
   type MaterialFamily, type TradeComponent, type Scope,
 } from "./data/onboarding/index";
 import { getLibraryTradeIdsForLegacy } from "../shared/tradeTypeUtils";
+import type { AuthRequest } from "./auth";
 
 const router = Router();
 
-function getOrgId(req: Request): string | null {
-  return (req as any).user?.organizationId || null;
+function getOrgId(req: AuthRequest): string | null {
+  return req.user?.organizationId || null;
 }
 
-function getUserId(req: Request): string | null {
-  return (req as any).user?.id || null;
+function getUserId(req: AuthRequest): string | null {
+  return req.user?.id || null;
 }
 
-router.get("/api/custom-libraries", async (req: Request, res: Response) => {
+router.get("/api/custom-libraries", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const results = await db.select().from(customLibraries).where(eq(customLibraries.organizationId, orgId));
   res.json(results);
 });
 
-router.post("/api/custom-libraries", async (req: Request, res: Response) => {
+router.post("/api/custom-libraries", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const data = insertCustomLibrarySchema.parse({ ...req.body, organizationId: orgId });
@@ -42,7 +43,7 @@ router.post("/api/custom-libraries", async (req: Request, res: Response) => {
   res.json(result);
 });
 
-router.patch("/api/custom-libraries/:id", async (req: Request, res: Response) => {
+router.patch("/api/custom-libraries/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -55,7 +56,7 @@ router.patch("/api/custom-libraries/:id", async (req: Request, res: Response) =>
   res.json(result);
 });
 
-router.delete("/api/custom-libraries/:id", async (req: Request, res: Response) => {
+router.delete("/api/custom-libraries/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -64,7 +65,7 @@ router.delete("/api/custom-libraries/:id", async (req: Request, res: Response) =
   res.json({ success: true });
 });
 
-router.get("/api/library-items", async (req: Request, res: Response) => {
+router.get("/api/library-items", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { search, libraryId, costType } = req.query;
@@ -80,7 +81,7 @@ router.get("/api/library-items", async (req: Request, res: Response) => {
   res.json(results);
 });
 
-router.post("/api/library-items", async (req: Request, res: Response) => {
+router.post("/api/library-items", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const data = insertLibraryItemSchema.parse({ ...req.body, organizationId: orgId });
@@ -88,7 +89,7 @@ router.post("/api/library-items", async (req: Request, res: Response) => {
   res.json(result);
 });
 
-router.patch("/api/library-items/:id", async (req: Request, res: Response) => {
+router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -104,7 +105,7 @@ router.patch("/api/library-items/:id", async (req: Request, res: Response) => {
   res.json(result);
 });
 
-router.delete("/api/library-items/:id", async (req: Request, res: Response) => {
+router.delete("/api/library-items/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -113,7 +114,7 @@ router.delete("/api/library-items/:id", async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
-router.post("/api/library-items/import", async (req: Request, res: Response) => {
+router.post("/api/library-items/import", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { items } = req.body;
@@ -127,7 +128,7 @@ router.post("/api/library-items/import", async (req: Request, res: Response) => 
   res.json({ imported: results.length, items: results });
 });
 
-router.get("/api/library-assemblies", async (req: Request, res: Response) => {
+router.get("/api/library-assemblies", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { search, libraryId } = req.query;
@@ -157,7 +158,7 @@ router.get("/api/library-assemblies", async (req: Request, res: Response) => {
   res.json(result);
 });
 
-router.post("/api/library-assemblies", async (req: Request, res: Response) => {
+router.post("/api/library-assemblies", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { items: assemblyItems, groups: assemblyGroups, ...assemblyData } = req.body;
@@ -194,7 +195,7 @@ router.post("/api/library-assemblies", async (req: Request, res: Response) => {
   res.json(assembly);
 });
 
-router.patch("/api/library-assemblies/:id", async (req: Request, res: Response) => {
+router.patch("/api/library-assemblies/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -240,7 +241,7 @@ router.patch("/api/library-assemblies/:id", async (req: Request, res: Response) 
   res.json(result);
 });
 
-router.delete("/api/library-assemblies/:id", async (req: Request, res: Response) => {
+router.delete("/api/library-assemblies/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -249,7 +250,7 @@ router.delete("/api/library-assemblies/:id", async (req: Request, res: Response)
   res.json({ success: true });
 });
 
-router.get("/api/saved-takeoffs", async (req: Request, res: Response) => {
+router.get("/api/saved-takeoffs", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { libraryId } = req.query;
@@ -261,7 +262,7 @@ router.get("/api/saved-takeoffs", async (req: Request, res: Response) => {
   res.json(results);
 });
 
-router.post("/api/saved-takeoffs", async (req: Request, res: Response) => {
+router.post("/api/saved-takeoffs", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const data = insertSavedTakeoffSchema.parse({ ...req.body, organizationId: orgId });
@@ -269,7 +270,7 @@ router.post("/api/saved-takeoffs", async (req: Request, res: Response) => {
   res.json(result);
 });
 
-router.delete("/api/saved-takeoffs/:id", async (req: Request, res: Response) => {
+router.delete("/api/saved-takeoffs/:id", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
@@ -278,7 +279,7 @@ router.delete("/api/saved-takeoffs/:id", async (req: Request, res: Response) => 
   res.json({ success: true });
 });
 
-router.post("/api/library-items/seed-from-onboarding", async (req: Request, res: Response) => {
+router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, res: Response) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
 

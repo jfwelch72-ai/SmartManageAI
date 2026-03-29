@@ -1,14 +1,14 @@
 import { Router } from "express";
-import { requireAuth } from "./auth";
+import { requireAuth, type AuthRequest } from "./auth";
 import * as approvalService from "./services/approvalService";
 import { logInfo, logError } from "./utils/logger";
 import { notifySubmitter } from "./services/approvalNotificationService";
 
 const router = Router();
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
@@ -21,9 +21,9 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/stats", requireAuth, async (req, res) => {
+router.get("/stats", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
       return res.status(403).json({ error: "Admin access required" });
     }
@@ -35,9 +35,9 @@ router.get("/stats", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
@@ -49,9 +49,9 @@ router.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/:id/approve", requireAuth, async (req, res) => {
+router.post("/:id/approve", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
@@ -76,9 +76,9 @@ router.post("/:id/approve", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/:id/reject", requireAuth, async (req, res) => {
+router.post("/:id/reject", requireAuth, async (req: AuthRequest, res) => {
   try {
-    const user = (req as any).user;
+    const user = req.user!;
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }

@@ -164,3 +164,34 @@ export function verifyOrgAccess(req: AuthRequest, res: Response, resourceOrgId: 
 export function verifyUserOrgAccess(req: AuthRequest, res: Response, targetUser: { organizationId: string | null }): boolean {
   return verifyOrgAccess(req, res, targetUser.organizationId);
 }
+
+/**
+ * Reusable helper for route handlers that operate on a resource by ID.
+ * Resolves the org filter context and denies access when appropriate.
+ * 
+ * Returns { orgId, isSuperAdmin } if access is allowed, or null if denied (response already sent).
+ * - SUPER_ADMIN: orgId is null (no org filter needed — skip org-scoped WHERE clauses)
+ * - Regular user: orgId is the user's organizationId (use in WHERE clauses)
+ * 
+ * Usage in a route handler:
+ *   const orgCtx = requireOrgOwnership(req as AuthRequest, res);
+ *   if (!orgCtx) return;
+ *   if (!orgCtx.isSuperAdmin) {
+ *     // Add eq(table.organizationId, orgCtx.orgId!) to WHERE clause
+ *   }
+ */
+export function requireOrgOwnership(req: AuthRequest, res: Response): { orgId: string | null; isSuperAdmin: boolean } | null {
+  const { shouldFilter, orgId, isSuperAdmin: isSuper, mustDenyAccess } = getOrgIdForFilter(req);
+  if (mustDenyAccess) {
+    res.status(403).json({ error: "Access denied" });
+    return null;
+  }
+  if (isSuper) {
+    return { orgId: null, isSuperAdmin: true };
+  }
+  if (shouldFilter && !orgId) {
+    res.status(400).json({ error: "Organization required" });
+    return null;
+  }
+  return { orgId: orgId!, isSuperAdmin: false };
+}

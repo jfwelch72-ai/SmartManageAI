@@ -223,7 +223,7 @@ router.patch("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest
     const [updated] = await db
       .update(vendorScores)
       .set({ ...updateData, updatedAt: new Date() })
-      .where(eq(vendorScores.id, id))
+      .where(and(eq(vendorScores.id, id), eq(vendorScores.organizationId, organizationId)))
       .returning();
 
     res.json(updated);
@@ -426,7 +426,7 @@ router.patch("/material-prices/:id", requireAuth, async (req: AuthenticatedReque
     const [updated] = await db
       .update(materialPriceIndex)
       .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(materialPriceIndex.id, id))
+      .where(and(eq(materialPriceIndex.id, id), eq(materialPriceIndex.organizationId, organizationId)))
       .returning();
 
     res.json(updated);
@@ -651,7 +651,7 @@ router.patch("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest
     const [updated] = await db
       .update(crewMarketplace)
       .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(crewMarketplace.id, id))
+      .where(and(eq(crewMarketplace.id, id), eq(crewMarketplace.organizationId, organizationId)))
       .returning();
 
     res.json(updated);
@@ -1185,7 +1185,7 @@ router.patch("/crews/:id", requireAuth, requireOrgRole, async (req: Authenticate
     const [updated] = await db
       .update(crewMarketplace)
       .set({ ...updateBody, updatedAt: new Date() })
-      .where(eq(crewMarketplace.id, id))
+      .where(and(eq(crewMarketplace.id, id), eq(crewMarketplace.organizationId, organizationId)))
       .returning();
 
     res.json(updated);
@@ -1357,7 +1357,7 @@ router.patch("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, re
     const [updated] = await db
       .update(equipmentListings)
       .set({ ...req.body, updatedAt: new Date() })
-      .where(eq(equipmentListings.id, id))
+      .where(and(eq(equipmentListings.id, id), eq(equipmentListings.organizationId, organizationId)))
       .returning();
 
     res.json(updated);
