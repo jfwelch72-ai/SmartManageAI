@@ -5,6 +5,7 @@ import { voiceLogs, issueCaptures, offlineSyncQueue, media, projects, insertVoic
 import { eq, and, desc, sql, inArray, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { ObjectStorageService } from "./objectStorage";
 
 const router = Router();
 
@@ -726,6 +727,27 @@ router.post("/photo-auto-tag", requireAuth, async (req: AuthenticatedRequest, re
       return res.status(404).json({ error: "Media not found" });
     }
 
+    let resolvedImageUrl = imageUrl;
+    const needsDownload = imageUrl.startsWith("/objects/") || imageUrl.includes("replit-objstore");
+    if (needsDownload) {
+      try {
+        const storageService = new ObjectStorageService();
+        let normalizedPath = imageUrl;
+        if (!imageUrl.startsWith("/objects/")) {
+          normalizedPath = storageService.normalizeObjectEntityPath(imageUrl);
+        }
+        const file = await storageService.getObjectEntityFile(normalizedPath);
+        const [buffer] = await file.download();
+        const base64 = buffer.toString("base64");
+        const [mediaRecord] = await db.select({ mimeType: media.mimeType }).from(media).where(eq(media.id, mediaId)).limit(1);
+        const mime = mediaRecord?.mimeType || "image/jpeg";
+        resolvedImageUrl = `data:${mime};base64,${base64}`;
+      } catch (e) {
+        logError("Failed to download image for auto-tag:", {}, e instanceof Error ? e : new Error(String(e)));
+        return res.status(500).json({ error: "Failed to download image for analysis" });
+      }
+    }
+
     const systemPrompt = `You are a construction jobsite photo analyzer. Analyze the uploaded construction/jobsite photo and provide:
 - tags: Array of descriptive tags including:
   - Trade (e.g., "electrical", "plumbing", "framing", "concrete", "roofing")
@@ -745,7 +767,7 @@ Respond with valid JSON only: { "tags": [...], "description": "..." }`;
           role: "user",
           content: [
             { type: "text", text: "Analyze this construction jobsite photo and provide tags and description." },
-            { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+            { type: "image_url", image_url: { url: resolvedImageUrl, detail: "low" } },
           ],
         },
       ],
