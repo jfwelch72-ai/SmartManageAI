@@ -8,7 +8,7 @@ import type { AuthRequest } from "./auth";
 
 const router = Router();
 
-router.use(requireAuth, requireFeaturePermission('canManageSafety'));
+router.use("/api/safety-training", requireAuth, requireFeaturePermission('canManageSafety'));
 
 function isSafetyAdmin(role?: string): boolean {
   return ["ADMIN", "SUPER_ADMIN", "SAFETY_MANAGER", "HR_MANAGER", "MANAGER"].includes(role || "");

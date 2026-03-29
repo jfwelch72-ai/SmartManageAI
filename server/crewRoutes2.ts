@@ -12,7 +12,8 @@ import { sanitizeShortText, sanitizeText } from "./sanitization";
 
 const router = Router();
 
-router.use(requireAuth, requireFeaturePermission('canManageScheduling'));
+router.use("/api/crews", requireAuth, requireFeaturePermission('canManageScheduling'));
+router.use("/api/crew-assignments", requireAuth, requireFeaturePermission('canManageScheduling'));
 
 router.get("/api/crews", async (req: AuthRequest, res) => {
   try {

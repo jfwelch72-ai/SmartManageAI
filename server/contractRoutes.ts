@@ -23,7 +23,7 @@ interface ContractAttachment {
   version: number | null;
 }
 
-router.use(requireAuth, requireFeaturePermission('canManageContracts'));
+router.use("/api/contracts", requireAuth, requireFeaturePermission('canManageContracts'));
 
 const CONTRACT_MANAGE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
 const CONTRACT_VIEW_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "PROJECT_ENGINEER"] as const;

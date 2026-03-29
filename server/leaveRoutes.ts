@@ -10,7 +10,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 
 const router = Router();
 
-router.use(requireAuth, requireFeaturePermission('canManageLeave'));
+router.use("/api/leave", requireAuth, requireFeaturePermission('canManageLeave'));
 
 async function seedDefaultLeaveTypes(orgId: string) {
   const existing = await db.select({ id: leaveTypes.id }).from(leaveTypes).where(eq(leaveTypes.organizationId, orgId)).limit(1);
