@@ -5,6 +5,7 @@ import { requireAuth, requireRole, type AuthRequest, type UserRole } from "./aut
 import { eq, desc, sql, and, lt, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logDelete } from "./auditLogger";
+import { safeJsonParse } from "./responseHelper";
 import { insertNotification, insertNotifications } from "./services/notificationService";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
@@ -1328,10 +1329,9 @@ router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthReq
       db.select().from(changeOrderMaterialEntries).where(eq(changeOrderMaterialEntries.changeOrderId, id)),
     ]);
 
-    let costBreakdown = null;
-    if (order?.costBreakdownJson) {
-      try { costBreakdown = JSON.parse(order.costBreakdownJson); } catch (_e) {}
-    }
+    const costBreakdown = order?.costBreakdownJson
+      ? safeJsonParse(typeof order.costBreakdownJson === 'string' ? order.costBreakdownJson : null, typeof order.costBreakdownJson === 'object' ? order.costBreakdownJson : null)
+      : null;
     
     res.json({
       laborEntries,
@@ -1891,8 +1891,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
     const allRfis = await db.select().from(rfisTable).where(eq(rfisTable.projectId, projectId));
     for (const rfi of allRfis) {
       if (rfi.attachmentsJson) {
-        try {
-          const attachments = JSON.parse(rfi.attachmentsJson);
+          const attachments = safeJsonParse<any[]>(rfi.attachmentsJson, []);
           if (Array.isArray(attachments)) {
             for (let i = 0; i < attachments.length; i++) {
               const att = attachments[i];
@@ -1913,15 +1912,13 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch { logWarn("Non-critical operation failed"); }
       }
     }
 
     const allSubmittals = await db.select().from(submittalsTable).where(eq(submittalsTable.projectId, projectId));
     for (const sub of allSubmittals) {
       if (sub.attachmentsJson) {
-        try {
-          const attachments = JSON.parse(sub.attachmentsJson);
+          const attachments = safeJsonParse<any[]>(sub.attachmentsJson, []);
           if (Array.isArray(attachments)) {
             for (let i = 0; i < attachments.length; i++) {
               const att = attachments[i];
@@ -1942,15 +1939,13 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch { logWarn("Non-critical operation failed"); }
       }
     }
 
     const allTransmittals = await db.select().from(transmittalsTable).where(eq(transmittalsTable.projectId, projectId));
     for (const tx of allTransmittals) {
       if (tx.attachmentsJson) {
-        try {
-          const attachments = JSON.parse(tx.attachmentsJson);
+          const attachments = safeJsonParse<any[]>(tx.attachmentsJson, []);
           if (Array.isArray(attachments)) {
             for (let i = 0; i < attachments.length; i++) {
               const att = attachments[i];
@@ -1971,7 +1966,6 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch { logWarn("Non-critical operation failed"); }
       }
     }
 
@@ -2049,8 +2043,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
     const allChangeOrders = await db.select().from(changeOrders).where(eq(changeOrders.projectId, projectId));
     for (const co of allChangeOrders) {
       if (co.attachmentsJson) {
-        try {
-          const attachments = JSON.parse(co.attachmentsJson);
+          const attachments = safeJsonParse<any[]>(co.attachmentsJson, []);
           if (Array.isArray(attachments)) {
             for (let i = 0; i < attachments.length; i++) {
               const att = attachments[i];
@@ -2071,7 +2064,6 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch { logWarn("Non-critical operation failed"); }
       }
     }
   }

@@ -8,6 +8,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { calculateCostLedger } from "./costLedgerService";
 import { getCostCodesForTrade } from "@shared/costCodes";
+import { successResponse } from "./responseHelper";
 
 async function getValidCostCodes(orgId: string): Promise<Set<string>> {
   const [org] = await db.select({ tradeType: organizations.tradeType })
@@ -232,7 +233,7 @@ router.delete("/api/projects/:code/budget-lines/:lineId", requireAuth, async (re
       .returning();
 
     if (!deleted) return res.status(404).json({ error: "Budget line not found" });
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Delete budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
@@ -258,7 +259,24 @@ router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthReque
       Number(project.budgetCriticalThreshold || 95),
     );
 
-    res.json(result);
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const rawPageSize = req.query.pageSize ? parseInt(req.query.pageSize as string) : 0;
+    const pageSize = rawPageSize > 0 ? Math.min(200, rawPageSize) : 0;
+
+    if (pageSize > 0) {
+      const totalRows = result.rows.length;
+      const totalPages = Math.ceil(totalRows / pageSize);
+      const start = (page - 1) * pageSize;
+      const paginatedRows = result.rows.slice(start, start + pageSize);
+      res.json({
+        ...result,
+        rows: paginatedRows,
+        totalRowCount: totalRows,
+        pagination: { page, pageSize, totalPages, totalRows },
+      });
+    } else {
+      res.json(result);
+    }
   } catch (error) {
     logError("Cost ledger error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
@@ -331,7 +349,7 @@ router.delete("/api/projects/:code/forecast-adjustments/:costCode", requireAuth,
 
     if (!deleted) return res.status(404).json({ error: "Forecast adjustment not found" });
     evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Delete forecast adjustment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });

@@ -3,7 +3,8 @@ import { Router, type Request, type Response, NextFunction } from "express";
 import { eventBus } from "./events";
 import { db } from "./db";
 import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, changeOrderComments, tmTickets, rfis, scheduleOfValues, sovLineItems, budgetLineItems, orgCostCodes } from "@shared/schema";
-import { eq, and, desc, sql, max } from "drizzle-orm";
+import { eq, and, desc, sql, max, inArray } from "drizzle-orm";
+import { safeJsonParse, successResponse } from "./responseHelper";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -2033,9 +2034,9 @@ router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFF
       newValue: JSON.stringify({ changeOrderId: co.id, sovId: targetSovId }),
     }, req);
 
-    res.json({ success: true, sovLineItemId: newLineItem.id, sovId: targetSovId });
+    successResponse(res, { sovLineItemId: newLineItem.id, sovId: targetSovId });
   } catch (error) {
-  next(error);
+    next(error);
   }
 });
 
@@ -2100,11 +2101,151 @@ router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async 
   }
 });
 
-// ====================
 // PDF Export Routes
 // ====================
 
+interface PdfLookupMaps {
+  userMap: Map<string, { firstName: string; lastName: string }>;
+  costCodeMap: Map<string, { code: string; description: string }>;
+  rfiMap: Map<string, string>;
+  tmTicketMap: Map<string, string>;
+  contractMap: Map<string, string>;
+  approvalsByCoId: Map<string, { approverRole: string; status: string; stepOrder: number; comments: string | null; decidedAt: Date | null }[]>;
+  revisionsByCoId: Map<string, { revisionNumber: number; previousStatus: string; newStatus: string; description: string; createdAt: Date }[]>;
+}
+
+async function batchPdfLookups(changeOrderList: typeof changeOrders.$inferSelect[]): Promise<PdfLookupMaps> {
+  const userIds = new Set<string>();
+  const costCodeIds = new Set<string>();
+  const rfiIds = new Set<string>();
+  const tmTicketIds = new Set<string>();
+  const contractIds = new Set<string>();
+  const coIds = changeOrderList.map(co => co.id);
+
+  for (const co of changeOrderList) {
+    if (co.requestedById) userIds.add(co.requestedById);
+    if (co.approvedById) userIds.add(co.approvedById);
+    if (co.costCodeId) costCodeIds.add(co.costCodeId);
+    if (co.linkedRfiId) rfiIds.add(co.linkedRfiId);
+    if (co.linkedTmTicketId) tmTicketIds.add(co.linkedTmTicketId);
+    if (co.contractId) contractIds.add(co.contractId);
+  }
+
+  const [userRows, costCodeRows, rfiRows, tmRows, allApprovals, allRevisions, contractRows] = await Promise.all([
+    userIds.size > 0
+      ? db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+          .from(users).where(inArray(users.id, [...userIds]))
+      : Promise.resolve([]),
+    costCodeIds.size > 0
+      ? db.select({ id: orgCostCodes.id, code: orgCostCodes.code, description: orgCostCodes.description })
+          .from(orgCostCodes).where(inArray(orgCostCodes.id, [...costCodeIds]))
+      : Promise.resolve([]),
+    rfiIds.size > 0
+      ? db.select({ id: rfis.id, rfiNumber: rfis.rfiNumber })
+          .from(rfis).where(inArray(rfis.id, [...rfiIds]))
+      : Promise.resolve([]),
+    tmTicketIds.size > 0
+      ? db.select({ id: tmTickets.id, ticketNumber: tmTickets.ticketNumber })
+          .from(tmTickets).where(inArray(tmTickets.id, [...tmTicketIds]))
+      : Promise.resolve([]),
+    coIds.length > 0
+      ? db.select({
+          changeOrderId: changeOrderApprovals.changeOrderId,
+          approverRole: changeOrderApprovals.approverRole,
+          status: changeOrderApprovals.status,
+          stepOrder: changeOrderApprovals.stepOrder,
+          comments: changeOrderApprovals.comments,
+          decidedAt: changeOrderApprovals.decidedAt,
+        }).from(changeOrderApprovals)
+          .where(inArray(changeOrderApprovals.changeOrderId, coIds))
+          .orderBy(changeOrderApprovals.stepOrder)
+      : Promise.resolve([]),
+    coIds.length > 0
+      ? db.select({
+          changeOrderId: changeOrderRevisions.changeOrderId,
+          revisionNumber: changeOrderRevisions.revisionNumber,
+          previousStatus: changeOrderRevisions.previousStatus,
+          newStatus: changeOrderRevisions.newStatus,
+          description: changeOrderRevisions.description,
+          createdAt: changeOrderRevisions.createdAt,
+        }).from(changeOrderRevisions)
+          .where(inArray(changeOrderRevisions.changeOrderId, coIds))
+          .orderBy(changeOrderRevisions.revisionNumber)
+      : Promise.resolve([]),
+    contractIds.size > 0
+      ? (async () => {
+          const { contracts } = await import("@shared/schema");
+          return db.select({ id: contracts.id, contractNumber: contracts.contractNumber })
+            .from(contracts).where(inArray(contracts.id, [...contractIds]));
+        })()
+      : Promise.resolve([]),
+  ]);
+
+  const userMap = new Map(userRows.map(u => [u.id, { firstName: u.firstName, lastName: u.lastName }]));
+  const costCodeMap = new Map(costCodeRows.map(cc => [cc.id, { code: cc.code, description: cc.description }]));
+  const rfiMap = new Map(rfiRows.map(r => [r.id, r.rfiNumber]));
+  const tmTicketMap = new Map(tmRows.map(t => [t.id, t.ticketNumber]));
+  const contractMap = new Map(contractRows.map(c => [c.id, c.contractNumber]));
+
+  const approvalsByCoId = new Map<string, typeof allApprovals>();
+  for (const a of allApprovals) {
+    if (!approvalsByCoId.has(a.changeOrderId)) approvalsByCoId.set(a.changeOrderId, []);
+    approvalsByCoId.get(a.changeOrderId)!.push(a);
+  }
+
+  const revisionsByCoId = new Map<string, typeof allRevisions>();
+  for (const r of allRevisions) {
+    if (!revisionsByCoId.has(r.changeOrderId)) revisionsByCoId.set(r.changeOrderId, []);
+    revisionsByCoId.get(r.changeOrderId)!.push(r);
+  }
+
+  return { userMap, costCodeMap, rfiMap, tmTicketMap, contractMap, approvalsByCoId, revisionsByCoId };
+}
+
+function buildPdfPayload(
+  co: typeof changeOrders.$inferSelect,
+  lookups: PdfLookupMaps,
+  projectInfo: { name: string; code: string; clientName?: string | null; locationAddress?: string | null },
+  orgBranding?: { organizationName: string; primaryColor?: string },
+) {
+  const costBreakdownData = safeJsonParse(
+    typeof co.costBreakdownJson === 'string' ? co.costBreakdownJson : null,
+    typeof co.costBreakdownJson === 'object' ? co.costBreakdownJson : null,
+  );
+
+  const cc = co.costCodeId ? lookups.costCodeMap.get(co.costCodeId) : null;
+  const costCodeLabel = cc ? `${cc.code} — ${cc.description}` : null;
+
+  const requestedBy = lookups.userMap.get(co.requestedById);
+  const approver = co.approvedById ? lookups.userMap.get(co.approvedById) : null;
+  const approvedByName = approver ? `${approver.firstName} ${approver.lastName}` : undefined;
+  const linkedRfiNumber = co.linkedRfiId ? lookups.rfiMap.get(co.linkedRfiId) || null : null;
+  const linkedTmTicketNumber = co.linkedTmTicketId ? lookups.tmTicketMap.get(co.linkedTmTicketId) || null : null;
+  const contractNumber = co.contractId ? lookups.contractMap.get(co.contractId) || null : null;
+
+  const approvalRows = lookups.approvalsByCoId.get(co.id) || [];
+  const revisionRows = lookups.revisionsByCoId.get(co.id) || [];
+
+  return {
+    changeOrder: {
+      ...co,
+      costCodeLabel,
+      linkedTmTicketNumber,
+      linkedRfiNumber,
+      contractNumber,
+      requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
+      approvedByName,
+    },
+    project: { name: projectInfo.name, code: projectInfo.code, clientName: projectInfo.clientName || undefined, locationAddress: projectInfo.locationAddress },
+    lineItems: costBreakdownData,
+    approvals: approvalRows.map(a => ({ ...a, decidedAt: a.decidedAt ? String(a.decidedAt) : null })),
+    revisions: revisionRows.map(r => ({ ...r, createdAt: String(r.createdAt) })),
+    branding: orgBranding,
+  };
+}
+
 router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next) => {
+
   try {
     const result = await getChangeOrderById(req.params.id);
     if (!result?.order) {
@@ -2132,72 +2273,6 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
       locationAddress: projects.locationAddress,
     }).from(projects).where(eq(projects.id, order.projectId)).limit(1);
 
-    const [requestedBy] = await db.select({
-      firstName: users.firstName,
-      lastName: users.lastName,
-    }).from(users).where(eq(users.id, order.requestedById)).limit(1);
-
-    let approvedByName: string | undefined;
-    if (order.approvedById) {
-      const [approver] = await db.select({
-        firstName: users.firstName,
-        lastName: users.lastName,
-      }).from(users).where(eq(users.id, order.approvedById)).limit(1);
-      if (approver) approvedByName = `${approver.firstName} ${approver.lastName}`;
-    }
-
-    let costBreakdownData = null;
-    try {
-      if (order.costBreakdownJson) {
-        costBreakdownData = typeof order.costBreakdownJson === 'string' ? JSON.parse(order.costBreakdownJson) : order.costBreakdownJson;
-      }
-    } catch (e) {}
-
-    let contractNumber: string | null = null;
-    if (order.contractId) {
-      const { contracts } = await import("@shared/schema");
-      const [contract] = await db.select({ contractNumber: contracts.contractNumber }).from(contracts).where(eq(contracts.id, order.contractId)).limit(1);
-      if (contract) contractNumber = contract.contractNumber;
-    }
-
-    const approvalRows = await db.select({
-      approval: {
-        approverRole: changeOrderApprovals.approverRole,
-        status: changeOrderApprovals.status,
-        stepOrder: changeOrderApprovals.stepOrder,
-        comments: changeOrderApprovals.comments,
-        decidedAt: changeOrderApprovals.decidedAt,
-      },
-    }).from(changeOrderApprovals).where(eq(changeOrderApprovals.changeOrderId, order.id)).orderBy(changeOrderApprovals.stepOrder);
-
-    const revisionRows = await db.select({
-      revision: {
-        revisionNumber: changeOrderRevisions.revisionNumber,
-        previousStatus: changeOrderRevisions.previousStatus,
-        newStatus: changeOrderRevisions.newStatus,
-        description: changeOrderRevisions.description,
-        createdAt: changeOrderRevisions.createdAt,
-      },
-    }).from(changeOrderRevisions).where(eq(changeOrderRevisions.changeOrderId, order.id)).orderBy(changeOrderRevisions.revisionNumber);
-
-    let costCodeLabel: string | null = null;
-    if (order.costCodeId) {
-      const [cc] = await db.select({ code: orgCostCodes.code, description: orgCostCodes.description }).from(orgCostCodes).where(eq(orgCostCodes.id, order.costCodeId)).limit(1);
-      if (cc) costCodeLabel = `${cc.code} — ${cc.description}`;
-    }
-
-    let linkedRfiNumber: string | null = null;
-    if (order.linkedRfiId) {
-      const [rfi] = await db.select({ rfiNumber: rfis.rfiNumber }).from(rfis).where(eq(rfis.id, order.linkedRfiId)).limit(1);
-      if (rfi) linkedRfiNumber = rfi.rfiNumber;
-    }
-
-    let linkedTmTicketNumber: string | null = null;
-    if (order.linkedTmTicketId) {
-      const [tm] = await db.select({ ticketNumber: tmTickets.ticketNumber }).from(tmTickets).where(eq(tmTickets.id, order.linkedTmTicketId)).limit(1);
-      if (tm) linkedTmTicketNumber = tm.ticketNumber;
-    }
-
     let orgBranding: { organizationName: string; primaryColor?: string } | undefined;
     if (project?.gcOrganizationId) {
       const { organizations } = await import("@shared/schema");
@@ -2205,24 +2280,11 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
       if (org) orgBranding = { organizationName: org.name, primaryColor: org.primaryColor || undefined };
     }
 
-    const { generateChangeOrderPDF } = await import("./co-pdf-service");
+    const lookups = await batchPdfLookups([order]);
+    const payload = buildPdfPayload(order, lookups, projectData || { name: 'Unknown', code: '' }, orgBranding);
 
-    const stream = generateChangeOrderPDF({
-      changeOrder: {
-        ...order,
-        costCodeLabel,
-        linkedTmTicketNumber,
-        linkedRfiNumber,
-        contractNumber,
-        requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
-        approvedByName,
-      },
-      project: projectData || { name: 'Unknown', code: '' },
-      lineItems: costBreakdownData,
-      approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
-      revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
-      branding: orgBranding,
-    });
+    const { generateChangeOrderPDF } = await import("./co-pdf-service");
+    const stream = generateChangeOrderPDF(payload);
 
     const safeNumber = order.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
     res.setHeader('Content-Type', 'application/pdf');
@@ -2282,6 +2344,8 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
       if (org) orgBranding = { organizationName: org.name, primaryColor: org.primaryColor || undefined };
     }
 
+    const lookups = await batchPdfLookups(eligibleCOs);
+
     const { generateChangeOrderPDF } = await import("./co-pdf-service");
     const archiver = (await import("archiver")).default;
 
@@ -2291,86 +2355,12 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
     res.setHeader('Content-Disposition', `attachment; filename="ChangeOrders_${safeProjectCode}.zip"`);
     archive.pipe(res);
 
+    const projectInfo = { name: projectData.name, code: projectData.code, clientName: projectData.clientName, locationAddress: projectData.locationAddress };
+
     for (const co of eligibleCOs) {
       try {
-        let costBreakdownData = null;
-        try {
-          if (co.costBreakdownJson) {
-            costBreakdownData = typeof co.costBreakdownJson === 'string' ? JSON.parse(co.costBreakdownJson) : co.costBreakdownJson;
-          }
-        } catch (parseErr) {
-          console.warn(`Skipping malformed costBreakdownJson for CO ${co.changeOrderNumber}`);
-        }
-
-        let costCodeLabel: string | null = null;
-        if (co.costCodeId) {
-          const [cc] = await db.select({ code: orgCostCodes.code, description: orgCostCodes.description }).from(orgCostCodes).where(eq(orgCostCodes.id, co.costCodeId)).limit(1);
-          if (cc) costCodeLabel = `${cc.code} — ${cc.description}`;
-        }
-
-        const [requestedBy] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, co.requestedById)).limit(1);
-        let approvedByName: string | undefined;
-        if (co.approvedById) {
-          const [approver] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, co.approvedById)).limit(1);
-          if (approver) approvedByName = `${approver.firstName} ${approver.lastName}`;
-        }
-
-        let linkedRfiNumber: string | null = null;
-        if (co.linkedRfiId) {
-          const [rfi] = await db.select({ rfiNumber: rfis.rfiNumber }).from(rfis).where(eq(rfis.id, co.linkedRfiId)).limit(1);
-          if (rfi) linkedRfiNumber = rfi.rfiNumber;
-        }
-
-        let linkedTmTicketNumber: string | null = null;
-        if (co.linkedTmTicketId) {
-          const [tm] = await db.select({ ticketNumber: tmTickets.ticketNumber }).from(tmTickets).where(eq(tmTickets.id, co.linkedTmTicketId)).limit(1);
-          if (tm) linkedTmTicketNumber = tm.ticketNumber;
-        }
-
-        let contractNumber: string | null = null;
-        if (co.contractId) {
-          const { contracts } = await import("@shared/schema");
-          const [contract] = await db.select({ contractNumber: contracts.contractNumber }).from(contracts).where(eq(contracts.id, co.contractId)).limit(1);
-          if (contract) contractNumber = contract.contractNumber;
-        }
-
-        const approvalRows = await db.select({
-          approval: {
-            approverRole: changeOrderApprovals.approverRole,
-            status: changeOrderApprovals.status,
-            stepOrder: changeOrderApprovals.stepOrder,
-            comments: changeOrderApprovals.comments,
-            decidedAt: changeOrderApprovals.decidedAt,
-          },
-        }).from(changeOrderApprovals).where(eq(changeOrderApprovals.changeOrderId, co.id)).orderBy(changeOrderApprovals.stepOrder);
-
-        const revisionRows = await db.select({
-          revision: {
-            revisionNumber: changeOrderRevisions.revisionNumber,
-            previousStatus: changeOrderRevisions.previousStatus,
-            newStatus: changeOrderRevisions.newStatus,
-            description: changeOrderRevisions.description,
-            createdAt: changeOrderRevisions.createdAt,
-          },
-        }).from(changeOrderRevisions).where(eq(changeOrderRevisions.changeOrderId, co.id)).orderBy(changeOrderRevisions.revisionNumber);
-
-        const stream = generateChangeOrderPDF({
-          changeOrder: {
-            ...co,
-            costCodeLabel,
-            linkedTmTicketNumber,
-            linkedRfiNumber,
-            contractNumber,
-            requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
-            approvedByName,
-          },
-          project: { name: projectData.name, code: projectData.code, clientName: projectData.clientName || undefined, locationAddress: projectData.locationAddress },
-          lineItems: costBreakdownData,
-          approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
-          revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
-          branding: orgBranding,
-        });
-
+        const payload = buildPdfPayload(co, lookups, projectInfo, orgBranding);
+        const stream = generateChangeOrderPDF(payload);
         const safeNumber = co.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
         archive.append(stream, { name: `${safeNumber}.pdf` });
       } catch (coErr) {

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { getOrgIdForFilter } from "./orgFilter";
 import { deliverNotification, type NotificationRecord } from "./services/notificationDelivery";
 import { insertNotification } from "./services/notificationService";
+import { successResponse } from "./responseHelper";
 
 const router = Router();
 
@@ -309,15 +310,19 @@ async function postCostLedger(payRunId: string, txDb?: typeof db) {
     try {
       const { eventBus } = await import("./events");
       const projectIds = [...new Set(postings.map(p => p.projectId))];
+      const projRows = projectIds.length > 0
+        ? await queryDb.select({ id: projects.id, orgId: projects.gcOrganizationId }).from(projects).where(inArray(projects.id, projectIds))
+        : [];
+      const projOrgMap = new Map(projRows.map(p => [p.id, p.orgId]));
       for (const projectId of projectIds) {
         const projectPostings = postings.filter(p => p.projectId === projectId);
         const totalForProject = projectPostings.reduce((sum, p) => sum + parseFloat(p.totalAmount), 0);
-        const [proj] = await queryDb.select({ orgId: projects.gcOrganizationId }).from(projects).where(eq(projects.id, projectId)).limit(1);
-        if (proj?.orgId) {
+        const orgId = projOrgMap.get(projectId);
+        if (orgId) {
           await eventBus.emit({
             type: "cost_ledger.posted",
             version: 1,
-            orgId: proj.orgId,
+            orgId,
             actorId: "system",
             timestamp: new Date(),
             payload: {
@@ -1296,7 +1301,7 @@ router.delete("/api/payroll/deduction-types/:id", requireAuth, async (req, res) 
     if (!existing) return res.status(404).json({ error: "Deduction type not found" });
 
     await db.delete(payrollDeductionTypes).where(eq(payrollDeductionTypes.id, req.params.id));
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Delete deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
@@ -1430,7 +1435,7 @@ router.delete("/api/payroll/employee-deductions/:id", requireAuth, async (req, r
     if (!existing) return res.status(404).json({ error: "Employee deduction not found" });
 
     await db.delete(employeeDeductions).where(eq(employeeDeductions.id, req.params.id));
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Delete employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
@@ -1851,7 +1856,7 @@ router.delete("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
       oldValue: JSON.stringify({ runNumber: existing.runNumber }),
     });
 
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Delete pay run error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });

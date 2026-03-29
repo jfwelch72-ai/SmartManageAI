@@ -52,6 +52,7 @@ export interface CostCodeLedgerRow {
 export interface CostLedgerSummary {
   rows: CostCodeLedgerRow[];
   totals: CostCodeLedgerRow;
+  totalRowCount: number;
   projectBudget: number;
   budgetLineTotal: number;
   percentComplete: number;
@@ -149,8 +150,7 @@ export async function calculateCostLedger(
       costCode: subcontractorContracts.costCode,
     })
     .from(subcontractorContracts)
-    .where(eq(subcontractorContracts.projectId, projectId))
-    .limit(1000);
+    .where(eq(subcontractorContracts.projectId, projectId));
 
   for (const contract of subContracts) {
     const cc = normalizeCostCode(contract.costCode || "UNASSIGNED");
@@ -292,8 +292,7 @@ export async function calculateCostLedger(
         costCode: tmTickets.costCode,
       })
       .from(tmTickets)
-      .where(eq(tmTickets.projectId, projectId))
-      .limit(1000);
+      .where(eq(tmTickets.projectId, projectId));
 
     for (const ticket of tmTicketRows) {
       if (ticket.status === "APPROVED") {
@@ -489,6 +488,7 @@ export async function calculateCostLedger(
   return {
     rows,
     totals,
+    totalRowCount: rows.length,
     projectBudget: projectBudget,
     budgetLineTotal,
     percentComplete: round2(percentComplete),

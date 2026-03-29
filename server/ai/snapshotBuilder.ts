@@ -34,8 +34,22 @@ import {
   vendorPricebooks,
   pricebookImportJobs,
 } from "@shared/schema";
-import { sql, desc, eq } from "drizzle-orm";
+import { sql, desc, eq, gt } from "drizzle-orm";
 import { calculateProjectDataQuality } from "./dataQualityScorer";
+
+interface CappedResult<T> { rows: T[]; totalCount: number; isTruncated: boolean }
+
+async function cappedQuery<T>(
+  queryFn: (limit: number) => Promise<T[]>,
+  cap: number,
+  countQuery: () => Promise<{ count: number }[]>
+): Promise<CappedResult<T>> {
+  const [countResult] = await countQuery();
+  const totalCount = countResult?.count || 0;
+  const rows = await queryFn(cap + 1);
+  const isTruncated = rows.length > cap;
+  return { rows: isTruncated ? rows.slice(0, cap) : rows, totalCount, isTruncated };
+}
 
 export interface DataSnapshot {
   generated_at: string;
@@ -310,6 +324,11 @@ export interface DataSnapshot {
     pending_import_jobs: number;
     processing_import_jobs: number;
   };
+  _metadata: {
+    query_caps: {
+      [key: string]: { cap: number; totalCount: number; isTruncated: boolean };
+    };
+  };
 }
 
 export async function buildDataSnapshot(): Promise<DataSnapshot> {
@@ -339,40 +358,23 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .from(projects)
     .where(eq(projects.status, 'COMPLETE'));
 
-  // Time entries in the last week
-  const weeklyTimeEntries = await db
+  // Time entries in the last week — use SQL aggregation to avoid loading all rows
+  const assumedRate = 50;
+  const [weeklyAgg] = await db
     .select({
-      hoursRegular: timeEntries.hoursRegular,
-      hoursOvertime: timeEntries.hoursOvertime,
-      approvedAt: timeEntries.approvedAt,
+      totalRegularHours: sql<number>`coalesce(sum(${timeEntries.hoursRegular}::numeric), 0)::float`,
+      totalOvertimeHours: sql<number>`coalesce(sum(${timeEntries.hoursOvertime}::numeric), 0)::float`,
+      unapprovedRegular: sql<number>`coalesce(sum(case when ${timeEntries.approvedAt} is null then ${timeEntries.hoursRegular}::numeric else 0 end), 0)::float`,
+      unapprovedOvertime: sql<number>`coalesce(sum(case when ${timeEntries.approvedAt} is null then ${timeEntries.hoursOvertime}::numeric else 0 end), 0)::float`,
+      unapprovedCount: sql<number>`count(*) filter (where ${timeEntries.approvedAt} is null)::int`,
     })
     .from(timeEntries)
-    .where(sql`${timeEntries.date} >= ${oneWeekAgo.toISOString().split('T')[0]}`)
-    .limit(1000);
+    .where(sql`${timeEntries.date} >= ${oneWeekAgo.toISOString().split('T')[0]}`);
 
-  const totalHoursThisWeek = weeklyTimeEntries.reduce(
-    (sum, entry) => sum + Number(entry.hoursRegular || 0) + Number(entry.hoursOvertime || 0), 
-    0
-  );
-  const totalCostThisWeek = weeklyTimeEntries.reduce(
-    (sum, entry) => {
-      const regularHours = Number(entry.hoursRegular || 0);
-      const overtimeHours = Number(entry.hoursOvertime || 0);
-      const assumedRate = 50;
-      return sum + (regularHours * assumedRate) + (overtimeHours * assumedRate * 1.5);
-    },
-    0
-  );
-  const unapprovedEntries = weeklyTimeEntries.filter(e => !e.approvedAt);
-  const unapprovedValue = unapprovedEntries.reduce(
-    (sum, entry) => {
-      const regularHours = Number(entry.hoursRegular || 0);
-      const overtimeHours = Number(entry.hoursOvertime || 0);
-      const assumedRate = 50;
-      return sum + (regularHours * assumedRate) + (overtimeHours * assumedRate * 1.5);
-    },
-    0
-  );
+  const totalHoursThisWeek = (weeklyAgg?.totalRegularHours || 0) + (weeklyAgg?.totalOvertimeHours || 0);
+  const totalCostThisWeek = (weeklyAgg?.totalRegularHours || 0) * assumedRate + (weeklyAgg?.totalOvertimeHours || 0) * assumedRate * 1.5;
+  const unapprovedEntriesCount = weeklyAgg?.unapprovedCount || 0;
+  const unapprovedValue = (weeklyAgg?.unapprovedRegular || 0) * assumedRate + (weeklyAgg?.unapprovedOvertime || 0) * assumedRate * 1.5;
 
   // Active time-clock shifts
   const activeShiftsCount = await db
@@ -418,8 +420,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
   // Using higher limit to ensure all equipment plan project IDs can be resolved
   const allProjectsForMapping = await db
     .select({ id: projects.id, code: projects.code, name: projects.name })
-    .from(projects)
-    .limit(1000);
+    .from(projects);
   
   allProjectsForMapping.forEach(p => {
     projectIdToCode.set(p.id, p.code);
@@ -550,36 +551,39 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     };
   });
 
-  // Crew statistics
-  const allUsers = await db.select().from(users).limit(500);
-  const superintendents = allUsers.filter(u => u.role === 'SUPERINTENDENT').length;
-  const hourlyWorkers = allUsers.filter(u => u.role === 'HOURLY_EMPLOYEE').length;
+  // Crew statistics — use SQL aggregation instead of fetching all rows
+  const [userCounts] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      superintendents: sql<number>`count(*) filter (where ${users.role} = 'SUPERINTENDENT')::int`,
+      hourlyWorkers: sql<number>`count(*) filter (where ${users.role} = 'HOURLY_EMPLOYEE')::int`,
+      withoutCostRates: sql<number>`count(*) filter (where ${users.costRateRegular} is null or ${users.costRateOvertime} is null)::int`,
+    })
+    .from(users);
+  const superintendents = userCounts?.superintendents || 0;
+  const hourlyWorkers = userCounts?.hourlyWorkers || 0;
+  const usersWithoutCostRates = userCounts?.withoutCostRates || 0;
 
-  // Calculate overtime hours (>40 hours per week per employee) - to be properly implemented with user tracking
-  const overtimeHours = weeklyTimeEntries.reduce(
-    (sum, entry) => sum + Number(entry.hoursOvertime || 0),
-    0
-  );
+  const overtimeHours = weeklyAgg?.totalOvertimeHours || 0;
 
-  // Crew data - query actual crew tables
-  const allCrews = await db.select().from(crews).limit(100);
-  const activeCrews = allCrews.filter(c => c.isActive).length;
-  
-  // Count crew members across all crews
-  const crewMembersData = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(crewMembers)
-    .limit(1);
-  const totalCrewMembers = Number(crewMembersData[0]?.count || 0);
-  
-  // Count users with assigned skills
-  const usersWithSkillsData = await db
-    .select({ count: sql<number>`count(DISTINCT ${userSkills.userId})` })
-    .from(userSkills)
-    .limit(1);
-  const usersWithSkills = Number(usersWithSkillsData[0]?.count || 0);
-  
-  const usersWithoutCostRates = allUsers.filter(u => !u.costRateRegular || !u.costRateOvertime).length;
+  // Crew data — use SQL aggregation
+  const [crewCounts] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      active: sql<number>`count(*) filter (where ${crews.isActive} = true)::int`,
+    })
+    .from(crews);
+  const activeCrews = crewCounts?.active || 0;
+
+  const [crewMembersData] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(crewMembers);
+  const totalCrewMembers = crewMembersData?.count || 0;
+
+  const [usersWithSkillsData] = await db
+    .select({ count: sql<number>`count(DISTINCT ${userSkills.userId})::int` })
+    .from(userSkills);
+  const usersWithSkills = usersWithSkillsData?.count || 0;
 
   // Subcontractor data
   const allSubcontractorContracts = await db
@@ -604,28 +608,33 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     total_value: Math.round(data.value * 100) / 100,
   }));
 
-  // Data quality scores
-  const qualityScores = await db
-    .select()
+  // Data quality scores — use SQL aggregation instead of fetching all rows
+  const [qualityAgg] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+      avgScore: sql<number>`coalesce(round(avg(${aiDataQuality.overallScore})::numeric), 0)::int`,
+      belowThreshold: sql<number>`count(*) filter (where ${aiDataQuality.overallScore} < 60)::int`,
+    })
+    .from(aiDataQuality);
+
+  const avgQualityScore = qualityAgg?.avgScore || 0;
+  const projectsBelowThreshold = qualityAgg?.belowThreshold || 0;
+
+  const qualityScoresForIssues = await db
+    .select({ missingFields: aiDataQuality.missingFields })
     .from(aiDataQuality)
-    .limit(1000);
+    .where(sql`${aiDataQuality.missingFields} is not null and array_length(${aiDataQuality.missingFields}, 1) > 0`)
+    .limit(200);
 
-  const avgQualityScore = qualityScores.length > 0
-    ? Math.round(qualityScores.reduce((sum, q) => sum + q.overallScore, 0) / qualityScores.length)
-    : 0;
-
-  const projectsBelowThreshold = qualityScores.filter(q => q.overallScore < 60).length;
-
-  const commonIssues: string[] = [];
-  qualityScores.forEach(q => {
-    if (q.missingFields && q.missingFields.length > 0) {
-      q.missingFields.forEach(field => {
-        if (!commonIssues.includes(field)) {
-          commonIssues.push(field);
-        }
-      });
+  const commonIssuesSet = new Set<string>();
+  for (const q of qualityScoresForIssues) {
+    if (q.missingFields) {
+      for (const field of q.missingFields) {
+        commonIssuesSet.add(field);
+      }
     }
-  });
+  }
+  const commonIssues = Array.from(commonIssuesSet);
 
   // Missing financials
   const projectsMissingFinancials = activeProjects.filter(
@@ -644,10 +653,12 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .where(sql`${equipmentAssignments.returnedAt} IS NULL`)
     .limit(500);
 
-  const allEquipmentPlans = await db
-    .select()
-    .from(projectEquipmentPlans)
-    .limit(1000);
+  const equipmentPlansResult = await cappedQuery(
+    (cap) => db.select().from(projectEquipmentPlans).limit(cap),
+    2000,
+    () => db.select({ count: sql<number>`count(*)::int` }).from(projectEquipmentPlans)
+  );
+  const allEquipmentPlans = equipmentPlansResult.rows;
 
   const ownedPlans = allEquipmentPlans.filter(p => p.source === 'OWNED');
   const rentalPlans = allEquipmentPlans.filter(p => p.source === 'RENTAL');
@@ -739,8 +750,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .limit(500);
 
   // Get rental usage history for frequency analysis
-  const rentalUsageHistory = await db
-    .select({
+  const rentalUsageResult = await cappedQuery(
+    (cap) => db.select({
       equipmentType: rentalEquipmentUsages.equipmentType,
       dailyRate: rentalEquipmentUsages.dailyRate,
       startDate: rentalEquipmentUsages.startDate,
@@ -748,9 +759,11 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       expectedEndDate: rentalEquipmentUsages.expectedEndDate,
       totalCost: rentalEquipmentUsages.totalCost,
       status: rentalEquipmentUsages.status,
-    })
-    .from(rentalEquipmentUsages)
-    .limit(1000);
+    }).from(rentalEquipmentUsages).limit(cap),
+    2000,
+    () => db.select({ count: sql<number>`count(*)::int` }).from(rentalEquipmentUsages)
+  );
+  const rentalUsageHistory = rentalUsageResult.rows;
 
   // Group rental catalog by equipment type for avg rates
   const rentalRatesByType = new Map<string, { dailyRates: number[], weeklyRates: number[], monthlyRates: number[] }>();
@@ -920,15 +933,16 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .slice(0, 10);
 
   // Find underutilized owned equipment
-  // First, get all assignments (not just active) to find last assignment date
-  const allAssignmentsForAnalysis = await db
-    .select({
+  const assignmentsResult = await cappedQuery(
+    (cap) => db.select({
       equipmentId: equipmentAssignments.equipmentId,
       assignedAt: equipmentAssignments.assignedAt,
       returnedAt: equipmentAssignments.returnedAt,
-    })
-    .from(equipmentAssignments)
-    .limit(2000);
+    }).from(equipmentAssignments).limit(cap),
+    2000,
+    () => db.select({ count: sql<number>`count(*)::int` }).from(equipmentAssignments)
+  );
+  const allAssignmentsForAnalysis = assignmentsResult.rows;
 
   // Group assignments by equipment to find most recent
   const lastAssignmentByEquipment = new Map<string, Date>();
@@ -997,8 +1011,8 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .slice(0, 10);
 
   // Material budget variance analysis
-  const allMaterialBudgets = await db
-    .select({
+  const materialBudgetsResult = await cappedQuery(
+    (cap) => db.select({
       id: projectMaterialBudgets.id,
       projectId: projectMaterialBudgets.projectId,
       description: projectMaterialBudgets.description,
@@ -1009,9 +1023,11 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       actualTotalCost: projectMaterialBudgets.actualTotalCost,
       variancePercent: projectMaterialBudgets.variancePercent,
       alertTriggered: projectMaterialBudgets.alertTriggered,
-    })
-    .from(projectMaterialBudgets)
-    .limit(1000);
+    }).from(projectMaterialBudgets).limit(cap),
+    2000,
+    () => db.select({ count: sql<number>`count(*)::int` }).from(projectMaterialBudgets)
+  );
+  const allMaterialBudgets = materialBudgetsResult.rows;
 
   // Calculate overall material budget metrics
   const totalMaterialBudgeted = allMaterialBudgets.reduce((sum, b) => sum + Number(b.budgetedTotalCost || 0), 0);
@@ -1082,22 +1098,35 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       };
     });
 
-  // Delay Claims data
+  // Delay Claims data — use SQL aggregation
+  const [delayClaimsAgg] = await db
+    .select({
+      draft: sql<number>`count(*) filter (where ${delayClaims.status} = 'DRAFT')::int`,
+      under_review: sql<number>`count(*) filter (where ${delayClaims.status} = 'UNDER_REVIEW')::int`,
+      approved: sql<number>`count(*) filter (where ${delayClaims.status} = 'APPROVED')::int`,
+      rejected: sql<number>`count(*) filter (where ${delayClaims.status} = 'REJECTED')::int`,
+      submitted: sql<number>`count(*) filter (where ${delayClaims.status} = 'SUBMITTED')::int`,
+      totalClaimedDays: sql<number>`coalesce(sum(${delayClaims.daysRequested}::numeric), 0)::float`,
+      totalClaimedAmount: sql<number>`coalesce(sum(${delayClaims.costRequested}::numeric), 0)::float`,
+    })
+    .from(delayClaims);
+
+  const delayClaimsByStatus = {
+    draft: delayClaimsAgg?.draft || 0,
+    under_review: delayClaimsAgg?.under_review || 0,
+    approved: delayClaimsAgg?.approved || 0,
+    rejected: delayClaimsAgg?.rejected || 0,
+    submitted: delayClaimsAgg?.submitted || 0,
+  };
+
+  const totalClaimedDays = delayClaimsAgg?.totalClaimedDays || 0;
+  const totalClaimedAmount = delayClaimsAgg?.totalClaimedAmount || 0;
+
   const allDelayClaims = await db
     .select()
     .from(delayClaims)
-    .limit(500);
-
-  const delayClaimsByStatus = {
-    draft: allDelayClaims.filter(c => c.status === 'DRAFT').length,
-    under_review: allDelayClaims.filter(c => c.status === 'UNDER_REVIEW').length,
-    approved: allDelayClaims.filter(c => c.status === 'APPROVED').length,
-    rejected: allDelayClaims.filter(c => c.status === 'REJECTED').length,
-    submitted: allDelayClaims.filter(c => c.status === 'SUBMITTED').length,
-  };
-
-  const totalClaimedDays = allDelayClaims.reduce((sum, c) => sum + Number(c.daysRequested || 0), 0);
-  const totalClaimedAmount = allDelayClaims.reduce((sum, c) => sum + Number(c.costRequested || 0), 0);
+    .orderBy(desc(delayClaims.createdAt))
+    .limit(10);
 
   const recentDelayClaims = allDelayClaims
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -1111,21 +1140,23 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       status: c.status,
     }));
 
-  // Daily Report Locks data
-  const allDailyReportLocks = await db
-    .select()
+  // Daily Report Locks data — use SQL aggregation
+  const [totalLockedCount] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(dailyReportLocks);
+
+  const lockedByProjectRows = await db
+    .select({
+      projectId: dailyReportLocks.projectId,
+      lockedCount: sql<number>`count(*)::int`,
+    })
     .from(dailyReportLocks)
-    .limit(1000);
+    .groupBy(dailyReportLocks.projectId)
+    .limit(500);
 
-  const lockedByProject = new Map<string, number>();
-  for (const lock of allDailyReportLocks) {
-    const count = lockedByProject.get(lock.projectId) || 0;
-    lockedByProject.set(lock.projectId, count + 1);
-  }
-
-  const lockedByProjectArray = Array.from(lockedByProject.entries()).map(([projectId, count]) => ({
-    project_id: projectId,
-    locked_count: count,
+  const lockedByProjectArray = lockedByProjectRows.map(r => ({
+    project_id: r.projectId,
+    locked_count: r.lockedCount,
   }));
 
   // Field Productivity data
@@ -1165,12 +1196,14 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     .select({ count: sql<number>`count(*)::int` })
     .from(materialPriceIndex);
 
-  const allCrewListings = await db
-    .select()
-    .from(crewMarketplace)
-    .limit(500);
+  const [crewListingsAgg] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      active: sql<number>`count(*) filter (where ${crewMarketplace.availabilityStatus} = 'AVAILABLE')::int`,
+    })
+    .from(crewMarketplace);
 
-  const activeListings = allCrewListings.filter(l => l.availabilityStatus === 'AVAILABLE').length;
+  const activeListings = crewListingsAgg?.active || 0;
 
   // Pricebook status
   const [pricebooksCount] = await db
@@ -1209,7 +1242,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     labor: {
       total_hours_this_week: Math.round(totalHoursThisWeek * 100) / 100,
       total_cost_this_week: Math.round(totalCostThisWeek * 100) / 100,
-      unapproved_entries_count: unapprovedEntries.length,
+      unapproved_entries_count: unapprovedEntriesCount,
       unapproved_entries_value: Math.round(unapprovedValue * 100) / 100,
       active_shifts_count: activeShiftsCount[0]?.count || 0,
     },
@@ -1243,11 +1276,11 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       all_bids_for_followup: allBidsForFollowup,
     },
     crew: {
-      total_employees: allUsers.length,
+      total_employees: userCounts?.total || 0,
       superintendents: superintendents,
       hourly_workers: hourlyWorkers,
       overtime_hours_this_week: Math.round(overtimeHours * 100) / 100,
-      total_crews: allCrews.length,
+      total_crews: (crewCounts?.total || 0),
       active_crews: activeCrews,
       total_crew_members: totalCrewMembers,
       users_with_skills: usersWithSkills,
@@ -1317,7 +1350,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       recent_claims: recentDelayClaims,
     },
     daily_report_locks: {
-      total_locked_reports: allDailyReportLocks.length,
+      total_locked_reports: totalLockedCount?.count || 0,
       locked_by_project: lockedByProjectArray,
     },
     field_productivity: {
@@ -1335,7 +1368,7 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       vendor_scores_count: vendorScoresCount?.count || 0,
       avg_vendor_score: vendorScoresCount?.avgScore || 0,
       material_price_entries: materialPriceCount?.count || 0,
-      crew_marketplace_listings: allCrewListings.length,
+      crew_marketplace_listings: crewListingsAgg?.total || 0,
       active_listings: activeListings,
     },
     pricebook_status: {
@@ -1343,6 +1376,30 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
       active_pricebooks: pricebooksCount?.active || 0,
       pending_import_jobs: importJobsCount?.pending || 0,
       processing_import_jobs: importJobsCount?.processing || 0,
+    },
+    _metadata: {
+      query_caps: {
+        equipment_assignments: {
+          cap: 2000,
+          totalCount: assignmentsResult.totalCount,
+          isTruncated: assignmentsResult.isTruncated,
+        },
+        equipment_plans: {
+          cap: 2000,
+          totalCount: equipmentPlansResult.totalCount,
+          isTruncated: equipmentPlansResult.isTruncated,
+        },
+        rental_usage_history: {
+          cap: 2000,
+          totalCount: rentalUsageResult.totalCount,
+          isTruncated: rentalUsageResult.isTruncated,
+        },
+        material_budgets: {
+          cap: 2000,
+          totalCount: materialBudgetsResult.totalCount,
+          isTruncated: materialBudgetsResult.isTruncated,
+        },
+      },
     },
   };
 }

@@ -25,6 +25,7 @@ import { z } from "zod";
 import crypto from "crypto";
 import { sendEmail } from "./email";
 import { authLimiter } from "./rateLimiter";
+import { safeJsonParse, successResponse } from "./responseHelper";
 
 const router = Router();
 
@@ -112,7 +113,7 @@ router.delete("/portal/access/:accessId", requireAuth, requireRole("ADMIN", "MAN
         eq(clientPortalAccess.organizationId, organizationId)
       ));
 
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Revoke portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revoke access" });
@@ -154,11 +155,9 @@ router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAG
         viewInvoices: false,
         submitRequests: false,
       };
-      try {
-        if (row.access.permissionsJson) {
-          permissions = { ...permissions, ...JSON.parse(row.access.permissionsJson) };
+      if (row.access.permissionsJson) {
+          permissions = { ...permissions, ...(safeJsonParse<Record<string, boolean>>(row.access.permissionsJson, {}) || {}) };
         }
-      } catch { logWarn("Non-critical operation failed"); }
 
       return {
         id: row.access.id,
@@ -270,13 +269,7 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
       })
       .returning();
 
-    let parsedPermissions;
-    try {
-      parsedPermissions = JSON.parse(newAccess.permissionsJson || "{}");
-    } catch {
-      logWarn("Non-critical operation failed");
-      parsedPermissions = {};
-    }
+    const parsedPermissions = safeJsonParse<Record<string, boolean>>(newAccess.permissionsJson, {}) || {};
 
     const host = req.get("host") || "";
     const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -469,7 +462,7 @@ router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MA
       .delete(clientPortalAccess)
       .where(eq(clientPortalAccess.id, accessId));
 
-    res.json({ success: true, message: "Portal access revoked" });
+    successResponse(res, { message: "Portal access revoked" });
   } catch (error) {
     logError("Error revoking portal access:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revoke portal access" });
@@ -516,11 +509,9 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
       viewInvoices: false,
       submitRequests: false,
     };
-    try {
-      if (access.access.permissionsJson) {
-        permissions = { ...permissions, ...JSON.parse(access.access.permissionsJson) };
+    if (access.access.permissionsJson) {
+        permissions = { ...permissions, ...(safeJsonParse<Record<string, boolean>>(access.access.permissionsJson, {}) || {}) };
       }
-    } catch { logWarn("Non-critical operation failed"); }
 
     await db
       .update(clientPortalAccess)
@@ -576,11 +567,9 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
       viewInvoices: false,
       submitRequests: false,
     };
-    try {
-      if (access.permissionsJson) {
-        permissions = { ...permissions, ...JSON.parse(access.permissionsJson) };
+    if (access.permissionsJson) {
+        permissions = { ...permissions, ...(safeJsonParse<Record<string, boolean>>(access.permissionsJson, {}) || {}) };
       }
-    } catch { logWarn("Non-critical operation failed"); }
 
     const [project] = await db
       .select()
@@ -728,8 +717,8 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
       result.changeOrders = cos.map((co) => {
         let costBreakdown = null;
         if (co.costBreakdownJson) {
-          try {
-            const raw = JSON.parse(co.costBreakdownJson);
+          const raw = safeJsonParse<Record<string, any>>(typeof co.costBreakdownJson === 'string' ? co.costBreakdownJson : null);
+          if (raw) {
             costBreakdown = {
               labor: raw.labor || 0,
               material: raw.material || 0,
@@ -737,7 +726,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
               subcontractor: raw.subcontractor || 0,
               total: raw.total || Number(co.amount) || 0,
             };
-          } catch { logWarn("Non-critical operation failed"); }
+          }
         }
         return {
           id: co.id,
@@ -814,11 +803,9 @@ async function verifyPortalAccess(projectId: string, email: string) {
     viewInvoices: false,
     submitRequests: false,
   };
-  try {
-    if (access.permissionsJson) {
-      permissions = { ...permissions, ...JSON.parse(access.permissionsJson) };
+  if (access.permissionsJson) {
+      permissions = { ...permissions, ...(safeJsonParse<Record<string, boolean>>(access.permissionsJson, {}) || {}) };
     }
-  } catch { logWarn("Non-critical operation failed"); }
 
   return { access, permissions };
 }

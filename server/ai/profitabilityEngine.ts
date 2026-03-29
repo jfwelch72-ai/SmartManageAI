@@ -120,8 +120,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       status: procurementItems.status,
     })
     .from(procurementItems)
-    .where(eq(procurementItems.projectId, project.id))
-    .limit(1000);
+    .where(eq(procurementItems.projectId, project.id));
 
   const totalMaterialCost = materials.reduce((sum, item) => {
     const cost = Number(item.unitCost || 0) * Number(item.quantity || 0);
@@ -135,8 +134,7 @@ export async function calculateProjectProfitability(projectCode: string): Promis
       date: receipts.date,
     })
     .from(receipts)
-    .where(eq(receipts.projectId, project.id))
-    .limit(1000);
+    .where(eq(receipts.projectId, project.id));
 
   const totalOtherExpenses = expenseReceipts.reduce((sum, r) => sum + Number(r.amount || 0), 0);
 

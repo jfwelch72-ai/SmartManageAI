@@ -69,8 +69,7 @@ export async function getSubcontractorRecommendations(
     .innerJoin(crmOrganisations, eq(subcontractorContracts.subcontractorId, crmOrganisations.id))
     .innerJoin(projects, eq(subcontractorContracts.projectId, projects.id))
     .where(eq(projects.gcOrganizationId, organizationId))
-    .orderBy(desc(subcontractorContracts.createdAt))
-    .limit(1000);
+    .orderBy(desc(subcontractorContracts.createdAt));
 
   if (allContracts.length === 0) return [];
 

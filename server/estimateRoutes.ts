@@ -33,6 +33,7 @@ import {
   type MaterialCalculationInputs 
 } from "./materialCalculator";
 import { getOrgIdForFilter } from "./orgFilter";
+import { successResponse, safeJsonParse } from "./responseHelper";
 import { 
   getProductionRateForSOW, 
   getProductionRateBySowItemId,
@@ -57,6 +58,8 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
       .where(eq(vendorPricingCatalogs.organizationId, organizationId));
 
     if (catalogItems.length === 0) return;
+
+    const updates: { id: string; vendorPricingId: string | null; vendorMatchConfidence: string }[] = [];
 
     for (const li of lineItems) {
       const desc = (li.description || "").toLowerCase().trim();
@@ -87,14 +90,18 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
         }
       }
 
-      const confidence = bestMatch?.confidence || "NO_MATCH";
-      await db.update(estimateLineItems)
-        .set({
-          vendorPricingId: bestMatch?.id || null,
-          vendorMatchConfidence: confidence,
-        })
-        .where(eq(estimateLineItems.id, li.id));
+      updates.push({
+        id: li.id,
+        vendorPricingId: bestMatch?.id || null,
+        vendorMatchConfidence: bestMatch?.confidence || "NO_MATCH",
+      });
     }
+
+    await Promise.all(updates.map(u =>
+      db.update(estimateLineItems)
+        .set({ vendorPricingId: u.vendorPricingId, vendorMatchConfidence: u.vendorMatchConfidence })
+        .where(eq(estimateLineItems.id, u.id))
+    ));
   } catch (err) {
     logError("[VendorMatch] Error matching vendor pricing:", {}, err instanceof Error ? err : new Error(String(err)));
   }
@@ -1562,7 +1569,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         logError("[Snapshot] Failed to create snapshot after line item delete:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
-      res.json({ success: true });
+      successResponse(res);
     } catch (error) {
       logError("Error deleting line item:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete line item" });
@@ -1808,7 +1815,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         logError("[Snapshot] Failed after subcontractor removal:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
-      res.json({ success: true });
+      successResponse(res);
     } catch (error) {
       logError("Error deleting subcontractor assignment:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete subcontractor assignment" });
@@ -1847,14 +1854,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         .orderBy(desc(estimateVersions.versionNumber));
 
       const result = versions.map((v) => {
-        const parsed = JSON.parse(v.snapshot);
+        const parsed = safeJsonParse<{ savedByUserId?: string; totalCost?: number; lineItemCount?: number }>(v.snapshot, {});
         return {
           id: v.id,
           versionNumber: v.versionNumber,
           createdAt: v.createdAt,
-          savedByUserId: parsed.savedByUserId,
-          totalCost: parsed.totalCost,
-          lineItemCount: parsed.lineItemCount,
+          savedByUserId: parsed?.savedByUserId,
+          totalCost: parsed?.totalCost,
+          lineItemCount: parsed?.lineItemCount,
         };
       });
 
@@ -1894,7 +1901,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         .limit(1);
       if (!version) return res.status(404).json({ error: "Version not found" });
 
-      const parsed = JSON.parse(version.snapshot);
+      const parsed = safeJsonParse(version.snapshot, {});
       res.json({ ...version, parsed });
     } catch (error) {
       logError("Error fetching estimate version:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -2019,7 +2026,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           scopeItemsCreated,
         });
       } else {
-        res.json({ success: true, total, estimateId, projectId: null });
+        successResponse(res, { total, estimateId, projectId: null });
       }
     } catch (error) {
       logError("Error approving estimate:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -2731,7 +2738,7 @@ router.delete("/api/historical-costs/:id", requireAuth, async (req: AuthRequest,
     const { historicalCosts } = await import("@shared/schema");
     await db.delete(historicalCosts)
       .where(and(eq(historicalCosts.id, req.params.id), eq(historicalCosts.organizationId, orgId)));
-    res.json({ success: true });
+    successResponse(res);
   } catch (error) {
     logError("Historical cost delete error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete historical cost record" });

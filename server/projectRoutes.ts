@@ -1062,9 +1062,10 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
     await db.delete(receipts).where(eq(receipts.projectId, project.id));
     await db.delete(procurementItems).where(eq(procurementItems.projectId, project.id));
     
-    const plansToDelete = await db.select().from(projectPlans).where(eq(projectPlans.projectId, project.id));
-    for (const plan of plansToDelete) {
-      await db.delete(takeoffMeasurements).where(eq(takeoffMeasurements.sheetId, plan.id));
+    const plansToDelete = await db.select({ id: projectPlans.id }).from(projectPlans).where(eq(projectPlans.projectId, project.id));
+    if (plansToDelete.length > 0) {
+      const planIds = plansToDelete.map(p => p.id);
+      await db.delete(takeoffMeasurements).where(inArray(takeoffMeasurements.sheetId, planIds));
     }
     await db.delete(projectPlans).where(eq(projectPlans.projectId, project.id));
     await db.delete(takeoffSheets).where(eq(takeoffSheets.projectId, project.id));
