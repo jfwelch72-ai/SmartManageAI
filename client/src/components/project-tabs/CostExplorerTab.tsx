@@ -120,10 +120,10 @@ export default function CostExplorerTab({ projectCode }: CostExplorerTabProps) {
   const transactions = transactionsData?.transactions || [];
   const totalCount = transactionsData?.total || 0;
   const totalPages = Math.ceil(totalCount / pageSize);
-  const summary = summaryData || [];
+  const summary = Array.isArray(summaryData) ? summaryData : [];
   const summaryTotal = summary.reduce((acc, r) => acc + r.totalAmount, 0);
 
-  const categoryCards = (categorySummary || []).map((c) => ({
+  const categoryCards = (Array.isArray(categorySummary) ? categorySummary : []).map((c) => ({
     label: SOURCE_CATEGORY_LABELS[c.groupKey] || c.groupKey,
     amount: c.totalAmount,
     count: c.transactionCount,
