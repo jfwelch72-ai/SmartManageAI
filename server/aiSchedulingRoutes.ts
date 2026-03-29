@@ -1,0 +1,743 @@
+import { Router , NextFunction } from "express";
+import { db } from "./db";
+import { projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, organizations, projects, media } from "@shared/schema";
+import { eq, desc, and, sql, isNotNull } from "drizzle-orm";
+import { z } from "zod";
+import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { logError, logWarn } from "./utils/logger";
+import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
+import { governedAiCall } from "./services/aiGovernance";
+
+const router = Router();
+
+
+// ============================================
+// FEATURE B: AI SCHEDULING ASSISTANT ROUTES
+// ============================================
+
+const scheduleGenerateSchema = z.object({
+  projectId: z.string(),
+  startDate: z.string(),
+  workingDays: z.array(z.number()).optional().default([1, 2, 3, 4, 5]),
+  crewIds: z.array(z.string()).optional(),
+  includeTrades: z.array(z.string()).optional(),
+  options: z.object({
+    bufferDays: z.number().optional().default(1),
+    weatherContingency: z.number().optional().default(10),
+    inspectionWaitDays: z.number().optional().default(2),
+  }).optional(),
+});
+
+// POST /api/ai-features/schedule/generate - Generate AI schedule
+router.post("/ai-features/schedule/generate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const organizationId = req.user?.organizationId;
+    if (!userId || !organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const parsed = scheduleGenerateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+
+    const { projectId, startDate, workingDays, crewIds, options } = parsed.data;
+
+    // Get organization trade type
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+    const tradeType = org?.tradeType || "GENERAL_CONTRACTOR";
+
+    // Create schedule
+    const [schedule] = await db.insert(projectSchedules).values({
+      organizationId,
+      projectId,
+      name: "AI-Generated Schedule",
+      generatedBy: "AI",
+      baselineStartDate: startDate,
+      workingDays,
+      optionsJson: JSON.stringify(options),
+      createdByUserId: userId,
+    }).returning();
+
+    // Generate trade-specific tasks
+    const tasks = await generateTradeScheduleTasks(schedule.id, tradeType, startDate, options);
+
+    res.json({
+      success: true,
+      scheduleId: schedule.id,
+      status: "GENERATED",
+      proposedSchedule: {
+        startDate,
+        endDate: tasks.length > 0 ? tasks[tasks.length - 1].plannedEndDate : startDate,
+        totalDays: tasks.reduce((sum, t) => sum + (t.durationDays || 0), 0),
+        criticalPathDays: tasks.filter(t => t.isCriticalPath).reduce((sum, t) => sum + (t.durationDays || 0), 0),
+        tasks,
+      },
+      aiNotes: `Generated ${tasks.length} tasks for ${tradeType} project.`,
+    });
+  } catch (error) {
+    logError("Schedule generate error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to generate schedule" });
+  }
+});
+
+async function generateTradeScheduleTasks(scheduleId: string, tradeType: string, startDate: string, options?: any) {
+  const taskTemplates: Record<string, Array<{name: string; duration: number; isCritical: boolean}>> = {
+    ROOFING: [
+      { name: "Tear-off Existing Roof", duration: 2, isCritical: true },
+      { name: "Deck Inspection & Repair", duration: 1, isCritical: true },
+      { name: "Install Underlayment", duration: 1, isCritical: true },
+      { name: "Install Shingles/Metal", duration: 3, isCritical: true },
+      { name: "Install Flashings", duration: 1, isCritical: false },
+      { name: "Install Gutters", duration: 1, isCritical: false },
+      { name: "Cleanup & Final Inspection", duration: 1, isCritical: true },
+    ],
+    ELECTRICAL: [
+      { name: "Rough-In Wiring", duration: 3, isCritical: true },
+      { name: "Panel Installation", duration: 1, isCritical: true },
+      { name: "Rough Inspection", duration: 1, isCritical: true },
+      { name: "Trim-Out (Devices & Fixtures)", duration: 2, isCritical: false },
+      { name: "Panel Terminations", duration: 1, isCritical: true },
+      { name: "Final Inspection", duration: 1, isCritical: true },
+    ],
+    CONCRETE: [
+      { name: "Layout & Excavation", duration: 2, isCritical: true },
+      { name: "Form Installation", duration: 2, isCritical: true },
+      { name: "Rebar Installation", duration: 2, isCritical: true },
+      { name: "Pre-Pour Inspection", duration: 1, isCritical: true },
+      { name: "Concrete Pour", duration: 1, isCritical: true },
+      { name: "Curing Period", duration: 7, isCritical: true },
+      { name: "Form Stripping", duration: 1, isCritical: false },
+      { name: "Final Finish", duration: 1, isCritical: false },
+    ],
+    GENERAL_CONTRACTOR: [
+      { name: "Site Preparation", duration: 3, isCritical: true },
+      { name: "Foundation", duration: 5, isCritical: true },
+      { name: "Framing", duration: 10, isCritical: true },
+      { name: "MEP Rough-In", duration: 5, isCritical: true },
+      { name: "Insulation & Drywall", duration: 5, isCritical: false },
+      { name: "Finish Work", duration: 7, isCritical: false },
+      { name: "Final Inspections", duration: 2, isCritical: true },
+    ],
+  };
+
+  const templates = taskTemplates[tradeType] || taskTemplates.GENERAL_CONTRACTOR;
+  let currentDate = new Date(startDate);
+  const tasks: any[] = [];
+  const dependencies: string[] = [];
+
+  for (let i = 0; i < templates.length; i++) {
+    const template = templates[i];
+    const taskStartDate = new Date(currentDate);
+    const taskEndDate = new Date(currentDate);
+    taskEndDate.setDate(taskEndDate.getDate() + template.duration - 1);
+
+    const [task] = await db.insert(projectScheduleTasks).values({
+      scheduleId,
+      name: template.name,
+      tradeType: tradeType as any,
+      plannedStartDate: taskStartDate.toISOString().split('T')[0],
+      plannedEndDate: taskEndDate.toISOString().split('T')[0],
+      durationDays: template.duration,
+      dependencies: dependencies.length > 0 ? [dependencies[dependencies.length - 1]] : [],
+      isCriticalPath: template.isCritical,
+      status: "NOT_STARTED",
+      sortOrder: i,
+    }).returning();
+
+    tasks.push(task);
+    dependencies.push(task.id);
+    currentDate = new Date(taskEndDate);
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  // Update schedule end date
+  if (tasks.length > 0) {
+    await db.update(projectSchedules)
+      .set({ baselineEndDate: tasks[tasks.length - 1].plannedEndDate })
+      .where(eq(projectSchedules.id, scheduleId));
+  }
+
+  try {
+    const { recalculateSchedule } = await import("./cpmEngine");
+    await recalculateSchedule(scheduleId);
+  } catch (e) {
+    logError("CPM recalculation after generation failed:", {}, e instanceof Error ? e : new Error(String(e)));
+  }
+
+  return tasks;
+}
+
+// GET /api/ai-features/schedule/:projectId - Get project schedule
+router.get("/ai-features/schedule/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const [schedule] = await db.select()
+      .from(projectSchedules)
+      .where(and(
+        eq(projectSchedules.projectId, req.params.projectId),
+        eq(projectSchedules.organizationId, organizationId),
+        eq(projectSchedules.isActive, true)
+      ))
+      .orderBy(desc(projectSchedules.createdAt))
+      .limit(1);
+
+    if (!schedule) {
+      return res.json({ schedule: null, tasks: [] });
+    }
+
+    const tasks = await db.select()
+      .from(projectScheduleTasks)
+      .where(eq(projectScheduleTasks.scheduleId, schedule.id))
+      .orderBy(projectScheduleTasks.sortOrder);
+
+    res.json({ schedule, tasks });
+  } catch (error) {
+    logError("Get schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to get schedule" });
+  }
+});
+
+
+// ============================================
+// FEATURE C: AI JOBSITE CAMERA ANALYSIS ROUTES
+// ============================================
+
+const jobsiteAnalysisSchema = z.object({
+  projectId: z.string(),
+  date: z.string(),
+  analysisTypes: z.array(z.string()).default(["SAFETY", "PROGRESS"]),
+  tradeType: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// POST /api/ai-features/jobsite/analyze - Create jobsite analysis batch
+router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user?.id;
+    const organizationId = req.user?.organizationId;
+    if (!userId || !organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const parsed = jobsiteAnalysisSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+
+    const { projectId, date, analysisTypes, tradeType, notes } = parsed.data;
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied: project does not belong to your organization" });
+    }
+
+    // Get organization trade type if not provided
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
+    // Valid trade types from the enum - "MANUAL" and other custom types should fall back to GENERAL_CONTRACTOR
+    const validTradeTypes = [
+      "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
+      "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
+      "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
+      "SOLAR", "WATERPROOFING", "OTHER"
+    ];
+    const orgTradeType = org?.tradeType;
+    const effectiveTradeType = tradeType || (orgTradeType && validTradeTypes.includes(orgTradeType) ? orgTradeType : "GENERAL_CONTRACTOR");
+
+    const [batch] = await db.insert(jobsiteAnalysisBatches).values({
+      organizationId,
+      projectId,
+      analysisDate: date,
+      tradeType: effectiveTradeType as any,
+      status: "PENDING",
+      analysisTypes,
+      createdByUserId: userId,
+    }).returning();
+
+    res.json({
+      success: true,
+      batchId: batch.id,
+      status: "QUEUED",
+      estimatedTime: 60,
+    });
+  } catch (error) {
+    logError("Jobsite analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to create analysis" });
+  }
+});
+
+async function processJobsiteBatch(batchId: string, user: { id?: string; organizationId?: string; role?: string }) {
+  const [batch] = await db.select()
+    .from(jobsiteAnalysisBatches)
+    .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+  if (!batch) throw new Error("Batch not found");
+
+  try {
+  await db.update(jobsiteAnalysisBatches)
+    .set({ status: "PROCESSING" })
+    .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+  const photos = await db.select()
+    .from(jobsiteAnalysisPhotos)
+    .where(eq(jobsiteAnalysisPhotos.batchId, batchId));
+
+  let safetyFindings: any[];
+  let progressFindings: any[];
+  let summary: any;
+  let crewFindings: any;
+  let aiNotes: string;
+
+  if (photos.length > 0 && openai) {
+    try {
+      const tradeType = batch.tradeType || "GENERAL_CONTRACTOR";
+      const analysisTypes = batch.analysisTypes || ["SAFETY", "PROGRESS"];
+      
+      const safetyPrompt = analysisTypes.includes("SAFETY") 
+        ? `SAFETY: Identify any safety hazards, PPE compliance issues, fall hazards, housekeeping problems. Rate severity as CRITICAL, HIGH, MEDIUM, or LOW.` 
+        : "";
+      const progressPrompt = analysisTypes.includes("PROGRESS")
+        ? `PROGRESS: Estimate work completion percentage, identify active work areas, note quality of workmanship.`
+        : "";
+      const crewPrompt = `CREW: Estimate number of workers visible, assess PPE compliance percentage.`;
+      
+      const tradeContext = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
+      const imageUrl = photos[0].fileUrl;
+      
+      const govResult = await governedAiCall({
+        orgId: batch.organizationId,
+        userId: user?.id || null,
+        actionType: "jobsite_analysis",
+        inputRefs: { projectId: batch.projectId },
+        fn: async () => {
+          const completion = await openai!.chat.completions.create({
+            model: AI_MODEL_GPT4O,
+            messages: [
+              {
+                role: "system",
+                content: `You are a construction site safety and progress inspector for ${tradeType} trade work.
+${tradeContext}
+
+Analyze the jobsite photo and provide a comprehensive assessment.
+
+${safetyPrompt}
+${progressPrompt}
+${crewPrompt}
+
+Return your analysis as JSON with this exact structure:
+{
+  "summary": {
+    "overallSafetyScore": number (0-100),
+    "estimatedCompletion": number (0-100 percentage),
+    "crewCountEstimate": number,
+    "weatherConditions": "string",
+    "primaryConcerns": ["array of concerns"]
+  },
+  "safetyFindings": [
+    {
+      "severity": "CRITICAL|HIGH|MEDIUM|LOW",
+      "category": "PPE|FALL_HAZARD|HOUSEKEEPING|ELECTRICAL|FIRE|OTHER",
+      "description": "detailed description",
+      "recommendation": "corrective action"
+    }
+  ],
+  "progressFindings": [
+    {
+      "workArea": "area name",
+      "tradeType": "${tradeType}",
+      "estimatedComplete": number (0-100),
+      "observations": "quality and progress notes"
+    }
+  ],
+  "crewFindings": {
+    "estimatedCount": number,
+    "ppeCompliance": number (0-100),
+    "activeWorkAreas": ["array of areas"]
+  },
+  "notes": "overall summary of findings"
+}`
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "image_url",
+                    image_url: { url: imageUrl, detail: "high" }
+                  },
+                  {
+                    type: "text",
+                    text: `Analyze this construction jobsite photo for ${tradeType} trade work. Focus on safety hazards, work progress, and crew activity.`
+                  }
+                ]
+              }
+            ],
+            max_tokens: 4096,
+            temperature: 0.3,
+          });
+          return { result: completion.choices[0]?.message?.content, completion };
+        },
+      });
+
+      if (govResult.blocked) {
+        await db.update(jobsiteAnalysisBatches)
+          .set({ status: "FAILED", errorMessage: govResult.reason || "AI rate limited", updatedAt: new Date() })
+          .where(eq(jobsiteAnalysisBatches.id, batchId));
+        return;
+      }
+
+      const responseContent = govResult.result || "";
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        summary = parsed.summary || {
+          overallSafetyScore: 80, estimatedCompletion: 50, crewCountEstimate: 5,
+          weatherConditions: "Unknown", primaryConcerns: [],
+        };
+        safetyFindings = (parsed.safetyFindings || []).map((f: any, i: number) => ({
+          id: `sf-${i + 1}`, severity: f.severity || "MEDIUM", category: f.category || "OTHER",
+          description: f.description, recommendation: f.recommendation, photoId: photos[0].id,
+        }));
+        progressFindings = (parsed.progressFindings || []).map((f: any, i: number) => ({
+          id: `pf-${i + 1}`, workArea: f.workArea || "General Area", tradeType: f.tradeType || tradeType,
+          estimatedComplete: f.estimatedComplete || 0, observations: f.observations, photoId: photos[0].id,
+        }));
+        crewFindings = parsed.crewFindings || { estimatedCount: 0, ppeCompliance: 100, activeWorkAreas: [] };
+        aiNotes = parsed.notes || "AI Vision analysis complete.";
+      } else {
+        throw new Error("Could not parse AI response");
+      }
+    } catch (visionError) {
+      logError("OpenAI Vision error for jobsite analysis, falling back to mock:", {}, visionError instanceof Error ? visionError : new Error(String(visionError)));
+      safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+      progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+      summary = {
+        overallSafetyScore: 85, estimatedCompletion: 45, crewCountEstimate: 6,
+        weatherConditions: "Clear, 72°F",
+        primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
+        analysisMethod: "Fallback (mock)",
+      };
+      crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
+      aiNotes = "Fallback: Generated sample analysis data.";
+    }
+  } else {
+    safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+    progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
+    summary = {
+      overallSafetyScore: 85, estimatedCompletion: 45, crewCountEstimate: 6,
+      weatherConditions: "Clear, 72°F",
+      primaryConcerns: safetyFindings.filter((f: any) => f.severity === "HIGH").map((f: any) => f.description),
+      analysisMethod: "Demo (no photos)",
+    };
+    crewFindings = { estimatedCount: 6, ppeCompliance: 90, activeWorkAreas: ["Main building", "North side"] };
+    aiNotes = "Demo mode: Generated sample analysis data.";
+  }
+
+  await db.update(jobsiteAnalysisBatches)
+    .set({
+      status: "COMPLETE",
+      summaryJson: JSON.stringify(summary),
+      safetyFindingsJson: JSON.stringify(safetyFindings),
+      progressFindingsJson: JSON.stringify(progressFindings),
+      crewFindingsJson: JSON.stringify(crewFindings),
+      aiNotes,
+      updatedAt: new Date(),
+    })
+    .where(eq(jobsiteAnalysisBatches.id, batchId));
+  } catch (processingError) {
+    logError(`processJobsiteBatch uncaught error for batch ${batchId}:`, {}, processingError instanceof Error ? processingError : new Error(String(processingError)));
+    await db.update(jobsiteAnalysisBatches)
+      .set({
+        status: "FAILED",
+        errorMessage: processingError instanceof Error ? processingError.message : "Unexpected processing error",
+        updatedAt: new Date(),
+      })
+      .where(eq(jobsiteAnalysisBatches.id, batchId));
+  }
+}
+
+// POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos with AI Vision
+router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userRole = req.user?.role;
+    
+    if (userRole !== "SUPER_ADMIN" && !organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const batchId = req.params.batchId;
+
+    const [batch] = await db.select()
+      .from(jobsiteAnalysisBatches)
+      .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+
+    if (userRole !== "SUPER_ADMIN" && batch.organizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    await processJobsiteBatch(batchId, req.user!);
+
+    res.json({ success: true, status: "COMPLETE" });
+  } catch (error) {
+    logError("Process jobsite analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to process analysis" });
+  }
+});
+
+function generateSafetyFindings(tradeType: string) {
+  const findings = [
+    { id: "sf-1", severity: "MEDIUM", category: "PPE", description: "Worker without hard hat observed in photo 3", recommendation: "Ensure all workers wear hard hats on site" },
+    { id: "sf-2", severity: "LOW", category: "HOUSEKEEPING", description: "Material storage could be better organized", recommendation: "Organize materials to clear walkways" },
+  ];
+  
+  if (tradeType === "ROOFING") {
+    findings.push({ id: "sf-3", severity: "HIGH", category: "FALL_HAZARD", description: "Ladder not properly secured at roof access", recommendation: "Secure ladder with proper tie-offs" });
+  }
+  
+  return findings;
+}
+
+function generateProgressFindings(tradeType: string) {
+  const findings = [
+    { id: "pf-1", workArea: "Main Building", tradeType, estimatedComplete: 45, observations: "Work progressing on schedule" },
+    { id: "pf-2", workArea: "North Section", tradeType, estimatedComplete: 60, observations: "Ahead of schedule in this area" },
+  ];
+  return findings;
+}
+
+// GET /api/ai-features/jobsite/results/:batchId - Get analysis results
+router.get("/ai-features/jobsite/results/:batchId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const [batch] = await db.select()
+      .from(jobsiteAnalysisBatches)
+      .where(and(
+        eq(jobsiteAnalysisBatches.id, req.params.batchId),
+        eq(jobsiteAnalysisBatches.organizationId, organizationId)
+      ));
+
+    if (!batch) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    const photos = await db.select()
+      .from(jobsiteAnalysisPhotos)
+      .where(eq(jobsiteAnalysisPhotos.batchId, batch.id));
+
+    res.json({
+      batchId: batch.id,
+      status: batch.status,
+      projectId: batch.projectId,
+      date: batch.analysisDate,
+      tradeType: batch.tradeType,
+      summary: batch.summaryJson ? JSON.parse(batch.summaryJson) : null,
+      safetyFindings: batch.safetyFindingsJson ? JSON.parse(batch.safetyFindingsJson) : [],
+      progressFindings: batch.progressFindingsJson ? JSON.parse(batch.progressFindingsJson) : [],
+      crewFindings: batch.crewFindingsJson ? JSON.parse(batch.crewFindingsJson) : null,
+      photos,
+    });
+  } catch (error) {
+    logError("Get jobsite results error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to get results" });
+  }
+});
+
+// GET /api/ai-features/jobsite/history/:projectId - Get analysis history
+router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const batches = await db.select()
+      .from(jobsiteAnalysisBatches)
+      .where(and(
+        eq(jobsiteAnalysisBatches.projectId, req.params.projectId),
+        eq(jobsiteAnalysisBatches.organizationId, organizationId)
+      ))
+      .orderBy(desc(jobsiteAnalysisBatches.analysisDate))
+      .limit(30);
+
+    const batchIds = batches.map(b => b.id);
+    let photoCountMap: Record<string, number> = {};
+    if (batchIds.length > 0) {
+      const photoCounts = await db.select({
+        batchId: jobsiteAnalysisPhotos.batchId,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(jobsiteAnalysisPhotos)
+        .where(sql`${jobsiteAnalysisPhotos.batchId} IN (${sql.join(batchIds.map(id => sql`${id}`), sql`, `)})`)
+        .groupBy(jobsiteAnalysisPhotos.batchId);
+      for (const pc of photoCounts) {
+        photoCountMap[pc.batchId] = pc.count;
+      }
+    }
+
+    const batchesWithCounts = batches.map(b => {
+      let safetyScore: number | undefined;
+      let safetyFindings: any[] = [];
+      let summary: any = undefined;
+      try {
+        if (b.summaryJson) summary = JSON.parse(b.summaryJson);
+        if (summary) safetyScore = summary.overallSafetyScore;
+      } catch { logWarn("Non-critical operation failed"); }
+      try {
+        if (b.safetyFindingsJson) safetyFindings = JSON.parse(b.safetyFindingsJson);
+      } catch { logWarn("Non-critical operation failed"); }
+      return {
+        ...b,
+        photoCount: photoCountMap[b.id] || 0,
+        safetyScore,
+        safetyFindings,
+        summary,
+      };
+    });
+
+    res.json({ batches: batchesWithCounts });
+  } catch (error) {
+    logError("Get jobsite history error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to get history" });
+  }
+});
+
+// GET /api/ai-features/jobsite/project-photos/:projectId - Get unanalyzed project photos
+router.get("/ai-features/jobsite/project-photos/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const projectId = req.params.projectId;
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const allPhotos = await db.select()
+      .from(media)
+      .where(and(
+        eq(media.projectId, projectId),
+        eq(media.type, "IMAGE")
+      ))
+      .orderBy(desc(media.uploadedAt));
+
+    const alreadyUsed = await db.select({ fileUrl: jobsiteAnalysisPhotos.fileUrl })
+      .from(jobsiteAnalysisPhotos)
+      .innerJoin(jobsiteAnalysisBatches, eq(jobsiteAnalysisPhotos.batchId, jobsiteAnalysisBatches.id))
+      .where(eq(jobsiteAnalysisBatches.projectId, projectId));
+
+    const usedUrls = new Set(alreadyUsed.map(p => p.fileUrl));
+    const unanalyzed = allPhotos.filter(p => !usedUrls.has(p.fileUrl));
+
+    res.json({ photos: unanalyzed, total: allPhotos.length, unanalyzedCount: unanalyzed.length });
+  } catch (error) {
+    logError("Get project photos error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to get project photos" });
+  }
+});
+
+// POST /api/ai-features/jobsite/:batchId/attach-photos - Attach photos and trigger processing
+const attachPhotosSchema = z.object({
+  photos: z.array(z.object({
+    fileUrl: z.string().min(1),
+    fileKey: z.string().optional(),
+    originalFilename: z.string().optional(),
+  })).min(1, "At least one photo is required"),
+});
+
+router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    if (!organizationId || !userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const parsed = attachPhotosSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+
+    const { photos } = parsed.data;
+    const batchId = req.params.batchId;
+
+    const [batch] = await db.select()
+      .from(jobsiteAnalysisBatches)
+      .where(eq(jobsiteAnalysisBatches.id, batchId));
+
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+
+    if (batch.organizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const [project] = await db.select().from(projects).where(eq(projects.id, batch.projectId)).limit(1);
+    if (!project || project.gcOrganizationId !== organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const projectMedia = await db.select({ fileUrl: media.fileUrl })
+      .from(media)
+      .where(and(eq(media.projectId, batch.projectId), eq(media.type, "IMAGE")));
+    const validMediaUrls = new Set(projectMedia.map(m => m.fileUrl));
+
+    const { uploadIntents } = await import("@shared/schema");
+    const orgIntents = await db.select({ objectKey: uploadIntents.objectKey })
+      .from(uploadIntents)
+      .where(and(
+        eq(uploadIntents.organizationId, organizationId),
+        isNotNull(uploadIntents.confirmedAt),
+      ));
+    const validObjectKeys = new Set(orgIntents.map(i => i.objectKey));
+
+    const validatedPhotos = photos.filter(p => {
+      if (validMediaUrls.has(p.fileUrl)) return true;
+      if (p.fileKey && validObjectKeys.has(p.fileKey)) return true;
+      const normalizedPath = p.fileUrl.replace(/^\//, "");
+      if (validObjectKeys.has(normalizedPath)) return true;
+      return false;
+    });
+
+    if (validatedPhotos.length === 0) {
+      return res.status(400).json({ error: "No valid photos to attach" });
+    }
+
+    const photoRecords = validatedPhotos.map(p => ({
+      batchId,
+      fileKey: p.fileKey || p.fileUrl,
+      fileUrl: p.fileUrl,
+      originalFilename: p.originalFilename || null,
+    }));
+
+    await db.insert(jobsiteAnalysisPhotos).values(photoRecords);
+
+    res.json({ success: true, photosAttached: validatedPhotos.length, batchId });
+
+    processJobsiteBatch(batchId, req.user!).catch(err => {
+      logError("Background batch processing error:", {}, err instanceof Error ? err : new Error(String(err)));
+    });
+  } catch (error) {
+    logError("Attach photos error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Failed to attach photos" });
+  }
+});
+
+export default router;

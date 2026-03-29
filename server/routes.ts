@@ -70,12 +70,18 @@ import timeClockRoutes from "./timeClockRoutes";
 import overtimeRoutes from "./overtimeRoutes";
 import timeEntryRoutes from "./timeEntryRoutes";
 import payrollRoutes from "./payrollRoutes";
-import changeOrderRoutes from "./changeOrderRoutes";
+import changeOrderCrudRoutes from "./changeOrderCrudRoutes";
+import changeOrderApprovalRoutes from "./changeOrderApprovalRoutes";
+import changeOrderExportRoutes from "./changeOrderExportRoutes";
 import delayRoutes from "./delayRoutes";
 import inspectionRoutes from "./inspectionRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
-import aiCoreRoutes from "./aiCoreRoutes";
+import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
+import aiCfoAnalyticsRoutes from "./aiCfoAnalyticsRoutes";
+import aiTakeoffFeatureRoutes from "./aiTakeoffFeatureRoutes";
+import aiSchedulingRoutes from "./aiSchedulingRoutes";
+import aiOnboardingRoutes from "./aiOnboardingRoutes";
 import aiDocumentRoutes from "./aiDocumentRoutes";
 import scheduleRoutes from "./scheduleRoutes";
 import notesRoutes from "./notesRoutes";
@@ -136,9 +142,14 @@ import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter, verifyOrgAccess, verifyUserOrgAccess, isSuperAdmin } from "./orgFilter";
 import bidRoutes2 from "./bidRoutes2";
-import takeoffRoutes from "./takeoffRoutes";
+import takeoffSheetRoutes from "./takeoffSheetRoutes";
+import takeoffIssueRoutes from "./takeoffIssueRoutes";
+import takeoffMeasurementRoutes from "./takeoffMeasurementRoutes";
+import takeoffCategoryRoutes from "./takeoffCategoryRoutes";
 import bimRoutes from "./bimRoutes";
-import projectRoutes from "./projectRoutes";
+import projectCrudRoutes from "./projectCrudRoutes";
+import projectContentRoutes from "./projectContentRoutes";
+import projectFinancialRoutes from "./projectFinancialRoutes";
 import scopeRoutes from "./scopeRoutes";
 import materialTrackingRoutes from "./materialTrackingRoutes";
 import productionRateRoutes from "./productionRateRoutes";
@@ -208,7 +219,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(payrollRoutes);
 
   // Register change order state machine routes
-  app.use("/api/change-orders", changeOrderRoutes);
+  app.use("/api/change-orders", changeOrderCrudRoutes);
+  app.use("/api/change-orders", changeOrderApprovalRoutes);
+  app.use("/api/change-orders", changeOrderExportRoutes);
 
   // Register delay tracking routes
   app.use("/api", delayRoutes);
@@ -226,7 +239,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", warrantyRoutes);
 
   // Register AI core routes (analysis, features, governance, onboarding)
-  app.use("/api", aiCoreRoutes);
+  app.use("/api", aiOrchestrationRoutes);
+  app.use("/api", aiCfoAnalyticsRoutes);
+  app.use("/api", aiTakeoffFeatureRoutes);
+  app.use("/api", aiSchedulingRoutes);
+  app.use("/api", aiOnboardingRoutes);
 
   // Register AI document routes (bids, contracts, notes, scope, insights, schedule, assistant)
   app.use("/api", aiDocumentRoutes);
@@ -475,11 +492,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Bid Routes
   app.use(bidRoutes2);
-  app.use(takeoffRoutes);
+  app.use(takeoffSheetRoutes);
+  app.use(takeoffIssueRoutes);
+  app.use(takeoffMeasurementRoutes);
+  app.use(takeoffCategoryRoutes);
   app.use(bimRoutes);
 
-  // Project Routes (consolidated: core + content)
-  app.use(projectRoutes);
+  // Project Routes (split: core CRUD, content, financial)
+  app.use(projectCrudRoutes);
+  app.use(projectContentRoutes);
+  app.use(projectFinancialRoutes);
   app.use(materialTrackingRoutes);
   app.use(productionRateRoutes);
 
