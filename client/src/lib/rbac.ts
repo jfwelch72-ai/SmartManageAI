@@ -145,7 +145,7 @@ export function hasSafetyAccess(role?: string): boolean {
  * Check if user has procurement module access
  */
 export function hasProcurementAccess(role?: string): boolean {
-  return role === "ADMIN" || role === "MANAGER" || role === "PROCUREMENT_MANAGER";
+  return role === "ADMIN" || role === "MANAGER" || role === "PROCUREMENT_MANAGER" || role === "SUPERINTENDENT";
 }
 
 /**
@@ -335,8 +335,8 @@ export const RoutePermissions = {
   // Website Builder routes (ADMIN only - organization feature)
   WEBSITE_BUILDER: (role?: string) => isOrganizationAdmin(role),
 
-  // Social Media Management (ADMIN and MANAGER)
-  SOCIAL_MEDIA: (role?: string) => role === "ADMIN" || role === "MANAGER",
+  // Social Media Management (ADMIN, MANAGER, and MARKETING)
+  SOCIAL_MEDIA: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "MARKETING",
 
   // Contractor user access (everyone except SUPER_ADMIN)
   DASHBOARD: (role?: string) => hasContractorAccess(role),
@@ -353,7 +353,7 @@ export const RoutePermissions = {
   BID_NETWORK_INBOX: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "VENDOR",
 
   // Workforce Management (merged Manage Workers + Performance & Rewards)
-  MANAGE_WORKERS: (role?: string) => hasContractorAccess(role),
+  MANAGE_WORKERS: (role?: string) => hasManagementAccess(role) || role === "DISPATCHER" || role === "MAINTENANCE_MANAGER",
 
   // Payroll Management
   PAYROLL_MANAGEMENT: (role?: string) => isOrganizationAdmin(role) || role === "OFFICE_MANAGER" || role === "MANAGER",
@@ -369,9 +369,9 @@ export const RoutePermissions = {
 
   // Hiring Module
   // Full hiring management (jobs CRUD, integrations, pipeline management)
-  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER",
+  HIRING: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER",
   // Candidate review access (read candidates, pipeline board view, dashboard)
-  HIRING_REVIEW: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER",
+  HIRING_REVIEW: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER",
   // Interviews + analytics: ADMIN/HUSTLER/MANAGER only (excludes OFFICE_MANAGER and HR_MANAGER)
   HIRING_ADVANCED: (role?: string) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER",
   HIRING_SETTINGS: (role?: string) => role === "ADMIN",
@@ -595,7 +595,7 @@ export const NavigationConfig = {
       href: "/manage-workers",
       label: "Workforce Management",
       testId: "nav-manage-workers",
-      visible: (role?: string) => hasContractorAccess(role),
+      visible: (role?: string) => hasManagementAccess(role) || role === "DISPATCHER" || role === "MAINTENANCE_MANAGER",
     },
     {
       href: "/payroll-management",
@@ -688,6 +688,12 @@ export const NavigationConfig = {
 
   insightsMenu: [
     {
+      href: "/social-media",
+      label: "Social Media",
+      testId: "nav-social-media",
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "MARKETING" || perms?.canPostSocialMedia === true,
+    },
+    {
       href: "/ai-document-analysis",
       label: "AI Document Analysis",
       testId: "nav-ai-document-analysis",
@@ -712,25 +718,25 @@ export const NavigationConfig = {
       href: "/hiring",
       label: "Dashboard",
       testId: "nav-hiring-dashboard",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/jobs",
       label: "Jobs",
       testId: "nav-hiring-jobs",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/candidates",
       label: "Candidates",
       testId: "nav-hiring-candidates",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/pipeline",
       label: "Pipeline",
       testId: "nav-hiring-pipeline",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/interviews",
@@ -742,7 +748,7 @@ export const NavigationConfig = {
       href: "/hiring/tasks",
       label: "Tasks",
       testId: "nav-hiring-tasks",
-      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
+      visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "HUSTLER" || role === "HR_MANAGER" || role === "MANAGER" || role === "OFFICE_MANAGER" || perms?.canManageHiring === true,
     },
     {
       href: "/hiring/analytics",
