@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { verifyToken } from "./auth";
@@ -131,7 +132,7 @@ async function verifyRoomAccess(roomId: string, userId: string, organizationId: 
       .limit(1);
     if (bid) return true;
   } catch (e) {
-    console.error("[Collab] Room access check failed:", e);
+    logError("[Collab] Room access check failed:", {}, e instanceof Error ? e : new Error(String(e)));
   }
   return false;
 }
@@ -178,7 +179,7 @@ export function setupTakeoffCollaboration(server: HttpServer) {
         organizationId = user.organizationId;
       }
     } catch (e) {
-      console.error("[Collab] Failed to fetch user:", e);
+      logError("[Collab] Failed to fetch user:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     const hasAccess = await verifyRoomAccess(roomId, payload.userId, organizationId);
@@ -252,6 +253,7 @@ export function setupTakeoffCollaboration(server: HttpServer) {
       try {
         msg = JSON.parse(raw.toString());
       } catch {
+        logWarn("Non-critical operation failed");
         return;
       }
 

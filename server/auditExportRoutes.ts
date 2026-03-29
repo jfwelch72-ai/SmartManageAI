@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
@@ -77,7 +78,7 @@ router.get("/search", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireF
       },
     });
   } catch (error) {
-    console.error("Error searching audit logs:", error);
+    logError("Error searching audit logs:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to search audit logs" });
   }
 });
@@ -111,7 +112,7 @@ router.get("/stats", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFe
       last24Hours: recentCount[0]?.count || 0,
     });
   } catch (error) {
-    console.error("Error fetching audit stats:", error);
+    logError("Error fetching audit stats:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch audit statistics" });
   }
 });
@@ -176,7 +177,7 @@ router.get("/export", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireF
     res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().split("T")[0]}.csv"`);
     res.send(csvRows.join("\n"));
   } catch (error) {
-    console.error("Error exporting audit logs:", error);
+    logError("Error exporting audit logs:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to export audit logs" });
   }
 });

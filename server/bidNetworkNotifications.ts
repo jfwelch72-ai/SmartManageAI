@@ -3,7 +3,7 @@ import { db } from "./db";
 import { users, organizations, organizationNetworkSettings, notifications } from "@shared/schema";
 import { insertNotification } from "./services/notificationService";
 import { eq, and, or } from "drizzle-orm";
-import { logInfo, logError } from "./utils/logger";
+import {logInfo, logError, logWarn } from "./utils/logger";
 
 interface NotificationRecipient {
   email: string;
@@ -80,6 +80,7 @@ async function getOrgNotificationSettings(organizationId: string): Promise<{ not
       notifyInApp: settings?.notifyInApp ?? true,
     };
   } catch {
+    logWarn("Non-critical operation failed");
     return { notifyByEmail: true, notifyInApp: true };
   }
 }
@@ -108,6 +109,7 @@ async function getOrgAdminEmails(organizationId: string): Promise<NotificationRe
       organizationName: org?.name,
     }));
   } catch {
+    logWarn("Non-critical operation failed");
     return [];
   }
 }

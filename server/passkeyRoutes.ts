@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import {
   generateRegistrationOptions,
@@ -100,7 +101,7 @@ router.post(
 
       res.json({ ...options, regSessionId });
     } catch (error) {
-      console.error("Passkey register-options error:", error);
+      logError("Passkey register-options error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to generate registration options" });
     }
   }
@@ -164,7 +165,7 @@ router.post(
 
       res.json({ verified: true });
     } catch (error) {
-      console.error("Passkey register-verify error:", error);
+      logError("Passkey register-verify error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to verify registration" });
     }
   }
@@ -186,7 +187,7 @@ router.post(
 
       res.json({ ...options, sessionId });
     } catch (error) {
-      console.error("Passkey auth-options error:", error);
+      logError("Passkey auth-options error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to generate authentication options" });
     }
   }
@@ -290,7 +291,7 @@ router.post(
         redirectTo: redirectPath,
       });
     } catch (error) {
-      console.error("Passkey auth-verify error:", error);
+      logError("Passkey auth-verify error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to verify authentication" });
     }
   }
@@ -313,7 +314,7 @@ router.get(
 
       res.json(creds);
     } catch (error) {
-      console.error("Passkey credentials list error:", error);
+      logError("Passkey credentials list error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to list passkeys" });
     }
   }
@@ -342,7 +343,7 @@ router.delete(
 
       res.json({ deleted: true });
     } catch (error) {
-      console.error("Passkey delete error:", error);
+      logError("Passkey delete error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete passkey" });
     }
   }

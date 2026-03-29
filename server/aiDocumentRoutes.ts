@@ -29,7 +29,7 @@ import { governedAiCall } from "./services/aiGovernance";
 import { ObjectStorageService } from "./objectStorage";
 import { aiNotesService } from "./aiNotesService";
 import { parsePagination, getUserOrThrow } from "./utils/routeHelpers";
-import { logInfo, logError } from "./utils/logger";
+import {logInfo, logError, logWarn } from "./utils/logger";
 import { sensitiveLimiter } from "./rateLimiter";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { 
@@ -208,7 +208,7 @@ Respond with JSON in this format:
     const parsed = JSON.parse(content);
     return parsed as BidDocumentAnalysisResult;
   } catch (error) {
-    console.error("AI document analysis error:", error);
+    logError("AI document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     return {
       projectName: null,
       clientName: null,
@@ -237,6 +237,7 @@ function safeJsonParse(value: string | null | undefined, defaultValue: any[] = [
   try {
     return JSON.parse(value);
   } catch {
+    logWarn("Non-critical operation failed");
     return defaultValue;
   }
 }
@@ -280,7 +281,7 @@ router.get("/ai-bid-document/bids", requireAuth, async (req: AuthRequest, res: R
     const bidsList = await query;
     res.json(bidsList);
   } catch (error) {
-    console.error("Get bids for AI analysis error:", error);
+    logError("Get bids for AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -341,7 +342,7 @@ router.get("/ai-bid-document", requireAuth, async (req: AuthRequest, res: Respon
     
     res.json(enrichedAnalyses);
   } catch (error) {
-    console.error("Get AI bid document analyses error:", error);
+    logError("Get AI bid document analyses error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -433,7 +434,7 @@ router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIM
 
         console.log(`AI bid document analysis completed for: ${fileName}`);
       } catch (error) {
-        console.error("Background AI analysis error:", error);
+        logError("Background AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiBidDocumentAnalysis)
           .set({
@@ -446,7 +447,7 @@ router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIM
     })();
 
   } catch (error) {
-    console.error("Create AI bid document analysis error:", error);
+    logError("Create AI bid document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -519,7 +520,7 @@ router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", 
 
         console.log(`AI bid document reanalysis completed for: ${existing.documentName}`);
       } catch (error) {
-        console.error("Background AI reanalysis error:", error);
+        logError("Background AI reanalysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiBidDocumentAnalysis)
           .set({
@@ -532,7 +533,7 @@ router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", 
     })();
 
   } catch (error) {
-    console.error("Reanalyze AI bid document error:", error);
+    logError("Reanalyze AI bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -572,7 +573,7 @@ router.patch("/ai-bid-document/:id/archive", requireAuth, requireRole("SUPER_ADM
 
     res.json({ success: true, message: "Analysis archived successfully" });
   } catch (error) {
-    console.error("Archive AI bid document error:", error);
+    logError("Archive AI bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -612,7 +613,7 @@ router.patch("/ai-bid-document/:id/restore", requireAuth, requireRole("SUPER_ADM
 
     res.json({ success: true, message: "Analysis restored successfully" });
   } catch (error) {
-    console.error("Restore AI bid document error:", error);
+    logError("Restore AI bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -647,7 +648,7 @@ router.delete("/ai-bid-document/:id", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json({ success: true, message: "Analysis permanently deleted" });
   } catch (error) {
-    console.error("Delete AI bid document error:", error);
+    logError("Delete AI bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -673,7 +674,7 @@ router.get("/ai/bid-document-analysis", requireAuth, async (req: AuthRequest, re
     const analyses = await query;
     res.json(analyses.map(parseAnalysis));
   } catch (error) {
-    console.error("Get AI bid document analyses error:", error);
+    logError("Get AI bid document analyses error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -710,7 +711,7 @@ router.get("/ai/bid-document-analysis/bid/:bidId", requireAuth, async (req: Auth
 
     res.json(analyses.map(parseAnalysis));
   } catch (error) {
-    console.error("Get bid document analyses error:", error);
+    logError("Get bid document analyses error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -740,7 +741,7 @@ router.get("/ai/bid-document-analysis/:id", requireAuth, async (req: AuthRequest
 
     res.json(parseAnalysis(analysis));
   } catch (error) {
-    console.error("Get bid document analysis error:", error);
+    logError("Get bid document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -855,7 +856,7 @@ router.post("/ai/bid-document-analysis", requireAuth, requireRole("ADMIN", "ESTI
 
         console.log(`AI bid document analysis completed for: ${documentName}`);
       } catch (error) {
-        console.error("Background AI analysis error:", error);
+        logError("Background AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiBidDocumentAnalysis)
           .set({
@@ -868,7 +869,7 @@ router.post("/ai/bid-document-analysis", requireAuth, requireRole("ADMIN", "ESTI
     })();
 
   } catch (error) {
-    console.error("Create AI bid document analysis error:", error);
+    logError("Create AI bid document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -947,7 +948,7 @@ router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole(
 
         console.log(`AI bid document re-analysis completed for: ${existingAnalysis.documentName}`);
       } catch (error) {
-        console.error("Background AI re-analysis error:", error);
+        logError("Background AI re-analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiBidDocumentAnalysis)
           .set({
@@ -960,7 +961,7 @@ router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole(
     })();
 
   } catch (error) {
-    console.error("Reanalyze bid document error:", error);
+    logError("Reanalyze bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -994,7 +995,7 @@ router.delete("/ai/bid-document-analysis/:id", requireAuth, requireRole("ADMIN")
 
     res.json({ success: true, message: "Analysis deleted" });
   } catch (error) {
-    console.error("Delete bid document analysis error:", error);
+    logError("Delete bid document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1033,6 +1034,7 @@ function isValidObjectStorageUrl(url: string): boolean {
     ];
     return allowedHosts.some(host => parsedUrl.hostname.endsWith(host));
   } catch {
+    logWarn("Non-critical operation failed");
     return false;
   }
 }
@@ -1081,7 +1083,7 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
         const images = await extractDocumentContent(doc.url);
         allDocumentImages.push(...images);
       } catch (extractError) {
-        console.error(`[AI Bid Wizard] Failed to extract content from ${doc.name}:`, extractError);
+        logError(`[AI Bid Wizard] Failed to extract content from ${doc.name}:`, {}, extractError instanceof Error ? extractError : new Error(String(extractError)));
       }
     }
 
@@ -1180,7 +1182,7 @@ Be thorough in extracting scope items. Include quantities and units when availab
       
       res.json(result);
     } catch (aiError) {
-      console.error('[AI Bid Wizard] AI analysis error:', aiError instanceof Error ? aiError.message : 'Unknown');
+      logError('[AI Bid Wizard] AI analysis error', {}, aiError instanceof Error ? aiError : new Error(String(aiError)));
       
       return res.status(200).json({
         projectName: null,
@@ -1204,7 +1206,7 @@ Be thorough in extracting scope items. Include quantities and units when availab
       });
     }
   } catch (error) {
-    console.error("[AI Bid Wizard] Error:", error instanceof Error ? error.message : 'Unknown');
+    logError("[AI Bid Wizard] Error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1440,7 +1442,7 @@ Analyze the document and return the structured JSON with all contract details.`;
     if ((error as any)?.governed) {
       throw error;
     }
-    console.error("AI contract document analysis error:", error);
+    logError("AI contract document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     return {
       contractType: null,
       contractNumber: null,
@@ -1530,7 +1532,7 @@ router.get("/ai-contract-document/projects", requireAuth, async (req: AuthReques
 
     res.json(projectsList);
   } catch (error) {
-    console.error("Get projects for contract analysis error:", error);
+    logError("Get projects for contract analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1575,7 +1577,7 @@ router.get("/ai-contract-document", requireAuth, async (req: AuthRequest, res: R
             ? JSON.parse(analysis.analysisResult) 
             : analysis.analysisResult;
         } catch (e) {
-          console.error('Failed to parse analysisResult:', e);
+          logError('Failed to parse analysisResult:', {}, e instanceof Error ? e : new Error(String(e)));
         }
       }
       
@@ -1596,7 +1598,7 @@ router.get("/ai-contract-document", requireAuth, async (req: AuthRequest, res: R
     
     res.json(enrichedAnalyses);
   } catch (error) {
-    console.error("Get AI contract document analyses error:", error);
+    logError("Get AI contract document analyses error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1700,7 +1702,7 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
         if ((error as any)?.governed) {
           console.warn("AI contract analysis blocked by governance:", (error as any).reason);
         }
-        console.error("Background AI contract analysis error:", error);
+        logError("Background AI contract analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiContractDocumentAnalysis)
           .set({
@@ -1716,7 +1718,7 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
     if ((error as any)?.governed) {
       return res.status(429).json({ error: (error as any).reason || "AI rate limit exceeded" });
     }
-    console.error("Create AI contract document analysis error:", error);
+    logError("Create AI contract document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1807,7 +1809,7 @@ router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUP
         if ((error as any)?.governed) {
           console.warn("AI contract reanalysis blocked by governance:", (error as any).reason);
         }
-        console.error("Background AI contract reanalysis error:", error);
+        logError("Background AI contract reanalysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiContractDocumentAnalysis)
           .set({
@@ -1823,7 +1825,7 @@ router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUP
     if ((error as any)?.governed) {
       return res.status(429).json({ error: (error as any).reason || "AI rate limit exceeded" });
     }
-    console.error("Reanalyze AI contract document error:", error);
+    logError("Reanalyze AI contract document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1849,7 +1851,7 @@ router.get("/ai/contract-document-analysis", requireAuth, async (req: AuthReques
     const analyses = await query;
     res.json(analyses.map(parseContractAnalysis));
   } catch (error) {
-    console.error("Get AI contract document analyses error:", error);
+    logError("Get AI contract document analyses error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1886,7 +1888,7 @@ router.get("/ai/contract-document-analysis/project/:projectId", requireAuth, asy
 
     res.json(analyses.map(parseContractAnalysis));
   } catch (error) {
-    console.error("Get project contract analyses error:", error);
+    logError("Get project contract analyses error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1916,7 +1918,7 @@ router.get("/ai/contract-document-analysis/:id", requireAuth, async (req: AuthRe
 
     res.json(parseContractAnalysis(analysis));
   } catch (error) {
-    console.error("Get contract document analysis error:", error);
+    logError("Get contract document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2048,7 +2050,7 @@ router.post("/ai/contract-document-analysis", requireAuth, requireRole("SUPER_AD
         if ((error as any)?.governed) {
           console.warn("AI contract analysis blocked by governance:", (error as any).reason);
         }
-        console.error("Background AI contract analysis error:", error);
+        logError("Background AI contract analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiContractDocumentAnalysis)
           .set({
@@ -2061,7 +2063,7 @@ router.post("/ai/contract-document-analysis", requireAuth, requireRole("SUPER_AD
     })();
 
   } catch (error) {
-    console.error("Create AI contract document analysis error:", error);
+    logError("Create AI contract document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2166,7 +2168,7 @@ router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, require
         if ((error as any)?.governed) {
           console.warn("AI contract re-analysis blocked by governance:", (error as any).reason);
         }
-        console.error("Background AI contract re-analysis error:", error);
+        logError("Background AI contract re-analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(aiContractDocumentAnalysis)
           .set({
@@ -2179,7 +2181,7 @@ router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, require
     })();
 
   } catch (error) {
-    console.error("Reanalyze contract document error:", error);
+    logError("Reanalyze contract document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2213,7 +2215,7 @@ router.delete("/ai/contract-document-analysis/:id", requireAuth, requireRole("SU
 
     res.json({ success: true, message: "Analysis deleted" });
   } catch (error) {
-    console.error("Delete contract document analysis error:", error);
+    logError("Delete contract document analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2262,7 +2264,7 @@ router.get("/ai-contract-document/download/:id", requireAuth, async (req: AuthRe
 
     await objectStorageService.downloadObject(objectFile, res, 0);
   } catch (error: any) {
-    console.error("Download contract document error:", error);
+    logError("Download contract document error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ObjectNotFoundError") {
       return res.status(404).json({ error: "Document file not found in storage" });
     }
@@ -2293,7 +2295,7 @@ router.post("/analyze", requireAuth, requireRole("ADMIN", "MANAGER"), async (req
       insightsGenerated: result.insightsCount,
     });
   } catch (error) {
-    console.error("Error triggering AI analysis:", error);
+    logError("Error triggering AI analysis:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({
       error: "Failed to analyze notes",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -2309,7 +2311,7 @@ router.get("/insights", requireAuth, async (req: AuthRequest, res: Response) => 
     const insights = await aiNotesService.getAllInsights(limit, user.role);
     res.json({ insights });
   } catch (error) {
-    console.error("Error fetching insights:", error);
+    logError("Error fetching insights:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({
       error: "Failed to fetch insights",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -2325,7 +2327,7 @@ router.get("/insights/role", requireAuth, async (req: AuthRequest, res: Response
     const insights = await aiNotesService.getInsightsForRole(user.role, limit);
     res.json({ insights });
   } catch (error) {
-    console.error("Error fetching role-based insights:", error);
+    logError("Error fetching role-based insights:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({
       error: "Failed to fetch insights",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -2372,7 +2374,7 @@ router.get("/insights/project/:projectId", requireAuth, async (req: AuthRequest,
     const insights = await aiNotesService.getProjectInsights(projectId, limit, user.role);
     res.json({ insights });
   } catch (error) {
-    console.error("Error fetching project insights:", error);
+    logError("Error fetching project insights:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({
       error: "Failed to fetch project insights",
       message: error instanceof Error ? error.message : "Unknown error",
@@ -2394,7 +2396,7 @@ router.get("/ai/trades", requireAuth, async (req: AuthRequest, res) => {
       allTrades: ALL_TRADES,
     });
   } catch (error: any) {
-    logError(`[AI Trades] Error fetching trades: ${error.message}`);
+    logError("[AI Trades] Error fetching trades", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch trades" });
   }
 });
@@ -2422,7 +2424,7 @@ router.post("/ai/trades/discover", sensitiveLimiter, requireAuth, async (req: Au
     if (error.message?.includes("limit reached") || error.message?.includes("blocked")) {
       return res.status(429).json({ error: error.message });
     }
-    logError(`[AI Trades] Trade discovery error: ${error.message}`);
+    logError("[AI Trades] Trade discovery error", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to discover trades" });
   }
 });
@@ -2451,7 +2453,7 @@ router.post("/ai/scope/predict", sensitiveLimiter, requireAuth, async (req: Auth
     if (error.message?.includes("limit reached") || error.message?.includes("blocked")) {
       return res.status(429).json({ error: error.message });
     }
-    logError(`[AI Scope] Scope prediction error: ${error.message}`);
+    logError("[AI Scope] Scope prediction error", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to predict scope items" });
   }
 });
@@ -2476,7 +2478,7 @@ router.get("/ai/scope/search", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(result);
   } catch (error: any) {
-    logError(`[AI Scope] Scope search error: ${error.message}`);
+    logError("[AI Scope] Scope search error", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to search scope items" });
   }
 });
@@ -2492,7 +2494,7 @@ router.get("/ai/scope/trade/:tradeType", requireAuth, async (req: AuthRequest, r
 
     res.json({ items, count: items.length });
   } catch (error: any) {
-    logError(`[AI Scope] Error fetching trade scope items: ${error.message}`);
+    logError("[AI Scope] Error fetching trade scope items", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch scope items for trade" });
   }
 });
@@ -2509,7 +2511,7 @@ router.get("/ai/scope/modifiers/:tradeType", requireAuth, async (req: AuthReques
 
     res.json({ modifiers });
   } catch (error: any) {
-    logError(`[AI Scope] Error fetching modifiers: ${error.message}`);
+    logError("[AI Scope] Error fetching modifiers", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch modifiers" });
   }
 });
@@ -2526,7 +2528,7 @@ router.post("/ai/trades/modifiers", requireAuth, async (req: AuthRequest, res) =
 
     res.json(result);
   } catch (error: any) {
-    logError(`[AI Scope] Error fetching trade modifiers: ${error.message}`);
+    logError("[AI Scope] Error fetching trade modifiers", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch trade modifiers" });
   }
 });
@@ -2553,7 +2555,7 @@ router.post("/ai/scope/from-document", sensitiveLimiter, requireAuth, async (req
     if (error.message?.includes("limit reached") || error.message?.includes("blocked")) {
       return res.status(429).json({ error: error.message });
     }
-    logError(`[AI Scope] Scope from document error: ${error.message}`);
+    logError("[AI Scope] Scope from document error", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to suggest scope from document" });
   }
 });
@@ -2618,7 +2620,7 @@ router.get("/ai-insights/dashboard-summary", requireAuth, requireRole("ADMIN", "
       totalUnacknowledged: countBySeverity.reduce((sum, c) => sum + c.count, 0),
     });
   } catch (error: any) {
-    console.error("Error fetching AI dashboard summary:", error);
+    logError("Error fetching AI dashboard summary:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch AI dashboard summary" });
   }
 });
@@ -2672,7 +2674,7 @@ router.get("/ai-insights", requireAuth, requireRole("ADMIN", "MANAGER"), async (
 
     res.json(parsedInsights);
   } catch (error: any) {
-    console.error("Error fetching AI insights:", error);
+    logError("Error fetching AI insights:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch AI insights" });
   }
 });
@@ -2706,7 +2708,7 @@ router.get("/ai-insights/:id", requireAuth, requireRole("ADMIN", "MANAGER"), asy
 
     res.json(parsedInsight);
   } catch (error: any) {
-    console.error("Error fetching AI insight:", error);
+    logError("Error fetching AI insight:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch AI insight" });
   }
 });
@@ -2743,7 +2745,7 @@ router.patch("/ai-insights/:id/acknowledge", requireAuth, requireRole("ADMIN", "
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Error acknowledging AI insight:", error);
+    logError("Error acknowledging AI insight:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to acknowledge insight" });
   }
 });
@@ -2767,7 +2769,7 @@ router.get("/ai-gantt-recommendations/:projectId", requireAuth, requireRole("ADM
 
     res.json(parsedRecommendations);
   } catch (error: any) {
-    console.error("Error fetching Gantt recommendations:", error);
+    logError("Error fetching Gantt recommendations:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch Gantt recommendations" });
   }
 });
@@ -2802,7 +2804,7 @@ router.get("/ai-vendor-comparisons", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(parsedComparisons);
   } catch (error: any) {
-    console.error("Error fetching vendor comparisons:", error);
+    logError("Error fetching vendor comparisons:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch vendor comparisons" });
   }
 });
@@ -3093,7 +3095,7 @@ Generate a realistic schedule that:
     try {
       aiResponse = JSON.parse(responseContent);
     } catch (parseError) {
-      console.error("Failed to parse AI response:", responseContent);
+      logError("Failed to parse AI response:", {}, responseContent instanceof Error ? responseContent : new Error(String(responseContent)));
       res.status(500).json({ error: "Failed to parse AI schedule response" });
       return;
     }
@@ -3252,7 +3254,7 @@ Generate a realistic schedule that:
         );
       }
     } catch (recErr) {
-      console.error("Failed to generate AI recommendations:", recErr);
+      logError("Failed to generate AI recommendations:", {}, recErr instanceof Error ? recErr : new Error(String(recErr)));
     }
 
     const [updatedSchedule] = await db
@@ -3279,7 +3281,7 @@ Generate a realistic schedule that:
     });
 
   } catch (error) {
-    console.error("AI Schedule generation error:", error);
+    logError("AI Schedule generation error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate schedule. Please try again." });
   }
 });
@@ -3355,7 +3357,7 @@ router.patch("/projects/:code/schedule/tasks/reorder", requireAuth, requireRole(
     const tasks = await db.select().from(projectScheduleTasks).where(eq(projectScheduleTasks.scheduleId, schedule.id));
     res.json({ tasks });
   } catch (error) {
-    console.error("Reorder tasks error:", error);
+    logError("Reorder tasks error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3477,7 +3479,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole(
         const { recalculateSchedule } = await import("./cpmEngine");
         await recalculateSchedule(updatedTask.scheduleId);
       } catch (e) {
-        console.error("CPM recalculation failed:", e);
+        logError("CPM recalculation failed:", {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
 
@@ -3487,7 +3489,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole(
 
     res.json({ task: updatedTask, tasks: allTasks });
   } catch (error) {
-    console.error("Update schedule task error:", error);
+    logError("Update schedule task error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3531,7 +3533,7 @@ router.get("/projects/:code/schedule", requireAuth, async (req: AuthRequest, res
     res.json({ schedule, tasks });
 
   } catch (error) {
-    console.error("Get schedule error:", error);
+    logError("Get schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3774,7 +3776,7 @@ Analyze and suggest the properly formatted SOW item.`;
     });
 
   } catch (error: any) {
-    console.error("AI SOW Assistant error:", error);
+    logError("AI SOW Assistant error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate suggestion", details: error.message });
   }
 });
@@ -3857,7 +3859,7 @@ router.post("/ai-assistant/sow/add", async (req: AuthRequest, res) => {
     });
 
   } catch (error: any) {
-    console.error("Add SOW item error:", error);
+    logError("Add SOW item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to add SOW item", details: error.message });
   }
 });
@@ -3967,7 +3969,7 @@ Analyze and suggest the properly formatted UOM, or explain if a similar one alre
     });
 
   } catch (error: any) {
-    console.error("AI UOM Assistant error:", error);
+    logError("AI UOM Assistant error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate suggestion", details: error.message });
   }
 });
@@ -4033,7 +4035,7 @@ router.post("/ai-assistant/uom/add", async (req: AuthRequest, res) => {
     });
 
   } catch (error: any) {
-    console.error("Add UOM error:", error);
+    logError("Add UOM error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to add unit of measure", details: error.message });
   }
 });
@@ -4100,7 +4102,7 @@ router.get("/ai-assistant/sow/search", async (req: AuthRequest, res) => {
     });
 
   } catch (error: any) {
-    console.error("SOW search error:", error);
+    logError("SOW search error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Search failed", details: error.message });
   }
 });
@@ -4124,7 +4126,7 @@ router.get("/ai-assistant/uom/list", async (req: AuthRequest, res) => {
     res.json({ uoms });
 
   } catch (error: any) {
-    console.error("UOM list error:", error);
+    logError("UOM list error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch UOMs" });
   }
 });

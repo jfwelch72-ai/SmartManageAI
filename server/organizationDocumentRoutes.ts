@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { organizationDocuments, organizations, users, insertOrganizationDocumentSchema, type OrganizationDocument } from "@shared/schema";
@@ -72,7 +73,7 @@ router.get("/organization-documents/types", requireAuth, async (req: AuthRequest
       ]
     });
   } catch (error) {
-    console.error("Get document types error:", error);
+    logError("Get document types error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -130,7 +131,7 @@ router.get("/organization-documents/summary", requireAuth, async (req: AuthReque
 
     res.json(summary);
   } catch (error) {
-    console.error("Get document summary error:", error);
+    logError("Get document summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -181,7 +182,7 @@ router.get("/organization-documents/history/:type", requireAuth, async (req: Aut
 
     res.json(enrichedDocuments);
   } catch (error) {
-    console.error("Get document history error:", error);
+    logError("Get document history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -248,7 +249,7 @@ router.get("/organization-documents", requireAuth, async (req: AuthRequest, res:
 
     res.json(enrichedDocuments);
   } catch (error) {
-    console.error("Get organization documents error:", error);
+    logError("Get organization documents error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -319,7 +320,7 @@ router.get("/organization-documents/:id", requireAuth, async (req: AuthRequest, 
 
     res.json(enrichedDocument);
   } catch (error) {
-    console.error("Get organization document error:", error);
+    logError("Get organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -411,7 +412,7 @@ router.post("/organization-documents", requireAuth, requireRole("SUPER_ADMIN", "
       visibilityLabel: VISIBILITY_LABELS[newDocument.visibility] || newDocument.visibility,
     });
   } catch (error) {
-    console.error("Create organization document error:", error);
+    logError("Create organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -472,7 +473,7 @@ router.patch("/organization-documents/:id", requireAuth, requireRole("SUPER_ADMI
       visibilityLabel: VISIBILITY_LABELS[updatedDoc.visibility] || updatedDoc.visibility,
     });
   } catch (error) {
-    console.error("Update organization document error:", error);
+    logError("Update organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -514,7 +515,7 @@ router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADM
 
     res.json({ success: true, message: "Document deactivated" });
   } catch (error) {
-    console.error("Delete organization document error:", error);
+    logError("Delete organization document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

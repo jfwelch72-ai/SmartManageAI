@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { eq, and, desc, gte, lte, ilike, sql, asc, or } from "drizzle-orm";
@@ -82,7 +83,7 @@ router.get("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ data: posts, total, limit, offset });
   } catch (error) {
-    console.error("Error fetching social posts:", error);
+    logError("Error fetching social posts:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch social posts" });
   }
 });
@@ -151,7 +152,7 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(warning ? { ...post, warning } : post);
   } catch (error) {
-    console.error("Error creating social post:", error);
+    logError("Error creating social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create social post" });
   }
 });
@@ -225,7 +226,7 @@ router.post("/posts/generate-image", requireAuth, async (req: AuthRequest, res: 
     const imageUrl = `/api/social/image/${orgId}/social-${uniqueId}.png`;
     res.json({ imageUrl });
   } catch (error: any) {
-    console.error("Error generating social media image:", error);
+    logError("Error generating social media image:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different prompt." });
     }
@@ -292,7 +293,7 @@ router.post("/upload-media", requireAuth, socialUpload.single("file"), async (re
     const proxyUrl = `/api/social/image/${orgId}/social-${uniqueId}.${ext}`;
     res.json({ url: proxyUrl, fileName: file.originalname, size: file.size, mimeType: file.mimetype });
   } catch (error: any) {
-    console.error("Error uploading social media file:", error);
+    logError("Error uploading social media file:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to upload file" });
   }
 });
@@ -307,7 +308,7 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
     }
     objectStorage.downloadObject(file, res, 86400);
   } catch (error: any) {
-    console.error("Error serving social image:", error);
+    logError("Error serving social image:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error instanceof ObjectNotFoundError) {
       return res.status(404).json({ error: "Image not found" });
     }
@@ -369,7 +370,7 @@ router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating social post:", error);
+    logError("Error updating social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update social post" });
   }
 });
@@ -391,7 +392,7 @@ router.delete("/posts/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting social post:", error);
+    logError("Error deleting social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete social post" });
   }
 });
@@ -454,7 +455,7 @@ router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Res
 
     res.json({ ...updated, warning: publishWarning });
   } catch (error) {
-    console.error("Error publishing social post:", error);
+    logError("Error publishing social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to publish social post" });
   }
 });
@@ -480,7 +481,7 @@ router.post("/posts/:id/approve", requireAuth, async (req: AuthRequest, res: Res
     if (!updated) return res.status(404).json({ error: "Post not found" });
     res.json(updated);
   } catch (error) {
-    console.error("Error approving social post:", error);
+    logError("Error approving social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to approve social post" });
   }
 });
@@ -521,7 +522,7 @@ router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: R
 
     res.json(duplicate);
   } catch (error) {
-    console.error("Error duplicating social post:", error);
+    logError("Error duplicating social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to duplicate social post" });
   }
 });
@@ -548,7 +549,7 @@ router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res:
     if (!updated) return res.status(404).json({ error: "Post not found" });
     res.json(updated);
   } catch (error) {
-    console.error("Error rescheduling social post:", error);
+    logError("Error rescheduling social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to reschedule social post" });
   }
 });
@@ -584,7 +585,7 @@ router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json(updated);
   } catch (error) {
-    console.error("Error rejecting social post:", error);
+    logError("Error rejecting social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to reject social post" });
   }
 });
@@ -621,7 +622,7 @@ router.post("/posts/bulk", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json({ created: created.length, posts: created });
   } catch (error) {
-    console.error("Error bulk creating social posts:", error);
+    logError("Error bulk creating social posts:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to bulk create posts" });
   }
 });
@@ -641,6 +642,7 @@ function decrypt(text: string): string {
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch {
+    logWarn("Non-critical operation failed");
     return "";
   }
 }
@@ -677,7 +679,7 @@ router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json(sanitized);
   } catch (error) {
-    console.error("Error fetching social accounts:", error);
+    logError("Error fetching social accounts:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch social accounts" });
   }
 });
@@ -705,7 +707,7 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response) =>
 
     res.json({ ...account, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" });
   } catch (error) {
-    console.error("Error creating social account:", error);
+    logError("Error creating social account:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create social account" });
   }
 });
@@ -738,7 +740,7 @@ router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Respons
     if (!updated) return res.status(404).json({ error: "Account not found" });
     res.json({ ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" });
   } catch (error) {
-    console.error("Error updating social account:", error);
+    logError("Error updating social account:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update social account" });
   }
 });
@@ -757,7 +759,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Respon
     if (!deleted) return res.status(404).json({ error: "Account not found" });
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting social account:", error);
+    logError("Error deleting social account:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete social account" });
   }
 });
@@ -789,7 +791,7 @@ router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Re
       expiresAt: account.tokenExpiresAt || null,
     });
   } catch (error) {
-    console.error("Error checking account status:", error);
+    logError("Error checking account status:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to check account status" });
   }
 });
@@ -838,7 +840,7 @@ router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: 
       account: { ...updated, accessTokenEncrypted: "***", refreshTokenEncrypted: "***" },
     });
   } catch (error) {
-    console.error("Error refreshing token:", error);
+    logError("Error refreshing token:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to refresh token" });
   }
 });
@@ -881,7 +883,7 @@ router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json({ month: m, year: y, posts: grouped });
   } catch (error) {
-    console.error("Error fetching social calendar:", error);
+    logError("Error fetching social calendar:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch calendar data" });
   }
 });
@@ -937,7 +939,7 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res: Response) => {
       }, {}),
     });
   } catch (error) {
-    console.error("Error fetching social stats:", error);
+    logError("Error fetching social stats:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch social stats" });
   }
 });
@@ -1028,7 +1030,7 @@ Return a JSON object with:
 
     res.json(postContent);
   } catch (error) {
-    console.error("Error generating social post:", error);
+    logError("Error generating social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate social post" });
   }
 });
@@ -1148,7 +1150,7 @@ router.get("/auth/facebook/callback", requireAuth, async (req: AuthRequest, res:
     });
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
-      console.error("Facebook token exchange failed:", tokenData);
+      logError("Facebook token exchange failed:", {}, tokenData instanceof Error ? tokenData : new Error(String(tokenData)));
       return res.redirect("/social-media?error=facebook_failed");
     }
 
@@ -1196,7 +1198,7 @@ router.get("/auth/facebook/callback", requireAuth, async (req: AuthRequest, res:
 
     res.redirect("/social-media?connected=FACEBOOK");
   } catch (err) {
-    console.error("Facebook OAuth callback error:", err);
+    logError("Facebook OAuth callback error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.redirect("/social-media?error=facebook_failed");
   }
 });
@@ -1237,7 +1239,7 @@ router.get("/auth/linkedin/callback", requireAuth, async (req: AuthRequest, res:
     });
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
-      console.error("LinkedIn token exchange failed:", tokenData);
+      logError("LinkedIn token exchange failed:", {}, tokenData instanceof Error ? tokenData : new Error(String(tokenData)));
       return res.redirect("/social-media?error=linkedin_failed");
     }
 
@@ -1254,7 +1256,7 @@ router.get("/auth/linkedin/callback", requireAuth, async (req: AuthRequest, res:
 
     res.redirect("/social-media?connected=LINKEDIN");
   } catch (err) {
-    console.error("LinkedIn OAuth callback error:", err);
+    logError("LinkedIn OAuth callback error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.redirect("/social-media?error=linkedin_failed");
   }
 });
@@ -1324,7 +1326,7 @@ router.get("/auth/twitter/callback", requireAuth, async (req: AuthRequest, res: 
     });
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) {
-      console.error("Twitter token exchange failed:", tokenData);
+      logError("Twitter token exchange failed:", {}, tokenData instanceof Error ? tokenData : new Error(String(tokenData)));
       return res.redirect("/social-media?error=twitter_failed");
     }
 
@@ -1341,7 +1343,7 @@ router.get("/auth/twitter/callback", requireAuth, async (req: AuthRequest, res: 
 
     res.redirect("/social-media?connected=TWITTER");
   } catch (err) {
-    console.error("Twitter OAuth callback error:", err);
+    logError("Twitter OAuth callback error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.redirect("/social-media?error=twitter_failed");
   }
 });

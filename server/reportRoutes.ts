@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -82,7 +83,7 @@ router.get("/api/reports/takeoff/quantity", requireAuth, async (req: AuthRequest
 
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching takeoff quantity report:", error);
+    logError("Error fetching takeoff quantity report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -132,7 +133,7 @@ router.get("/api/reports/takeoff/summary", requireAuth, async (req: AuthRequest,
 
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching takeoff summary report:", error);
+    logError("Error fetching takeoff summary report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -189,7 +190,7 @@ router.get("/api/reports/takeoff/by-takeoff", requireAuth, async (req: AuthReque
 
     res.json(Object.values(grouped));
   } catch (error) {
-    console.error("Error fetching takeoff by-takeoff report:", error);
+    logError("Error fetching takeoff by-takeoff report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -228,7 +229,7 @@ router.get("/api/reports/takeoff/items", requireAuth, async (req: AuthRequest, r
 
     res.json(Array.from(seen.values()));
   } catch (error) {
-    console.error("Error fetching takeoff items report:", error);
+    logError("Error fetching takeoff items report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -281,7 +282,7 @@ router.get("/api/reports/takeoff/item-cost", requireAuth, async (req: AuthReques
 
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching takeoff item-cost report:", error);
+    logError("Error fetching takeoff item-cost report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -343,7 +344,7 @@ router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, async (req: Au
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching takeoff item-cost-by-type report:", error);
+    logError("Error fetching takeoff item-cost-by-type report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -410,7 +411,7 @@ router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, async (req:
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching takeoff item-cost-by-takeoff report:", error);
+    logError("Error fetching takeoff item-cost-by-takeoff report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -454,7 +455,7 @@ router.get("/api/reports/estimates/summary", requireAuth, async (req: AuthReques
 
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching estimate summary report:", error);
+    logError("Error fetching estimate summary report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -505,7 +506,7 @@ router.get("/api/reports/estimates/cost-breakdown", requireAuth, async (req: Aut
       grandTotal: Math.round(grandTotal * 100) / 100,
     });
   } catch (error) {
-    console.error("Error fetching estimate cost-breakdown report:", error);
+    logError("Error fetching estimate cost-breakdown report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -585,7 +586,7 @@ router.get("/api/reports/export/csv", requireAuth, async (req: AuthRequest, res)
     res.setHeader("Content-Disposition", `attachment; filename="${reportType}-report.csv"`);
     res.send(csvRows.join("\n"));
   } catch (error) {
-    console.error("Error exporting CSV:", error);
+    logError("Error exporting CSV:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

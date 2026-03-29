@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import {
@@ -142,7 +143,7 @@ router.get("/projects/:code/warranty/cases", requireAuth, async (req: AuthReques
 
     res.json(cases.map(enrichCase));
   } catch (err) {
-    console.error("Error listing warranty cases:", err);
+    logError("Error listing warranty cases:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch warranty cases" });
   }
 });
@@ -224,7 +225,7 @@ router.post(
 
       res.status(201).json(enrichCase(wc));
     } catch (err) {
-      console.error("Error creating warranty case:", err);
+      logError("Error creating warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create warranty case" });
     }
   },
@@ -240,7 +241,7 @@ router.get("/projects/:code/warranty/cases/:id", requireAuth, async (req: AuthRe
     if (!project || project.id !== wc.projectId) return res.status(404).json({ error: "Warranty case not found" });
     res.json(enrichCase(wc));
   } catch (err) {
-    console.error("Error fetching warranty case:", err);
+    logError("Error fetching warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch warranty case" });
   }
 });
@@ -352,7 +353,7 @@ router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: Auth
 
     res.json(enrichCase(updated));
   } catch (err) {
-    console.error("Error updating warranty case:", err);
+    logError("Error updating warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update warranty case" });
   }
 });
@@ -382,7 +383,7 @@ router.delete(
 
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting warranty case:", err);
+      logError("Error deleting warranty case:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete warranty case" });
     }
   },
@@ -415,7 +416,7 @@ router.get("/projects/:code/warranty/cases/:id/tasks", requireAuth, async (req: 
 
     res.json(tasks);
   } catch (err) {
-    console.error("Error listing warranty tasks:", err);
+    logError("Error listing warranty tasks:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch warranty tasks" });
   }
 });
@@ -453,7 +454,7 @@ router.post(
       const [task] = await db.insert(warrantyTasks).values(parsed.data).returning();
       res.status(201).json(task);
     } catch (err) {
-      console.error("Error creating warranty task:", err);
+      logError("Error creating warranty task:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create warranty task" });
     }
   },
@@ -495,7 +496,7 @@ router.patch("/projects/:code/warranty/tasks/:taskId", requireAuth, async (req: 
 
     res.json(updated);
   } catch (err) {
-    console.error("Error updating warranty task:", err);
+    logError("Error updating warranty task:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update warranty task" });
   }
 });
@@ -517,7 +518,7 @@ router.delete(
       await db.delete(warrantyTasks).where(eq(warrantyTasks.id, req.params.taskId));
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting warranty task:", err);
+      logError("Error deleting warranty task:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete warranty task" });
     }
   },
@@ -556,7 +557,7 @@ router.post(
       const [doc] = await db.insert(warrantyDocuments).values(parsed.data).returning();
       res.status(201).json(doc);
     } catch (err) {
-      console.error("Error adding warranty document:", err);
+      logError("Error adding warranty document:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to add document" });
     }
   },
@@ -579,7 +580,7 @@ router.delete(
       await db.delete(warrantyDocuments).where(eq(warrantyDocuments.id, req.params.docId));
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting warranty document:", err);
+      logError("Error deleting warranty document:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete document" });
     }
   },
@@ -600,7 +601,7 @@ router.get("/projects/:code/warranty/cases/:id/documents", requireAuth, async (r
 
     res.json(docs);
   } catch (err) {
-    console.error("Error listing warranty documents:", err);
+    logError("Error listing warranty documents:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch documents" });
   }
 });
@@ -667,7 +668,7 @@ router.get("/projects/:code/warranty/export", requireAuth, async (req: AuthReque
     res.setHeader("Content-Type", "text/html");
     res.send(html);
   } catch (err) {
-    console.error("Error exporting warranty cases:", err);
+    logError("Error exporting warranty cases:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to export warranty cases" });
   }
 });

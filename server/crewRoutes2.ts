@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -76,7 +77,7 @@ router.get("/api/crews", async (req: AuthRequest, res) => {
 
     res.json(crewsWithCounts);
   } catch (error) {
-    console.error("Error fetching crews:", error);
+    logError("Error fetching crews:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -143,7 +144,7 @@ router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthReque
 
     res.status(201).json(newCrew);
   } catch (error) {
-    console.error("Error creating crew:", error);
+    logError("Error creating crew:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -181,7 +182,7 @@ router.patch("/api/crews/:id", requireRole("ADMIN", "MANAGER"), async (req: Auth
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating crew:", error);
+    logError("Error updating crew:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -202,7 +203,7 @@ router.delete("/api/crews/:id", requireRole("ADMIN"), async (req: AuthRequest, r
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Error deleting crew:", error);
+    logError("Error deleting crew:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -231,7 +232,7 @@ router.get("/api/crews/:id/members", requireAuth, async (req: AuthRequest, res) 
 
     res.json(members);
   } catch (error) {
-    console.error("Error fetching crew members:", error);
+    logError("Error fetching crew members:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -317,7 +318,7 @@ router.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (re
 
     res.status(201).json(newMember);
   } catch (error: any) {
-    console.error("Error adding crew member:", error);
+    logError("Error adding crew member:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.message === "User is already a member of this crew") {
       res.status(400).json({ error: "User is already a member of this crew" });
     } else {
@@ -352,7 +353,7 @@ router.delete("/api/crews/:id/members/:userId", requireRole("ADMIN", "MANAGER"),
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Error removing crew member:", error);
+    logError("Error removing crew member:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -382,7 +383,7 @@ router.get("/api/crew-assignments", requireAuth, async (req: AuthRequest, res) =
 
     res.json(assignments);
   } catch (error) {
-    console.error("Error fetching crew assignments:", error);
+    logError("Error fetching crew assignments:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -505,7 +506,7 @@ router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTEN
 
     res.status(201).json(assignment);
   } catch (error: any) {
-    console.error("Error creating crew assignment:", error);
+    logError("Error creating crew assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid input", details: error.errors });
     } else {
@@ -541,7 +542,7 @@ router.delete("/api/crew-assignments/:id", requireRole("ADMIN", "MANAGER", "SUPE
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error removing crew assignment:", error);
+    logError("Error removing crew assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

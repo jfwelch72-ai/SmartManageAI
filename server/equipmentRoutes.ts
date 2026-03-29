@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { equipment, equipmentAssignments, equipmentMaintenanceSchedules, equipmentMaintenanceHistory, equipmentRateProfiles, insertEquipmentRateProfileSchema, validatedEquipmentSchema, projects, users, auditLog, rentalVendors, insertRentalVendorSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, equipmentHourLogs, equipmentRepairs, bidEquipmentSelections, projectEquipmentPlans, bids, notifications, equipmentFuelLogs } from "@shared/schema";
@@ -177,7 +178,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(result);
     } catch (error) {
-      console.error("Get equipment error:", error);
+      logError("Get equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -292,7 +293,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
 
       res.json({ created, skipped, errors });
     } catch (error) {
-      console.error("Import equipment error:", error);
+      logError("Import equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -325,7 +326,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(activeProjects);
     } catch (error) {
-      console.error("Get available projects error:", error);
+      logError("Get available projects error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -367,7 +368,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(result[0]);
     } catch (error) {
-      console.error("Get equipment by ID error:", error);
+      logError("Get equipment by ID error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -436,7 +437,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newEquipment);
     } catch (error: any) {
-      console.error("Create equipment error:", error);
+      logError("Create equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error.constraint === "equipment_equipment_code_unique") {
         res.status(400).json({ error: "Equipment code already exists" });
         return;
@@ -516,7 +517,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      console.error("Update equipment error:", error);
+      logError("Update equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -561,7 +562,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ success: true });
     } catch (error) {
-      console.error("Delete equipment error:", error);
+      logError("Delete equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -616,7 +617,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(upcomingMaintenance);
     } catch (error) {
-      console.error("Get upcoming maintenance error:", error);
+      logError("Get upcoming maintenance error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -673,7 +674,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(assignments);
     } catch (error) {
-      console.error("Get equipment assignments error:", error);
+      logError("Get equipment assignments error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -739,7 +740,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(assignment);
     } catch (error) {
-      console.error("Assign equipment error:", error);
+      logError("Assign equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -813,7 +814,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      console.error("Return equipment error:", error);
+      logError("Return equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -848,7 +849,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(schedules);
     } catch (error) {
-      console.error("Get maintenance schedules error:", error);
+      logError("Get maintenance schedules error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -898,7 +899,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(schedule);
     } catch (error) {
-      console.error("Create maintenance schedule error:", error);
+      logError("Create maintenance schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -980,7 +981,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(history);
     } catch (error) {
-      console.error("Record maintenance error:", error);
+      logError("Record maintenance error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1015,7 +1016,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(history);
     } catch (error) {
-      console.error("Get maintenance history error:", error);
+      logError("Get maintenance history error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1072,7 +1073,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(profiles);
     } catch (error) {
-      console.error("Get equipment rate profiles error:", error);
+      logError("Get equipment rate profiles error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1113,7 +1114,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(activeProfile);
     } catch (error) {
-      console.error("Get active rate profile error:", error);
+      logError("Get active rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1173,7 +1174,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newProfile);
     } catch (error) {
-      console.error("Create equipment rate profile error:", error);
+      logError("Create equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
@@ -1238,7 +1239,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updatedProfile);
     } catch (error) {
-      console.error("Update equipment rate profile error:", error);
+      logError("Update equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1294,7 +1295,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updatedProfile);
     } catch (error) {
-      console.error("Activate equipment rate profile error:", error);
+      logError("Activate equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1338,7 +1339,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Rate profile deleted successfully" });
     } catch (error) {
-      console.error("Delete equipment rate profile error:", error);
+      logError("Delete equipment rate profile error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1372,7 +1373,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(vendors);
     } catch (error) {
-      console.error("Get rental vendors error:", error);
+      logError("Get rental vendors error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1400,7 +1401,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(vendor);
     } catch (error) {
-      console.error("Get rental vendor error:", error);
+      logError("Get rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1428,7 +1429,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newVendor);
     } catch (error) {
-      console.error("Create rental vendor error:", error);
+      logError("Create rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
@@ -1466,7 +1467,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      console.error("Update rental vendor error:", error);
+      logError("Update rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1498,7 +1499,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Rental vendor deleted successfully" });
     } catch (error) {
-      console.error("Delete rental vendor error:", error);
+      logError("Delete rental vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1535,7 +1536,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(catalog);
     } catch (error) {
-      console.error("Get rental equipment catalog error:", error);
+      logError("Get rental equipment catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1587,7 +1588,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(filtered);
     } catch (error) {
-      console.error("Get rental equipment error:", error);
+      logError("Get rental equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1624,7 +1625,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newItem);
     } catch (error) {
-      console.error("Create rental equipment catalog item error:", error);
+      logError("Create rental equipment catalog item error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid input", details: error.errors });
       }
@@ -1671,7 +1672,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      console.error("Update rental equipment catalog item error:", error);
+      logError("Update rental equipment catalog item error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1712,7 +1713,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Catalog item deleted successfully" });
     } catch (error) {
-      console.error("Delete rental equipment catalog item error:", error);
+      logError("Delete rental equipment catalog item error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1773,7 +1774,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(projectEquipment);
     } catch (error) {
-      console.error("Get project equipment error:", error);
+      logError("Get project equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1810,7 +1811,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(plans);
     } catch (error) {
-      console.error("Get project equipment plans error:", error);
+      logError("Get project equipment plans error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1866,7 +1867,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newPlan);
     } catch (error) {
-      console.error("Create project equipment plan error:", error);
+      logError("Create project equipment plan error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1959,13 +1960,13 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
             });
           }
         } catch (emitErr) {
-          console.error("Failed to post equipment cost transaction:", emitErr);
+          logError("Failed to post equipment cost transaction:", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
         }
       }
 
       res.json(updated);
     } catch (error) {
-      console.error("Update project equipment plan error:", error);
+      logError("Update project equipment plan error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2010,7 +2011,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(204).send();
     } catch (error) {
-      console.error("Delete project equipment plan error:", error);
+      logError("Delete project equipment plan error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2049,7 +2050,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(assignedEquipment);
     } catch (error) {
-      console.error("Get project equipment error:", error);
+      logError("Get project equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2077,7 +2078,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(selections);
     } catch (error) {
-      console.error("Get bid equipment selections error:", error);
+      logError("Get bid equipment selections error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2124,7 +2125,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(newSelection);
     } catch (error) {
-      console.error("Create bid equipment selection error:", error);
+      logError("Create bid equipment selection error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2179,7 +2180,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      console.error("Update bid equipment selection error:", error);
+      logError("Update bid equipment selection error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2215,7 +2216,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json({ message: "Equipment selection deleted successfully" });
     } catch (error) {
-      console.error("Delete bid equipment selection error:", error);
+      logError("Delete bid equipment selection error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2293,7 +2294,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         rental: rentalCatalog,
       });
     } catch (error) {
-      console.error("Get equipment for selection error:", error);
+      logError("Get equipment for selection error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2347,7 +2348,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(repairs);
     } catch (error) {
-      console.error("Get equipment repairs error:", error);
+      logError("Get equipment repairs error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2410,7 +2411,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(repair);
     } catch (error) {
-      console.error("Create repair error:", error);
+      logError("Create repair error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2461,7 +2462,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(updated);
     } catch (error) {
-      console.error("Update repair error:", error);
+      logError("Update repair error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2524,7 +2525,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.status(201).json(log);
     } catch (error: any) {
-      console.error("Submit hour log error:", error);
+      logError("Submit hour log error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error.constraint === "equipment_hour_logs_unique_week") {
         res.status(400).json({ error: "Hour log already exists for this week" });
         return;
@@ -2575,7 +2576,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       res.json(logs);
     } catch (error) {
-      console.error("Get hour logs error:", error);
+      logError("Get hour logs error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2690,7 +2691,7 @@ Please provide:
 
       res.json(recommendations);
     } catch (error) {
-      console.error("AI recommendations error:", error);
+      logError("AI recommendations error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to generate AI recommendations" });
     }
   });
@@ -2732,7 +2733,7 @@ Please provide:
       
       res.json({ success: true, notifiedCount: uniqueRecipientIds.length });
     } catch (error) {
-      console.error("Notify maintenance error:", error);
+      logError("Notify maintenance error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2771,7 +2772,7 @@ Please provide:
         accumulatedDepreciation: result.totalDepreciation,
       });
     } catch (error) {
-      console.error("Depreciation error:", error);
+      logError("Depreciation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to calculate depreciation" });
     }
   });
@@ -2815,7 +2816,7 @@ Please provide:
 
       res.json(logs);
     } catch (error) {
-      console.error("Fuel logs fetch error:", error);
+      logError("Fuel logs fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch fuel logs" });
     }
   });
@@ -2873,7 +2874,7 @@ Please provide:
 
       res.status(201).json(newLog);
     } catch (error) {
-      console.error("Fuel log create error:", error);
+      logError("Fuel log create error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to create fuel log" });
     }
   });
@@ -2948,7 +2949,7 @@ Please provide:
 
       res.json(updated);
     } catch (error) {
-      console.error("Fuel log update error:", error);
+      logError("Fuel log update error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to update fuel log" });
     }
   });
@@ -2972,7 +2973,7 @@ Please provide:
       await db.delete(equipmentFuelLogs).where(eq(equipmentFuelLogs.id, logId));
       res.json({ success: true });
     } catch (error) {
-      console.error("Fuel log delete error:", error);
+      logError("Fuel log delete error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete fuel log" });
     }
   });
@@ -3038,7 +3039,7 @@ Please provide:
         })),
       });
     } catch (error) {
-      console.error("Fuel summary error:", error);
+      logError("Fuel summary error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch fuel summary" });
     }
   });
@@ -3098,7 +3099,7 @@ Please provide:
         })),
       });
     } catch (error) {
-      console.error("Project fuel summary error:", error);
+      logError("Project fuel summary error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch project fuel summary" });
     }
   });

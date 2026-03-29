@@ -5,6 +5,8 @@ import { db } from "./db";
 import { overheadCostItems, overheadCostHistory } from "../shared/schema/features";
 import { organizations, projects } from "../shared/schema/core";
 import { requireAuth, type AuthRequest } from "./auth";
+import { logWarn } from "./utils/logger";
+import { sendValidationError } from "./utils/validation";
 
 const router = Router();
 
@@ -44,7 +46,7 @@ function toMonthly(amount: number, frequency: string, amortizationMonths?: numbe
 function requireOverheadRole(req: AuthRequest, res: Response): boolean {
   const role = req.user?.role;
   if (role !== "ADMIN" && role !== "MANAGER" && role !== "OFFICE_MANAGER") {
-    res.status(403).json({ message: "Insufficient permissions" });
+    res.status(403).json({ error: "Insufficient permissions" });
     return false;
   }
   return true;
@@ -103,7 +105,7 @@ function itemToJson(item: Record<string, unknown>): string {
 router.get("/api/overhead/items", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const items = await db
     .select()
@@ -118,10 +120,10 @@ router.get("/api/overhead/items", requireAuth, async (req: AuthRequest, res: Res
 router.post("/api/overhead/items", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const parsed = createItemSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+  if (!parsed.success) return sendValidationError(res, parsed.error);
 
   const data = parsed.data;
   const [item] = await db
@@ -157,17 +159,17 @@ router.post("/api/overhead/items", requireAuth, async (req: AuthRequest, res: Re
 router.patch("/api/overhead/items/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const parsed = updateItemSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+  if (!parsed.success) return sendValidationError(res, parsed.error);
 
   const [existing] = await db
     .select()
     .from(overheadCostItems)
     .where(and(eq(overheadCostItems.id, req.params.id), eq(overheadCostItems.organizationId, orgId)));
 
-  if (!existing) return res.status(404).json({ message: "Item not found" });
+  if (!existing) return res.status(404).json({ error: "Item not found" });
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   const data = parsed.data;
@@ -192,7 +194,7 @@ router.patch("/api/overhead/items/:id", requireAuth, async (req: AuthRequest, re
     .where(and(eq(overheadCostItems.id, req.params.id), eq(overheadCostItems.organizationId, orgId)))
     .returning();
 
-  if (!item) return res.status(404).json({ message: "Item not found" });
+  if (!item) return res.status(404).json({ error: "Item not found" });
 
   await db.insert(overheadCostHistory).values({
     organizationId: orgId,
@@ -211,14 +213,14 @@ router.patch("/api/overhead/items/:id", requireAuth, async (req: AuthRequest, re
 router.delete("/api/overhead/items/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const [deleted] = await db
     .delete(overheadCostItems)
     .where(and(eq(overheadCostItems.id, req.params.id), eq(overheadCostItems.organizationId, orgId)))
     .returning();
 
-  if (!deleted) return res.status(404).json({ message: "Item not found" });
+  if (!deleted) return res.status(404).json({ error: "Item not found" });
 
   await db.insert(overheadCostHistory).values({
     organizationId: orgId,
@@ -237,7 +239,7 @@ router.delete("/api/overhead/items/:id", requireAuth, async (req: AuthRequest, r
 router.get("/api/overhead/history", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const limit = Math.min(Number(req.query.limit) || 50, 200);
   const history = await db
@@ -254,11 +256,11 @@ router.get("/api/overhead/history", requireAuth, async (req: AuthRequest, res: R
 router.get("/api/overhead/summary", requireAuth, async (req: AuthRequest, res: Response) => {
   const role = req.user?.role;
   if (!canReadBidBenchmark(role)) {
-    return res.status(403).json({ message: "Insufficient permissions" });
+    return res.status(403).json({ error: "Insufficient permissions" });
   }
 
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const [org, items] = await Promise.all([
     db
@@ -296,7 +298,7 @@ router.get("/api/overhead/summary", requireAuth, async (req: AuthRequest, res: R
     if ((org as any)?.monthlyRevenueTargets) {
       monthlyRevTargets = JSON.parse((org as any).monthlyRevenueTargets);
     }
-  } catch {}
+  } catch { logWarn("Non-critical operation failed"); }
 
   const currentMonthKey = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"][new Date().getMonth()];
   const currentMonthTarget = monthlyRevTargets?.[currentMonthKey] ?? null;
@@ -310,12 +312,12 @@ router.get("/api/overhead/summary", requireAuth, async (req: AuthRequest, res: R
   let categoryWeights: Record<string, number> | null = null;
   try {
     categoryWeights = org?.overheadCategoryWeights ? JSON.parse(org.overheadCategoryWeights) : null;
-  } catch { /* ignore parse errors */ }
+  } catch { logWarn("Non-critical operation failed"); }
 
   let monthlyRevenueTargets: Record<string, number> | null = null;
   try {
     monthlyRevenueTargets = org?.monthlyRevenueTargets ? JSON.parse(org.monthlyRevenueTargets) : null;
-  } catch { /* ignore parse errors */ }
+  } catch { logWarn("Non-critical operation failed"); }
 
   const weightedCategoryBreakdown: Record<string, { monthly: number; weight: number; weighted: number }> = {};
   if (categoryWeights && Object.keys(categoryWeights).length > 0) {
@@ -348,10 +350,10 @@ router.get("/api/overhead/summary", requireAuth, async (req: AuthRequest, res: R
 router.patch("/api/overhead/revenue-target", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const parsed = revenueTargetSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+  if (!parsed.success) return sendValidationError(res, parsed.error);
 
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if ("annualRevenueTarget" in parsed.data) {
@@ -386,7 +388,7 @@ router.patch("/api/overhead/revenue-target", requireAuth, async (req: AuthReques
 router.get("/api/overhead/project-allocation", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const [activeProjects, items] = await Promise.all([
     db
@@ -452,7 +454,7 @@ router.get("/api/overhead/project-allocation", requireAuth, async (req: AuthRequ
 router.get("/api/overhead/monthly-breakdown", requireAuth, async (req: AuthRequest, res: Response) => {
   if (!requireOverheadRole(req, res)) return;
   const orgId = req.user!.organizationId;
-  if (!orgId) return res.status(400).json({ message: "No organization" });
+  if (!orgId) return res.status(400).json({ error: "No organization" });
 
   const [org, items] = await Promise.all([
     db
@@ -480,7 +482,7 @@ router.get("/api/overhead/monthly-breakdown", requireAuth, async (req: AuthReque
   let storedTargets: Record<string, number> = {};
   try {
     storedTargets = org?.monthlyRevenueTargets ? JSON.parse(org.monthlyRevenueTargets) : {};
-  } catch { /* ignore */ }
+  } catch { logWarn("Non-critical operation failed"); }
 
   const MONTH_KEYS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 

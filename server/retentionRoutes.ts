@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
@@ -21,7 +22,7 @@ router.get("/policies", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requir
 
     res.json(policies);
   } catch (error) {
-    console.error("Error fetching retention policies:", error);
+    logError("Error fetching retention policies:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch retention policies" });
   }
 });
@@ -66,7 +67,7 @@ router.post("/policies/seed", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), 
 
     res.json(policies);
   } catch (error) {
-    console.error("Error seeding retention policies:", error);
+    logError("Error seeding retention policies:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to seed retention policies" });
   }
 });
@@ -109,7 +110,7 @@ router.put("/policies/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), re
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating retention policy:", error);
+    logError("Error updating retention policy:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update retention policy" });
   }
 });
@@ -166,7 +167,7 @@ router.post("/preview", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requir
 
     res.json(preview);
   } catch (error) {
-    console.error("Error previewing retention:", error);
+    logError("Error previewing retention:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to preview retention impact" });
   }
 });
@@ -224,7 +225,7 @@ router.post("/execute", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requir
 
     res.json({ dryRun, results });
   } catch (error) {
-    console.error("Error executing retention:", error);
+    logError("Error executing retention:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to execute retention" });
   }
 });

@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import { portalChatThreads, portalChatMessages } from "@shared/schema";
@@ -38,7 +39,7 @@ router.get("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest,
 
     res.json(threadsWithPreview);
   } catch (error) {
-    console.error("Portal chat threads list error:", error);
+    logError("Portal chat threads list error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -82,7 +83,7 @@ router.post("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest
 
     res.status(201).json({ ...thread, message: msg });
   } catch (error) {
-    console.error("Portal chat create thread error:", error);
+    logError("Portal chat create thread error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -130,7 +131,7 @@ router.get("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (
 
     res.json(messages);
   } catch (error) {
-    console.error("Portal chat get messages error:", error);
+    logError("Portal chat get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -188,7 +189,7 @@ router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async 
 
     res.status(201).json(msg);
   } catch (error) {
-    console.error("Portal chat send message error:", error);
+    logError("Portal chat send message error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -227,7 +228,7 @@ router.post("/portal/chat/threads/:threadId/read", requirePortalAuth, async (req
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Portal chat mark read error:", error);
+    logError("Portal chat mark read error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

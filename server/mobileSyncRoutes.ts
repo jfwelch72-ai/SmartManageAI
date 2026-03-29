@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -69,7 +70,7 @@ router.get("/api/ai-features/mobile-sync", requireAuth, async (req: AuthRequest,
       },
     });
   } catch (error: any) {
-    console.error("Mobile sync status error:", error.message);
+    logError("Mobile sync status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get mobile sync status" });
   }
 });
@@ -109,7 +110,7 @@ router.post("/api/ai-features/mobile-sync/sync", requireAuth, async (req: AuthRe
 
     res.json({ success: true, syncedCount: pendingItems.length });
   } catch (error: any) {
-    console.error("Mobile sync trigger error:", error.message);
+    logError("Mobile sync trigger error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to trigger sync" });
   }
 });
@@ -131,7 +132,7 @@ router.delete("/api/ai-features/mobile-sync/devices/:deviceId", requireAuth, asy
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Remove device error:", error.message);
+    logError("Remove device error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to remove device" });
   }
 });
@@ -151,7 +152,7 @@ router.post("/api/ai-features/mobile-sync/clear-offline", requireAuth, async (re
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Clear offline data error:", error.message);
+    logError("Clear offline data error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to clear offline data" });
   }
 });
@@ -182,7 +183,7 @@ router.get("/api/ai-features/mobile-sync/conflicts", requireAuth, async (req: Au
 
     res.json(conflicts);
   } catch (error: any) {
-    console.error("Get conflicts error:", error.message);
+    logError("Get conflicts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get conflicts" });
   }
 });
@@ -215,7 +216,7 @@ router.patch("/api/ai-features/mobile-sync/conflicts/:id", requireAuth, async (r
 
     res.json({ success: true, resolution });
   } catch (error: any) {
-    console.error("Resolve conflict error:", error.message);
+    logError("Resolve conflict error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to resolve conflict" });
   }
 });
@@ -283,7 +284,7 @@ router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthReq
       syncEndpoint: "/api/ai-features/mobile/sync",
     });
   } catch (error) {
-    console.error("Device register error:", error);
+    logError("Device register error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to register device" });
   }
 });
@@ -338,7 +339,7 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
       },
     });
   } catch (error) {
-    console.error("Mobile sync error:", error);
+    logError("Mobile sync error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to sync" });
   }
 });
@@ -377,7 +378,7 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       serverTime: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Mobile upload sync error:", error);
+    logError("Mobile upload sync error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to upload changes" });
   }
 });
@@ -399,7 +400,7 @@ router.get("/api/ai-features/mobile/devices", requireAuth, async (req: AuthReque
 
     res.json({ devices });
   } catch (error) {
-    console.error("Get devices error:", error);
+    logError("Get devices error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get devices" });
   }
 });

@@ -1,3 +1,4 @@
+import { logError } from "../../utils/logger";
 import { db } from "../../db";
 import {
   users, organizations, projects, bids, crmOrganisations, estimates,
@@ -181,7 +182,7 @@ export async function cleanupTestData(): Promise<void> {
       await db.execute(sql`DELETE FROM organizations WHERE id = ${orgId}`).catch(() => {});
     }
   } catch (err) {
-    console.error("Cleanup error (non-fatal):", err);
+    logError("Cleanup error (non-fatal):", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 

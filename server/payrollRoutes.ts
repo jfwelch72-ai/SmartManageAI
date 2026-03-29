@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
@@ -326,7 +327,7 @@ async function postCostLedger(payRunId: string, txDb?: typeof db) {
           });
         }
       }
-    } catch {}
+    } catch { logWarn("Non-critical operation failed"); }
   }
 }
 
@@ -416,7 +417,7 @@ router.get("/api/payroll/overview", requireAuth, async (req, res) => {
       recentPayRuns,
     });
   } catch (error) {
-    console.error("Payroll overview error:", error);
+    logError("Payroll overview error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -435,7 +436,7 @@ router.get("/api/payroll/pay-runs", requireAuth, async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error("Get pay runs error:", error);
+    logError("Get pay runs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -467,7 +468,7 @@ router.get("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
 
     res.json({ ...payRun, lineItems });
   } catch (error) {
-    console.error("Get pay run detail error:", error);
+    logError("Get pay run detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -829,7 +830,7 @@ router.post("/api/payroll/pay-runs", requireAuth, async (req, res) => {
 
     res.status(201).json(updatedPayRun);
   } catch (error) {
-    console.error("Create pay run error:", error);
+    logError("Create pay run error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -919,7 +920,7 @@ const payRunStatusHandler = async (req: any, res: Response) => {
           },
         });
       } catch (emitErr) {
-        console.error("Failed to emit payroll.run.completed on APPROVED:", emitErr);
+        logError("Failed to emit payroll.run.completed on APPROVED:", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
       }
     } else {
       const [result] = await db.update(payRuns).set(updateData)
@@ -940,7 +941,7 @@ const payRunStatusHandler = async (req: any, res: Response) => {
       try {
         await postCostLedger(updated.id);
       } catch (err) {
-        console.error(`Cost ledger posting failed on PAID transition for pay run ${updated.id} (non-blocking):`, err);
+        logError(`Cost ledger posting failed on PAID transition for pay run ${updated.id} (non-blocking):`, {}, err instanceof Error ? err : new Error(String(err)));
       }
 
       const lineItemCount = await db
@@ -971,7 +972,7 @@ const payRunStatusHandler = async (req: any, res: Response) => {
 
     res.json(updated);
   } catch (error) {
-    console.error("Update pay run status error:", error);
+    logError("Update pay run status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -1006,7 +1007,7 @@ router.get("/api/payroll/workers", requireAuth, async (req, res) => {
 
     res.json(workers);
   } catch (error) {
-    console.error("Get payroll workers error:", error);
+    logError("Get payroll workers error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1054,7 +1055,7 @@ router.get("/api/payroll/time-entries", requireAuth, async (req, res) => {
 
     res.json(entries);
   } catch (error) {
-    console.error("Get payroll time entries error:", error);
+    logError("Get payroll time entries error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1127,7 +1128,7 @@ router.get("/api/projects/:id/payroll-summary", requireAuth, async (req, res) =>
       workers: workerResults,
     });
   } catch (error) {
-    console.error("Project payroll summary error:", error);
+    logError("Project payroll summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1222,7 +1223,7 @@ router.get("/api/payroll/deduction-types", requireAuth, async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error("Get deduction types error:", error);
+    logError("Get deduction types error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1247,7 +1248,7 @@ router.post("/api/payroll/deduction-types", requireAuth, async (req, res) => {
     const [created] = await db.insert(payrollDeductionTypes).values(body).returning();
     res.status(201).json(created);
   } catch (error) {
-    console.error("Create deduction type error:", error);
+    logError("Create deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1279,7 +1280,7 @@ router.patch("/api/payroll/deduction-types/:id", requireAuth, async (req, res) =
       .where(eq(payrollDeductionTypes.id, req.params.id)).returning();
     res.json(updated);
   } catch (error) {
-    console.error("Update deduction type error:", error);
+    logError("Update deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1297,7 +1298,7 @@ router.delete("/api/payroll/deduction-types/:id", requireAuth, async (req, res) 
     await db.delete(payrollDeductionTypes).where(eq(payrollDeductionTypes.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete deduction type error:", error);
+    logError("Delete deduction type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1325,7 +1326,7 @@ router.get("/api/payroll/employee-deductions", requireAuth, async (req, res) => 
 
     res.json(results);
   } catch (error) {
-    console.error("Get employee deductions error:", error);
+    logError("Get employee deductions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1355,7 +1356,7 @@ router.get("/api/payroll/employee-deductions/:userId", requireAuth, async (req, 
 
     res.json(results);
   } catch (error) {
-    console.error("Get employee deductions by user error:", error);
+    logError("Get employee deductions by user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1386,7 +1387,7 @@ router.post("/api/payroll/employee-deductions", requireAuth, async (req, res) =>
     const [created] = await db.insert(employeeDeductions).values(body).returning();
     res.status(201).json(created);
   } catch (error) {
-    console.error("Create employee deduction error:", error);
+    logError("Create employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1413,7 +1414,7 @@ router.patch("/api/payroll/employee-deductions/:id", requireAuth, async (req, re
       .where(eq(employeeDeductions.id, req.params.id)).returning();
     res.json(updated);
   } catch (error) {
-    console.error("Update employee deduction error:", error);
+    logError("Update employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1431,7 +1432,7 @@ router.delete("/api/payroll/employee-deductions/:id", requireAuth, async (req, r
     await db.delete(employeeDeductions).where(eq(employeeDeductions.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete employee deduction error:", error);
+    logError("Delete employee deduction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1529,7 +1530,7 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs", requireAuth, async (req, res) 
 
     res.json(Array.from(workerMap.values()));
   } catch (error) {
-    console.error("Get pay stubs error:", error);
+    logError("Get pay stubs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1622,7 +1623,7 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, async (re
 
     res.json(stub);
   } catch (error) {
-    console.error("Get single pay stub error:", error);
+    logError("Get single pay stub error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1815,7 +1816,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       projectReports,
     });
   } catch (error) {
-    console.error("Get certified payroll report error:", error);
+    logError("Get certified payroll report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1852,7 +1853,7 @@ router.delete("/api/payroll/pay-runs/:id", requireAuth, async (req, res) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete pay run error:", error);
+    logError("Delete pay run error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1909,7 +1910,7 @@ router.get("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MANA
 
     res.json(formatted);
   } catch (error) {
-    console.error("Get payroll notifications error:", error);
+    logError("Get payroll notifications error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1988,7 +1989,7 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
 
     res.status(201).json(notification);
   } catch (error) {
-    console.error("Create payroll notification error:", error);
+    logError("Create payroll notification error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2028,7 +2029,7 @@ router.patch("/api/payroll-notifications/:id/process", requireAuth, requireRole(
 
     res.json(updated);
   } catch (error) {
-    console.error("Process payroll notification error:", error);
+    logError("Process payroll notification error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2084,7 +2085,7 @@ router.get("/api/payroll/settings", requireAuth, requireRole("ADMIN", "OFFICE_MA
 
     res.json(settings);
   } catch (error) {
-    console.error("Get payroll settings error:", error);
+    logError("Get payroll settings error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2143,7 +2144,7 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "OFFICE_MA
 
     res.json(settings);
   } catch (error) {
-    console.error("Update payroll settings error:", error);
+    logError("Update payroll settings error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2168,7 +2169,7 @@ router.get("/api/payroll/weekly-reports", requireAuth, requireRole("ADMIN", "OFF
 
     res.json(reports);
   } catch (error) {
-    console.error("Get weekly reports error:", error);
+    logError("Get weekly reports error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2198,7 +2199,7 @@ router.get("/api/payroll/weekly-reports/:id", requireAuth, requireRole("ADMIN", 
 
     res.json(report);
   } catch (error) {
-    console.error("Get weekly report error:", error);
+    logError("Get weekly report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2388,7 +2389,7 @@ router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADM
       },
     });
   } catch (error) {
-    console.error("Generate weekly report error:", error);
+    logError("Generate weekly report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2463,7 +2464,7 @@ router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN"
       reportId: existingReport?.id,
     });
   } catch (error) {
-    console.error("Get current week summary error:", error);
+    logError("Get current week summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

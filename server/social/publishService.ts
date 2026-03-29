@@ -1,3 +1,4 @@
+import { logWarn } from "../utils/logger";
 import crypto from "crypto";
 
 const ENCRYPTION_KEY = process.env.SESSION_SECRET || process.env.ENCRYPTION_KEY || "";
@@ -13,6 +14,7 @@ function decrypt(text: string): string {
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch {
+    logWarn("Non-critical operation failed");
     return "";
   }
 }
@@ -392,6 +394,7 @@ export async function refreshToken(
         return null;
     }
   } catch {
+    logWarn("Non-critical operation failed");
     return null;
   }
 }

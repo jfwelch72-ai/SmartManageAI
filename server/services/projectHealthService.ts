@@ -16,7 +16,7 @@ import {
   costLedgerPostings,
 } from "@shared/schema";
 import { eq, and, sql, desc, count } from "drizzle-orm";
-import { logInfo, logError } from "../utils/logger";
+import {logInfo, logError, logWarn } from "../utils/logger";
 import { openai, AI_MODEL_GPT4O } from "../ai/openaiClient";
 
 export interface HealthScoreBreakdown {
@@ -389,6 +389,7 @@ export async function computeProjectHealth(orgId: string, projectId: string): Pr
       safetyResult.score,
     );
   } catch {
+    logWarn("Non-critical operation failed");
     aiExplanation = null;
   }
 

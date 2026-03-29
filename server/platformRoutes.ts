@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections, platformAnnouncements, announcementDismissals, globalWorkflowTemplates, equipment, contracts } from "@shared/schema";
@@ -105,7 +106,7 @@ router.get("/platform/stats", requireAuth, requireSuperAdmin, async (req: AuthRe
       usersByRole: usersByRole.filter(u => u.role !== "SUPER_ADMIN"),
     });
   } catch (error: any) {
-    console.error("Platform stats error:", error.message);
+    logError("Platform stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch platform stats" });
   }
 });
@@ -141,7 +142,7 @@ router.get("/platform/organizations", requireAuth, requireSuperAdmin, async (req
 
     res.json(orgsWithUserCounts);
   } catch (error: any) {
-    console.error("Platform organizations error:", error.message);
+    logError("Platform organizations error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organizations" });
   }
 });
@@ -179,7 +180,7 @@ router.post("/platform/organizations", requireAuth, requireSuperAdmin, async (re
 
     res.status(201).json(newOrg);
   } catch (error: any) {
-    console.error("Create organization error:", error.message);
+    logError("Create organization error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create organization" });
   }
 });
@@ -220,7 +221,7 @@ router.get("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, asy
       },
     });
   } catch (error: any) {
-    console.error("Platform organization detail error:", error.message);
+    logError("Platform organization detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization details" });
   }
 });
@@ -282,7 +283,7 @@ router.get("/platform/organizations/:orgId/db-usage", requireAuth, requireSuperA
       calendarEvents: row.calendar_events || 0,
     });
   } catch (error: any) {
-    console.error("Platform org db-usage error:", error.message);
+    logError("Platform org db-usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch database usage" });
   }
 });
@@ -298,7 +299,7 @@ router.get("/platform/organizations/:orgId/sow-items", requireAuth, requireSuper
 
     res.json(items);
   } catch (error: any) {
-    console.error("Get SOW items error:", error.message);
+    logError("Get SOW items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch SOW items" });
   }
 });
@@ -331,7 +332,7 @@ router.post("/platform/organizations/:orgId/sow-items", requireAuth, requireSupe
 
     res.json(newItem);
   } catch (error: any) {
-    console.error("Create SOW item error:", error.message);
+    logError("Create SOW item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create SOW item" });
   }
 });
@@ -358,7 +359,7 @@ router.patch("/platform/organizations/:orgId/sow-items/:itemId", requireAuth, re
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Update SOW item error:", error.message);
+    logError("Update SOW item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update SOW item" });
   }
 });
@@ -373,7 +374,7 @@ router.get("/platform/organizations/:orgId/work-types", requireAuth, requireSupe
 
     res.json(items);
   } catch (error: any) {
-    console.error("Get work types error:", error.message);
+    logError("Get work types error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch work types" });
   }
 });
@@ -397,7 +398,7 @@ router.post("/platform/organizations/:orgId/work-types", requireAuth, requireSup
 
     res.json(newItem);
   } catch (error: any) {
-    console.error("Create work type error:", error.message);
+    logError("Create work type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create work type" });
   }
 });
@@ -448,7 +449,7 @@ router.post("/platform/organizations/:orgId/suspend", requireAuth, requireSuperA
         : `Organization "${org.name}" has been suspended`,
     });
   } catch (error: any) {
-    console.error("Org suspend/reactivate error:", error.message);
+    logError("Org suspend/reactivate error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update organization status" });
   }
 });
@@ -503,7 +504,7 @@ router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, asy
     const { passwordHash: _, tokenVersion: _tv, ...userWithoutSensitive } = updated;
     res.json({ user: userWithoutSensitive, message: `Role changed from ${oldRole} to ${role}` });
   } catch (error: any) {
-    console.error("Change user role error:", error.message);
+    logError("Change user role error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to change user role" });
   }
 });
@@ -574,7 +575,7 @@ router.post("/platform/users/:userId/transfer", requireAuth, requireSuperAdmin, 
       message: `User transferred from "${oldOrgName}" to "${targetOrg.name}"`,
     });
   } catch (error: any) {
-    console.error("Transfer user error:", error.message);
+    logError("Transfer user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to transfer user" });
   }
 });
@@ -598,7 +599,7 @@ router.patch("/platform/organizations/:orgId", requireAuth, requireSuperAdmin, a
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Update organization error:", error.message);
+    logError("Update organization error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update organization" });
   }
 });
@@ -721,7 +722,7 @@ router.get("/platform/analytics", requireAuth, requireSuperAdmin, async (req: Au
       days,
     });
   } catch (error: any) {
-    console.error("Platform analytics error:", error.message);
+    logError("Platform analytics error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch analytics" });
   }
 });
@@ -770,7 +771,7 @@ router.get("/platform/organizations/:orgId/activity", requireAuth, requireSuperA
       limit,
     });
   } catch (error: any) {
-    console.error("Platform organization activity error:", error.message);
+    logError("Platform organization activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization activity" });
   }
 });
@@ -832,7 +833,7 @@ router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthR
     const { passwordHash: _, tokenVersion, ...userWithoutPassword } = newUser;
     res.status(201).json(userWithoutPassword);
   } catch (error: any) {
-    console.error("Platform create user error:", error.message);
+    logError("Platform create user error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.code === '23505') {
       return res.status(409).json({ error: "Email already exists" });
     }
@@ -869,7 +870,7 @@ router.get("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthRe
 
     res.json(usersWithOrgs);
   } catch (error: any) {
-    console.error("Platform users error:", error.message);
+    logError("Platform users error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch users" });
   }
 });
@@ -902,7 +903,7 @@ router.get("/platform/users/archived", requireAuth, requireSuperAdmin, async (re
 
     res.json(usersWithOrgs);
   } catch (error: any) {
-    console.error("Platform archived users error:", error.message);
+    logError("Platform archived users error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch archived users" });
   }
 });
@@ -952,7 +953,7 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
     console.log(`Admin-initiated credential reset for user: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `Password reset email sent to ${user.email}` });
   } catch (error: any) {
-    console.error("Admin password reset error:", error.message);
+    logError("Admin password reset error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to initiate password reset" });
   }
 });
@@ -1010,7 +1011,7 @@ router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmi
       message: `Impersonation code generated for ${user.email}` 
     });
   } catch (error: any) {
-    console.error("Impersonate user error:", error.message);
+    logError("Impersonate user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate impersonation token" });
   }
 });
@@ -1052,7 +1053,7 @@ router.post("/platform/impersonate/exchange", async (req, res) => {
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Impersonation exchange error:", error.message);
+    logError("Impersonation exchange error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to exchange impersonation code" });
   }
 });
@@ -1088,7 +1089,7 @@ router.post("/platform/users/:userId/restore", requireAuth, requireSuperAdmin, a
     console.log(`User restored: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been restored and reactivated` });
   } catch (error: any) {
-    console.error("Restore user error:", error.message);
+    logError("Restore user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to restore user" });
   }
 });
@@ -1124,7 +1125,7 @@ router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmi
     console.log(`User soft-deleted: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been deactivated and archived` });
   } catch (error: any) {
-    console.error("Soft delete user error:", error.message);
+    logError("Soft delete user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to deactivate user" });
   }
 });
@@ -1156,7 +1157,7 @@ router.patch("/platform/users/:userId/verify-email", requireAuth, requireSuperAd
 
     res.json({ emailVerified: updated.emailVerified, message: `Email ${newStatus ? 'verified' : 'unverified'} for ${user.email}` });
   } catch (error: any) {
-    console.error("Toggle email verification error:", error.message);
+    logError("Toggle email verification error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update email verification status" });
   }
 });
@@ -1200,7 +1201,7 @@ router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (
     console.log(`User permanently deleted: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been permanently deleted` });
   } catch (error: any) {
-    console.error("Permanent delete user error:", error.message);
+    logError("Permanent delete user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to permanently delete user" });
   }
 });
@@ -1302,7 +1303,7 @@ router.get("/platform/monitoring/api-usage", requireAuth, requireSuperAdmin, asy
       organizations: result.sort((a, b) => (b.totalRequests + b.auditedActions) - (a.totalRequests + a.auditedActions)),
     });
   } catch (error: any) {
-    console.error("Platform monitoring API usage error:", error.message);
+    logError("Platform monitoring API usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch API usage metrics" });
   }
 });
@@ -1367,7 +1368,7 @@ router.get("/platform/monitoring/ai-usage", requireAuth, requireSuperAdmin, asyn
       organizations: merged.sort((a, b) => b.totalCalls - a.totalCalls),
     });
   } catch (error: any) {
-    console.error("Platform monitoring AI usage error:", error.message);
+    logError("Platform monitoring AI usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch AI usage metrics" });
   }
 });
@@ -1395,7 +1396,7 @@ router.get("/platform/monitoring/storage-usage", requireAuth, requireSuperAdmin,
       })).sort((a, b) => b.totalSizeBytes - a.totalSizeBytes),
     });
   } catch (error: any) {
-    console.error("Platform monitoring storage usage error:", error.message);
+    logError("Platform monitoring storage usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch storage usage metrics" });
   }
 });
@@ -1473,7 +1474,7 @@ router.get("/platform/monitoring/integration-health", requireAuth, requireSuperA
       },
     });
   } catch (error: any) {
-    console.error("Platform monitoring integration health error:", error.message);
+    logError("Platform monitoring integration health error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch integration health" });
   }
 });
@@ -1575,7 +1576,7 @@ router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, as
       },
     });
   } catch (error: any) {
-    console.error("Platform monitoring audit logs error:", error.message);
+    logError("Platform monitoring audit logs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch audit logs" });
   }
 });
@@ -1589,7 +1590,7 @@ router.get("/platform/announcements", requireAuth, requireSuperAdmin, async (req
     const all = await db.select().from(platformAnnouncements).orderBy(desc(platformAnnouncements.createdAt));
     res.json(all);
   } catch (error: any) {
-    console.error("Get announcements error:", error.message);
+    logError("Get announcements error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch announcements" });
   }
 });
@@ -1610,7 +1611,7 @@ router.post("/platform/announcements", requireAuth, requireSuperAdmin, async (re
     }).returning();
     res.status(201).json(announcement);
   } catch (error: any) {
-    console.error("Create announcement error:", error.message);
+    logError("Create announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create announcement" });
   }
 });
@@ -1629,7 +1630,7 @@ router.patch("/platform/announcements/:id", requireAuth, requireSuperAdmin, asyn
     if (!updated) return res.status(404).json({ error: "Announcement not found" });
     res.json(updated);
   } catch (error: any) {
-    console.error("Update announcement error:", error.message);
+    logError("Update announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update announcement" });
   }
 });
@@ -1640,7 +1641,7 @@ router.delete("/platform/announcements/:id", requireAuth, requireSuperAdmin, asy
     await db.delete(platformAnnouncements).where(eq(platformAnnouncements.id, id));
     res.json({ message: "Announcement deleted" });
   } catch (error: any) {
-    console.error("Delete announcement error:", error.message);
+    logError("Delete announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete announcement" });
   }
 });
@@ -1672,7 +1673,7 @@ router.get("/platform/announcements/active", requireAuth, async (req: AuthReques
     const result = filtered.filter(a => !dismissedIds.has(a.id));
     res.json(result);
   } catch (error: any) {
-    console.error("Get active announcements error:", error.message);
+    logError("Get active announcements error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch active announcements" });
   }
 });
@@ -1686,7 +1687,7 @@ router.post("/platform/announcements/:id/dismiss", requireAuth, async (req: Auth
     }).onConflictDoNothing();
     res.json({ message: "Announcement dismissed" });
   } catch (error: any) {
-    console.error("Dismiss announcement error:", error.message);
+    logError("Dismiss announcement error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to dismiss announcement" });
   }
 });
@@ -1721,7 +1722,7 @@ router.get("/platform/organizations/:orgId/projects", requireAuth, requireSuperA
     const uniqueProjects = Array.from(new Map(orgProjects.map(p => [p.id, p])).values());
     res.json(uniqueProjects);
   } catch (error: any) {
-    console.error("Get org projects error:", error.message);
+    logError("Get org projects error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization projects" });
   }
 });
@@ -1744,7 +1745,7 @@ router.get("/platform/organizations/:orgId/bids", requireAuth, requireSuperAdmin
 
     res.json(orgBids);
   } catch (error: any) {
-    console.error("Get org bids error:", error.message);
+    logError("Get org bids error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization bids" });
   }
 });
@@ -1767,7 +1768,7 @@ router.get("/platform/organizations/:orgId/contracts", requireAuth, requireSuper
 
     res.json(orgContracts);
   } catch (error: any) {
-    console.error("Get org contracts error:", error.message);
+    logError("Get org contracts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization contracts" });
   }
 });
@@ -1791,7 +1792,7 @@ router.get("/platform/organizations/:orgId/equipment", requireAuth, requireSuper
 
     res.json(orgEquipment);
   } catch (error: any) {
-    console.error("Get org equipment error:", error.message);
+    logError("Get org equipment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization equipment" });
   }
 });
@@ -1834,7 +1835,7 @@ router.get("/platform/organizations/:orgId/financials", requireAuth, requireSupe
       payrollRuns: row.payroll_runs || 0,
     });
   } catch (error: any) {
-    console.error("Get org financials error:", error.message);
+    logError("Get org financials error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organization financials" });
   }
 });
@@ -1848,7 +1849,7 @@ router.get("/platform/workflow-templates", requireAuth, requireSuperAdmin, async
     const templates = await db.select().from(globalWorkflowTemplates).orderBy(desc(globalWorkflowTemplates.updatedAt));
     res.json(templates);
   } catch (error: any) {
-    console.error("Get global workflow templates error:", error.message);
+    logError("Get global workflow templates error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch workflow templates" });
   }
 });
@@ -1869,7 +1870,7 @@ router.post("/platform/workflow-templates", requireAuth, requireSuperAdmin, asyn
     }).returning();
     res.status(201).json(template);
   } catch (error: any) {
-    console.error("Create global workflow template error:", error.message);
+    logError("Create global workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create workflow template" });
   }
 });
@@ -1888,7 +1889,7 @@ router.patch("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin,
     if (!updated) return res.status(404).json({ error: "Template not found" });
     res.json(updated);
   } catch (error: any) {
-    console.error("Update global workflow template error:", error.message);
+    logError("Update global workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update workflow template" });
   }
 });
@@ -1899,7 +1900,7 @@ router.delete("/platform/workflow-templates/:id", requireAuth, requireSuperAdmin
     await db.delete(globalWorkflowTemplates).where(eq(globalWorkflowTemplates.id, id));
     res.json({ message: "Template deleted" });
   } catch (error: any) {
-    console.error("Delete global workflow template error:", error.message);
+    logError("Delete global workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete workflow template" });
   }
 });
@@ -1972,7 +1973,7 @@ router.get("/platform/organizations/:orgId/export", requireAuth, requireSuperAdm
     res.setHeader("Content-Disposition", `attachment; filename="org-${org.slug}-export-${new Date().toISOString().split('T')[0]}.json"`);
     res.json(exportData);
   } catch (error: any) {
-    console.error("Data export error:", error.message);
+    logError("Data export error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to export organization data" });
   }
 });
@@ -2027,7 +2028,7 @@ router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requi
     console.log(`COMPLIANCE: Full data deletion for org "${org.name}" (${orgId}) by admin: ${req.user!.email}`);
     res.json({ message: `All data for organization "${org.name}" has been permanently deleted` });
   } catch (error: any) {
-    console.error("Data deletion error:", error.message);
+    logError("Data deletion error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete organization data. The operation was rolled back." });
   }
 });

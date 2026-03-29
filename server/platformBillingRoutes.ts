@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, organizations, auditLog, organizationSubscriptions, organizationAddOns, organizationUsage, subscriptionEvents, organizationSowItems, scopeItems, estimateLineItems, dailyScopeProgress } from "@shared/schema";
@@ -85,7 +86,7 @@ router.get("/platform/subscriptions/stats", requireAuth, requireSuperAdmin, asyn
       recentChanges,
     });
   } catch (error: any) {
-    console.error("Subscription stats error:", error.message);
+    logError("Subscription stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get subscription stats" });
   }
 });
@@ -200,7 +201,7 @@ router.get("/platform/subscriptions", requireAuth, requireSuperAdmin, async (req
       },
     });
   } catch (error: any) {
-    console.error("Subscriptions list error:", error.message);
+    logError("Subscriptions list error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to list subscriptions" });
   }
 });
@@ -248,7 +249,7 @@ router.get("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, asy
       recentAudit,
     });
   } catch (error: any) {
-    console.error("Subscription detail error:", error.message);
+    logError("Subscription detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get subscription details" });
   }
 });
@@ -300,7 +301,7 @@ router.get("/platform/subscriptions/:orgId/history", requireAuth, requireSuperAd
       pagination: { page, limit, total: totalRow.count, totalPages: Math.ceil(totalRow.count / limit) },
     });
   } catch (error: any) {
-    console.error("Subscription history error:", error.message);
+    logError("Subscription history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch subscription history" });
   }
 });
@@ -373,7 +374,7 @@ router.patch("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, a
 
     res.json({ subscription: updated, changes });
   } catch (error: any) {
-    console.error("Subscription update error:", error.message);
+    logError("Subscription update error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update subscription" });
   }
 });
@@ -429,7 +430,7 @@ router.patch("/platform/subscriptions/:orgId/addons/:addonKey", requireAuth, req
 
     res.json({ addon: result });
   } catch (error: any) {
-    console.error("Addon update error:", error.message);
+    logError("Addon update error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update addon" });
   }
 });
@@ -495,7 +496,7 @@ router.post("/platform/subscriptions", requireAuth, requireSuperAdmin, async (re
 
     res.status(201).json({ subscription: newSub });
   } catch (error: any) {
-    console.error("Create subscription error:", error.message);
+    logError("Create subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create subscription" });
   }
 });
@@ -541,7 +542,7 @@ router.post("/platform/subscriptions/:orgId/cancel", requireAuth, requireSuperAd
 
     res.json({ subscription: updated, message: "Subscription has been canceled" });
   } catch (error: any) {
-    console.error("Cancel subscription error:", error.message);
+    logError("Cancel subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to cancel subscription" });
   }
 });
@@ -591,7 +592,7 @@ router.post("/platform/subscriptions/:orgId/pause", requireAuth, requireSuperAdm
 
     res.json({ subscription: updated, message: "Subscription has been paused" });
   } catch (error: any) {
-    console.error("Pause subscription error:", error.message);
+    logError("Pause subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to pause subscription" });
   }
 });
@@ -649,7 +650,7 @@ router.post("/platform/subscriptions/:orgId/downgrade", requireAuth, requireSupe
 
     res.json({ subscription: updated, message: `Subscription downgraded from ${oldPlan} to ${targetPlan}` });
   } catch (error: any) {
-    console.error("Downgrade subscription error:", error.message);
+    logError("Downgrade subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to downgrade subscription" });
   }
 });
@@ -695,7 +696,7 @@ router.delete("/platform/subscriptions/:orgId", requireAuth, requireSuperAdmin, 
 
     res.json({ success: true, message: "Subscription deleted" });
   } catch (error: any) {
-    console.error("Delete subscription error:", error.message);
+    logError("Delete subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete subscription" });
   }
 });
@@ -716,7 +717,7 @@ router.get("/platform/organizations-without-subscription", requireAuth, requireS
 
     res.json(orgsWithoutSubs);
   } catch (error: any) {
-    console.error("Fetch orgs without subscription error:", error.message);
+    logError("Fetch orgs without subscription error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch organizations" });
   }
 });
@@ -741,7 +742,7 @@ router.get("/platform/audit-report", requireAuth, requireSuperAdmin, async (req:
     
     res.json(report);
   } catch (error: any) {
-    console.error("Audit report fetch error:", error.message);
+    logError("Audit report fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch audit report" });
   }
 });
@@ -774,11 +775,11 @@ router.post("/platform/run-audit", requireAuth, requireSuperAdmin, async (req: A
     res.json({ message: "Audit started. Refresh the page in a few seconds to see results." });
     
     execAsync("npm run audit", { timeout: 120000 }).catch((error) => {
-      console.error("Audit execution error:", error.message);
+      logError("Audit execution error:", {}, error instanceof Error ? error : new Error(String(error)));
     });
     
   } catch (error: any) {
-    console.error("Audit run error:", error.message);
+    logError("Audit run error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to run audit" });
   }
 });
@@ -899,7 +900,7 @@ router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, asyn
       ...results,
     });
   } catch (error: any) {
-    console.error("SOW backfill error:", error.message);
+    logError("SOW backfill error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to backfill SOW links", details: error.message });
   }
 });
@@ -931,7 +932,7 @@ router.get("/platform/sow-link-stats", requireAuth, requireSuperAdmin, async (re
 
     res.json(stats.rows);
   } catch (error: any) {
-    console.error("SOW stats error:", error.message);
+    logError("SOW stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get SOW link stats" });
   }
 });

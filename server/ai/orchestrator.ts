@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { randomUUID } from "crypto";
 import { db } from "../db";
 import { aiSettings, aiRuns, aiTasks, projects } from "@shared/schema";
@@ -76,7 +77,7 @@ export async function runAIAnalysis(triggeredById: string | null = null, organiz
         console.log(`📋 Created ${draftsCreated} auto-generated change order drafts`);
       }
     } catch (coError) {
-      console.error('⚠️ Change order automation error (non-fatal):', coError);
+      logError('⚠️ Change order automation error (non-fatal):', {}, coError instanceof Error ? coError : new Error(String(coError)));
     }
 
     // Step 9: Persist cost overrun predictions from AI response
@@ -88,7 +89,7 @@ export async function runAIAnalysis(triggeredById: string | null = null, organiz
     return runId;
 
   } catch (error: any) {
-    console.error('❌ AI analysis failed:', error);
+    logError('❌ AI analysis failed:', {}, error instanceof Error ? error : new Error(String(error)));
 
     // Update run with error
     await db

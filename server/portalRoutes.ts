@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import { insertNotifications } from "./services/notificationService";
@@ -56,7 +57,7 @@ export async function notifyGcTeamOfPortalActivity(
 
     await insertNotifications(notificationValues);
   } catch (error) {
-    console.error("Failed to create portal activity notifications:", error);
+    logError("Failed to create portal activity notifications:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -88,7 +89,7 @@ router.get("/portal/manage/activity/:tokenId", requireAuth, requireRole("SUPER_A
 
     res.json(activity);
   } catch (error) {
-    console.error("Get portal activity error:", error);
+    logError("Get portal activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -196,12 +197,12 @@ router.post("/bid-docs/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
         text: `Hello ${contactName}, you have been sent a document: ${documentTitle}. ${portalLink ? `View it here: ${portalLink}` : ''}`,
       });
     } catch (emailError) {
-      console.error("Failed to send bid doc distribution email:", emailError);
+      logError("Failed to send bid doc distribution email:", {}, emailError instanceof Error ? emailError : new Error(String(emailError)));
     }
 
     res.status(201).json({ ...distribution, portalLink });
   } catch (error) {
-    console.error("Send bid document error:", error);
+    logError("Send bid document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -230,7 +231,7 @@ router.get("/bid-docs/distributions", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(distributions);
   } catch (error) {
-    console.error("List bid doc distributions error:", error);
+    logError("List bid doc distributions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -276,7 +277,7 @@ router.patch("/bid-docs/distributions/:id/status", requireAuth, requireRole("SUP
 
     res.json(updated);
   } catch (error) {
-    console.error("Update distribution status error:", error);
+    logError("Update distribution status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -307,7 +308,7 @@ export async function notifyChatTeamMembers(orgId: string, projectId: string, se
       })));
     }
   } catch (error) {
-    console.error("Failed to create portal chat notifications:", error);
+    logError("Failed to create portal chat notifications:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -352,7 +353,7 @@ router.post("/team/chat/threads/:threadId/read", requireAuth, async (req: AuthRe
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Team portal chat mark read error:", error);
+    logError("Team portal chat mark read error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -419,7 +420,7 @@ router.get("/team/chat/threads", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json(mapped);
   } catch (error) {
-    console.error("Team portal chat threads list error:", error);
+    logError("Team portal chat threads list error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -471,7 +472,7 @@ router.get("/team/chat/threads/:threadId/messages", requireAuth, async (req: Aut
 
     res.json(messages);
   } catch (error) {
-    console.error("Team portal chat get messages error:", error);
+    logError("Team portal chat get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -566,13 +567,13 @@ router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: Au
           }
         }
       } catch (emailError) {
-        console.error("Failed to send portal chat email notification:", emailError);
+        logError("Failed to send portal chat email notification:", {}, emailError instanceof Error ? emailError : new Error(String(emailError)));
       }
     }
 
     res.status(201).json(msg);
   } catch (error) {
-    console.error("Team portal chat send message error:", error);
+    logError("Team portal chat send message error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -612,7 +613,7 @@ router.patch("/team/chat/threads/:threadId", requireAuth, requireRole("SUPER_ADM
 
     res.json(updated);
   } catch (error) {
-    console.error("Team portal chat update thread error:", error);
+    logError("Team portal chat update thread error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -634,7 +635,7 @@ router.get("/team/chat/unread", requireAuth, async (req: AuthRequest, res: Respo
 
     res.json({ unreadCount: result[0]?.count || 0 });
   } catch (error) {
-    console.error("Team portal chat unread count error:", error);
+    logError("Team portal chat unread count error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -667,7 +668,7 @@ router.get("/portal/info", requirePortalAuth, async (req: PortalRequest, res: Re
       contactEmail: token.contactEmail,
     });
   } catch (error) {
-    console.error("Portal info error:", error);
+    logError("Portal info error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -704,7 +705,7 @@ router.get("/portal/rfis", requirePortalAuth, requirePortalPermission("view"), a
 
     res.json(mapped);
   } catch (error) {
-    console.error("Portal get RFIs error:", error);
+    logError("Portal get RFIs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -750,7 +751,7 @@ router.get("/portal/rfis/:id", requirePortalAuth, requirePortalPermission("view"
       activity,
     });
   } catch (error) {
-    console.error("Portal get RFI detail error:", error);
+    logError("Portal get RFI detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -797,7 +798,7 @@ router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermissi
 
     res.status(201).json({ success: true });
   } catch (error) {
-    console.error("Portal RFI comment error:", error);
+    logError("Portal RFI comment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -834,7 +835,7 @@ router.get("/portal/submittals", requirePortalAuth, requirePortalPermission("vie
 
     res.json(mapped);
   } catch (error) {
-    console.error("Portal get submittals error:", error);
+    logError("Portal get submittals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -880,7 +881,7 @@ router.get("/portal/submittals/:id", requirePortalAuth, requirePortalPermission(
       activity,
     });
   } catch (error) {
-    console.error("Portal get submittal detail error:", error);
+    logError("Portal get submittal detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -927,7 +928,7 @@ router.post("/portal/submittals/:id/comment", requirePortalAuth, requirePortalPe
 
     res.status(201).json({ success: true });
   } catch (error) {
-    console.error("Portal submittal comment error:", error);
+    logError("Portal submittal comment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -991,7 +992,7 @@ router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPer
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    console.error("Portal submittal upload error:", error);
+    logError("Portal submittal upload error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1034,7 +1035,7 @@ router.get("/portal/transmittals", requirePortalAuth, requirePortalPermission("v
 
     res.json(mapped);
   } catch (error) {
-    console.error("Portal get transmittals error:", error);
+    logError("Portal get transmittals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1092,7 +1093,7 @@ router.get("/portal/transmittals/:id", requirePortalAuth, requirePortalPermissio
       },
     });
   } catch (error) {
-    console.error("Portal get transmittal detail error:", error);
+    logError("Portal get transmittal detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1152,7 +1153,7 @@ router.post("/portal/transmittals/:id/acknowledge", requirePortalAuth, requirePo
 
     res.json(updated);
   } catch (error) {
-    console.error("Portal acknowledge transmittal error:", error);
+    logError("Portal acknowledge transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1215,7 +1216,7 @@ router.get("/portal/manage/tokens", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     res.json(mapped);
   } catch (error) {
-    console.error("Get portal tokens error:", error);
+    logError("Get portal tokens error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1295,7 +1296,7 @@ router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "AD
         text: `Hello ${contactName}, you have been invited to access the subcontractor portal for ${projectName}. Access it here: ${portalLink}`,
       });
     } catch (emailError) {
-      console.error("Failed to send portal invite email:", emailError);
+      logError("Failed to send portal invite email:", {}, emailError instanceof Error ? emailError : new Error(String(emailError)));
     }
 
     res.status(201).json({
@@ -1304,7 +1305,7 @@ router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "AD
       portalLink,
     });
   } catch (error) {
-    console.error("Create portal invite error:", error);
+    logError("Create portal invite error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1340,7 +1341,7 @@ router.post("/portal/manage/revoke/:tokenId", requireAuth, requireRole("SUPER_AD
 
     res.json(updated);
   } catch (error) {
-    console.error("Revoke portal token error:", error);
+    logError("Revoke portal token error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1387,7 +1388,7 @@ router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_AD
       rawToken,
     });
   } catch (error) {
-    console.error("Resend portal token error:", error);
+    logError("Resend portal token error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

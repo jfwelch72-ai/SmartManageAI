@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
@@ -81,7 +82,7 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
       })),
     });
   } catch (error) {
-    console.error("Get notification preferences error:", error);
+    logError("Get notification preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -154,7 +155,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Update notification preferences error:", error);
+    logError("Update notification preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -208,7 +209,7 @@ router.put("/api/notifications/preferences/webhooks", requireAuth, async (req: A
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Update webhook preferences error:", error);
+    logError("Update webhook preferences error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

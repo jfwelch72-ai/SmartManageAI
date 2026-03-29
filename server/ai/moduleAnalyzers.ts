@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { db } from "../db";
 import { 
   projects, 
@@ -185,7 +186,7 @@ Respond with JSON in this format:
       ganttRecommendations: parsed.ganttRecommendations || [],
     };
   } catch (error) {
-    console.error('[AI Scheduling] Error:', error);
+    logError('[AI Scheduling] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       insights: [{
         module: "SCHEDULING",
@@ -309,7 +310,7 @@ Respond with JSON in this format:
       })),
     };
   } catch (error) {
-    console.error('[AI Delays] Error:', error);
+    logError('[AI Delays] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       insights: [{
         module: "DELAYS",
@@ -453,7 +454,7 @@ Respond with JSON in this format:
       })),
     };
   } catch (error) {
-    console.error('[AI Costs] Error:', error);
+    logError('[AI Costs] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       insights: [{
         module: "COSTS",
@@ -583,7 +584,7 @@ Respond with JSON in this format:
       })),
     };
   } catch (error) {
-    console.error('[AI Equipment] Error:', error);
+    logError('[AI Equipment] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       insights: [{
         module: "EQUIPMENT",
@@ -717,7 +718,7 @@ Respond with JSON in this format:
       vendorComparisons: parsed.vendorComparisons || [],
     };
   } catch (error) {
-    console.error('[AI Vendor Pricing] Error:', error);
+    logError('[AI Vendor Pricing] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       insights: [{
         module: "VENDOR_PRICING",
@@ -847,7 +848,7 @@ Respond with JSON in this format:
       })),
     };
   } catch (error) {
-    console.error('[AI Project Health] Error:', error);
+    logError('[AI Project Health] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       insights: [{
         module: "PROJECT_HEALTH",
@@ -913,7 +914,7 @@ export async function runComprehensiveAnalysis(
         results.vendorComparisons!.push(...moduleResult.vendorComparisons);
       }
     } catch (error) {
-      console.error(`[AI Comprehensive] Error in module ${module}:`, error);
+      logError(`[AI Comprehensive] Error in module ${module}:`, {}, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -980,7 +981,7 @@ export async function saveAnalysisResults(
         }
       }
     } catch (error) {
-      console.error('[AI Save] Error saving insight:', error);
+      logError('[AI Save] Error saving insight:', {}, error instanceof Error ? error : new Error(String(error)));
     }
   }
 

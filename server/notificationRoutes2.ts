@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { notifications } from "@shared/schema";
@@ -17,7 +18,7 @@ router.get("/api/notifications", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(userNotifications);
   } catch (error) {
-    console.error("Get notifications error:", error);
+    logError("Get notifications error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -31,7 +32,7 @@ router.get("/api/notifications/unread-count", requireAuth, async (req: AuthReque
 
     res.json({ count: result.count });
   } catch (error) {
-    console.error("Get unread count error:", error);
+    logError("Get unread count error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -51,7 +52,7 @@ router.patch("/api/notifications/:id/read", requireAuth, async (req: AuthRequest
 
     res.json(notification);
   } catch (error: any) {
-    console.error("Mark notification read error:", error);
+    logError("Mark notification read error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -65,7 +66,7 @@ router.post("/api/notifications/read-all", requireAuth, async (req: AuthRequest,
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Mark all notifications read error:", error);
+    logError("Mark all notifications read error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

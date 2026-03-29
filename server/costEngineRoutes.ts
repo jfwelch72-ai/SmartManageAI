@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
@@ -50,7 +51,7 @@ router.get("/api/projects/:code/cost-transactions", requireAuth, async (req: Aut
 
     res.json(result);
   } catch (error) {
-    console.error("Get cost transactions error:", error);
+    logError("Get cost transactions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -78,7 +79,7 @@ router.get("/api/projects/:code/cost-transactions/summary", requireAuth, async (
 
     res.json(result);
   } catch (error) {
-    console.error("Get cost summary error:", error);
+    logError("Get cost summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -95,7 +96,7 @@ router.get("/api/projects/:code/cost-transactions/by-cost-code/:costCode", requi
     const transactions = await getByCostCode(project.id, req.params.costCode);
     res.json(transactions);
   } catch (error) {
-    console.error("Get cost transactions by cost code error:", error);
+    logError("Get cost transactions by cost code error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -133,7 +134,7 @@ router.post("/api/projects/:code/cost-transactions", requireAuth, async (req: Au
 
     res.status(201).json(row);
   } catch (error) {
-    console.error("Post cost transaction error:", error);
+    logError("Post cost transaction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -157,7 +158,7 @@ router.patch("/api/projects/:code/cost-transactions/:transactionId/void", requir
     if (!row) return res.status(404).json({ error: "Transaction not found or already voided" });
     res.json(row);
   } catch (error) {
-    console.error("Void cost transaction error:", error);
+    logError("Void cost transaction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

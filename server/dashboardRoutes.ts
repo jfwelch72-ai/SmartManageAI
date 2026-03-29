@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests } from "@shared/schema";
@@ -263,7 +264,7 @@ router.get('/api/dashboard/permissions', requireAuth, requireRole('ADMIN', 'SUPE
 
     res.json(usersWithPermissions);
   } catch (error) {
-    console.error('Error fetching permissions:', error);
+    logError('Error fetching permissions:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch permissions' });
   }
 });
@@ -332,7 +333,7 @@ router.put('/api/dashboard/permissions/:userId', requireAuth, requireRole('ADMIN
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error updating permissions:', error);
+    logError('Error updating permissions:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to update permissions' });
   }
 });
@@ -379,7 +380,7 @@ router.get('/api/dashboard/my-permissions', requireAuth, async (req: AuthRequest
 
     res.json(mergePermissions(roleDefaults, dbPerms));
   } catch (error) {
-    console.error('Error fetching user permissions:', error);
+    logError('Error fetching user permissions:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch permissions' });
   }
 });
@@ -413,13 +414,14 @@ router.get('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
         }
         return res.json({ layout: config as DashboardLayoutConfig, isCustom: layout.isCustom });
       } catch {
+        logWarn("Non-critical operation failed");
         return res.json({ layout: roleDefault, isCustom: false });
       }
     }
 
     res.json({ layout: roleDefault, isCustom: false });
   } catch (error) {
-    console.error('Error fetching layout:', error);
+    logError('Error fetching layout:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch layout' });
   }
 });
@@ -505,7 +507,7 @@ router.put('/api/dashboard/layout', requireAuth, async (req: AuthRequest, res: R
 
     res.json({ success: true, layout });
   } catch (error) {
-    console.error('Error saving layout:', error);
+    logError('Error saving layout:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to save layout' });
   }
 });
@@ -529,7 +531,7 @@ router.post('/api/dashboard/layout/reset', requireAuth, async (req: AuthRequest,
 
     res.json({ success: true, layout: roleDefault });
   } catch (error) {
-    console.error('Error resetting layout:', error);
+    logError('Error resetting layout:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to reset layout' });
   }
 });
@@ -701,7 +703,7 @@ router.get('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res: 
 
     res.json({ palette: palette || null, orgPalette: orgPalette || null, isActive: !!palette });
   } catch (error) {
-    console.error('Error fetching palette:', error);
+    logError('Error fetching palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch palette' });
   }
 });
@@ -723,7 +725,7 @@ router.get('/api/dashboard/palettes', requireAuth, async (req: AuthRequest, res:
 
     res.json(palettes);
   } catch (error) {
-    console.error('Error fetching palettes:', error);
+    logError('Error fetching palettes:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch palettes' });
   }
 });
@@ -741,7 +743,7 @@ router.post('/api/dashboard/palette/validate', requireAuth, async (req: AuthRequ
       dark: darkValidation,
     });
   } catch (error) {
-    console.error('Error validating palette:', error);
+    logError('Error validating palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to validate palette' });
   }
 });
@@ -850,7 +852,7 @@ router.post('/api/dashboard/palette', requireAuth, async (req: AuthRequest, res:
     }
     res.json(response);
   } catch (error) {
-    console.error('Error saving palette:', error);
+    logError('Error saving palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to save palette' });
   }
 });
@@ -889,7 +891,7 @@ router.put('/api/dashboard/palette/:paletteId/activate', requireAuth, async (req
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error activating palette:', error);
+    logError('Error activating palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to activate palette' });
   }
 });
@@ -912,7 +914,7 @@ router.post('/api/dashboard/palette/deactivate', requireAuth, async (req: AuthRe
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deactivating palette:', error);
+    logError('Error deactivating palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to deactivate palette' });
   }
 });
@@ -932,7 +934,7 @@ router.get('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, r
 
     res.json({ palette: palette || null, isActive: !!palette });
   } catch (error) {
-    console.error('Error fetching org palette:', error);
+    logError('Error fetching org palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to fetch organization palette' });
   }
 });
@@ -1036,7 +1038,7 @@ router.post('/api/dashboard/org-palette', requireAuth, async (req: AuthRequest, 
     }
     res.json(response);
   } catch (error) {
-    console.error('Error saving org palette:', error);
+    logError('Error saving org palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to save organization palette' });
   }
 });
@@ -1060,7 +1062,7 @@ router.post('/api/dashboard/org-palette/deactivate', requireAuth, async (req: Au
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deactivating org palette:', error);
+    logError('Error deactivating org palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to deactivate organization palette' });
   }
 });
@@ -1091,7 +1093,7 @@ router.delete('/api/dashboard/palette/:paletteId', requireAuth, async (req: Auth
 
     res.json({ success: true });
   } catch (error) {
-    console.error('Error deleting palette:', error);
+    logError('Error deleting palette:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: 'Failed to delete palette' });
   }
 });
@@ -1235,7 +1237,7 @@ router.get("/api/dashboard/stats", requireAuth, sensitiveLimiter, async (req: Au
 
     res.json(result);
   } catch (error) {
-    console.error("Dashboard stats error:", error);
+    logError("Dashboard stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1484,7 +1486,7 @@ router.get("/api/dashboard/kpi", requireAuth, async (req: AuthRequest, res) => {
       isEstimated,
     });
   } catch (error) {
-    console.error("KPI endpoint error:", error);
+    logError("KPI endpoint error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1505,7 +1507,7 @@ router.get("/api/dashboard/snapshot", requireAuth, requireRole("ADMIN", "MANAGER
     
     res.json({ snapshot, aiData });
   } catch (error) {
-    console.error("Dashboard snapshot error:", error);
+    logError("Dashboard snapshot error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1529,7 +1531,7 @@ router.post("/api/dashboard/aggregate-time-tracking", requireAuth, requireRole("
     
     res.json(result);
   } catch (error) {
-    console.error("Time tracking aggregation error:", error);
+    logError("Time tracking aggregation error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1568,7 +1570,7 @@ router.get("/api/users", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MA
     const usersWithoutPasswords = allUsers.map(({ passwordHash, ...user }) => user);
     res.json(usersWithoutPasswords);
   } catch (error) {
-    console.error("Get users error:", error);
+    logError("Get users error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1588,7 +1590,7 @@ router.get("/api/users/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async
     const { passwordHash, ...userWithoutPassword } = user;
     res.json(userWithoutPassword);
   } catch (error) {
-    console.error("Get user error:", error);
+    logError("Get user error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1632,7 +1634,7 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
     const { passwordHash: _, ...userWithoutPassword } = newUser;
     res.status(201).json(userWithoutPassword);
   } catch (error: any) {
-    console.error("Create user error:", error);
+    logError("Create user error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.code === '23505') { // Unique violation
       res.status(409).json({ error: "Email already exists" });
     } else {
@@ -1696,7 +1698,7 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
     const { passwordHash, tokenVersion, ...userWithoutPassword } = updatedUser;
     res.json(userWithoutPassword);
   } catch (error: any) {
-    console.error("Update user error:", error);
+    logError("Update user error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.code === '23505') {
       res.status(409).json({ error: "Email already exists" });
     } else {
@@ -1750,7 +1752,7 @@ router.patch("/api/users/:id/cost-rates", requireAuth, requireRole("ADMIN"), asy
     const { passwordHash, tokenVersion, ...userWithoutPassword } = updated;
     res.json(userWithoutPassword);
   } catch (error) {
-    console.error("Update cost rates error:", error);
+    logError("Update cost rates error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1781,7 +1783,7 @@ router.post("/api/users/:id/revoke-tokens", requireAuth, requireRole("ADMIN"), s
 
     res.json({ success: true, message: "All tokens revoked. User will need to log in again." });
   } catch (error) {
-    console.error("Revoke tokens error:", error);
+    logError("Revoke tokens error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1819,7 +1821,7 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
 
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
-    console.error("Change password error:", error);
+    logError("Change password error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1851,7 +1853,7 @@ router.post("/api/auth/set-initial-password", requireAuth, sensitiveLimiter, asy
 
     res.json({ success: true, message: "Password set successfully" });
   } catch (error) {
-    console.error("Set initial password error:", error);
+    logError("Set initial password error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2125,7 +2127,7 @@ router.get("/api/dashboard/trend", requireAuth, async (req: AuthRequest, res) =>
 
     res.json(trendResult);
   } catch (error) {
-    console.error("Trend data error:", error);
+    logError("Trend data error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2354,7 +2356,7 @@ router.get("/api/dashboard/list", requireAuth, async (req: AuthRequest, res) => 
 
     res.json({ items, entity, total });
   } catch (error) {
-    console.error("List widget data error:", error);
+    logError("List widget data error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2459,7 +2461,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
         }
       }
     } catch (e) {
-      console.error("Alerts: insurance check error:", e);
+      logError("Alerts: insurance check error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 2. Over Budget Projects
@@ -2524,7 +2526,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
         }
       }
     } catch (e) {
-      console.error("Alerts: budget check error:", e);
+      logError("Alerts: budget check error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 3. Unapproved Time Entries
@@ -2570,7 +2572,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
         });
       }
     } catch (e) {
-      console.error("Alerts: time entry check error:", e);
+      logError("Alerts: time entry check error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 4. Late Subcontractor Payments
@@ -2629,7 +2631,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
         });
       }
     } catch (e) {
-      console.error("Alerts: subcontractor payment check error:", e);
+      logError("Alerts: subcontractor payment check error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 5. Low Gross Margin
@@ -2694,7 +2696,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
         }
       }
     } catch (e) {
-      console.error("Alerts: margin check error:", e);
+      logError("Alerts: margin check error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // Sort: critical first, then warning, then info
@@ -2712,7 +2714,7 @@ router.get("/api/dashboard/alerts", requireAuth, async (req: AuthRequest, res) =
 
     res.json(alertsResult);
   } catch (error) {
-    console.error("Alerts endpoint error:", error);
+    logError("Alerts endpoint error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2797,7 +2799,7 @@ router.get("/api/dashboard/workforce-snapshot", requireAuth, requireRoleOrFeatur
 
     res.json(wfResult);
   } catch (error) {
-    console.error("Workforce snapshot error:", error);
+    logError("Workforce snapshot error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2831,7 +2833,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
       `);
       accountsReceivable = parseFloat((arResult.rows[0] as any)?.total) || 0;
     } catch (e) {
-      console.error("Cash position: AR error:", e);
+      logError("Cash position: AR error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 2. Accounts Payable: unpaid subcontractor payments + committed procurement costs
@@ -2854,7 +2856,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
       `);
       accountsPayable += parseFloat((procResult.rows[0] as any)?.total) || 0;
     } catch (e) {
-      console.error("Cash position: AP error:", e);
+      logError("Cash position: AP error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 3. Payroll Liability: unpaid pay runs
@@ -2868,7 +2870,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
       `);
       payrollLiability = parseFloat((payrollResult.rows[0] as any)?.total) || 0;
     } catch (e) {
-      console.error("Cash position: payroll error:", e);
+      logError("Cash position: payroll error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     const netCashFlow = accountsReceivable - accountsPayable - payrollLiability;
@@ -2883,7 +2885,7 @@ router.get("/api/dashboard/cash-position", requireAuth, requireRoleOrFeature(["A
 
     res.json(cpResult);
   } catch (error) {
-    console.error("Cash position error:", error);
+    logError("Cash position error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2942,7 +2944,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
         billedPercent = Math.round((totalBilled / totalScheduledValue) * 10000) / 100;
       }
     } catch (e) {
-      console.error("SOV progress: totals error:", e);
+      logError("SOV progress: totals error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 2. Per-project breakdown (top 5 active projects with SOVs)
@@ -2972,7 +2974,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
         };
       });
     } catch (e) {
-      console.error("SOV progress: project breakdown error:", e);
+      logError("SOV progress: project breakdown error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 3. Labor cost vs SOV value
@@ -2999,7 +3001,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
         laborToSovPercent = Math.round((laborCost / sovValue) * 10000) / 100;
       }
     } catch (e) {
-      console.error("SOV progress: labor cost error:", e);
+      logError("SOV progress: labor cost error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 4. Retainage held
@@ -3021,7 +3023,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
       retainageHeld = parseFloat(retRow?.retainage_held) || 0;
       avgRetainagePercent = Math.round((parseFloat(retRow?.avg_retainage_percent) || 0) * 100) / 100;
     } catch (e) {
-      console.error("SOV progress: retainage error:", e);
+      logError("SOV progress: retainage error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     return {
@@ -3041,7 +3043,7 @@ router.get("/api/dashboard/sov-progress", requireAuth, requireRoleOrFeature(["AD
 
     res.json(sovResult);
   } catch (error) {
-    console.error("SOV progress error:", error);
+    logError("SOV progress error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3081,7 +3083,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       activeBids = parseInt(row?.active_count) || 0;
       pipelineValue = parseFloat(row?.pipeline_value) || 0;
     } catch (e) {
-      console.error("Bid pipeline: active bids error:", e);
+      logError("Bid pipeline: active bids error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     try {
@@ -3101,7 +3103,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
         winRate = Math.round((awardedCount / total) * 10000) / 100;
       }
     } catch (e) {
-      console.error("Bid pipeline: win rate error:", e);
+      logError("Bid pipeline: win rate error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     try {
@@ -3115,7 +3117,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
       `);
       laborExposure = parseFloat((laborResult.rows[0] as any)?.labor_exposure) || 0;
     } catch (e) {
-      console.error("Bid pipeline: labor exposure error:", e);
+      logError("Bid pipeline: labor exposure error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     return {
@@ -3130,7 +3132,7 @@ router.get("/api/dashboard/bid-pipeline", requireAuth, async (req: AuthRequest, 
 
     res.json(bpResult);
   } catch (error) {
-    console.error("Bid pipeline error:", error);
+    logError("Bid pipeline error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3238,7 +3240,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
           actual: Math.round((actualMap.get(code) || 0) * 100) / 100,
         })).sort((a, b) => Math.max(b.budgeted, b.actual) - Math.max(a.budgeted, a.actual)).slice(0, 10);
       } catch (e) {
-        console.error("Cost code breakdown: budget vs actual error:", e);
+        logError("Cost code breakdown: budget vs actual error:", {}, e instanceof Error ? e : new Error(String(e)));
       }
 
       return res.json({
@@ -3308,7 +3310,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
         totalLaborCost += otherCost;
       }
     } catch (e) {
-      console.error("Cost code breakdown: labor error:", e);
+      logError("Cost code breakdown: labor error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     res.json({
@@ -3318,7 +3320,7 @@ router.get("/api/dashboard/cost-code-breakdown", requireAuth, requireRoleOrFeatu
       totalActual: 0,
     });
   } catch (error) {
-    console.error("Cost code breakdown error:", error);
+    logError("Cost code breakdown error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3396,7 +3398,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
         projectCount: dailyMap.get(d.date)?.projects || 0,
       }));
     } catch (e) {
-      console.error("Schedule impact: daily allocation error:", e);
+      logError("Schedule impact: daily allocation error:", {}, e instanceof Error ? e : new Error(String(e)));
       dailyAllocation = next7Days.map(d => ({ date: d.date, dayLabel: d.dayLabel, assignedWorkers: 0, projectCount: 0 }));
     }
 
@@ -3432,7 +3434,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
         endDate: row.end_date ? row.end_date.split("T")[0] : null,
       }));
     } catch (e) {
-      console.error("Schedule impact: project forecast error:", e);
+      logError("Schedule impact: project forecast error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // 3. Conflicts - workers assigned to multiple projects on same day
@@ -3481,7 +3483,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
         projects: row.project_names || [],
       }));
     } catch (e) {
-      console.error("Schedule impact: conflicts error:", e);
+      logError("Schedule impact: conflicts error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // Unique workers across the 7-day window
@@ -3498,7 +3500,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
       `);
       totalUniqueWorkers = parseInt((uniqueResult.rows as any[])[0]?.total) || 0;
     } catch (e) {
-      console.error("Schedule impact: unique workers error:", e);
+      logError("Schedule impact: unique workers error:", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     // Summary
@@ -3527,7 +3529,7 @@ router.get("/api/dashboard/schedule-impact", requireAuth, async (req: AuthReques
 
     res.json(siResult);
   } catch (error) {
-    console.error("Schedule impact error:", error);
+    logError("Schedule impact error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3614,7 +3616,7 @@ router.get("/api/dashboard/labor-utilization", requireAuth, requireRoleOrFeature
 
     res.json(luResult);
   } catch (error) {
-    console.error("Labor utilization error:", error);
+    logError("Labor utilization error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3689,7 +3691,7 @@ router.get("/api/dashboard/safety-summary", requireAuth, requireRole("SUPER_ADMI
 
     res.json(ssResult);
   } catch (error) {
-    console.error("Safety summary error:", error);
+    logError("Safety summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -3772,7 +3774,7 @@ router.get("/api/dashboard/change-orders-pending", requireAuth, requireRoleOrFea
 
     res.json(coResult);
   } catch (error) {
-    console.error("Change orders pending error:", error);
+    logError("Change orders pending error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

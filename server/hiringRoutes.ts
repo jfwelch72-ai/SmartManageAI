@@ -9,7 +9,7 @@ import { encryptToken, decryptToken } from "./integrations/encryption";
 import { getATSProvider, listATSProviders } from "./integrations/ats/registry";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { eventBus } from "./events";
-import { logError, logInfo } from "./utils/logger";
+import {logError, logInfo, logWarn } from "./utils/logger";
 import { governedAiCall } from "./services/aiGovernance";
 import { openai, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import {
@@ -1683,6 +1683,7 @@ router.post(
             resumeContent = `[${ext.toUpperCase()} resume file on record — content not extractable in this context. Evaluate based on application answers and inferred skills.]`;
           }
         } catch {
+          logWarn("Non-critical operation failed");
           resumeContent = "[Resume file on record but could not be read. Evaluate based on application answers.]";
         }
       }

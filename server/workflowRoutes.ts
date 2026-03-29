@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { workflowTemplates, workflowStages, workflowApprovalSteps, workflowNotificationRules, workflowInstances } from "@shared/schema";
@@ -87,7 +88,7 @@ router.get("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), asy
 
     res.json(templatesWithStages);
   } catch (error) {
-    console.error("Get workflow templates error:", error);
+    logError("Get workflow templates error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -124,7 +125,7 @@ router.get("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), 
 
     res.json({ ...template, stages: stagesWithDetails });
   } catch (error) {
-    console.error("Get workflow template error:", error);
+    logError("Get workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -214,7 +215,7 @@ router.post("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: A
 
     res.status(201).json({ ...template, stages: createdStages });
   } catch (error) {
-    console.error("Create workflow template error:", error);
+    logError("Create workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -314,7 +315,7 @@ router.put("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req:
 
     res.json({ ...fullTemplate[0], stages: allStages });
   } catch (error) {
-    console.error("Update workflow template error:", error);
+    logError("Update workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -356,7 +357,7 @@ router.patch("/:id/status", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), as
 
     res.json(updated);
   } catch (error) {
-    console.error("Update workflow status error:", error);
+    logError("Update workflow status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -378,7 +379,7 @@ router.delete("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (r
     await db.delete(workflowTemplates).where(eq(workflowTemplates.id, req.params.id));
     res.json({ message: "Template deleted" });
   } catch (error) {
-    console.error("Delete workflow template error:", error);
+    logError("Delete workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -472,7 +473,7 @@ router.post("/:id/clone", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), asyn
 
     res.status(201).json({ ...clone, stages: allStages });
   } catch (error) {
-    console.error("Clone workflow template error:", error);
+    logError("Clone workflow template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -500,7 +501,7 @@ router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Respo
 
     res.status(201).json(instance);
   } catch (error) {
-    console.error("Start workflow instance error:", error);
+    logError("Start workflow instance error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -530,7 +531,7 @@ router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPE
 
     res.json(result);
   } catch (error) {
-    console.error("Transition workflow error:", error);
+    logError("Transition workflow error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -549,7 +550,7 @@ router.get("/instances/entity/:entityType/:entityId", requireAuth, async (req: A
     if (!data) return res.json(null);
     res.json(data);
   } catch (error) {
-    console.error("Get workflow instance error:", error);
+    logError("Get workflow instance error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { timeEntries, timeClockShifts, users, projects } from "@shared/schema";
@@ -77,7 +78,7 @@ router.get("/api/time-entries/pending-approvals", requireAuth, requireRole("ADMI
 
     res.json(formattedEntries);
   } catch (error) {
-    console.error("Get pending time entry approvals error:", error);
+    logError("Get pending time entry approvals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -163,12 +164,12 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
 
     if (entry.entry.projectId) {
       const { evaluateBudgetAlerts } = await import("./costLedgerRoutes");
-      evaluateBudgetAlerts(entry.entry.projectId).catch(e => console.error("Budget alert eval after time approval:", e));
+      evaluateBudgetAlerts(entry.entry.projectId).catch(e => logError("Budget alert eval after time approval:", {}, e instanceof Error ? e : new Error(String(e))));
     }
 
     res.json(updatedEntry);
   } catch (error) {
-    console.error("Approve time entry error:", error);
+    logError("Approve time entry error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -249,7 +250,7 @@ router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "M
 
     res.json(updatedEntry);
   } catch (error) {
-    console.error("Reject time entry error:", error);
+    logError("Reject time entry error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -327,7 +328,7 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
     if (projectIds.size > 0) {
       import("./costLedgerRoutes").then(m => {
         for (const pid of projectIds) {
-          m.evaluateBudgetAlerts(pid).catch(e => console.error("Budget alert eval after bulk time approval:", e));
+          m.evaluateBudgetAlerts(pid).catch(e => logError("Budget alert eval after bulk time approval:", {}, e instanceof Error ? e : new Error(String(e))));
         }
       }).catch(() => {});
     }
@@ -338,7 +339,7 @@ const bulkApproveHandler = async (req: AuthRequest, res: any) => {
       message: `Successfully approved ${accessibleIds.length} time entries`
     });
   } catch (error) {
-    console.error("Bulk approve time entries error:", error);
+    logError("Bulk approve time entries error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 };
@@ -444,7 +445,7 @@ router.get("/api/time-entries/export", requireAuth, requireRole("ADMIN", "MANAGE
     res.setHeader("Content-Disposition", `attachment; filename=time-entries-export-${new Date().toISOString().split('T')[0]}.csv`);
     res.send(csvHeader + csvRows);
   } catch (error) {
-    console.error("Export time entries error:", error);
+    logError("Export time entries error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -535,7 +536,7 @@ router.get("/api/time-clock/approval-summary", requireAuth, requireRole("ADMIN",
       },
     });
   } catch (error) {
-    console.error("Get approval summary error:", error);
+    logError("Get approval summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

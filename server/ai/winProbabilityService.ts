@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { db } from "../db";
 import { crmOpportunities, crmOpportunityActivities, bids, type CrmOpportunity } from "@shared/schema";
 import { eq, and, sql, count } from "drizzle-orm";
@@ -135,7 +136,7 @@ Respond ONLY with valid JSON: {"score": <number>, "rationale": "<string>"}`
 
     return { score, rationale };
   } catch (error) {
-    console.error("[Win Probability] AI scoring failed, using heuristic fallback:", error);
+    logError("[Win Probability] AI scoring failed, using heuristic fallback:", {}, error instanceof Error ? error : new Error(String(error)));
     return heuristicScore(opp, activityCount, daysSinceLastActivity, daysInPipeline, historicalWinRate);
   }
 }
@@ -181,7 +182,7 @@ async function heuristicScore(
       })
       .where(eq(crmOpportunities.id, opp.id));
   } catch (err) {
-    console.error("[Win Probability] Failed to save heuristic score:", err);
+    logError("[Win Probability] Failed to save heuristic score:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 
   await syncBidWinProbability(opp.id, score);
@@ -196,6 +197,6 @@ async function syncBidWinProbability(opportunityId: string, score: number): Prom
       .set({ aiWinProbability: score })
       .where(eq(bids.crmOpportunityId, opportunityId));
   } catch (err) {
-    console.error("[Win Probability] Failed to sync score to linked bids:", err);
+    logError("[Win Probability] Failed to sync score to linked bids:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }

@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -43,7 +44,7 @@ async function ensureProcurementSequences() {
     await db.execute(sql`SELECT setval('po_number_seq', ${poMax}, true)`);
   }
 }
-const sequencesReady = ensureProcurementSequences().catch(err => console.error("Failed to init procurement sequences:", err));
+const sequencesReady = ensureProcurementSequences().catch(err => logError("Failed to init procurement sequences:", {}, err instanceof Error ? err : new Error(String(err))));
 
 const PR_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "CONVERTED_TO_PO"] as const;
 const PO_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED", "CANCELLED"] as const;
@@ -132,7 +133,7 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
 
     res.json(result);
   } catch (error) {
-    console.error("Get purchase requests error:", error);
+    logError("Get purchase requests error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -193,7 +194,7 @@ router.post("/api/procurement-module/requests", requireAuth, requireRole(...ROLE
 
     res.status(201).json(pr);
   } catch (error) {
-    console.error("Create purchase request error:", error);
+    logError("Create purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -246,7 +247,7 @@ router.patch("/api/procurement-module/requests/:id", requireAuth, requireRole(..
 
     res.json(updated);
   } catch (error) {
-    console.error("Update purchase request error:", error);
+    logError("Update purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -264,7 +265,7 @@ router.delete("/api/procurement-module/requests/:id", requireAuth, requireRole(.
     await db.delete(purchaseRequests).where(eq(purchaseRequests.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete purchase request error:", error);
+    logError("Delete purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -293,7 +294,7 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
 
     res.json(updated);
   } catch (error) {
-    console.error("Submit purchase request error:", error);
+    logError("Submit purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -322,7 +323,7 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
 
     res.json(updated);
   } catch (error) {
-    console.error("Approve purchase request error:", error);
+    logError("Approve purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -354,7 +355,7 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
 
     res.json(updated);
   } catch (error) {
-    console.error("Reject purchase request error:", error);
+    logError("Reject purchase request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -419,7 +420,7 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
 
     res.status(201).json(po);
   } catch (error) {
-    console.error("Convert PR to PO error:", error);
+    logError("Convert PR to PO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -482,7 +483,7 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
       items: itemsByPo[r.po.id] || [],
     })));
   } catch (error) {
-    console.error("Get purchase orders error:", error);
+    logError("Get purchase orders error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -562,7 +563,7 @@ router.get("/api/procurement-module/orders/:id", requireAuth, requireRole(...ROL
 
     res.json({ ...po, items, project: proj || null, vendor, receipts: receiptsWithItems, invoices: invoicesWithMatch });
   } catch (error) {
-    console.error("Get PO detail error:", error);
+    logError("Get PO detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -651,7 +652,7 @@ router.post("/api/procurement-module/orders", requireAuth, requireRole(...ROLES)
 
     res.status(201).json(po);
   } catch (error) {
-    console.error("Create purchase order error:", error);
+    logError("Create purchase order error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -715,7 +716,7 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
 
     res.json(updated);
   } catch (error) {
-    console.error("Update purchase order error:", error);
+    logError("Update purchase order error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -733,7 +734,7 @@ router.delete("/api/procurement-module/orders/:id", requireAuth, requireRole(...
     await db.delete(purchaseOrders).where(eq(purchaseOrders.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete purchase order error:", error);
+    logError("Delete purchase order error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -762,7 +763,7 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
 
     res.json(updated);
   } catch (error) {
-    console.error("Submit PO error:", error);
+    logError("Submit PO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -794,12 +795,12 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
     }
 
     if (existing.projectId) {
-      import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(existing.projectId!)).catch(e => console.error("Budget alert eval after PO approval:", e));
+      import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(existing.projectId!)).catch(e => logError("Budget alert eval after PO approval:", {}, e instanceof Error ? e : new Error(String(e))));
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Approve PO error:", error);
+    logError("Approve PO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -835,7 +836,7 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
 
     res.json(updated);
   } catch (error) {
-    console.error("Reject PO error:", error);
+    logError("Reject PO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -855,7 +856,7 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
       .where(eq(purchaseOrders.id, req.params.id)).returning();
     res.json(updated);
   } catch (error) {
-    console.error("Send PO error:", error);
+    logError("Send PO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -913,13 +914,13 @@ router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireR
       }
 
       if (po.projectId) {
-        import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(po.projectId!)).catch(e => console.error("Budget alert eval after bulk PO approval:", e));
+        import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(po.projectId!)).catch(e => logError("Budget alert eval after bulk PO approval:", {}, e instanceof Error ? e : new Error(String(e))));
       }
     }
 
     res.json({ approved: approved.length, orders: approved });
   } catch (error) {
-    console.error("Bulk approve POs error:", error);
+    logError("Bulk approve POs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1005,7 +1006,7 @@ router.get("/api/procurement-module/summary", requireAuth, requireRole(...ROLES)
       totalPaid: totalPaid.toFixed(2),
     });
   } catch (error) {
-    console.error("Procurement summary error:", error);
+    logError("Procurement summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1058,7 +1059,7 @@ router.get("/api/procurement-module/delivery-schedule", requireAuth, requireRole
 
     res.json(deliveries);
   } catch (error) {
-    console.error("Delivery schedule error:", error);
+    logError("Delivery schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1082,7 +1083,7 @@ router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRo
     }));
     res.json(result);
   } catch (error) {
-    console.error("Get PO receipts error:", error);
+    logError("Get PO receipts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1205,12 +1206,12 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
         },
       });
     } catch (emitErr) {
-      console.error("Failed to emit po.receipt_recorded event:", emitErr);
+      logError("Failed to emit po.receipt_recorded event:", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
     }
 
     res.status(201).json(receipt);
   } catch (error) {
-    console.error("Create PO receipt error:", error);
+    logError("Create PO receipt error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1313,7 +1314,7 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
 
     res.json(result);
   } catch (error) {
-    console.error("Get all receipts error:", error);
+    logError("Get all receipts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1391,7 +1392,7 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
 
     res.json(result);
   } catch (error) {
-    console.error("Get vendor invoices error:", error);
+    logError("Get vendor invoices error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1466,7 +1467,7 @@ router.post("/api/procurement-module/invoices", requireAuth, requireRole(...ROLE
 
     res.status(201).json(result);
   } catch (error) {
-    console.error("Create vendor invoice error:", error);
+    logError("Create vendor invoice error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1521,7 +1522,7 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
     });
     res.json(updated);
   } catch (error) {
-    console.error("Update vendor invoice error:", error);
+    logError("Update vendor invoice error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1635,7 +1636,7 @@ router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, require
         res.json({ url: invoice.fileUrl });
         return;
       }
-    } catch {}
+    } catch { logWarn("Non-critical operation failed"); }
 
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
@@ -1647,7 +1648,7 @@ router.get("/api/procurement-module/invoices/:id/file-url", requireAuth, require
     });
     res.json({ url: signedUrl });
   } catch (error) {
-    console.error("Get invoice file URL error:", error);
+    logError("Get invoice file URL error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate download URL" });
   }
 });
@@ -1680,7 +1681,7 @@ router.get("/api/procurement-module/invoices/:id/match", requireAuth, requireRol
       ...matchResult,
     });
   } catch (error) {
-    console.error("Get invoice match error:", error);
+    logError("Get invoice match error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1736,7 +1737,7 @@ router.post("/api/procurement-module/invoices/:id/match", requireAuth, requireRo
 
     res.json(result);
   } catch (error) {
-    console.error("Create/update invoice match error:", error);
+    logError("Create/update invoice match error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1766,7 +1767,7 @@ router.post("/api/procurement-module/invoices/:id/match/resolve", requireAuth, r
 
     res.json(updated);
   } catch (error) {
-    console.error("Resolve match discrepancy error:", error);
+    logError("Resolve match discrepancy error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1805,7 +1806,7 @@ router.get("/api/procurement-module/invoices/:id/payments", requireAuth, require
       recordedBy: p.recorderFirst ? { firstName: p.recorderFirst, lastName: p.recorderLast } : null,
     })));
   } catch (error) {
-    console.error("Get invoice payments error:", error);
+    logError("Get invoice payments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1852,7 +1853,7 @@ router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requir
 
     res.status(201).json({ payment, totalPaid: String(totalPaid) });
   } catch (error) {
-    console.error("Create invoice payment error:", error);
+    logError("Create invoice payment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

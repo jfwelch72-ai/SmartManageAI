@@ -1,3 +1,4 @@
+import { logWarn } from "../../utils/logger";
 import type { ATSProvider, ATSJob, ATSJobInput, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
 
 /**
@@ -54,6 +55,7 @@ export class WorkableProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -69,6 +71,7 @@ export class WorkableProvider implements ATSProvider {
       const data = await res.json() as { jobs?: Record<string, unknown>[] };
       return (data.jobs || []).map((j) => this.normalizeJob(j));
     } catch {
+      logWarn("Non-critical operation failed");
       return [];
     }
   }
@@ -83,6 +86,7 @@ export class WorkableProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeJob(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -101,6 +105,7 @@ export class WorkableProvider implements ATSProvider {
       const data = await res.json() as { candidates?: Record<string, unknown>[] };
       return (data.candidates || []).map((c) => ({ ...this.normalizeCandidate(c), jobExternalId }));
     } catch {
+      logWarn("Non-critical operation failed");
       return [];
     }
   }
@@ -115,6 +120,7 @@ export class WorkableProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeCandidate(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -131,6 +137,7 @@ export class WorkableProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeJob(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -147,6 +154,7 @@ export class WorkableProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeJob(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -161,6 +169,7 @@ export class WorkableProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -175,6 +184,7 @@ export class WorkableProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -190,6 +200,7 @@ export class WorkableProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }

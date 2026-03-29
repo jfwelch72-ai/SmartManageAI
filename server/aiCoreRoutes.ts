@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { aiSettings, aiRuns, aiTasks, insertAISettingsSchema, users, aiTakeoffAnalyses, projectSchedules, projectScheduleTasks, jobsiteAnalysisBatches, jobsiteAnalysisPhotos, vendorPricebooks, vendorPricebookItems, aiCoDrafts, organizations, projects, takeoffSheets, changeOrders, organizationSowItems, projectInspections, projectDelays, scopeItems, media, aiInsights, aiGanttRecommendations, aiVendorComparisons, equipment as equipmentTable, tradeTemplates, organizationCalculators, organizationWorkTypes, tradeTypeEnum, masterSowItems, hustlerOrganizations, unitsOfMeasure } from "@shared/schema";
 import { logInfo, logError, logWarn } from "./utils/logger";
@@ -48,7 +48,7 @@ router.use("/cfo", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 
 router.use("/ai-analyze", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 router.use("/ai/assistant", requireAuth, requireFeaturePermission('canUseAiFeatures'));
 
-router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     let [settings] = await db.select().from(aiSettings).limit(1);
 
@@ -57,13 +57,12 @@ router.get("/ai-settings", requireRole("ADMIN"), async (req: AuthRequest, res) =
     }
 
     res.json(settings);
-  } catch (error: any) {
-    console.error("Error fetching AI settings:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.patch("/ai-settings", sensitiveLimiter, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/ai-settings", sensitiveLimiter, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedInput = {
       ...req.body,
@@ -103,13 +102,12 @@ router.patch("/ai-settings", sensitiveLimiter, requireRole("ADMIN"), async (req:
     );
 
     res.json(updated);
-  } catch (error: any) {
-    console.error("Error updating AI settings:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (orgId) {
@@ -153,13 +151,12 @@ router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest
     );
 
     res.json({ runId, status: 'completed' });
-  } catch (error: any) {
-    console.error("Error running AI analysis:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai-pm/latest-run", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-pm/latest-run", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const run = await getLatestAIRun();
     
@@ -175,13 +172,12 @@ router.get("/ai-pm/latest-run", requireAuth, async (req: AuthRequest, res) => {
     };
 
     res.json(parsedRun);
-  } catch (error: any) {
-    console.error("Error fetching latest AI run:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai-pm/runs/:runId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-pm/runs/:runId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const run = await getAIRunById(req.params.runId);
 
@@ -197,13 +193,12 @@ router.get("/ai-pm/runs/:runId", requireAuth, async (req: AuthRequest, res) => {
     };
 
     res.json(parsedRun);
-  } catch (error: any) {
-    console.error("Error fetching AI run:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai-pm/tasks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-pm/tasks", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { role, status } = req.query;
 
@@ -218,13 +213,12 @@ router.get("/ai-pm/tasks", requireAuth, async (req: AuthRequest, res) => {
     }));
 
     res.json(parsedTasks);
-  } catch (error: any) {
-    console.error("Error fetching AI tasks:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai-pm/tasks/role/:role", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-pm/tasks/role/:role", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { role } = req.params;
     const { status } = req.query;
@@ -239,13 +233,12 @@ router.get("/ai-pm/tasks/role/:role", requireAuth, async (req: AuthRequest, res)
     }));
 
     res.json(parsedTasks);
-  } catch (error: any) {
-    console.error("Error fetching AI tasks:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.patch("/ai-pm/tasks/:taskId", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/ai-pm/tasks/:taskId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { status } = req.body;
 
@@ -281,13 +274,12 @@ router.patch("/ai-pm/tasks/:taskId", requireAuth, async (req: AuthRequest, res) 
     );
 
     res.json(updatedTask);
-  } catch (error: any) {
-    console.error("Error updating AI task:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/cfo/profitability", requireAuth, async (req: AuthRequest, res) => {
+router.get("/cfo/profitability", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const latestRun = await getLatestAIRun();
 
@@ -299,13 +291,12 @@ router.get("/cfo/profitability", requireAuth, async (req: AuthRequest, res) => {
     const { calculateAllProjectsProfitability } = await import("./ai/profitabilityEngine");
     const liveData = await calculateAllProjectsProfitability();
     res.json(liveData);
-  } catch (error: any) {
-    console.error("Error fetching profitability data:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res) => {
+router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const latestRun = await getLatestAIRun();
 
@@ -378,13 +369,12 @@ router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res) 
       project_equipment_costs: projectCosts.slice(0, 10),
       last_updated: latestRun.createdAt,
     });
-  } catch (error: any) {
-    console.error("Error fetching equipment metrics:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res) => {
+router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -478,13 +468,12 @@ router.get("/cfo/forecasting", requireAuth, async (req: AuthRequest, res) => {
       alerts: alertsWithProject,
       early_warnings: earlyWarnings,
     });
-  } catch (error: any) {
-    console.error("Error fetching CFO forecasting data:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res) => {
+router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -604,13 +593,12 @@ router.get("/cfo/scurve-data", requireAuth, async (req: AuthRequest, res) => {
     });
 
     res.json({ months: result });
-  } catch (error: any) {
-    console.error("Error fetching S-curve data:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/cfo/budget-alerts", requireAuth, async (req: AuthRequest, res) => {
+router.get("/cfo/budget-alerts", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user?.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
@@ -636,13 +624,12 @@ router.get("/cfo/budget-alerts", requireAuth, async (req: AuthRequest, res) => {
       projectCode: r.projectCode,
       projectName: r.projectName,
     })));
-  } catch (error: any) {
-    console.error("Error fetching budget alerts:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai-pm/runs", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-pm/runs", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const runs = await db
       .select()
@@ -651,13 +638,12 @@ router.get("/ai-pm/runs", requireAuth, async (req: AuthRequest, res) => {
       .limit(50);
 
     res.json(runs);
-  } catch (error: any) {
-    console.error("Error fetching AI runs:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { message, currentPath, conversationHistory = [] } = req.body;
 
@@ -769,7 +755,7 @@ Tailor your responses to the user's role and current location in the app.`;
       }
     });
   } catch (error: any) {
-    console.error("AI Assistant chat error:", error.message || "Unknown error");
+    logError("AI Assistant chat error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get AI response. Please try again." });
   }
 });
@@ -780,7 +766,7 @@ const aiAnalysisSchema = z.object({
   saveResults: z.boolean().optional().default(true),
 });
 
-router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const validationResult = aiAnalysisSchema.safeParse(req.body);
     if (!validationResult.success) {
@@ -848,7 +834,7 @@ router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthReques
       savedInsightIds,
     });
   } catch (error: any) {
-    console.error("AI analysis error:", error);
+    logError("AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to run AI analysis" });
   }
 });
@@ -892,7 +878,7 @@ const aiTakeoffAnalyzeSchema = z.object({
 });
 
 // POST /api/ai-features/takeoff/analyze - Trigger AI analysis
-router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -941,7 +927,7 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       try {
         await processAiTakeoff(analysis.id, effectiveTradeType, focusAreas);
       } catch (error) {
-        console.error("AI Takeoff processing error:", error);
+        logError("AI Takeoff processing error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db.update(aiTakeoffAnalyses)
           .set({ status: "FAILED", errorMessage: "Processing failed" })
           .where(eq(aiTakeoffAnalyses.id, analysis.id));
@@ -955,7 +941,7 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       estimatedTime: analysisMode === "QUICK" ? 30 : 120,
     });
   } catch (error) {
-    console.error("AI Takeoff analyze error:", error);
+    logError("AI Takeoff analyze error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to start analysis" });
   }
 });
@@ -1035,7 +1021,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
               
               pdfDoc.destroy();
             } catch (pdfRenderError) {
-              console.error("PDF page render failed, sending full PDF:", pdfRenderError);
+              logError("PDF page render failed, sending full PDF:", {}, pdfRenderError instanceof Error ? pdfRenderError : new Error(String(pdfRenderError)));
               const base64Data = buffer.toString("base64");
               imageUrl = `data:application/pdf;base64,${base64Data}`;
             }
@@ -1048,7 +1034,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
           }
         }
       } catch (downloadError) {
-        console.error("Failed to download image for AI takeoff:", downloadError);
+        logError("Failed to download image for AI takeoff:", {}, downloadError instanceof Error ? downloadError : new Error(String(downloadError)));
         imageUrl = null;
       }
     }
@@ -1155,7 +1141,7 @@ Return your analysis as JSON with this exact structure:
           throw new Error("Could not parse AI response");
         }
       } catch (visionError) {
-        console.error("OpenAI Vision error, falling back to mock data:", visionError);
+        logError("OpenAI Vision error, falling back to mock data:", {}, visionError instanceof Error ? visionError : new Error(String(visionError)));
         const tradeItems = generateTradeSpecificItems(tradeType);
         detectedItems = tradeItems.map((item, index) => ({
           id: `item-${index + 1}`,
@@ -1196,7 +1182,7 @@ Return your analysis as JSON with this exact structure:
       })
       .where(eq(aiTakeoffAnalyses.id, analysisId));
   } catch (error: any) {
-    console.error("AI Takeoff processing error:", error);
+    logError("AI Takeoff processing error:", {}, error instanceof Error ? error : new Error(String(error)));
     await db.update(aiTakeoffAnalyses)
       .set({
         status: "FAILED",
@@ -1348,7 +1334,7 @@ function generateTradeSpecificItems(tradeType: string) {
 }
 
 // GET /api/ai-features/takeoff/results/:analysisId - Get analysis results
-router.get("/ai-features/takeoff/results/:analysisId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/takeoff/results/:analysisId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -1379,13 +1365,13 @@ router.get("/ai-features/takeoff/results/:analysisId", requireAuth, async (req: 
       processingTimeMs: analysis.processingTimeMs,
     });
   } catch (error) {
-    console.error("Get takeoff results error:", error);
+    logError("Get takeoff results error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get results" });
   }
 });
 
 // GET /api/ai-features/takeoff/history/:projectId - Get analysis history for project
-router.get("/ai-features/takeoff/history/:projectId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/takeoff/history/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -1403,7 +1389,7 @@ router.get("/ai-features/takeoff/history/:projectId", requireAuth, async (req: A
 
     res.json({ analyses });
   } catch (error) {
-    console.error("Get takeoff history error:", error);
+    logError("Get takeoff history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get history" });
   }
 });
@@ -1426,7 +1412,7 @@ const scheduleGenerateSchema = z.object({
 });
 
 // POST /api/ai-features/schedule/generate - Generate AI schedule
-router.post("/ai-features/schedule/generate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/ai-features/schedule/generate", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -1474,7 +1460,7 @@ router.post("/ai-features/schedule/generate", requireAuth, requireRole("ADMIN", 
       aiNotes: `Generated ${tasks.length} tasks for ${tradeType} project.`,
     });
   } catch (error) {
-    console.error("Schedule generate error:", error);
+    logError("Schedule generate error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate schedule" });
   }
 });
@@ -1560,14 +1546,14 @@ async function generateTradeScheduleTasks(scheduleId: string, tradeType: string,
     const { recalculateSchedule } = await import("./cpmEngine");
     await recalculateSchedule(scheduleId);
   } catch (e) {
-    console.error("CPM recalculation after generation failed:", e);
+    logError("CPM recalculation after generation failed:", {}, e instanceof Error ? e : new Error(String(e)));
   }
 
   return tasks;
 }
 
 // GET /api/ai-features/schedule/:projectId - Get project schedule
-router.get("/ai-features/schedule/:projectId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/schedule/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -1595,7 +1581,7 @@ router.get("/ai-features/schedule/:projectId", requireAuth, async (req: AuthRequ
 
     res.json({ schedule, tasks });
   } catch (error) {
-    console.error("Get schedule error:", error);
+    logError("Get schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get schedule" });
   }
 });
@@ -1614,7 +1600,7 @@ const jobsiteAnalysisSchema = z.object({
 });
 
 // POST /api/ai-features/jobsite/analyze - Create jobsite analysis batch
-router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -1663,7 +1649,7 @@ router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "M
       estimatedTime: 60,
     });
   } catch (error) {
-    console.error("Jobsite analysis error:", error);
+    logError("Jobsite analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create analysis" });
   }
 });
@@ -1809,7 +1795,7 @@ Return your analysis as JSON with this exact structure:
         throw new Error("Could not parse AI response");
       }
     } catch (visionError) {
-      console.error("OpenAI Vision error for jobsite analysis, falling back to mock:", visionError);
+      logError("OpenAI Vision error for jobsite analysis, falling back to mock:", {}, visionError instanceof Error ? visionError : new Error(String(visionError)));
       safetyFindings = generateSafetyFindings(batch.tradeType || "GENERAL_CONTRACTOR");
       progressFindings = generateProgressFindings(batch.tradeType || "GENERAL_CONTRACTOR");
       summary = {
@@ -1846,7 +1832,7 @@ Return your analysis as JSON with this exact structure:
     })
     .where(eq(jobsiteAnalysisBatches.id, batchId));
   } catch (processingError) {
-    console.error(`processJobsiteBatch uncaught error for batch ${batchId}:`, processingError);
+    logError(`processJobsiteBatch uncaught error for batch ${batchId}:`, {}, processingError instanceof Error ? processingError : new Error(String(processingError)));
     await db.update(jobsiteAnalysisBatches)
       .set({
         status: "FAILED",
@@ -1858,7 +1844,7 @@ Return your analysis as JSON with this exact structure:
 }
 
 // POST /api/ai-features/jobsite/:batchId/process - Process uploaded photos with AI Vision
-router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, res) => {
+router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     const userRole = req.user?.role;
@@ -1885,7 +1871,7 @@ router.post("/ai-features/jobsite/:batchId/process", requireAuth, async (req: Au
 
     res.json({ success: true, status: "COMPLETE" });
   } catch (error) {
-    console.error("Process jobsite analysis error:", error);
+    logError("Process jobsite analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to process analysis" });
   }
 });
@@ -1912,7 +1898,7 @@ function generateProgressFindings(tradeType: string) {
 }
 
 // GET /api/ai-features/jobsite/results/:batchId - Get analysis results
-router.get("/ai-features/jobsite/results/:batchId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/jobsite/results/:batchId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -1947,13 +1933,13 @@ router.get("/ai-features/jobsite/results/:batchId", requireAuth, async (req: Aut
       photos,
     });
   } catch (error) {
-    console.error("Get jobsite results error:", error);
+    logError("Get jobsite results error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get results" });
   }
 });
 
 // GET /api/ai-features/jobsite/history/:projectId - Get analysis history
-router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -1991,10 +1977,10 @@ router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: A
       try {
         if (b.summaryJson) summary = JSON.parse(b.summaryJson);
         if (summary) safetyScore = summary.overallSafetyScore;
-      } catch {}
+      } catch { logWarn("Non-critical operation failed"); }
       try {
         if (b.safetyFindingsJson) safetyFindings = JSON.parse(b.safetyFindingsJson);
-      } catch {}
+      } catch { logWarn("Non-critical operation failed"); }
       return {
         ...b,
         photoCount: photoCountMap[b.id] || 0,
@@ -2006,13 +1992,13 @@ router.get("/ai-features/jobsite/history/:projectId", requireAuth, async (req: A
 
     res.json({ batches: batchesWithCounts });
   } catch (error) {
-    console.error("Get jobsite history error:", error);
+    logError("Get jobsite history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get history" });
   }
 });
 
 // GET /api/ai-features/jobsite/project-photos/:projectId - Get unanalyzed project photos
-router.get("/ai-features/jobsite/project-photos/:projectId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/jobsite/project-photos/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2044,7 +2030,7 @@ router.get("/ai-features/jobsite/project-photos/:projectId", requireAuth, async 
 
     res.json({ photos: unanalyzed, total: allPhotos.length, unanalyzedCount: unanalyzed.length });
   } catch (error) {
-    console.error("Get project photos error:", error);
+    logError("Get project photos error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get project photos" });
   }
 });
@@ -2058,7 +2044,7 @@ const attachPhotosSchema = z.object({
   })).min(1, "At least one photo is required"),
 });
 
-router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     const userId = req.user?.id;
@@ -2129,10 +2115,10 @@ router.post("/ai-features/jobsite/:batchId/attach-photos", requireAuth, requireR
     res.json({ success: true, photosAttached: validatedPhotos.length, batchId });
 
     processJobsiteBatch(batchId, req.user!).catch(err => {
-      console.error("Background batch processing error:", err);
+      logError("Background batch processing error:", {}, err instanceof Error ? err : new Error(String(err)));
     });
   } catch (error) {
-    console.error("Attach photos error:", error);
+    logError("Attach photos error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to attach photos" });
   }
 });
@@ -2152,7 +2138,7 @@ const pricebookUploadSchema = z.object({
 });
 
 // POST /api/ai-features/vendors/pricebook/upload - Upload pricebook
-router.post("/ai-features/vendors/pricebook/upload", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/ai-features/vendors/pricebook/upload", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -2186,13 +2172,13 @@ router.post("/ai-features/vendors/pricebook/upload", requireAuth, requireRole("A
       status: "PROCESSING",
     });
   } catch (error) {
-    console.error("Pricebook upload error:", error);
+    logError("Pricebook upload error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to upload pricebook" });
   }
 });
 
 // GET /api/ai-features/vendors/pricebook/items - Get pricebook items
-router.get("/ai-features/vendors/pricebook/items", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/vendors/pricebook/items", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2212,13 +2198,13 @@ router.get("/ai-features/vendors/pricebook/items", requireAuth, async (req: Auth
 
     res.json({ items, totalCount: items.length });
   } catch (error) {
-    console.error("Get pricebook items error:", error);
+    logError("Get pricebook items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get items" });
   }
 });
 
 // GET /api/ai-features/vendors/pricebooks - List vendor pricebooks
-router.get("/ai-features/vendors/pricebooks", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/vendors/pricebooks", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2232,7 +2218,7 @@ router.get("/ai-features/vendors/pricebooks", requireAuth, async (req: AuthReque
 
     res.json({ pricebooks });
   } catch (error) {
-    console.error("Get pricebooks error:", error);
+    logError("Get pricebooks error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get pricebooks" });
   }
 });
@@ -2256,7 +2242,7 @@ const coGenerateSchema = z.object({
 });
 
 // POST /api/ai-features/change-orders/generate - Generate AI change order draft
-router.post("/ai-features/change-orders/generate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/ai-features/change-orders/generate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user?.id;
     const organizationId = req.user?.organizationId;
@@ -2310,7 +2296,7 @@ router.post("/ai-features/change-orders/generate", requireAuth, requireRole("ADM
       aiNotes: `Generated change order draft based on ${Object.keys(linkedItems).filter(k => linkedItems[k as keyof typeof linkedItems]?.length).length} linked item types.`,
     });
   } catch (error) {
-    console.error("Generate CO error:", error);
+    logError("Generate CO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate change order" });
   }
 });
@@ -2357,7 +2343,7 @@ async function generateCoDraft(tradeType: string, linkedItems: any) {
 }
 
 // GET /api/ai-features/change-orders/drafts/:projectId - Get drafts for project
-router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2375,13 +2361,13 @@ router.get("/ai-features/change-orders/drafts/:projectId", requireAuth, async (r
 
     res.json({ drafts });
   } catch (error) {
-    console.error("Get CO drafts error:", error);
+    logError("Get CO drafts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get drafts" });
   }
 });
 
 // PATCH /api/ai-features/change-orders/drafts/:draftId - Update draft status (e.g. REJECTED, REVIEWED)
-router.patch("/ai-features/change-orders/drafts/:draftId", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/ai-features/change-orders/drafts/:draftId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
@@ -2400,13 +2386,13 @@ router.patch("/ai-features/change-orders/drafts/:draftId", requireAuth, async (r
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Update CO draft error:", error);
+    logError("Update CO draft error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update draft" });
   }
 });
 
 // POST /api/ai-features/change-orders/drafts/:draftId/convert - Convert draft to real CO
-router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2452,13 +2438,13 @@ router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, r
       changeOrderId: co.id,
     });
   } catch (error) {
-    console.error("Convert CO draft error:", error);
+    logError("Convert CO draft error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to convert draft" });
   }
 });
 
 // GET /api/ai-features/sub-recommendations - Get subcontractor recommendations
-router.get("/ai-features/sub-recommendations", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai-features/sub-recommendations", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;
     if (!organizationId) {
@@ -2479,7 +2465,7 @@ router.get("/ai-features/sub-recommendations", requireAuth, async (req: AuthRequ
 
     res.json({ recommendations, total: recommendations.length });
   } catch (error) {
-    console.error("Sub recommendations error:", error);
+    logError("Sub recommendations error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get recommendations" });
   }
 });
@@ -2510,7 +2496,7 @@ function parseDateRange(req: any): { dateFrom?: Date; dateTo?: Date } {
   return { dateFrom, dateTo };
 }
 
-router.get("/audit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res) => {
+router.get("/audit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -2524,7 +2510,7 @@ router.get("/audit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (re
   }
 });
 
-router.get("/usage", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res) => {
+router.get("/usage", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -2536,7 +2522,7 @@ router.get("/usage", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (re
   }
 });
 
-router.get("/cost-breakdown", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res) => {
+router.get("/cost-breakdown", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);
     if (!orgId) return;
@@ -2682,7 +2668,7 @@ const tradeResearchSchema = z.object({
 });
 
 
-router.get("/ai/onboarding/sow-items/:tradeType", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai/onboarding/sow-items/:tradeType", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { tradeType } = req.params;
     
@@ -2716,13 +2702,12 @@ router.get("/ai/onboarding/sow-items/:tradeType", requireAuth, async (req: AuthR
       groupedByCategory: grouped,
       totalCount: items.length 
     });
-  } catch (error: any) {
-    console.error("Error fetching master SOW items:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai/onboarding/trades", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai/onboarding/trades", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const templates = await db
       .select({
@@ -2739,13 +2724,12 @@ router.get("/ai/onboarding/trades", requireAuth, async (req: AuthRequest, res) =
       .orderBy(asc(tradeTemplates.displayName));
 
     res.json(templates);
-  } catch (error: any) {
-    console.error("Error fetching trade templates:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/ai/onboarding/units", requireAuth, async (req: AuthRequest, res) => {
+router.get("/ai/onboarding/units", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const units = await db
       .select()
@@ -2754,9 +2738,8 @@ router.get("/ai/onboarding/units", requireAuth, async (req: AuthRequest, res) =>
       .orderBy(asc(unitsOfMeasure.sortOrder));
 
     res.json(units);
-  } catch (error: any) {
-    console.error("Error fetching units:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -3272,7 +3255,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
             }
           }
         } catch (e) {
-          console.error("Error parsing work types:", e);
+          logError("Error parsing work types:", {}, e instanceof Error ? e : new Error(String(e)));
         }
 
         try {
@@ -3296,7 +3279,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
             }
           }
         } catch (e) {
-          console.error("Error parsing calculators:", e);
+          logError("Error parsing calculators:", {}, e instanceof Error ? e : new Error(String(e)));
         }
       }
     }
@@ -3325,7 +3308,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
 
     if (websiteUrl) {
       extractThemeFromWebsite(newOrg.id, websiteUrl, req.user.id).catch(err => {
-        console.error("Theme extraction failed:", err.message);
+        logError("Theme extraction failed:", {}, err instanceof Error ? err : new Error(String(err)));
       });
     }
 
@@ -3338,8 +3321,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
       isHustler,
     });
   } catch (error: any) {
-    logError(`[Onboarding] FAILED: ${error.message || "Unknown error"}`);
-    console.error("Onboarding complete error:", error.message || "Unknown error");
+    logError("[Onboarding] FAILED", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to complete onboarding. Please try again." });
   }
 });
@@ -3457,7 +3439,7 @@ async function extractThemeFromWebsite(organizationId: string, websiteUrl: strin
       }
     }
   } catch (error: any) {
-    console.error("Theme extraction error:", error.message);
+    logError("Theme extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -3485,7 +3467,7 @@ router.post("/ai/onboarding/research-trade", sensitiveLimiter, requireAuth, asyn
       research,
     });
   } catch (error: any) {
-    console.error("Trade research error:", error.message || "Unknown error");
+    logError("Trade research error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to research trade. Please try again." });
   }
 });
@@ -3604,7 +3586,7 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: Au
     const parsed = JSON.parse(responseText);
     res.json(parsed);
   } catch (error: any) {
-    console.error("AI Onboarding error:", error.message || "Unknown error");
+    logError("AI Onboarding error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get AI response. Please try again." });
   }
 });
@@ -3663,7 +3645,7 @@ router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res) 
       } : null,
     });
   } catch (error: any) {
-    console.error("Walkthrough status error:", error.message);
+    logError("Walkthrough status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get walkthrough status" });
   }
 });
@@ -3702,7 +3684,7 @@ router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res) 
       firstName,
     });
   } catch (error: any) {
-    console.error("Walkthrough start error:", error.message);
+    logError("Walkthrough start error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to start walkthrough" });
   }
 });
@@ -3775,7 +3757,7 @@ router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res) =
       });
     }
   } catch (error: any) {
-    console.error("Walkthrough next error:", error.message);
+    logError("Walkthrough next error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to advance walkthrough" });
   }
 });
@@ -3803,7 +3785,7 @@ router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, re
       message: "Walkthrough completed",
     });
   } catch (error: any) {
-    console.error("Walkthrough complete error:", error.message);
+    logError("Walkthrough complete error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to complete walkthrough" });
   }
 });
@@ -3830,7 +3812,7 @@ router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res) 
       message: "Walkthrough reset",
     });
   } catch (error: any) {
-    console.error("Walkthrough reset error:", error.message);
+    logError("Walkthrough reset error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to reset walkthrough" });
   }
 });
@@ -3873,7 +3855,7 @@ router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res) 
       completed: updateData.walkthroughCompleted ?? false,
     });
   } catch (error: any) {
-    console.error("Walkthrough step update error:", error.message);
+    logError("Walkthrough step update error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update walkthrough step" });
   }
 });

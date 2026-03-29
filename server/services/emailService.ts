@@ -1,6 +1,7 @@
 // Resend Email Service
 // Uses Resend for transactional email
 
+import { logError } from "../utils/logger";
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -48,14 +49,14 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     });
     
     if (error) {
-      console.error('Resend email error:', error);
+      logError('Resend email error:', {}, error instanceof Error ? error : new Error(String(error)));
       return false;
     }
     
     console.log(`Email sent successfully via Resend to ${recipients.join(', ')}`, data?.id);
     return true;
   } catch (error: any) {
-    console.error('Resend email error:', error.message);
+    logError('Resend email error:', {}, error instanceof Error ? error : new Error(String(error)));
     return false;
   }
 }

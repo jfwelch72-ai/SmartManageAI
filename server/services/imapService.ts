@@ -1,3 +1,4 @@
+import {logError, logWarn } from "../utils/logger";
 import { ImapFlow } from "imapflow";
 import * as nodemailer from "nodemailer";
 import type { EmailAccount } from "@shared/schema";
@@ -198,7 +199,7 @@ export async function fetchImapMessages(
                 messageId: envelope.messageId || `imap-${msg.uid}`,
               });
             } catch (parseErr) {
-              console.error(`Error parsing IMAP message UID ${msg.uid}:`, parseErr);
+              logError(`Error parsing IMAP message UID ${msg.uid}:`, {}, parseErr instanceof Error ? parseErr : new Error(String(parseErr)));
             }
           }
         }
@@ -354,6 +355,7 @@ function decodeContent(content: string, fullSource: string): string {
     try {
       return Buffer.from(content.replace(/\s/g, ""), "base64").toString("utf-8");
     } catch {
+      logWarn("Non-critical operation failed");
       return content;
     }
   }

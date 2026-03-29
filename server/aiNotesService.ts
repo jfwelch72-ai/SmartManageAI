@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { openai } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { db } from "./db";
@@ -204,7 +205,7 @@ Return format: { "insights": [ ... ] }`;
 
       return validInsights;
     } catch (error) {
-      console.error("Error analyzing notes with AI:", error);
+      logError("Error analyzing notes with AI:", {}, error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -218,7 +219,7 @@ Return format: { "insights": [ ... ] }`;
     try {
       parsed = JSON.parse(responseText);
     } catch (error) {
-      console.error("[AI Notes] Failed to parse OpenAI JSON response:", error);
+      logError("[AI Notes] Failed to parse OpenAI JSON response:", {}, error instanceof Error ? error : new Error(String(error)));
       throw new Error("Invalid JSON response from OpenAI");
     }
 
@@ -313,7 +314,7 @@ Return format: { "insights": [ ... ] }`;
           sourceType: sourceNote.sourceType,
         });
       } catch (error) {
-        console.error(`[AI Notes] Error validating insight ${index}:`, error);
+        logError(`[AI Notes] Error validating insight ${index}:`, {}, error instanceof Error ? error : new Error(String(error)));
         continue;
       }
     }
@@ -370,7 +371,7 @@ Return format: { "insights": [ ... ] }`;
 
         persistedRecords.push(recordWithParsedFields);
       } catch (error) {
-        console.error(`[AI Notes Service] Failed to insert insight for note ${insight.sourceNoteId}:`, error);
+        logError(`[AI Notes Service] Failed to insert insight for note ${insight.sourceNoteId}:`, {}, error instanceof Error ? error : new Error(String(error)));
         // Skip this insight and continue with others
         continue;
       }

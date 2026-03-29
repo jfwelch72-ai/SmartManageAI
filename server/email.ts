@@ -1,4 +1,5 @@
 // Email service using Resend
+import { logError } from "./utils/logger";
 import { getResendClient } from './services/emailService';
 import { Resend } from 'resend';
 
@@ -54,14 +55,14 @@ export async function sendEmail(options: EmailOptions): Promise<boolean> {
     const { data, error } = await resend.emails.send(emailPayload);
     
     if (error) {
-      console.error('Failed to send email via Resend:', error);
+      logError('Failed to send email via Resend:', {}, error instanceof Error ? error : new Error(String(error)));
       return false;
     }
     
     console.log('Email sent successfully via Resend to:', recipients.join(', '), 'ID:', data?.id);
     return true;
   } catch (error: any) {
-    console.error('Failed to send email via Resend:', error.message || error);
+    logError('Failed to send email via Resend', {}, error instanceof Error ? error : new Error(String(error)));
     return false;
   }
 }

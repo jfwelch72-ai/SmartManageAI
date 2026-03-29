@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Express } from "express";
 import { db } from "./db";
 import { eq, and, desc, inArray } from "drizzle-orm";
@@ -86,7 +87,7 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      console.error("Error submitting T&M ticket:", error);
+      logError("Error submitting T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to submit T&M ticket" });
     }
   });
@@ -164,13 +165,13 @@ function registerTMApprovalRoutes(app: Express) {
             },
           });
         } catch (emitErr) {
-          console.error("Failed to emit tm_ticket.approved event:", emitErr);
+          logError("Failed to emit tm_ticket.approved event:", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
         }
       }
       
       res.json(updatedTicket);
     } catch (error) {
-      console.error("Error approving T&M ticket:", error);
+      logError("Error approving T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to approve T&M ticket" });
     }
   });
@@ -232,7 +233,7 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      console.error("Error rejecting T&M ticket:", error);
+      logError("Error rejecting T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to reject T&M ticket" });
     }
   });
@@ -280,7 +281,7 @@ function registerTMApprovalRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      console.error("Error uploading signed document:", error);
+      logError("Error uploading signed document:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to upload signed document" });
     }
   });
@@ -342,7 +343,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(enrichedTickets);
     } catch (error) {
-      console.error("Error fetching pending billing tickets:", error);
+      logError("Error fetching pending billing tickets:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch pending billing tickets" });
     }
   });
@@ -469,14 +470,14 @@ function registerTMInvoiceRoutes(app: Express) {
             });
           }
         } catch (autoInvoiceError) {
-          console.error("Auto-invoice error (non-fatal):", autoInvoiceError);
+          logError("Auto-invoice error (non-fatal):", {}, autoInvoiceError instanceof Error ? autoInvoiceError : new Error(String(autoInvoiceError)));
         }
       }
 
       const finalTicket = await db.query.tmTickets.findFirst({ where: eq(tmTickets.id, ticketId) });
       res.json(finalTicket || updated);
     } catch (error) {
-      console.error("Error approving ticket for billing:", error);
+      logError("Error approving ticket for billing:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to approve ticket for billing" });
     }
   });
@@ -521,7 +522,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(enrichedTickets);
     } catch (error) {
-      console.error("Error fetching approved billing tickets:", error);
+      logError("Error fetching approved billing tickets:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch approved billing tickets" });
     }
   });
@@ -607,7 +608,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json({ ...invoice, tickets });
     } catch (error) {
-      console.error("Error creating invoice:", error);
+      logError("Error creating invoice:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to create invoice" });
     }
   });
@@ -646,7 +647,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(enrichedInvoices);
     } catch (error) {
-      console.error("Error fetching invoices:", error);
+      logError("Error fetching invoices:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch invoices" });
     }
   });
@@ -673,7 +674,7 @@ function registerTMInvoiceRoutes(app: Express) {
         createdBy: createdBy ? { id: createdBy.id, firstName: createdBy.firstName, lastName: createdBy.lastName } : null,
       });
     } catch (error) {
-      console.error("Error fetching invoice:", error);
+      logError("Error fetching invoice:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch invoice" });
     }
   });
@@ -733,7 +734,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error saving client sign-off:", error);
+      logError("Error saving client sign-off:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to save client sign-off" });
     }
   });
@@ -763,7 +764,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error sending invoice:", error);
+      logError("Error sending invoice:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to send invoice" });
     }
   });
@@ -810,7 +811,7 @@ function registerTMInvoiceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error marking invoice as paid:", error);
+      logError("Error marking invoice as paid:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to mark invoice as paid" });
     }
   });
@@ -873,7 +874,7 @@ function registerTMInvoiceRoutes(app: Express) {
         totalPaid: invoices.filter(i => i.status === "PAID").reduce((sum, i) => sum + Number(i.total || 0), 0),
       });
     } catch (error) {
-      console.error("Error fetching billing summary:", error);
+      logError("Error fetching billing summary:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch billing summary" });
     }
   });
@@ -939,7 +940,7 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.json(enrichedTickets);
     } catch (error) {
-      console.error("Error fetching T&M tickets:", error);
+      logError("Error fetching T&M tickets:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch T&M tickets" });
     }
   });
@@ -976,7 +977,7 @@ export function registerTMTicketRoutes(app: Express) {
         project: project ? { id: project.id, name: project.name, code: project.code, clientName: project.clientName, locationAddress: project.locationAddress } : null,
       });
     } catch (error) {
-      console.error("Error fetching T&M ticket:", error);
+      logError("Error fetching T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch T&M ticket" });
     }
   });
@@ -1127,7 +1128,7 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.status(201).json(newTicket);
     } catch (error: any) {
-      console.error("Error creating T&M ticket:", error);
+      logError("Error creating T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error.message?.includes("missing")) {
         return res.status(400).json({ error: error.message });
       }
@@ -1230,7 +1231,7 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.json(updatedTicket);
     } catch (error) {
-      console.error("Error updating T&M ticket:", error);
+      logError("Error updating T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to update T&M ticket" });
     }
   });
@@ -1272,7 +1273,7 @@ export function registerTMTicketRoutes(app: Express) {
       
       res.json({ success: true });
     } catch (error) {
-      console.error("Error deleting T&M ticket:", error);
+      logError("Error deleting T&M ticket:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete T&M ticket" });
     }
   });
@@ -1534,7 +1535,7 @@ export function registerTMTicketRoutes(app: Express) {
       res.setHeader('Content-Disposition', `inline; filename="tm-ticket-${ticket.ticketNumber}.html"`);
       res.send(html);
     } catch (error) {
-      console.error("Error generating T&M ticket PDF:", error);
+      logError("Error generating T&M ticket PDF:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to generate T&M ticket PDF" });
     }
   });
@@ -1564,7 +1565,7 @@ export function registerTMTicketRoutes(app: Express) {
         totalLaborHours: approvedTickets.reduce((sum, t) => sum + Number(t.totalLaborHours || 0), 0),
       });
     } catch (error) {
-      console.error("Error fetching T&M summary:", error);
+      logError("Error fetching T&M summary:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch T&M summary" });
     }
   });

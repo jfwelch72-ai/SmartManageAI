@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { EstimateLineItem } from "@shared/schema";
 
 export interface MaterialCalculationInputs {
@@ -351,7 +352,7 @@ export function aggregateMaterialRequirements(lineItems: EstimateLineItem[]): Ma
         }
       }
     } catch (e) {
-      console.error('Failed to parse material requirements:', e);
+      logError('Failed to parse material requirements:', {}, e instanceof Error ? e : new Error(String(e)));
     }
   }
   
@@ -378,7 +379,7 @@ export function aggregateEquipmentRequirements(lineItems: EstimateLineItem[]): E
         }
       }
     } catch (e) {
-      console.error('Failed to parse equipment requirements:', e);
+      logError('Failed to parse equipment requirements:', {}, e instanceof Error ? e : new Error(String(e)));
     }
   }
   

@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { organizations, FEATURE_FLAG_KEYS, type FeatureFlagKey } from "@shared/schema";
 import { eq, or, isNull, sql } from "drizzle-orm";
-import { logInfo } from "../utils/logger";
+import {logInfo, logWarn } from "../utils/logger";
 
 export type FeatureFlagsMap = Partial<Record<FeatureFlagKey, boolean>>;
 
@@ -23,6 +23,7 @@ export async function getFeatureFlags(orgId: string): Promise<FeatureFlagsMap> {
     const parsed = JSON.parse(org.featureFlags) as FeatureFlagsMap;
     return { ...DEFAULT_FLAGS, ...parsed };
   } catch {
+    logWarn("Non-critical operation failed");
     return { ...DEFAULT_FLAGS };
   }
 }

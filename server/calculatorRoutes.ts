@@ -3,6 +3,7 @@
  * Endpoints for material calculations and verification
  */
 
+import { logError } from "./utils/logger";
 import { Router } from 'express';
 import { TradeCalculators } from './tradeCalculators';
 import { CALCULATION_VERIFICATION_SUITE, runAllVerificationTests, printVerificationReport } from './calculatorVerification';
@@ -38,7 +39,7 @@ router.get('/verify', async (req, res) => {
       allResults: summary.results,
     });
   } catch (error: any) {
-    console.error('Verification error:', error);
+    logError('Verification error:', {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({
       success: false,
       error: error.message,

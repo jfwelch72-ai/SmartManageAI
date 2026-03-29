@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { File } from "@google-cloud/storage";
 import { db } from "./db";
 import { filePermissions, objectAclPolicies } from "@shared/schema";
@@ -63,7 +64,7 @@ export async function setObjectAclPolicy(
         },
       });
   } catch (dbErr) {
-    console.error("Failed to mirror ACL policy to DB:", dbErr);
+    logError("Failed to mirror ACL policy to DB:", {}, dbErr instanceof Error ? dbErr : new Error(String(dbErr)));
   }
 }
 
@@ -98,7 +99,7 @@ export async function getObjectAclPolicy(
       };
     }
   } catch (dbErr) {
-    console.error("DB ACL fallback also failed:", dbErr);
+    logError("DB ACL fallback also failed:", {}, dbErr instanceof Error ? dbErr : new Error(String(dbErr)));
   }
 
   return null;

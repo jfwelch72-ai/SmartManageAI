@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { db } from "./db";
 import { users, projects, bids, scopeItems, projectNotes, timeEntries, changeOrders, calendarEvents, notifications, organizations, emailAccounts, emailThreads, emailMessages, tasks } from "@shared/schema";
 import { hashPassword } from "./auth";
@@ -758,6 +759,6 @@ seed()
     process.exit(0);
   })
   .catch((error) => {
-    console.error("❌ Seeding failed:", error);
+    logError("❌ Seeding failed:", {}, error instanceof Error ? error : new Error(String(error)));
     process.exit(1);
   });

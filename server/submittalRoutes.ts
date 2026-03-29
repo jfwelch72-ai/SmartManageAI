@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import {
@@ -78,7 +79,7 @@ router.get("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANA
 
     res.json(result);
   } catch (error) {
-    console.error("Get submittals error:", error);
+    logError("Get submittals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -120,7 +121,7 @@ router.get("/submittals/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(stats);
   } catch (error) {
-    console.error("Get submittal stats error:", error);
+    logError("Get submittal stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -199,7 +200,7 @@ router.get("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
       activity: activityLog,
     });
   } catch (error) {
-    console.error("Get submittal error:", error);
+    logError("Get submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -271,7 +272,7 @@ router.post("/submittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MAN
 
     res.status(201).json(newSubmittal);
   } catch (error) {
-    console.error("Create submittal error:", error);
+    logError("Create submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -332,7 +333,7 @@ router.patch("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    console.error("Update submittal error:", error);
+    logError("Update submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -395,7 +396,7 @@ router.post("/submittals/:id/link-rfi", requireAuth, requireRole("SUPER_ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    console.error("Link RFI error:", error);
+    logError("Link RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -445,7 +446,7 @@ router.post("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", 
 
     res.status(201).json(entry);
   } catch (error) {
-    console.error("Add submittal activity error:", error);
+    logError("Add submittal activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -482,7 +483,7 @@ router.get("/submittals/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.json(activityLog);
   } catch (error) {
-    console.error("Get submittal activity error:", error);
+    logError("Get submittal activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -525,7 +526,7 @@ router.delete("/submittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete submittal error:", error);
+    logError("Delete submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -608,7 +609,7 @@ router.post("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "AD
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    console.error("Upload submittal file error:", error);
+    logError("Upload submittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -646,7 +647,7 @@ router.get("/submittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     res.json(attachments);
   } catch (error) {
-    console.error("Get submittal files error:", error);
+    logError("Get submittal files error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -702,7 +703,7 @@ router.delete("/submittals/:id/files/:fileId", requireAuth, requireRole("SUPER_A
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete submittal file error:", error);
+    logError("Delete submittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -733,7 +734,7 @@ router.get("/submittals/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     res.json(items);
   } catch (error) {
-    console.error("Get submittal items error:", error);
+    logError("Get submittal items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -780,7 +781,7 @@ router.post("/submittals/:id/items", requireAuth, requireRole("SUPER_ADMIN", "AD
 
     res.status(201).json(newItem);
   } catch (error) {
-    console.error("Create submittal item error:", error);
+    logError("Create submittal item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -835,7 +836,7 @@ router.patch("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_AD
     const [updated] = await db.update(submittalItems).set(updates).where(eq(submittalItems.id, itemId)).returning();
     res.json(updated);
   } catch (error) {
-    console.error("Update submittal item error:", error);
+    logError("Update submittal item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -863,7 +864,7 @@ router.delete("/submittals/:id/items/:itemId", requireAuth, requireRole("SUPER_A
     await db.delete(submittalItems).where(eq(submittalItems.id, itemId));
     res.status(204).send();
   } catch (error) {
-    console.error("Delete submittal item error:", error);
+    logError("Delete submittal item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -894,7 +895,7 @@ router.get("/submittals/:id/reviews", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(reviews);
   } catch (error) {
-    console.error("Get submittal reviews error:", error);
+    logError("Get submittal reviews error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -933,7 +934,7 @@ router.post("/submittals/:id/reviews", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.status(201).json(newReview);
   } catch (error) {
-    console.error("Create submittal review error:", error);
+    logError("Create submittal review error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -961,7 +962,7 @@ router.delete("/submittals/:id/reviews/:reviewId", requireAuth, requireRole("SUP
     await db.delete(submittalReviews).where(eq(submittalReviews.id, reviewId));
     res.status(204).send();
   } catch (error) {
-    console.error("Delete submittal review error:", error);
+    logError("Delete submittal review error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -993,7 +994,7 @@ router.get("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN"
 
     res.json(attachments);
   } catch (error) {
-    console.error("Get submittal attachments error:", error);
+    logError("Get submittal attachments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1034,10 +1035,11 @@ router.get("/submittals/:id/attachments/:attachmentId/download", requireAuth, re
       });
       res.json({ url: signedUrl });
     } catch {
+      logWarn("Non-critical operation failed");
       res.status(500).json({ error: "Failed to generate download URL" });
     }
   } catch (error) {
-    console.error("Get submittal attachment download URL error:", error);
+    logError("Get submittal attachment download URL error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1107,6 +1109,7 @@ router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN
         return res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
       }
     } catch {
+      logWarn("Non-critical operation failed");
       isObjectPath = true;
     }
 
@@ -1123,13 +1126,13 @@ router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN
         });
         if (!response.ok) {
           const errBody = await response.text().catch(() => "");
-          console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+          logError(`GCS sidecar upload failed (${response.status}): ${errBody}`);
           return res.status(502).json({ error: "File storage upload failed" });
         }
         const data = await response.json() as { storageKey?: string };
         storageKey = data.storageKey || objectPath;
       } catch (sidecarErr) {
-        console.error("GCS sidecar unreachable:", sidecarErr);
+        logError("GCS sidecar unreachable:", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
         return res.status(502).json({ error: "File storage service unavailable" });
       }
     }
@@ -1166,7 +1169,7 @@ router.post("/submittals/:id/attachments", requireAuth, requireRole("SUPER_ADMIN
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    console.error("Upload submittal attachment error:", error);
+    logError("Upload submittal attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1209,11 +1212,11 @@ router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireR
         });
         if (!delResponse.ok) {
           const errBody = await delResponse.text().catch(() => "");
-          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          logError(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
           return res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
         }
       } catch (sidecarErr) {
-        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        logError("GCS sidecar unreachable during delete:", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
         return res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
       }
     }
@@ -1221,7 +1224,7 @@ router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireR
     await db.delete(submittalAttachments).where(eq(submittalAttachments.id, attachmentId));
     res.status(204).send();
   } catch (error) {
-    console.error("Delete submittal attachment error:", error);
+    logError("Delete submittal attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1440,7 +1443,7 @@ router.post("/submittals/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(updated);
   } catch (error) {
-    console.error("Submit submittal error:", error);
+    logError("Submit submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1506,7 +1509,7 @@ router.post("/submittals/:id/review", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(updated);
   } catch (error) {
-    console.error("Review submittal error:", error);
+    logError("Review submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1585,7 +1588,7 @@ router.post("/submittals/:id/reviews/:reviewId/start", requireAuth, requireRole(
 
     res.json(updatedReview);
   } catch (error) {
-    console.error("Start review error:", error);
+    logError("Start review error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1674,7 +1677,7 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
 
     res.json(updatedReview);
   } catch (error) {
-    console.error("Stamp review error:", error);
+    logError("Stamp review error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1754,7 +1757,7 @@ router.post("/submittals/:id/approve", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.json(updated);
   } catch (error) {
-    console.error("Approve submittal error:", error);
+    logError("Approve submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1838,7 +1841,7 @@ router.post("/submittals/:id/approve-as-noted", requireAuth, requireRole("SUPER_
 
     res.json(updated);
   } catch (error) {
-    console.error("Approve as noted submittal error:", error);
+    logError("Approve as noted submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1922,7 +1925,7 @@ router.post("/submittals/:id/reject", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(updated);
   } catch (error) {
-    console.error("Reject submittal error:", error);
+    logError("Reject submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2006,7 +2009,7 @@ router.post("/submittals/:id/revise", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(updated);
   } catch (error) {
-    console.error("Revise submittal error:", error);
+    logError("Revise submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2085,7 +2088,7 @@ router.post("/submittals/:id/resubmit", requireAuth, requireRole("SUPER_ADMIN", 
 
     res.status(201).json(newSubmittal);
   } catch (error) {
-    console.error("Resubmit submittal error:", error);
+    logError("Resubmit submittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

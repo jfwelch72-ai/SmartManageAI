@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import {
@@ -119,7 +120,7 @@ router.get("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "
 
     res.json(mapped);
   } catch (error) {
-    console.error("Get RFIs error:", error);
+    logError("Get RFIs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -157,7 +158,7 @@ router.get("/rfi/stats", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
 
     res.json({ total, open, answered, closed, overdue });
   } catch (error) {
-    console.error("Get RFI stats error:", error);
+    logError("Get RFI stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -251,7 +252,7 @@ router.get("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER
       activity,
     });
   } catch (error) {
-    console.error("Get RFI error:", error);
+    logError("Get RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -300,7 +301,7 @@ router.post("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
 
     res.status(201).json(newRfi);
   } catch (error) {
-    console.error("Create RFI error:", error);
+    logError("Create RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -344,7 +345,7 @@ router.patch("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAG
 
     res.json(updated);
   } catch (error) {
-    console.error("Update RFI error:", error);
+    logError("Update RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -376,7 +377,7 @@ router.post("/rfi/:id/submit", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    console.error("Submit RFI error:", error);
+    logError("Submit RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -402,7 +403,7 @@ router.post("/rfi/:id/review", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    console.error("Review RFI error:", error);
+    logError("Review RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -451,7 +452,7 @@ router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    console.error("Forward RFI error:", error);
+    logError("Forward RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -492,7 +493,7 @@ router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    console.error("Answer RFI error:", error);
+    logError("Answer RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -523,7 +524,7 @@ router.post("/rfi/:id/close", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.json(updated);
   } catch (error) {
-    console.error("Close RFI error:", error);
+    logError("Close RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -558,7 +559,7 @@ router.post("/rfi/:id/reopen", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
 
     res.json(updated);
   } catch (error) {
-    console.error("Reopen RFI error:", error);
+    logError("Reopen RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -601,7 +602,7 @@ router.post("/rfi/:id/link-co", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    console.error("Link CO error:", error);
+    logError("Link CO error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -644,7 +645,7 @@ router.post("/rfi/:id/link-tm", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    console.error("Link TM error:", error);
+    logError("Link TM error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -675,7 +676,7 @@ router.post("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
     res.status(201).json(entry);
   } catch (error) {
-    console.error("Add RFI activity error:", error);
+    logError("Add RFI activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -694,7 +695,7 @@ router.get("/rfi/:id/activity", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(activity);
   } catch (error) {
-    console.error("Get RFI activity error:", error);
+    logError("Get RFI activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -714,7 +715,7 @@ router.delete("/rfi/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete RFI error:", error);
+    logError("Delete RFI error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -757,7 +758,7 @@ router.get("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADMI
 
     res.json(attachments);
   } catch (error) {
-    console.error("Get RFI attachments error:", error);
+    logError("Get RFI attachments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -797,6 +798,7 @@ router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADM
         return res.status(400).json({ error: "fileUrl must not point to an internal/private address" });
       }
     } catch {
+      logWarn("Non-critical operation failed");
       isObjectPath = true;
     }
 
@@ -813,13 +815,13 @@ router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADM
         });
         if (!response.ok) {
           const errBody = await response.text().catch(() => "");
-          console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+          logError(`GCS sidecar upload failed (${response.status}): ${errBody}`);
           return res.status(502).json({ error: "File storage upload failed" });
         }
         const data = await response.json() as { storageKey?: string };
         storageKey = data.storageKey || objectPath;
       } catch (sidecarErr) {
-        console.error("GCS sidecar unreachable:", sidecarErr);
+        logError("GCS sidecar unreachable:", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
         return res.status(502).json({ error: "File storage service unavailable" });
       }
     }
@@ -849,7 +851,7 @@ router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADM
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    console.error("Upload RFI attachment error:", error);
+    logError("Upload RFI attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -884,11 +886,11 @@ router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SU
         });
         if (!delResponse.ok) {
           const errBody = await delResponse.text().catch(() => "");
-          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          logError(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
           return res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
         }
       } catch (sidecarErr) {
-        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        logError("GCS sidecar unreachable during delete:", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
         return res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
       }
     }
@@ -896,7 +898,7 @@ router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SU
     await db.delete(rfiAttachments).where(eq(rfiAttachments.id, attachmentId));
     res.status(204).send();
   } catch (error) {
-    console.error("Delete RFI attachment error:", error);
+    logError("Delete RFI attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

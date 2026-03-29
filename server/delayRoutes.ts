@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { projectDelays, projects, changeOrders, users, notifications, delayNotifications, insertProjectDelaySchema, insertDelayNotificationSchema, type ProjectDelay, delayClaims, dailyReportLocks, photoCustodyRecords, insertDelayClaimSchema, insertDailyReportLockSchema, insertPhotoCustodyRecordSchema, type DelayClaim, type DailyReportLock, type PhotoCustodyRecord } from "@shared/schema";
@@ -44,7 +45,7 @@ async function fetchWeatherEvidence(lat: number, lng: number, startDate: Date, e
     const response = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
     if (!response.ok) {
-      console.error("Weather API error:", response.status);
+      logError("Weather API error", { status: response.status });
       return null;
     }
 
@@ -76,7 +77,7 @@ async function fetchWeatherEvidence(lat: number, lng: number, startDate: Date, e
       dailyData,
     };
   } catch (error) {
-    console.error("Failed to fetch weather evidence:", error);
+    logError("Failed to fetch weather evidence:", {}, error instanceof Error ? error : new Error(String(error)));
     return null;
   }
 }
@@ -263,7 +264,7 @@ router.get("/projects/:projectId/delays", requireAuth, async (req: AuthRequest, 
 
     res.json(enrichedDelays);
   } catch (error) {
-    console.error("Error fetching project delays:", error);
+    logError("Error fetching project delays:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch delays" });
   }
 });
@@ -351,7 +352,7 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
             .set({ weatherEvidenceJson: evidence })
             .where(eq(projectDelays.id, delayId));
         }
-      }).catch(err => console.error("Failed to fetch weather evidence:", err));
+      }).catch(err => logError("Failed to fetch weather evidence:", {}, err instanceof Error ? err : new Error(String(err))));
     }
 
     await logAudit({
@@ -368,7 +369,7 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       const delayStart = newDelay.startDateTime ? new Date(newDelay.startDateTime).toISOString().split("T")[0] : undefined;
       scheduleImpact = await computeProjectDelayImpact(projectId, newDelay.estimatedDuration || 0, delayStart);
     } catch (e) {
-      console.error("Schedule impact computation failed (non-blocking):", e);
+      logError("Schedule impact computation failed (non-blocking):", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     res.status(201).json({
@@ -378,7 +379,7 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
       scheduleImpact,
     });
   } catch (error) {
-    console.error("Error creating delay:", error);
+    logError("Error creating delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create delay" });
   }
 });
@@ -408,7 +409,7 @@ router.get("/delays/:id", requireAuth, async (req: AuthRequest, res: Response) =
       linkedChangeOrder
     });
   } catch (error) {
-    console.error("Error fetching delay:", error);
+    logError("Error fetching delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch delay" });
   }
 });
@@ -470,7 +471,7 @@ router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERI
       const delayStart = updatedDelay.startDateTime ? new Date(updatedDelay.startDateTime).toISOString().split("T")[0] : undefined;
       scheduleImpact = await computeProjectDelayImpact(updatedDelay.projectId, updatedDelay.estimatedDuration || 0, delayStart);
     } catch (e) {
-      console.error("Schedule impact computation failed (non-blocking):", e);
+      logError("Schedule impact computation failed (non-blocking):", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     res.json({
@@ -480,7 +481,7 @@ router.patch("/delays/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERI
       scheduleImpact,
     });
   } catch (error) {
-    console.error("Error updating delay:", error);
+    logError("Error updating delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update delay" });
   }
 });
@@ -541,7 +542,7 @@ router.post("/delays/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER", "
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    console.error("Error submitting delay:", error);
+    logError("Error submitting delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to submit delay" });
   }
 });
@@ -603,7 +604,7 @@ router.post("/delays/:id/acknowledge", requireAuth, requireRole("ADMIN", "MANAGE
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    console.error("Error acknowledging delay:", error);
+    logError("Error acknowledging delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to acknowledge delay" });
   }
 });
@@ -667,7 +668,7 @@ router.post("/delays/:id/resolve", requireAuth, requireRole("ADMIN", "MANAGER", 
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    console.error("Error resolving delay:", error);
+    logError("Error resolving delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to resolve delay" });
   }
 });
@@ -712,7 +713,7 @@ router.post("/delays/:id/create-change-order", requireAuth, requireRole("ADMIN",
       const delayStart = delay.startDateTime ? new Date(delay.startDateTime).toISOString().split("T")[0] : undefined;
       impactAnalysis = await computeProjectDelayImpact(delay.projectId, delay.estimatedDuration || 0, delayStart);
     } catch (e) {
-      console.error("Schedule impact computation failed (non-blocking):", e);
+      logError("Schedule impact computation failed (non-blocking):", {}, e instanceof Error ? e : new Error(String(e)));
     }
 
     const startDate = new Date(delay.startDateTime).toLocaleDateString();
@@ -760,7 +761,7 @@ router.post("/delays/:id/create-change-order", requireAuth, requireRole("ADMIN",
 
     res.status(201).json(newChangeOrder);
   } catch (error) {
-    console.error("Error creating change order from delay:", error);
+    logError("Error creating change order from delay:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create change order" });
   }
 });
@@ -807,7 +808,7 @@ router.post("/delays/:id/revert-to-draft", requireAuth, requireRole("ADMIN", "MA
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible
     });
   } catch (error) {
-    console.error("Error reverting delay to draft:", error);
+    logError("Error reverting delay to draft:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revert delay" });
   }
 });
@@ -851,7 +852,7 @@ router.get("/delays/dashboard/summary", requireAuth, async (req: AuthRequest, re
       }))
     });
   } catch (error) {
-    console.error("Error fetching delay dashboard summary:", error);
+    logError("Error fetching delay dashboard summary:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch delay summary" });
   }
 });
@@ -978,7 +979,7 @@ router.post("/delays/:id/notifications/generate", requireAuth, requireRole("ADMI
 
     res.status(201).json(notification);
   } catch (error) {
-    console.error("Error generating delay notification:", error);
+    logError("Error generating delay notification:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate notification" });
   }
 });
@@ -1001,7 +1002,7 @@ router.get("/delays/:id/notifications", requireAuth, async (req: AuthRequest, re
 
     res.json(notificationsList);
   } catch (error) {
-    console.error("Error fetching delay notifications:", error);
+    logError("Error fetching delay notifications:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch notifications" });
   }
 });
@@ -1026,7 +1027,7 @@ router.get("/delays/:delayId/notifications/:notificationId", requireAuth, async 
 
     res.json(notification);
   } catch (error) {
-    console.error("Error fetching notification:", error);
+    logError("Error fetching notification:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch notification" });
   }
 });
@@ -1095,7 +1096,7 @@ router.patch("/delays/:delayId/notifications/:notificationId", requireAuth, requ
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating notification:", error);
+    logError("Error updating notification:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update notification" });
   }
 });
@@ -1186,7 +1187,7 @@ router.get("/delays/:delayId/notifications/:notificationId/pdf", requireAuth, as
 
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("Error generating notification PDF:", error);
+    logError("Error generating notification PDF:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate PDF" });
   }
 });
@@ -1224,7 +1225,7 @@ router.delete("/delays/:delayId/notifications/:notificationId", requireAuth, req
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting notification:", error);
+    logError("Error deleting notification:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete notification" });
   }
 });
@@ -1287,7 +1288,7 @@ router.post("/delays/:id/fetch-weather-evidence", requireAuth, requireRole("ADMI
       responsibilityLabel: RESPONSIBILITY_LABELS[updatedDelay.financiallyResponsible] || updatedDelay.financiallyResponsible,
     });
   } catch (error) {
-    console.error("Error fetching weather evidence:", error);
+    logError("Error fetching weather evidence:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch weather evidence" });
   }
 });
@@ -1380,7 +1381,7 @@ router.get("/delay-claims", requireAuth, async (req: AuthRequest, res: Response)
       claimTypeLabel: CLAIM_TYPE_LABELS[claim.claimType] || claim.claimType,
     })));
   } catch (error) {
-    console.error("Error fetching delay claims:", error);
+    logError("Error fetching delay claims:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch delay claims" });
   }
 });
@@ -1422,7 +1423,7 @@ router.get("/delay-claims/locks", requireAuth, async (req: AuthRequest, res: Res
       project,
     })));
   } catch (error) {
-    console.error("Error fetching daily report locks:", error);
+    logError("Error fetching daily report locks:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch daily report locks" });
   }
 });
@@ -1495,7 +1496,7 @@ router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", 
     
     res.status(201).json(lock);
   } catch (error) {
-    console.error("Error locking daily report:", error);
+    logError("Error locking daily report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to lock daily report" });
   }
 });
@@ -1521,7 +1522,7 @@ router.get("/delay-claims/locks/:projectId/:date", requireAuth, async (req: Auth
     
     res.json(lock || { status: "UNLOCKED", projectId, reportDate: date });
   } catch (error) {
-    console.error("Error fetching lock status:", error);
+    logError("Error fetching lock status:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch lock status" });
   }
 });
@@ -1561,7 +1562,7 @@ router.post("/delay-claims/locks/:id/supervisor-lock", requireAuth, requireRole(
     
     res.json(updated);
   } catch (error) {
-    console.error("Error applying supervisor lock:", error);
+    logError("Error applying supervisor lock:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to apply supervisor lock" });
   }
 });
@@ -1615,7 +1616,7 @@ router.post("/delay-claims/locks/:id/unlock", requireAuth, requireRole("ADMIN", 
     
     res.json(updated);
   } catch (error) {
-    console.error("Error unlocking daily report:", error);
+    logError("Error unlocking daily report:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to unlock daily report" });
   }
 });
@@ -1669,7 +1670,7 @@ router.get("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest, 
       actionByUser: user,
     })));
   } catch (error) {
-    console.error("Error fetching photo custody records:", error);
+    logError("Error fetching photo custody records:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch photo custody records" });
   }
 });
@@ -1700,7 +1701,7 @@ router.post("/delay-claims/photo-custody", requireAuth, async (req: AuthRequest,
     
     res.status(201).json(record);
   } catch (error) {
-    console.error("Error creating photo custody record:", error);
+    logError("Error creating photo custody record:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
@@ -1746,7 +1747,7 @@ router.get("/delay-claims/photo-custody/chain/:photoUrl", requireAuth, async (re
       totalActions: records.length,
     });
   } catch (error) {
-    console.error("Error fetching chain of custody:", error);
+    logError("Error fetching chain of custody:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch chain of custody" });
   }
 });
@@ -1799,7 +1800,7 @@ router.get("/delay-claims/:id", requireAuth, async (req: AuthRequest, res: Respo
       claimTypeLabel: CLAIM_TYPE_LABELS[result.claim.claimType] || result.claim.claimType,
     });
   } catch (error) {
-    console.error("Error fetching delay claim:", error);
+    logError("Error fetching delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch delay claim" });
   }
 });
@@ -1858,7 +1859,7 @@ router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER
       claimTypeLabel: CLAIM_TYPE_LABELS[claim.claimType] || claim.claimType,
     });
   } catch (error) {
-    console.error("Error creating delay claim:", error);
+    logError("Error creating delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation failed", details: error.errors });
     }
@@ -1923,7 +1924,7 @@ router.patch("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER", "
       claimTypeLabel: CLAIM_TYPE_LABELS[updated.claimType] || updated.claimType,
     });
   } catch (error) {
-    console.error("Error updating delay claim:", error);
+    logError("Error updating delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update delay claim" });
   }
 });
@@ -1974,7 +1975,7 @@ router.post("/delay-claims/:id/submit", requireAuth, requireRole("ADMIN", "MANAG
     
     res.json(updated);
   } catch (error) {
-    console.error("Error submitting delay claim:", error);
+    logError("Error submitting delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to submit delay claim" });
   }
 });
@@ -2018,7 +2019,7 @@ router.post("/delay-claims/:id/review", requireAuth, requireRole("ADMIN", "MANAG
     
     res.json(updated);
   } catch (error) {
-    console.error("Error starting review:", error);
+    logError("Error starting review:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to start review" });
   }
 });
@@ -2073,7 +2074,7 @@ router.post("/delay-claims/:id/approve", requireAuth, requireRole("ADMIN", "MANA
     
     res.json(updated);
   } catch (error) {
-    console.error("Error approving delay claim:", error);
+    logError("Error approving delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to approve delay claim" });
   }
 });
@@ -2130,7 +2131,7 @@ router.post("/delay-claims/:id/reject", requireAuth, requireRole("ADMIN", "MANAG
     
     res.json(updated);
   } catch (error) {
-    console.error("Error rejecting delay claim:", error);
+    logError("Error rejecting delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to reject delay claim" });
   }
 });
@@ -2171,7 +2172,7 @@ router.delete("/delay-claims/:id", requireAuth, requireRole("ADMIN", "MANAGER"),
     
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting delay claim:", error);
+    logError("Error deleting delay claim:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete delay claim" });
   }
 });

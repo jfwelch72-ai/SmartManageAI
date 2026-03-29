@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
@@ -56,6 +57,7 @@ export function verifyToken(token: string): { userId: string; tokenVersion: numb
   try {
     return jwt.verify(token, JWT_SECRET) as { userId: string; tokenVersion: number };
   } catch {
+    logWarn("Non-critical operation failed");
     return null;
   }
 }
@@ -268,7 +270,7 @@ export function requireFeaturePermission(permKey: FeaturePermissionKey) {
           return;
         }
       } catch (error) {
-        console.error('Error checking feature permission:', error);
+        logError('Error checking feature permission:', {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 
@@ -309,7 +311,7 @@ export function requireAnyFeaturePermission(...permKeys: FeaturePermissionKey[])
           return;
         }
       } catch (error) {
-        console.error('Error checking feature permission:', error);
+        logError('Error checking feature permission:', {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 
@@ -355,7 +357,7 @@ export function requireRoleOrFeature(roles: UserRole[], permKey: FeaturePermissi
           return;
         }
       } catch (error) {
-        console.error('Error checking feature permission:', error);
+        logError('Error checking feature permission:', {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 

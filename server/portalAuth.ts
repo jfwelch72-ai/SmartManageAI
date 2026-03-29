@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
@@ -79,7 +80,7 @@ export async function requirePortalAuth(req: PortalRequest, res: Response, next:
 
     next();
   } catch (error) {
-    console.error("Portal auth error:", error);
+    logError("Portal auth error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Portal authentication failed" });
   }
 }

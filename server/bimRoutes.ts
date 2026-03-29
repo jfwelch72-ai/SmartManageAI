@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { bimExtractions, takeoffMeasurements, takeoffSheets, bids, projects } from "@shared/schema";
@@ -39,7 +40,7 @@ router.post("/api/bids/:id/bim-extractions", requireAuth, async (req: AuthReques
 
     res.status(201).json(extraction);
   } catch (error) {
-    console.error("Create BIM extraction error:", error);
+    logError("Create BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -62,7 +63,7 @@ router.get("/api/bids/:id/bim-extractions", requireAuth, async (req: AuthRequest
 
     res.json(extractions);
   } catch (error) {
-    console.error("Get BIM extractions error:", error);
+    logError("Get BIM extractions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -182,7 +183,7 @@ router.post("/api/bids/:id/bim-extractions/import", requireAuth, async (req: Aut
       count: measurements.length,
     });
   } catch (error) {
-    console.error("Import BIM extraction error:", error);
+    logError("Import BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -222,7 +223,7 @@ router.patch("/api/bids/:bidId/bim-extractions/:id/mappings", requireAuth, async
 
     res.json(updated);
   } catch (error) {
-    console.error("Update BIM mappings error:", error);
+    logError("Update BIM mappings error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -252,7 +253,7 @@ router.post("/api/projects/:id/bim-extractions", requireAuth, async (req: AuthRe
 
     res.status(201).json(extraction);
   } catch (error) {
-    console.error("Create project BIM extraction error:", error);
+    logError("Create project BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -275,7 +276,7 @@ router.get("/api/projects/:id/bim-extractions", requireAuth, async (req: AuthReq
 
     res.json(extractions);
   } catch (error) {
-    console.error("Get project BIM extractions error:", error);
+    logError("Get project BIM extractions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -380,7 +381,7 @@ router.post("/api/projects/:id/bim-extractions/import", requireAuth, async (req:
       count: measurements.length,
     });
   } catch (error) {
-    console.error("Import project BIM extraction error:", error);
+    logError("Import project BIM extraction error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -420,7 +421,7 @@ router.patch("/api/projects/:projectId/bim-extractions/:id/mappings", requireAut
 
     res.json(updated);
   } catch (error) {
-    console.error("Update project BIM mappings error:", error);
+    logError("Update project BIM mappings error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

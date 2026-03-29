@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, type Column } from "drizzle-orm";
@@ -97,7 +98,7 @@ router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(filtered);
   } catch (err) {
-    console.error("[Contracts] List error:", err);
+    logError("[Contracts] List error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list contracts" });
   }
 });
@@ -118,7 +119,7 @@ router.get("/api/contracts/by-project/:projectId", requireAuth, async (req: Auth
 
     res.json(result);
   } catch (err) {
-    console.error("[Contracts] By project error:", err);
+    logError("[Contracts] By project error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list contracts" });
   }
 });
@@ -152,7 +153,7 @@ router.get("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json({ ...contract, versions, redlines, approvals });
   } catch (err) {
-    console.error("[Contracts] Get error:", err);
+    logError("[Contracts] Get error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to get contract" });
   }
 });
@@ -226,7 +227,7 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(newContract);
   } catch (err) {
-    console.error("[Contracts] Create error:", err);
+    logError("[Contracts] Create error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to create contract" });
   }
 });
@@ -279,7 +280,7 @@ router.patch("/api/contracts/:id", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(updated);
   } catch (err) {
-    console.error("[Contracts] Update error:", err);
+    logError("[Contracts] Update error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update contract" });
   }
 });
@@ -378,7 +379,7 @@ router.post("/api/contracts/:id/transition", requireAuth, async (req: AuthReques
 
     res.json(updated);
   } catch (err) {
-    console.error("[Contracts] Transition error:", err);
+    logError("[Contracts] Transition error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to transition contract" });
   }
 });
@@ -412,7 +413,7 @@ router.post("/api/contracts/:id/redlines", requireAuth, async (req: AuthRequest,
 
     res.status(201).json(redline);
   } catch (err) {
-    console.error("[Contracts] Redline create error:", err);
+    logError("[Contracts] Redline create error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to create redline" });
   }
 });
@@ -452,7 +453,7 @@ router.patch("/api/contracts/:id/redlines/:redlineId", requireAuth, async (req: 
 
     res.json(updated);
   } catch (err) {
-    console.error("[Contracts] Redline update error:", err);
+    logError("[Contracts] Redline update error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update redline" });
   }
 });
@@ -536,7 +537,7 @@ router.post("/api/contracts/:id/request-approval", requireAuth, async (req: Auth
 
     res.status(201).json(approvalRecords);
   } catch (err) {
-    console.error("[Contracts] Request approval error:", err);
+    logError("[Contracts] Request approval error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to request approval" });
   }
 });
@@ -585,7 +586,7 @@ router.post("/api/contracts/:id/approve", requireAuth, async (req: AuthRequest, 
 
     res.json({ message: "Contract approved" });
   } catch (err) {
-    console.error("[Contracts] Approve error:", err);
+    logError("[Contracts] Approve error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to approve contract" });
   }
 });
@@ -621,7 +622,7 @@ router.post("/api/contracts/:id/reject", requireAuth, async (req: AuthRequest, r
 
     res.json({ message: "Contract rejected" });
   } catch (err) {
-    console.error("[Contracts] Reject error:", err);
+    logError("[Contracts] Reject error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to reject contract" });
   }
 });
@@ -646,7 +647,7 @@ router.get("/api/contracts/:id/versions", requireAuth, async (req: AuthRequest, 
 
     res.json(versions);
   } catch (err) {
-    console.error("[Contracts] Versions error:", err);
+    logError("[Contracts] Versions error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list versions" });
   }
 });
@@ -694,7 +695,7 @@ router.get("/api/contracts/:id/versions/compare", requireAuth, async (req: AuthR
 
     res.json({ v1: v1, v2: v2, changes, version1: ver1, version2: ver2 });
   } catch (err) {
-    console.error("[Contracts] Version compare error:", err);
+    logError("[Contracts] Version compare error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to compare versions" });
   }
 });
@@ -719,7 +720,7 @@ router.post("/api/contracts/:id/attachments/upload-url", requireAuth, async (req
 
     res.json({ uploadURL, objectKey });
   } catch (err) {
-    console.error("[Contracts] Upload URL error:", err);
+    logError("[Contracts] Upload URL error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to generate upload URL" });
   }
 });
@@ -767,7 +768,7 @@ router.post("/api/contracts/:id/attachments", requireAuth, async (req: AuthReque
 
     res.status(201).json(newAttachment);
   } catch (err) {
-    console.error("[Contracts] Attachment add error:", err);
+    logError("[Contracts] Attachment add error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to add attachment" });
   }
 });
@@ -789,7 +790,7 @@ router.get("/api/contracts/:id/attachments", requireAuth, async (req: AuthReques
     const attachments = JSON.parse(contract.attachmentsJson || "[]");
     res.json(attachments);
   } catch (err) {
-    console.error("[Contracts] Attachments list error:", err);
+    logError("[Contracts] Attachments list error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list attachments" });
   }
 });
@@ -825,7 +826,7 @@ router.delete("/api/contracts/:id/attachments/:attachmentId", requireAuth, async
 
     res.json({ message: "Attachment removed" });
   } catch (err) {
-    console.error("[Contracts] Attachment delete error:", err);
+    logError("[Contracts] Attachment delete error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to remove attachment" });
   }
 });
@@ -848,7 +849,7 @@ router.delete("/api/contracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADM
     await db.delete(contracts).where(eq(contracts.id, req.params.id));
     res.json({ message: "Contract deleted" });
   } catch (err) {
-    console.error("[Contracts] Delete error:", err);
+    logError("[Contracts] Delete error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to delete contract" });
   }
 });
@@ -882,7 +883,7 @@ router.post("/api/contracts/:id/link-change-order", requireAuth, async (req: Aut
     if (!co) { res.status(404).json({ error: "Change order not found" }); return; }
     res.json(co);
   } catch (err) {
-    console.error("[Contracts] Link CO error:", err);
+    logError("[Contracts] Link CO error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to link change order" });
   }
 });
@@ -906,7 +907,7 @@ router.get("/api/contracts/:id/change-orders", requireAuth, async (req: AuthRequ
 
     res.json(linkedCOs);
   } catch (err) {
-    console.error("[Contracts] Get COs error:", err);
+    logError("[Contracts] Get COs error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to get linked change orders" });
   }
 });
@@ -1000,7 +1001,7 @@ router.post("/api/contracts/:id/signature-request", requireAuth, async (req: Aut
 
     res.status(201).json(sigReq);
   } catch (err) {
-    console.error("[Contracts] Signature request error:", err);
+    logError("[Contracts] Signature request error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to create signature request" });
   }
 });
@@ -1027,7 +1028,7 @@ router.get("/api/contracts/:id/signature-requests", requireAuth, async (req: Aut
 
     res.json(enriched);
   } catch (err) {
-    console.error("[Contracts] List signature requests error:", err);
+    logError("[Contracts] List signature requests error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list signature requests" });
   }
 });
@@ -1149,7 +1150,7 @@ router.post("/api/contracts/:contractId/signature-requests/:reqId/sign", require
 
     res.json({ signers, status: newStatus });
   } catch (err) {
-    console.error("[Contracts] Sign error:", err);
+    logError("[Contracts] Sign error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to process signature" });
   }
 });
@@ -1292,7 +1293,7 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
       analyzedAt: analysis.analyzedAt,
     });
   } catch (err) {
-    console.error("[Contracts] Risk analysis error:", err);
+    logError("[Contracts] Risk analysis error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to run risk analysis" });
   }
 });
@@ -1327,7 +1328,7 @@ router.get("/api/contracts/:id/risk-analysis", requireAuth, requireRole(...CONTR
 
     res.json(formatted);
   } catch (err) {
-    console.error("[Contracts] Get risk analyses error:", err);
+    logError("[Contracts] Get risk analyses error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to get risk analyses" });
   }
 });

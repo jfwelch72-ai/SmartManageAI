@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import OpenAI from 'openai';
 
 let openaiInstance: OpenAI | null = null;
@@ -142,8 +143,8 @@ export async function callOpenAIForAnalysis(
     const parsed = JSON.parse(content);
     return parsed as AIAnalysisResponse;
   } catch (error) {
-    console.error('Failed to parse OpenAI response:', error);
-    console.error('Raw response:', content);
+    logError('Failed to parse OpenAI response:', {}, error instanceof Error ? error : new Error(String(error)));
+    logError('Raw response:', { detail: String(content) });
     throw new Error('Invalid JSON response from OpenAI');
   }
 }
@@ -271,7 +272,7 @@ If this is a very specialized or niche trade, do your best to provide relevant i
     
     return parsed as TradeResearchResult;
   } catch (error) {
-    console.error('[Trade Research] Error researching trade:', error);
+    logError('[Trade Research] Error researching trade:', {}, error instanceof Error ? error : new Error(String(error)));
     
     // Return a minimal fallback structure if research fails
     return {

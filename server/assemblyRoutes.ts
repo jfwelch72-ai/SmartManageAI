@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -26,7 +27,7 @@ router.get("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(rows);
   } catch (error: any) {
-    console.error("List assemblies error:", error.message);
+    logError("List assemblies error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to list assemblies" });
   }
 });
@@ -51,7 +52,7 @@ router.get("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) => 
 
     res.json({ ...assembly, items });
   } catch (error: any) {
-    console.error("Get assembly error:", error.message);
+    logError("Get assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get assembly" });
   }
 });
@@ -98,7 +99,7 @@ router.post("/api/assemblies", requireAuth, async (req: AuthRequest, res) => {
 
     res.status(201).json({ ...assembly, items: insertedItems });
   } catch (error: any) {
-    console.error("Create assembly error:", error.message);
+    logError("Create assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create assembly" });
   }
 });
@@ -163,7 +164,7 @@ router.patch("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) =
 
     res.json({ ...updated, items: finalItems });
   } catch (error: any) {
-    console.error("Update assembly error:", error.message);
+    logError("Update assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update assembly" });
   }
 });
@@ -183,7 +184,7 @@ router.delete("/api/assemblies/:id", requireAuth, async (req: AuthRequest, res) 
     await db.delete(takeoffAssemblies).where(eq(takeoffAssemblies.id, req.params.id));
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Delete assembly error:", error.message);
+    logError("Delete assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete assembly" });
   }
 });
@@ -210,7 +211,7 @@ router.post("/api/takeoff/measurements/:measurementId/assemblies", requireAuth, 
 
     res.status(201).json(link);
   } catch (error: any) {
-    console.error("Link assembly error:", error.message);
+    logError("Link assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to link assembly" });
   }
 });
@@ -223,7 +224,7 @@ router.delete("/api/takeoff/measurement-assemblies/:id", requireAuth, async (req
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Unlink assembly error:", error.message);
+    logError("Unlink assembly error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to unlink assembly" });
   }
 });
@@ -291,7 +292,7 @@ router.get("/api/takeoff/measurements/:measurementId/assembly-quantities", requi
 
     res.json(results);
   } catch (error: any) {
-    console.error("Assembly quantities error:", error.message);
+    logError("Assembly quantities error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to compute assembly quantities" });
   }
 });

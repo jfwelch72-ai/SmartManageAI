@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -70,7 +71,7 @@ router.post("/portal/access/create", requireAuth, requireRole("ADMIN", "MANAGER"
       expiresAt: expiresAt.toISOString(),
     });
   } catch (error) {
-    console.error("Create portal access error:", error);
+    logError("Create portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create access" });
   }
 });
@@ -92,7 +93,7 @@ router.get("/portal/access/:projectId", requireAuth, requireRole("ADMIN", "MANAG
 
     res.json({ accessList });
   } catch (error) {
-    console.error("Get portal access error:", error);
+    logError("Get portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to get access list" });
   }
 });
@@ -113,7 +114,7 @@ router.delete("/portal/access/:accessId", requireAuth, requireRole("ADMIN", "MAN
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Revoke portal access error:", error);
+    logError("Revoke portal access error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revoke access" });
   }
 });
@@ -157,7 +158,7 @@ router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAG
         if (row.access.permissionsJson) {
           permissions = { ...permissions, ...JSON.parse(row.access.permissionsJson) };
         }
-      } catch {}
+      } catch { logWarn("Non-critical operation failed"); }
 
       return {
         id: row.access.id,
@@ -195,7 +196,7 @@ router.get("/client-portal/:projectId", requireAuth, requireRole("ADMIN", "MANAG
       portalUrl,
     });
   } catch (error) {
-    console.error("Error fetching client portal access:", error);
+    logError("Error fetching client portal access:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch portal access" });
   }
 });
@@ -273,6 +274,7 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
     try {
       parsedPermissions = JSON.parse(newAccess.permissionsJson || "{}");
     } catch {
+      logWarn("Non-critical operation failed");
       parsedPermissions = {};
     }
 
@@ -369,7 +371,7 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
         text: `Hi ${name.trim()}, ${inviterName} from ${orgName} has invited you to access the client portal for project "${existingProject.name}". Your access level: ${accessLabel}. Visit: ${portalLink}`,
       });
     } catch (emailErr) {
-      console.error("Failed to send portal invitation email:", emailErr);
+      logError("Failed to send portal invitation email:", {}, emailErr instanceof Error ? emailErr : new Error(String(emailErr)));
     }
 
     res.status(201).json({
@@ -384,7 +386,7 @@ router.post("/client-portal/invite", requireAuth, requireRole("ADMIN", "MANAGER"
       createdAt: newAccess.createdAt.toISOString(),
     });
   } catch (error) {
-    console.error("Error creating portal invitation:", error);
+    logError("Error creating portal invitation:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to send invitation" });
   }
 });
@@ -433,7 +435,7 @@ router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MAN
       name: updated.name,
     });
   } catch (error) {
-    console.error("Error updating portal access:", error);
+    logError("Error updating portal access:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update portal access" });
   }
 });
@@ -469,7 +471,7 @@ router.delete("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MA
 
     res.json({ success: true, message: "Portal access revoked" });
   } catch (error) {
-    console.error("Error revoking portal access:", error);
+    logError("Error revoking portal access:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revoke portal access" });
   }
 });
@@ -518,7 +520,7 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
       if (access.access.permissionsJson) {
         permissions = { ...permissions, ...JSON.parse(access.access.permissionsJson) };
       }
-    } catch {}
+    } catch { logWarn("Non-critical operation failed"); }
 
     await db
       .update(clientPortalAccess)
@@ -536,7 +538,7 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res) => {
       permissions,
     });
   } catch (error) {
-    console.error("Error verifying portal access:", error);
+    logError("Error verifying portal access:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to verify portal access" });
   }
 });
@@ -578,7 +580,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
       if (access.permissionsJson) {
         permissions = { ...permissions, ...JSON.parse(access.permissionsJson) };
       }
-    } catch {}
+    } catch { logWarn("Non-critical operation failed"); }
 
     const [project] = await db
       .select()
@@ -735,7 +737,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
               subcontractor: raw.subcontractor || 0,
               total: raw.total || Number(co.amount) || 0,
             };
-          } catch {}
+          } catch { logWarn("Non-critical operation failed"); }
         }
         return {
           id: co.id,
@@ -783,7 +785,7 @@ router.post("/client-portal/public/data", authLimiter, async (req, res) => {
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching portal data:", error);
+    logError("Error fetching portal data:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch portal data" });
   }
 });
@@ -816,7 +818,7 @@ async function verifyPortalAccess(projectId: string, email: string) {
     if (access.permissionsJson) {
       permissions = { ...permissions, ...JSON.parse(access.permissionsJson) };
     }
-  } catch {}
+  } catch { logWarn("Non-critical operation failed"); }
 
   return { access, permissions };
 }
@@ -854,7 +856,7 @@ router.get("/client-portal/public/change-orders/:coId/comments", authLimiter, as
 
     res.json(comments);
   } catch (error) {
-    console.error("Error fetching CO comments:", error);
+    logError("Error fetching CO comments:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch comments" });
   }
 });
@@ -903,7 +905,7 @@ router.post("/client-portal/public/change-orders/:coId/comments", authLimiter, a
 
     res.json(comment);
   } catch (error) {
-    console.error("Error posting CO comment:", error);
+    logError("Error posting CO comment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to post comment" });
   }
 });
@@ -991,12 +993,12 @@ router.post("/client-portal/public/change-orders/:coId/acknowledge", authLimiter
         }
       }
     } catch (notifError) {
-      console.error("Failed to send CO acknowledgment notifications:", notifError);
+      logError("Failed to send CO acknowledgment notifications:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Error acknowledging CO:", error);
+    logError("Error acknowledging CO:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to acknowledge change order" });
   }
 });
@@ -1089,12 +1091,12 @@ router.post("/client-portal/public/change-orders/:coId/request-revision", authLi
         }
       }
     } catch (notifError) {
-      console.error("Failed to send CO revision request notifications:", notifError);
+      logError("Failed to send CO revision request notifications:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Error requesting CO revision:", error);
+    logError("Error requesting CO revision:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to request revision" });
   }
 });
@@ -1150,7 +1152,7 @@ router.get("/client-portal/public/change-orders/:coId/attachments/:attachmentId/
 
     await objectStorageService.downloadObject(objectFile, res, 0);
   } catch (error) {
-    console.error("Error downloading portal CO attachment:", error);
+    logError("Error downloading portal CO attachment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to download attachment" });
   }
 });

@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { AuthRequest, requireAuth, requireRole } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
@@ -21,7 +22,7 @@ router.get("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
 
     res.json(records);
   } catch (error) {
-    console.error("Error fetching processing records:", error);
+    logError("Error fetching processing records:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch processing records" });
   }
 });
@@ -62,7 +63,7 @@ router.post("/processing-records", requireAuth, requireRole("ADMIN", "SUPER_ADMI
     await logAudit({ userId: user.id, entityType: "data_processing_records", entityId: record.id, action: "CREATE" }, req);
     res.status(201).json(record);
   } catch (error) {
-    console.error("Error saving processing record:", error);
+    logError("Error saving processing record:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to save processing record" });
   }
 });
@@ -83,7 +84,7 @@ router.delete("/processing-records/:id", requireAuth, requireRole("ADMIN", "SUPE
     await logAudit({ userId: user.id, entityType: "data_processing_records", entityId: id, action: "DELETE" }, req);
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting processing record:", error);
+    logError("Error deleting processing record:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete processing record" });
   }
 });
@@ -101,7 +102,7 @@ router.get("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN")
 
     res.json(requests);
   } catch (error) {
-    console.error("Error fetching subject requests:", error);
+    logError("Error fetching subject requests:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch subject requests" });
   }
 });
@@ -130,7 +131,7 @@ router.post("/subject-requests", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"
     await logAudit({ userId: user.id, entityType: "data_subject_requests", entityId: request.id, action: "CREATE" }, req);
     res.status(201).json(request);
   } catch (error) {
-    console.error("Error creating subject request:", error);
+    logError("Error creating subject request:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create subject request" });
   }
 });
@@ -239,7 +240,7 @@ router.post("/subject-requests/:id/process", requireAuth, requireRole("ADMIN", "
     await logAudit({ userId: user.id, entityType: "data_subject_requests", entityId: id, action: "APPROVE" }, req);
     res.json(updated);
   } catch (error) {
-    console.error("Error processing subject request:", error);
+    logError("Error processing subject request:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to process subject request" });
   }
 });

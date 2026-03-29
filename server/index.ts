@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -121,12 +122,20 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    const clientMessage = status >= 500 ? "Internal Server Error" : (err.message || "Internal Server Error");
+    const requestId = (req as any).id || (req as any).requestId || undefined;
 
-    res.status(status).json({ message });
-    throw err;
+    logError("Unhandled error in request", {
+      method: req.method,
+      path: req.path,
+      requestId,
+    }, err instanceof Error ? err : new Error(String(err)));
+
+    if (!res.headersSent) {
+      res.status(status).json({ error: clientMessage, ...(requestId ? { requestId } : {}) });
+    }
   });
 
   // importantly only setup vite in development and after
@@ -160,10 +169,10 @@ app.use((req, res, next) => {
     if (err.code === "EADDRINUSE") {
       portRetryCount++;
       if (portRetryCount > MAX_PORT_RETRIES) {
-        console.error(`Port ${port} is still in use after ${MAX_PORT_RETRIES} attempts. Exiting.`);
+        logError(`Port ${port} is still in use after ${MAX_PORT_RETRIES} attempts. Exiting.`);
         process.exit(1);
       }
-      console.error(`Port ${port} is in use. Retry ${portRetryCount}/${MAX_PORT_RETRIES}...`);
+      logError(`Port ${port} is in use. Retry ${portRetryCount}/${MAX_PORT_RETRIES}...`);
       try {
         execSync(`fuser -k ${port}/tcp`, { stdio: "ignore" });
       } catch (_) { /* ignore */ }
@@ -172,7 +181,7 @@ app.use((req, res, next) => {
         server.listen({ port, host: "0.0.0.0", reusePort: true });
       }, 1500);
     } else {
-      console.error("Server error:", err);
+      logError("Server error:", {}, err instanceof Error ? err : new Error(String(err)));
       process.exit(1);
     }
   });
@@ -191,7 +200,7 @@ app.use((req, res, next) => {
     if (isProduction) {
       // Initialize AI PM + CFO scheduler (runs at configured daily time, default 6:00 AM)
       initializeAIScheduler().catch(error => {
-        console.error('Failed to initialize AI scheduler:', error);
+        logError('Failed to initialize AI scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       });
       
       // Initialize AI Notes Analysis scheduler (hourly + daily at 6 PM)
@@ -199,21 +208,21 @@ app.use((req, res, next) => {
         aiNotesScheduler.start();
         console.log('AI Notes Scheduler started successfully');
       } catch (error) {
-        console.error('Failed to start AI Notes Scheduler:', error);
+        logError('Failed to start AI Notes Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
       // Initialize nightly GCS orphan scan (runs at 02:00 daily)
       try {
         startOrphanScanScheduler();
       } catch (error) {
-        console.error('Failed to start Storage Orphan Scan Scheduler:', error);
+        logError('Failed to start Storage Orphan Scan Scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
       // Start background job runner (outbox, retention, orphan uploads, etc.)
       try {
         startJobRunner();
       } catch (error) {
-        console.error('Failed to start background job runner:', error);
+        logError('Failed to start background job runner:', {}, error instanceof Error ? error : new Error(String(error)));
       }
       
       console.log('AI auto-scan schedulers ENABLED (production mode)');

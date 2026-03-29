@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import cron from "node-cron";
 import { db } from "./db";
 import { media, planDocuments, receipts, bidDocuments, userPhotos, changeOrders, userCertifications } from "@shared/schema";
@@ -146,10 +147,7 @@ function logScanResult(result: OrphanScanResult) {
     );
   }
   if (result.errors.length > 0) {
-    console.error(
-      "[OrphanScan] Errors during scan:\n" +
-        result.errors.map((e) => `  - ${e}`).join("\n")
-    );
+    logError("[OrphanScan] Errors during scan", { errors: result.errors });
   }
 }
 
@@ -164,7 +162,7 @@ export function startOrphanScanScheduler() {
       const result = await runOrphanScan();
       logScanResult(result);
     } catch (err) {
-      console.error("[OrphanScan] Unexpected error during nightly scan:", err);
+      logError("[OrphanScan] Unexpected error during nightly scan:", {}, err instanceof Error ? err : new Error(String(err)));
     }
   });
 

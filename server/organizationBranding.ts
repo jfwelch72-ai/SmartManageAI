@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { db } from "./db";
 import { organizations, organizationDocuments } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
@@ -63,7 +64,7 @@ export async function getOrganizationBranding(organizationId: string): Promise<O
       accentColor: org.accentColor || defaultBranding.accentColor
     };
   } catch (error) {
-    console.error("Error fetching organization branding:", error);
+    logError("Error fetching organization branding:", {}, error instanceof Error ? error : new Error(String(error)));
     return defaultBranding;
   }
 }
@@ -93,7 +94,7 @@ export async function getOrganizationDocumentUrl(
 
     return doc?.fileUrl || null;
   } catch (error) {
-    console.error("Error fetching organization document:", error);
+    logError("Error fetching organization document:", {}, error instanceof Error ? error : new Error(String(error)));
     return null;
   }
 }
@@ -155,7 +156,7 @@ export async function getInsuranceCertificateStatus(organizationId: string): Pro
       umbrella: getStatus("INSURANCE_CERT_UMBRELLA")
     };
   } catch (error) {
-    console.error("Error fetching insurance certificate status:", error);
+    logError("Error fetching insurance certificate status:", {}, error instanceof Error ? error : new Error(String(error)));
     return {
       generalLiability: defaultStatus,
       workersComp: defaultStatus,

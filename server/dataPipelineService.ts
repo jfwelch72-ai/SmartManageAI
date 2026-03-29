@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { db } from "./db";
 import {
   timeClockShifts,
@@ -169,7 +170,7 @@ export async function aggregateTimeTrackingToProductionRates(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     errors.push(errorMessage);
-    console.error('[DataPipeline] Error aggregating time tracking:', error);
+    logError('[DataPipeline] Error aggregating time tracking:', {}, error instanceof Error ? error : new Error(String(error)));
     return { processed, errors };
   }
 }
@@ -532,7 +533,7 @@ export async function syncMaterialCalculatorToEstimate(
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[DataPipeline] Error syncing material calculator:', error);
+    logError('[DataPipeline] Error syncing material calculator:', {}, error instanceof Error ? error : new Error(String(error)));
     return { success: false, error: errorMessage };
   }
 }
@@ -597,7 +598,7 @@ export async function getEquipmentUtilizationForProject(
       utilizationRate: Math.round(utilizationRate * 100) / 100,
     };
   } catch (error) {
-    console.error('[DataPipeline] Error getting equipment utilization:', error);
+    logError('[DataPipeline] Error getting equipment utilization:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       assignedEquipment: 0,
       totalHoursLogged: 0,
@@ -672,7 +673,7 @@ export async function aggregateEquipmentHoursForProduction(
       totalHours: Math.round(totalHours * 100) / 100,
     };
   } catch (error) {
-    console.error('[DataPipeline] Error aggregating equipment hours:', error);
+    logError('[DataPipeline] Error aggregating equipment hours:', {}, error instanceof Error ? error : new Error(String(error)));
     return { byProject: [], totalHours: 0 };
   }
 }

@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { 
@@ -95,7 +96,7 @@ async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId:
         .where(eq(estimateLineItems.id, li.id));
     }
   } catch (err) {
-    console.error("[VendorMatch] Error matching vendor pricing:", err);
+    logError("[VendorMatch] Error matching vendor pricing:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -286,7 +287,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json({ estimate: { ...estimate, lineItems, totals } });
     } catch (error) {
-      console.error("Error fetching estimate:", error);
+      logError("Error fetching estimate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch estimate" });
     }
   });
@@ -335,7 +336,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       console.log("[Estimate] Created estimate:", newEstimate.id);
       res.status(201).json(newEstimate);
     } catch (error) {
-      console.error("[Estimate] Error creating estimate:", error);
+      logError("[Estimate] Error creating estimate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to create estimate" });
     }
   });
@@ -411,7 +412,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json({ estimate: { ...estimate, lineItems, totals } });
     } catch (error) {
-      console.error("Error fetching bid estimate:", error);
+      logError("Error fetching bid estimate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch estimate" });
     }
   });
@@ -460,7 +461,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       console.log("[Estimate] Created bid estimate:", newEstimate.id);
       res.status(201).json(newEstimate);
     } catch (error) {
-      console.error("[Estimate] Error creating bid estimate:", error);
+      logError("[Estimate] Error creating bid estimate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to create estimate" });
     }
   });
@@ -532,7 +533,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   linearTotal += length;
                   await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
-              } catch { /* skip */ }
+              } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
             if (measurement.computedAreaFt2) {
@@ -547,7 +548,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   areaTotal += area;
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
-              } catch { /* skip */ }
+              } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "VOLUME") {
             if (measurement.computedVolumeCy) {
@@ -563,7 +564,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   volumeTotal += volume;
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
-              } catch { /* skip */ }
+              } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "COUNT") {
             countTotal += 1;
@@ -690,7 +691,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     uncatLinear += length;
                     await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
-                } catch { /* skip */ }
+                } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
               if (measurement.computedAreaFt2) {
@@ -705,7 +706,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     uncatArea += area;
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
-                } catch { /* skip */ }
+                } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "VOLUME") {
               if (measurement.computedVolumeCy) {
@@ -721,7 +722,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     uncatVolume += volume;
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
-                } catch { /* skip */ }
+                } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "COUNT") {
               uncatCount += 1;
@@ -753,14 +754,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         try {
           await createEstimateSnapshot(estimateId, req.user!.id);
         } catch (snapshotErr) {
-          console.error("[Snapshot] Failed to create snapshot after project import-takeoff:", snapshotErr);
+          logError("[Snapshot] Failed to create snapshot after project import-takeoff:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
         }
         res.json({ lineItems: newLineItems, count: newLineItems.length });
       } else {
         res.json({ lineItems: [], count: 0 });
       }
     } catch (error) {
-      console.error("Error importing takeoff:", error);
+      logError("Error importing takeoff:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to import takeoff" });
     }
   });
@@ -953,7 +954,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   linearTotal += length;
                   await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
-              } catch { /* skip */ }
+              } catch { logWarn("Non-critical operation failed"); }
             }
           } else if ((measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA")) {
             if (measurement.computedAreaFt2) {
@@ -968,7 +969,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   areaTotal += area;
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
-              } catch { /* skip */ }
+              } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "VOLUME") {
             if (measurement.computedVolumeCy) {
@@ -984,7 +985,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   volumeTotal += volume;
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
-              } catch { /* skip */ }
+              } catch { logWarn("Non-critical operation failed"); }
             }
           } else if (measurement.type === "COUNT") {
             countTotal += 1;
@@ -1008,7 +1009,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 laborHours = laborEstimate.suggestedLaborHours;
               }
             } catch {
-              // production rate estimation failed — keep hours at 0
+              logWarn("Non-critical operation failed");
             }
             const laborCost = parseFloat((laborHours * classificationRate).toFixed(2));
             const totalCost = laborCost; // material/equip are all 0 at import time
@@ -1083,7 +1084,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     uncatLinear += length;
                     await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
-                } catch { /* skip */ }
+                } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
               if (measurement.computedAreaFt2) {
@@ -1098,7 +1099,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     uncatArea += area;
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
-                } catch { /* skip */ }
+                } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "VOLUME") {
               if (measurement.computedVolumeCy) {
@@ -1114,7 +1115,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     uncatVolume += volume;
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
-                } catch { /* skip */ }
+                } catch { logWarn("Non-critical operation failed"); }
               }
             } else if (measurement.type === "COUNT") {
               uncatCount += 1;
@@ -1147,14 +1148,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         try {
           await createEstimateSnapshot(estimateId, req.user!.id);
         } catch (snapshotErr) {
-          console.error("[Snapshot] Failed to create snapshot after import-takeoff:", snapshotErr);
+          logError("[Snapshot] Failed to create snapshot after import-takeoff:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
         }
         res.json({ lineItems: newLineItems, count: newLineItems.length, laborRateAppliedCount, classificationName });
       } else {
         res.json({ lineItems: [], count: 0, laborRateAppliedCount: 0, classificationName: null });
       }
     } catch (error) {
-      console.error("Error importing bid takeoff:", error);
+      logError("Error importing bid takeoff:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to import takeoff" });
     }
   });
@@ -1212,7 +1213,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       if (error instanceof OrganizationRequiredError) {
         return res.status(404).json({ error: "Not found" });
       }
-      console.error("Error estimating labor hours:", error);
+      logError("Error estimating labor hours:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(404).json({ error: "Not found" });
     }
   });
@@ -1350,12 +1351,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
-        console.error("[Snapshot] Failed to create snapshot after line item create:", snapshotErr);
+        logError("[Snapshot] Failed to create snapshot after line item create:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
       res.status(201).json(newLineItem);
     } catch (error) {
-      console.error("Error creating line item:", error);
+      logError("Error creating line item:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to create line item" });
     }
   });
@@ -1521,12 +1522,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
-        console.error("[Snapshot] Failed to create snapshot after line item update:", snapshotErr);
+        logError("[Snapshot] Failed to create snapshot after line item update:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
       res.json(updatedLineItem);
     } catch (error) {
-      console.error("Error updating line item:", error);
+      logError("Error updating line item:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to update line item" });
     }
   });
@@ -1558,12 +1559,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
-        console.error("[Snapshot] Failed to create snapshot after line item delete:", snapshotErr);
+        logError("[Snapshot] Failed to create snapshot after line item delete:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
       res.json({ success: true });
     } catch (error) {
-      console.error("Error deleting line item:", error);
+      logError("Error deleting line item:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete line item" });
     }
   });
@@ -1631,7 +1632,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json(assignments);
     } catch (error) {
-      console.error("Error fetching subcontractor assignments:", error);
+      logError("Error fetching subcontractor assignments:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch subcontractor assignments" });
     }
   });
@@ -1723,12 +1724,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
-        console.error("[Snapshot] Failed after subcontractor assignment:", snapshotErr);
+        logError("[Snapshot] Failed after subcontractor assignment:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
       res.json(newAssignments);
     } catch (error) {
-      console.error("Error setting subcontractor assignments:", error);
+      logError("Error setting subcontractor assignments:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to set subcontractor assignments" });
     }
   });
@@ -1804,12 +1805,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
-        console.error("[Snapshot] Failed after subcontractor removal:", snapshotErr);
+        logError("[Snapshot] Failed after subcontractor removal:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
       res.json({ success: true });
     } catch (error) {
-      console.error("Error deleting subcontractor assignment:", error);
+      logError("Error deleting subcontractor assignment:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to delete subcontractor assignment" });
     }
   });
@@ -1859,7 +1860,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       res.json(result);
     } catch (error) {
-      console.error("Error fetching estimate versions:", error);
+      logError("Error fetching estimate versions:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch estimate versions" });
     }
   });
@@ -1896,7 +1897,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const parsed = JSON.parse(version.snapshot);
       res.json({ ...version, parsed });
     } catch (error) {
-      console.error("Error fetching estimate version:", error);
+      logError("Error fetching estimate version:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to fetch estimate version" });
     }
   });
@@ -2021,7 +2022,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         res.json({ success: true, total, estimateId, projectId: null });
       }
     } catch (error) {
-      console.error("Error approving estimate:", error);
+      logError("Error approving estimate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to approve estimate" });
     }
   });
@@ -2206,7 +2207,7 @@ Provide comprehensive financial analysis and recommendations.`
         categoryBreakdown,
       });
     } catch (error) {
-      console.error("Error analyzing estimate:", error);
+      logError("Error analyzing estimate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to analyze estimate" });
     }
   });
@@ -2260,7 +2261,7 @@ Provide comprehensive financial analysis and recommendations.`
       if (error instanceof OrganizationRequiredError) {
         return res.status(404).json({ error: "Not found" });
       }
-      console.error("Error fetching production rate suggestions:", error);
+      logError("Error fetching production rate suggestions:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(404).json({ error: "Not found" });
     }
   });
@@ -2317,7 +2318,7 @@ Provide comprehensive financial analysis and recommendations.`
       if (error instanceof OrganizationRequiredError) {
         return res.status(404).json({ error: "Not found" });
       }
-      console.error("Error looking up production rate:", error);
+      logError("Error looking up production rate:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(404).json({ error: "Not found" });
     }
   });
@@ -2386,7 +2387,7 @@ Provide comprehensive financial analysis and recommendations.`
       if (error instanceof OrganizationRequiredError) {
         return res.status(404).json({ error: "Not found" });
       }
-      console.error("Error looking up production rate by SOW item:", error);
+      logError("Error looking up production rate by SOW item:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to lookup production rate" });
     }
   });
@@ -2489,7 +2490,7 @@ Provide comprehensive financial analysis and recommendations.`
         try {
           await createEstimateSnapshot(estimateId, req.user!.id);
         } catch (snapshotErr) {
-          console.error("[Snapshot] Failed to create snapshot after auto-populate-labor:", snapshotErr);
+          logError("[Snapshot] Failed to create snapshot after auto-populate-labor:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
         }
 
         return res.json({
@@ -2510,7 +2511,7 @@ Provide comprehensive financial analysis and recommendations.`
       if (error instanceof OrganizationRequiredError) {
         return res.status(404).json({ error: "Not found" });
       }
-      console.error("Error auto-populating labor hours:", error);
+      logError("Error auto-populating labor hours:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(404).json({ error: "Not found" });
     }
   });
@@ -2591,7 +2592,7 @@ Provide comprehensive financial analysis and recommendations.`
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);
       } catch (snapshotErr) {
-        console.error("[Snapshot] Failed to create snapshot after sync-materials:", snapshotErr);
+        logError("[Snapshot] Failed to create snapshot after sync-materials:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
       }
 
       res.json({
@@ -2600,7 +2601,7 @@ Provide comprehensive financial analysis and recommendations.`
         lineItem: updatedLineItem,
       });
     } catch (error) {
-      console.error("Error syncing material calculations:", error);
+      logError("Error syncing material calculations:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to sync material calculations" });
     }
   });
@@ -2632,7 +2633,7 @@ router.get("/api/historical-costs", requireAuth, async (req: AuthRequest, res) =
 
     res.json(results);
   } catch (error) {
-    console.error("Historical costs fetch error:", error);
+    logError("Historical costs fetch error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch historical costs" });
   }
 });
@@ -2695,7 +2696,7 @@ router.get("/api/historical-costs/aggregated", requireAuth, async (req: AuthRequ
       },
     });
   } catch (error) {
-    console.error("Historical costs aggregation error:", error);
+    logError("Historical costs aggregation error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to aggregate historical costs" });
   }
 });
@@ -2716,7 +2717,7 @@ router.post("/api/historical-costs", requireAuth, async (req: AuthRequest, res) 
     const [result] = await db.insert(historicalCosts).values(data).returning();
     res.json(result);
   } catch (error) {
-    console.error("Historical cost create error:", error);
+    logError("Historical cost create error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create historical cost record" });
   }
 });
@@ -2732,7 +2733,7 @@ router.delete("/api/historical-costs/:id", requireAuth, async (req: AuthRequest,
       .where(and(eq(historicalCosts.id, req.params.id), eq(historicalCosts.organizationId, orgId)));
     res.json({ success: true });
   } catch (error) {
-    console.error("Historical cost delete error:", error);
+    logError("Historical cost delete error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete historical cost record" });
   }
 });
@@ -2786,6 +2787,7 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, async (re
         }
         if (isNaN(computedQty) || !isFinite(computedQty)) computedQty = qty;
       } catch {
+        logWarn("Non-critical operation failed");
         computedQty = qty;
       }
 
@@ -2825,7 +2827,7 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, async (re
     try {
       await createEstimateSnapshot(estimateId, req.user!.id);
     } catch (snapshotErr) {
-      console.error("[Snapshot] Failed after assembly insertion:", snapshotErr);
+      logError("[Snapshot] Failed after assembly insertion:", {}, snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)));
     }
 
     res.json({
@@ -2835,7 +2837,7 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, async (re
       lineItems: createdLineItems,
     });
   } catch (error) {
-    console.error("Assembly insertion error:", error);
+    logError("Assembly insertion error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to insert assembly into estimate" });
   }
 });

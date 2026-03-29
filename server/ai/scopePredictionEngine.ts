@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { openai, AI_MODEL_GPT4O } from './openaiClient';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
@@ -286,7 +287,7 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
       missingScopeAreas: aiResult.missingScopeAreas || [],
     };
   } catch (error) {
-    console.error('[ScopePredictionEngine] Error:', error);
+    logError('[ScopePredictionEngine] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     
     // Return items sorted by default without AI ranking
     return {

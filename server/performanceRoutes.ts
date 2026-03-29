@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import type { Express, Response } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 import { db } from "./db";
@@ -112,7 +113,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      console.error("Error fetching criteria:", error);
+      logError("Error fetching criteria:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -171,7 +172,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(kpiCriteria);
     } catch (error) {
-      console.error("Error fetching KPI criteria:", error);
+      logError("Error fetching KPI criteria:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -198,7 +199,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json(created);
     } catch (error) {
-      console.error("Error creating criteria:", error);
+      logError("Error creating criteria:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -232,7 +233,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error updating criteria:", error);
+      logError("Error updating criteria:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -258,7 +259,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error deleting criteria:", error);
+      logError("Error deleting criteria:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -294,7 +295,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(eligible);
     } catch (error) {
-      console.error("Error fetching eligible employees:", error);
+      logError("Error fetching eligible employees:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -484,7 +485,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json({ ...rating, scores: insertedScores });
     } catch (error) {
-      console.error("Error creating rating:", error);
+      logError("Error creating rating:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -512,7 +513,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(ratingsWithScores);
     } catch (error) {
-      console.error("Error fetching my ratings:", error);
+      logError("Error fetching my ratings:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -549,7 +550,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(ratingsWithScores);
     } catch (error) {
-      console.error("Error fetching ratings:", error);
+      logError("Error fetching ratings:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -582,7 +583,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(leaderboard);
     } catch (error) {
-      console.error("Error fetching leaderboard:", error);
+      logError("Error fetching leaderboard:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -601,7 +602,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      console.error("Error fetching reward types:", error);
+      logError("Error fetching reward types:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -627,7 +628,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json(created);
     } catch (error) {
-      console.error("Error creating reward type:", error);
+      logError("Error creating reward type:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -660,7 +661,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error updating reward type:", error);
+      logError("Error updating reward type:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -686,7 +687,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(updated);
     } catch (error) {
-      console.error("Error deleting reward type:", error);
+      logError("Error deleting reward type:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -727,7 +728,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.status(201).json(created);
     } catch (error) {
-      console.error("Error assigning reward:", error);
+      logError("Error assigning reward:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -753,7 +754,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      console.error("Error fetching my rewards:", error);
+      logError("Error fetching my rewards:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -798,7 +799,7 @@ export function registerPerformanceRoutes(app: Express) {
         byMonth,
       });
     } catch (error) {
-      console.error("Error fetching reward analytics:", error);
+      logError("Error fetching reward analytics:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -834,7 +835,7 @@ export function registerPerformanceRoutes(app: Express) {
 
       res.json(results);
     } catch (error) {
-      console.error("Error fetching rewards:", error);
+      logError("Error fetching rewards:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });

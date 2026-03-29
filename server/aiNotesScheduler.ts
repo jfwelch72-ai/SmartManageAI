@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import * as cron from "node-cron";
 import { aiNotesService } from "./aiNotesService";
 
@@ -26,7 +27,7 @@ export class AINotesScheduler {
         const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
         console.log(`[AI Notes Scheduler] Hourly analysis complete: ${result.insightsCount} insights generated`);
       } catch (error) {
-        console.error("[AI Notes Scheduler] Hourly analysis failed:", error);
+        logError("[AI Notes Scheduler] Hourly analysis failed:", {}, error instanceof Error ? error : new Error(String(error)));
       }
     });
 
@@ -39,7 +40,7 @@ export class AINotesScheduler {
         const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
         console.log(`[AI Notes Scheduler] Daily analysis complete: ${result.insightsCount} insights generated`);
       } catch (error) {
-        console.error("[AI Notes Scheduler] Daily analysis failed:", error);
+        logError("[AI Notes Scheduler] Daily analysis failed:", {}, error instanceof Error ? error : new Error(String(error)));
       }
     });
 

@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import {
@@ -76,7 +77,7 @@ router.get("/projects/:code/handover/items", requireAuth, async (req: AuthReques
       .orderBy(assetHandoverItems.sortOrder, assetHandoverItems.createdAt);
     res.json(items);
   } catch (err) {
-    console.error("Error listing handover items:", err);
+    logError("Error listing handover items:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch handover items" });
   }
 });
@@ -104,7 +105,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "handoverItem", entityId: item.id, newValue: JSON.stringify({ title: item.title }) }, req);
       res.status(201).json(item);
     } catch (err) {
-      console.error("Error creating handover item:", err);
+      logError("Error creating handover item:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create handover item" });
     }
   },
@@ -149,7 +150,7 @@ router.patch(
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "handoverItem", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);
       res.json(updated);
     } catch (err) {
-      console.error("Error updating handover item:", err);
+      logError("Error updating handover item:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to update handover item" });
     }
   },
@@ -171,7 +172,7 @@ router.delete(
       await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "handoverItem", entityId: existing.id, oldValue: JSON.stringify({ title: existing.title }) }, req);
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting handover item:", err);
+      logError("Error deleting handover item:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete handover item" });
     }
   },
@@ -265,7 +266,7 @@ router.get("/projects/:code/handover/export", requireAuth, async (req: AuthReque
     res.setHeader("Content-Disposition", `attachment; filename="handover-summary-${project.code}.pdf"`);
     stream.pipe(res);
   } catch (err) {
-    console.error("Error exporting handover:", err);
+    logError("Error exporting handover:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to export handover summary" });
   }
 });
@@ -280,7 +281,7 @@ router.get("/projects/:code/handover/signoffs", requireAuth, async (req: AuthReq
       .where(eq(assetHandoverSignoffs.projectId, project.id));
     res.json(signoffs);
   } catch (err) {
-    console.error("Error listing signoffs:", err);
+    logError("Error listing signoffs:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch signoffs" });
   }
 });
@@ -323,7 +324,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "handoverSignoff", entityId: signoff.id, newValue: JSON.stringify({ role, projectId: project.id }) }, req);
       res.status(201).json(signoff);
     } catch (err) {
-      console.error("Error creating signoff:", err);
+      logError("Error creating signoff:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create signoff" });
     }
   },
@@ -356,7 +357,7 @@ router.get("/projects/:code/maintenance/logs", requireAuth, async (req: AuthRequ
       .orderBy(desc(maintenanceLogs.date));
     res.json(logs);
   } catch (err) {
-    console.error("Error listing maintenance logs:", err);
+    logError("Error listing maintenance logs:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch maintenance logs" });
   }
 });
@@ -386,7 +387,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "maintenanceLog", entityId: log.id, newValue: JSON.stringify({ title: log.title }) }, req);
       res.status(201).json(log);
     } catch (err) {
-      console.error("Error creating maintenance log:", err);
+      logError("Error creating maintenance log:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create maintenance log" });
     }
   },
@@ -427,7 +428,7 @@ router.patch(
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "maintenanceLog", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);
       res.json(updated);
     } catch (err) {
-      console.error("Error updating maintenance log:", err);
+      logError("Error updating maintenance log:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to update maintenance log" });
     }
   },
@@ -449,7 +450,7 @@ router.delete(
       await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "maintenanceLog", entityId: existing.id, oldValue: JSON.stringify({ title: existing.title }) }, req);
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting maintenance log:", err);
+      logError("Error deleting maintenance log:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete maintenance log" });
     }
   },
@@ -487,7 +488,7 @@ router.get("/projects/:code/maintenance/summary", requireAuth, async (req: AuthR
 
     res.json({ totalCost, totalEntries: logs.length, bySystem, byType, costOverTime });
   } catch (err) {
-    console.error("Error fetching maintenance summary:", err);
+    logError("Error fetching maintenance summary:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch maintenance summary" });
   }
 });
@@ -503,7 +504,7 @@ router.get("/projects/:code/maintenance/schedules", requireAuth, async (req: Aut
       .orderBy(maintenanceRecurringSchedules.nextDueDate);
     res.json(schedules);
   } catch (err) {
-    console.error("Error listing schedules:", err);
+    logError("Error listing schedules:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch schedules" });
   }
 });
@@ -532,7 +533,7 @@ router.post(
       await logAudit({ userId, action: "CREATE", entityType: "maintenanceSchedule", entityId: schedule.id, newValue: JSON.stringify({ title: schedule.title }) }, req);
       res.status(201).json(schedule);
     } catch (err) {
-      console.error("Error creating schedule:", err);
+      logError("Error creating schedule:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create schedule" });
     }
   },
@@ -570,7 +571,7 @@ router.patch(
       await logAudit({ userId: req.user!.id, action: "UPDATE", entityType: "maintenanceSchedule", entityId: updated.id, newValue: JSON.stringify({ changes: Object.keys(update) }) }, req);
       res.json(updated);
     } catch (err) {
-      console.error("Error updating schedule:", err);
+      logError("Error updating schedule:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to update schedule" });
     }
   },
@@ -592,7 +593,7 @@ router.delete(
       await logAudit({ userId: req.user!.id, action: "DELETE", entityType: "maintenanceSchedule", entityId: existing.id, oldValue: JSON.stringify({ title: existing.title }) }, req);
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting schedule:", err);
+      logError("Error deleting schedule:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete schedule" });
     }
   },

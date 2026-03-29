@@ -1,3 +1,4 @@
+import { logWarn } from "../../utils/logger";
 import type { ATSProvider, ATSJob, ATSJobInput, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
 
 export class LeverProvider implements ATSProvider {
@@ -45,6 +46,7 @@ export class LeverProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -59,6 +61,7 @@ export class LeverProvider implements ATSProvider {
       const data = await res.json() as { data?: Record<string, unknown>[] };
       return (data.data || []).map((j) => this.normalizeJob(j));
     } catch {
+      logWarn("Non-critical operation failed");
       return [];
     }
   }
@@ -73,6 +76,7 @@ export class LeverProvider implements ATSProvider {
       const data = await res.json() as { data?: Record<string, unknown> };
       return data.data ? this.normalizeJob(data.data) : null;
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -88,6 +92,7 @@ export class LeverProvider implements ATSProvider {
       const data = await res.json() as { data?: Record<string, unknown>[] };
       return (data.data || []).map((opp) => ({ ...this.normalizeCandidate(opp), jobExternalId }));
     } catch {
+      logWarn("Non-critical operation failed");
       return [];
     }
   }
@@ -102,6 +107,7 @@ export class LeverProvider implements ATSProvider {
       const data = await res.json() as { data?: Record<string, unknown> };
       return data.data ? this.normalizeCandidate(data.data) : null;
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -116,6 +122,7 @@ export class LeverProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -132,6 +139,7 @@ export class LeverProvider implements ATSProvider {
       const data = await res.json() as { data?: Record<string, unknown> };
       return data.data ? this.normalizeJob(data.data) : null;
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -148,6 +156,7 @@ export class LeverProvider implements ATSProvider {
       const data = await res.json() as { data?: Record<string, unknown> };
       return data.data ? this.normalizeJob(data.data) : null;
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -162,6 +171,7 @@ export class LeverProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -176,6 +186,7 @@ export class LeverProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }

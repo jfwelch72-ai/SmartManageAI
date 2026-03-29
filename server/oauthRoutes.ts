@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
 import { db } from "./db";
@@ -149,7 +150,7 @@ router.get(
   async (req: Request, res: Response) => {
     try {
       if (!validateState(req, "google")) {
-        console.error("Google OAuth state mismatch — possible CSRF");
+        logError("Google OAuth state mismatch — possible CSRF");
         res.redirect("/login?error=google_failed");
         return;
       }
@@ -184,7 +185,7 @@ router.get(
 
       const tokenData = await tokenRes.json();
       if (!tokenData.access_token) {
-        console.error("Google token exchange failed:", tokenData);
+        logError("Google token exchange failed:", {}, tokenData instanceof Error ? tokenData : new Error(String(tokenData)));
         res.redirect("/login?error=google_failed");
         return;
       }
@@ -233,7 +234,7 @@ router.get(
       setAuthCookie(res, token);
       res.redirect(getRedirectPath(user));
     } catch (error) {
-      console.error("Google OAuth error:", error);
+      logError("Google OAuth error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.redirect("/login?error=google_failed");
     }
   }
@@ -271,7 +272,7 @@ router.post(
   async (req: Request, res: Response) => {
     try {
       if (!validateState(req, "apple")) {
-        console.error("Apple OAuth state mismatch — possible CSRF");
+        logError("Apple OAuth state mismatch — possible CSRF");
         res.redirect("/login?error=apple_failed");
         return;
       }
@@ -297,18 +298,18 @@ router.post(
 
       const clientId = process.env.APPLE_CLIENT_ID;
       if (payload.iss !== "https://appleid.apple.com") {
-        console.error("Apple id_token issuer mismatch:", payload.iss);
+        logError("Apple id_token issuer mismatch", { iss: payload.iss });
         res.redirect("/login?error=apple_failed");
         return;
       }
       if (payload.aud !== clientId) {
-        console.error("Apple id_token audience mismatch:", payload.aud);
+        logError("Apple id_token audience mismatch", { aud: payload.aud });
         res.redirect("/login?error=apple_failed");
         return;
       }
       const now = Math.floor(Date.now() / 1000);
       if (payload.exp && payload.exp < now) {
-        console.error("Apple id_token expired");
+        logError("Apple id_token expired");
         res.redirect("/login?error=apple_failed");
         return;
       }
@@ -321,10 +322,7 @@ router.post(
         (k: { kid: string }) => k.kid === header.kid
       );
       if (!matchingKey) {
-        console.error(
-          "Apple id_token kid not found in JWKS:",
-          header.kid
-        );
+        logError("Apple id_token kid not found in JWKS", { kid: header.kid });
         res.redirect("/login?error=apple_failed");
         return;
       }
@@ -352,7 +350,7 @@ router.post(
             firstName = parsed.name.firstName || "User";
             lastName = parsed.name.lastName || "";
           }
-        } catch {}
+        } catch { logWarn("Non-critical operation failed"); }
       }
 
       const user = await findOrCreateOAuthUser(
@@ -381,7 +379,7 @@ router.post(
       setAuthCookie(res, token);
       res.redirect(getRedirectPath(user));
     } catch (error) {
-      console.error("Apple OAuth error:", error);
+      logError("Apple OAuth error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.redirect("/login?error=apple_failed");
     }
   }

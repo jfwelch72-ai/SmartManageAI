@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { db } from "../db";
 import {
   aiCoDrafts,
@@ -141,7 +142,7 @@ async function createDraftsFromDelays(snapshot: any, organizationId?: string): P
       });
       created++;
     } catch (err) {
-      console.error(`Failed to create CO draft from delay claim:`, err);
+      logError(`Failed to create CO draft from delay claim:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -229,7 +230,7 @@ async function createDraftsFromInspections(snapshot: any, organizationId?: strin
       });
       created++;
     } catch (err) {
-      console.error(`Failed to create CO draft from inspection:`, err);
+      logError(`Failed to create CO draft from inspection:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -314,7 +315,7 @@ async function createDraftsFromAISuggestions(suggestions: ChangeOrderSuggestion[
       });
       created++;
     } catch (err) {
-      console.error(`Failed to create CO draft from AI suggestion:`, err);
+      logError(`Failed to create CO draft from AI suggestion:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 

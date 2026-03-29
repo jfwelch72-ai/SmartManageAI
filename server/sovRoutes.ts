@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -53,7 +54,7 @@ router.get("/sov", async (req: AuthRequest, res: Response) => {
 
     res.json(sovsWithLineItems);
   } catch (error) {
-    console.error("Get SOVs error:", error);
+    logError("Get SOVs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -81,7 +82,7 @@ router.get("/sov/project/:projectId", requireAuth, async (req: AuthRequest, res:
 
     res.json(sovList);
   } catch (error) {
-    console.error("Get project SOVs error:", error);
+    logError("Get project SOVs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -112,7 +113,7 @@ router.get("/sov/projects", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json(projectList);
   } catch (error) {
-    console.error("Get SOV projects error:", error);
+    logError("Get SOV projects error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -140,7 +141,7 @@ router.get("/sov/:id", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ ...sov, lineItems });
   } catch (error) {
-    console.error("Get SOV error:", error);
+    logError("Get SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -308,7 +309,7 @@ router.post("/sov", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
 
     res.status(201).json({ ...createdSOV, lineItems: createdLineItems });
   } catch (error) {
-    console.error("Create SOV error:", error);
+    logError("Create SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -336,7 +337,7 @@ router.delete("/sov/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), asyn
 
     res.json({ message: "SOV deleted successfully" });
   } catch (error) {
-    console.error("Delete SOV error:", error);
+    logError("Delete SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -436,7 +437,7 @@ router.get("/sov/co-tieout", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     res.json(reconciliation);
   } catch (error) {
-    console.error("CO tie-out error:", error);
+    logError("CO tie-out error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch CO tie-out data" });
   }
 });
@@ -594,7 +595,7 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
 
     res.json(updated);
   } catch (error) {
-    console.error("Update SOV status error:", error);
+    logError("Update SOV status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -651,7 +652,7 @@ router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) 
     });
 
     pdfStream.on('error', (err) => {
-      console.error("PDF stream error:", err);
+      logError("PDF stream error:", {}, err instanceof Error ? err : new Error(String(err)));
       if (!res.headersSent) {
         res.status(500).json({ error: "Failed to generate PDF" });
       }
@@ -659,7 +660,7 @@ router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) 
 
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("Generate SOV PDF error:", error);
+    logError("Generate SOV PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
       res.status(500).json({ error: "Internal server error" });
     }
@@ -769,7 +770,7 @@ router.post("/sov/:id/send", requireAuth, async (req: AuthRequest, res: Response
 
     res.json({ success: true, message: `PDF sent to ${email}` });
   } catch (error) {
-    console.error("Send SOV PDF error:", error);
+    logError("Send SOV PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -877,7 +878,7 @@ router.post("/sov/:id/items", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json(newItem);
   } catch (error) {
-    console.error("Add SOV line item error:", error);
+    logError("Add SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -933,7 +934,7 @@ router.delete("/sov/:sovId/items/:itemId", requireAuth, requireRole("SUPER_ADMIN
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete SOV line item error:", error);
+    logError("Delete SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1098,13 +1099,13 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
           }
         }
       } catch (notifError) {
-        console.error("Failed to create SOV completion notification:", notifError);
+        logError("Failed to create SOV completion notification:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
       }
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Update SOV line item error:", error);
+    logError("Update SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1150,7 +1151,7 @@ router.get("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(waivers);
   } catch (error) {
-    console.error("Get lien waivers error:", error);
+    logError("Get lien waivers error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch lien waivers" });
   }
 });
@@ -1199,7 +1200,7 @@ router.post("/sov/lien-waivers", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
     res.status(201).json(waiver);
   } catch (error) {
-    console.error("Create lien waiver error:", error);
+    logError("Create lien waiver error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create lien waiver" });
   }
 });
@@ -1230,7 +1231,7 @@ router.patch("/sov/lien-waivers/:id", requireAuth, requireRole("SUPER_ADMIN", "A
     const [updated] = await db.update(lienWaivers).set(updates).where(eq(lienWaivers.id, id)).returning();
     res.json(updated);
   } catch (error) {
-    console.error("Update lien waiver error:", error);
+    logError("Update lien waiver error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update lien waiver" });
   }
 });
@@ -1270,7 +1271,7 @@ router.get("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 
     res.json(payments);
   } catch (error) {
-    console.error("Get SOV payments error:", error);
+    logError("Get SOV payments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch payments" });
   }
 });
@@ -1321,7 +1322,7 @@ router.post("/sov/payments", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     res.status(201).json(payment);
   } catch (error) {
-    console.error("Create SOV payment error:", error);
+    logError("Create SOV payment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create payment" });
   }
 });

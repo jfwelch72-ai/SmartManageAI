@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes, organizations, forecastAdjustments, budgetAlerts } from "@shared/schema";
@@ -57,7 +58,7 @@ router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
 
     res.json(lines);
   } catch (error) {
-    console.error("Get budget lines error:", error);
+    logError("Get budget lines error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -87,13 +88,13 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
     const total = Number(data.laborBudget || 0) + Number(data.materialBudget || 0) +
       Number(data.subcontractorBudget || 0) + Number(data.equipmentBudget || 0) + Number(data.otherBudget || 0);
     const [row] = await db.insert(budgetLineItems).values({ ...data, totalBudget: String(total) }).returning();
-    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.status(201).json(row);
   } catch (error: unknown) {
     if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "23505") {
       return res.status(409).json({ error: "A budget line for that cost code already exists on this project" });
     }
-    console.error("Create budget line error:", error);
+    logError("Create budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -153,10 +154,10 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
       });
       return tx.insert(budgetLineItems).values(toInsert).returning();
     });
-    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json(rows);
   } catch (error: unknown) {
-    console.error("Bulk upsert budget lines error:", error);
+    logError("Bulk upsert budget lines error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -209,10 +210,10 @@ router.patch("/api/projects/:code/budget-lines/:lineId", requireAuth, async (req
       .where(and(eq(budgetLineItems.id, req.params.lineId), eq(budgetLineItems.projectId, project.id)))
       .returning();
 
-    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json(row);
   } catch (error: unknown) {
-    console.error("Update budget line error:", error);
+    logError("Update budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -233,7 +234,7 @@ router.delete("/api/projects/:code/budget-lines/:lineId", requireAuth, async (re
     if (!deleted) return res.status(404).json({ error: "Budget line not found" });
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete budget line error:", error);
+    logError("Delete budget line error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -259,7 +260,7 @@ router.get("/api/projects/:code/cost-ledger", requireAuth, async (req: AuthReque
 
     res.json(result);
   } catch (error) {
-    console.error("Cost ledger error:", error);
+    logError("Cost ledger error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -307,10 +308,10 @@ router.put("/api/projects/:code/forecast-adjustments", requireAuth, async (req: 
       }).returning();
     }
 
-    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json(row);
   } catch (error) {
-    console.error("Forecast adjustment error:", error);
+    logError("Forecast adjustment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -329,10 +330,10 @@ router.delete("/api/projects/:code/forecast-adjustments/:costCode", requireAuth,
       .returning();
 
     if (!deleted) return res.status(404).json({ error: "Forecast adjustment not found" });
-    evaluateBudgetAlerts(project.id).catch(e => console.error("Budget alert eval error:", e));
+    evaluateBudgetAlerts(project.id).catch(e => logError("Budget alert eval error:", {}, e instanceof Error ? e : new Error(String(e))));
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete forecast adjustment error:", error);
+    logError("Delete forecast adjustment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -369,7 +370,7 @@ router.patch("/api/projects/:code/budget-thresholds", requireAuth, async (req: A
       budgetCriticalThreshold: Number(updated.budgetCriticalThreshold || 95),
     });
   } catch (error) {
-    console.error("Update budget thresholds error:", error);
+    logError("Update budget thresholds error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -388,7 +389,7 @@ router.get("/api/projects/:code/budget-alerts", requireAuth, async (req: AuthReq
 
     res.json(alerts);
   } catch (error) {
-    console.error("Get budget alerts error:", error);
+    logError("Get budget alerts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -411,7 +412,7 @@ router.patch("/api/projects/:code/budget-alerts/:alertId/dismiss", requireAuth, 
     if (!updated) return res.status(404).json({ error: "Alert not found" });
     res.json(updated);
   } catch (error) {
-    console.error("Dismiss budget alert error:", error);
+    logError("Dismiss budget alert error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -490,7 +491,7 @@ export async function evaluateBudgetAlerts(projectId: string): Promise<void> {
       }
     }
   } catch (error) {
-    console.error("evaluateBudgetAlerts error:", error);
+    logError("evaluateBudgetAlerts error:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 

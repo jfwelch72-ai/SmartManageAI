@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { projectNotes, companyDailyNotes, users, projects } from "@shared/schema";
@@ -49,7 +50,7 @@ router.get("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, r
 
     res.json(notes);
   } catch (error: any) {
-    console.error("Error fetching project notes:", error);
+    logError("Error fetching project notes:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ 
       error: "Failed to fetch project notes",
       details: error.message 
@@ -117,7 +118,7 @@ router.patch("/projects/:projectId/notes/:noteId", requireAuth, async (req: Auth
 
     res.json(updatedNote);
   } catch (error: any) {
-    console.error("Error updating project note:", error);
+    logError("Error updating project note:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ 
       error: "Failed to update project note",
       details: error.message 
@@ -172,7 +173,7 @@ router.post("/projects/:projectId/notes", requireAuth, async (req: AuthRequest, 
 
     res.status(201).json(noteWithUser);
   } catch (error: any) {
-    console.error("Error creating project note:", error);
+    logError("Error creating project note:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ 
       error: "Failed to create project note",
       details: error.message 
@@ -243,7 +244,7 @@ router.get("/company-notes", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(notes);
   } catch (error: any) {
-    console.error("Error fetching company notes:", error);
+    logError("Error fetching company notes:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ 
       error: "Failed to fetch company notes",
       details: error.message 
@@ -326,7 +327,7 @@ router.patch("/company-notes/:noteId", requireAuth, async (req: AuthRequest, res
 
     res.json(updatedNote);
   } catch (error: any) {
-    console.error("Error updating company note:", error);
+    logError("Error updating company note:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ 
       error: "Failed to update company note",
       details: error.message 
@@ -401,7 +402,7 @@ router.post("/company-notes", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(noteWithDetails);
   } catch (error: any) {
-    console.error("Error creating company note:", error);
+    logError("Error creating company note:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ 
       error: "Failed to create company note",
       details: error.message 

@@ -1,3 +1,4 @@
+import { logWarn } from "../../utils/logger";
 import type { ATSProvider, ATSJob, ATSJobInput, ATSCandidate, ATSSyncResult, ATSWebhookEvent } from "./ATSProvider";
 
 export class GreenhouseProvider implements ATSProvider {
@@ -46,6 +47,7 @@ export class GreenhouseProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -60,6 +62,7 @@ export class GreenhouseProvider implements ATSProvider {
       const data = await res.json() as Record<string, unknown>[];
       return data.map((j) => this.normalizeJob(j));
     } catch {
+      logWarn("Non-critical operation failed");
       return [];
     }
   }
@@ -73,6 +76,7 @@ export class GreenhouseProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeJob(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -88,6 +92,7 @@ export class GreenhouseProvider implements ATSProvider {
       const data = await res.json() as Record<string, unknown>[];
       return data.map((app) => ({ ...this.normalizeCandidate(app), jobExternalId }));
     } catch {
+      logWarn("Non-critical operation failed");
       return [];
     }
   }
@@ -101,6 +106,7 @@ export class GreenhouseProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeCandidate(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -115,6 +121,7 @@ export class GreenhouseProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -130,6 +137,7 @@ export class GreenhouseProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeJob(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -145,6 +153,7 @@ export class GreenhouseProvider implements ATSProvider {
       if (!res.ok) return null;
       return this.normalizeJob(await res.json() as Record<string, unknown>);
     } catch {
+      logWarn("Non-critical operation failed");
       return null;
     }
   }
@@ -159,6 +168,7 @@ export class GreenhouseProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }
@@ -173,6 +183,7 @@ export class GreenhouseProvider implements ATSProvider {
       });
       return res.ok;
     } catch {
+      logWarn("Non-critical operation failed");
       return false;
     }
   }

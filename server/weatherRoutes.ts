@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 
@@ -124,7 +125,7 @@ router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response) => 
 
     const response = await fetch(url);
     if (!response.ok) {
-      console.error("Open-Meteo API error:", response.status, await response.text());
+      logError("Open-Meteo API error", { status: response.status });
       res.status(502).json({ error: "Weather service unavailable" });
       return;
     }
@@ -152,7 +153,7 @@ router.get("/forecast", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching weather forecast:", error);
+    logError("Error fetching weather forecast:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch weather forecast" });
   }
 });
@@ -205,7 +206,7 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
 
     const response = await fetch(url);
     if (!response.ok) {
-      console.error("Open-Meteo Archive API error:", response.status, await response.text());
+      logError("Open-Meteo Archive API error", { status: response.status });
       res.status(502).json({ error: "Weather history service unavailable" });
       return;
     }
@@ -242,7 +243,7 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching weather history:", error);
+    logError("Error fetching weather history:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch weather history" });
   }
 });
@@ -260,7 +261,7 @@ router.get("/geocode", requireAuth, async (req: AuthRequest, res: Response) => {
 
     const response = await fetch(url);
     if (!response.ok) {
-      console.error("Open-Meteo Geocoding error:", response.status);
+      logError("Open-Meteo Geocoding error", { status: response.status });
       res.status(502).json({ error: "Geocoding service unavailable" });
       return;
     }
@@ -282,7 +283,7 @@ router.get("/geocode", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ results });
   } catch (error) {
-    console.error("Error geocoding address:", error);
+    logError("Error geocoding address:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to geocode address" });
   }
 });

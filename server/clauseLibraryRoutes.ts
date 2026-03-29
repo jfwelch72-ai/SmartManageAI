@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc } from "drizzle-orm";
@@ -38,7 +39,7 @@ router.get("/api/clause-library/clauses", requireAuth, async (req: AuthRequest, 
 
     res.json(clauses);
   } catch (err) {
-    console.error("[ClauseLibrary] List error:", err);
+    logError("[ClauseLibrary] List error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list clauses" });
   }
 });
@@ -68,7 +69,7 @@ router.post("/api/clause-library/clauses", requireAuth, async (req: AuthRequest,
 
     res.status(201).json(clause);
   } catch (err) {
-    console.error("[ClauseLibrary] Create error:", err);
+    logError("[ClauseLibrary] Create error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to create clause" });
   }
 });
@@ -99,7 +100,7 @@ router.patch("/api/clause-library/clauses/:id", requireAuth, async (req: AuthReq
 
     res.json(updated);
   } catch (err) {
-    console.error("[ClauseLibrary] Update error:", err);
+    logError("[ClauseLibrary] Update error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update clause" });
   }
 });
@@ -117,7 +118,7 @@ router.delete("/api/clause-library/clauses/:id", requireAuth, async (req: AuthRe
     await db.delete(contractClauses).where(eq(contractClauses.id, req.params.id));
     res.json({ message: "Clause deleted" });
   } catch (err) {
-    console.error("[ClauseLibrary] Delete error:", err);
+    logError("[ClauseLibrary] Delete error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to delete clause" });
   }
 });
@@ -134,7 +135,7 @@ router.get("/api/clause-library/templates", requireAuth, async (req: AuthRequest
 
     res.json(templates);
   } catch (err) {
-    console.error("[ClauseLibrary] List templates error:", err);
+    logError("[ClauseLibrary] List templates error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to list templates" });
   }
 });
@@ -159,7 +160,7 @@ router.get("/api/clause-library/templates/:id", requireAuth, async (req: AuthReq
 
     res.json({ ...template, clauses });
   } catch (err) {
-    console.error("[ClauseLibrary] Get template error:", err);
+    logError("[ClauseLibrary] Get template error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to get template" });
   }
 });
@@ -187,7 +188,7 @@ router.post("/api/clause-library/templates", requireAuth, async (req: AuthReques
 
     res.status(201).json(template);
   } catch (err) {
-    console.error("[ClauseLibrary] Create template error:", err);
+    logError("[ClauseLibrary] Create template error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to create template" });
   }
 });
@@ -220,7 +221,7 @@ router.patch("/api/clause-library/templates/:id", requireAuth, async (req: AuthR
 
     res.json(updated);
   } catch (err) {
-    console.error("[ClauseLibrary] Update template error:", err);
+    logError("[ClauseLibrary] Update template error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update template" });
   }
 });
@@ -238,7 +239,7 @@ router.delete("/api/clause-library/templates/:id", requireAuth, async (req: Auth
     await db.delete(contractTemplates).where(eq(contractTemplates.id, req.params.id));
     res.json({ message: "Template deleted" });
   } catch (err) {
-    console.error("[ClauseLibrary] Delete template error:", err);
+    logError("[ClauseLibrary] Delete template error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to delete template" });
   }
 });
@@ -301,7 +302,7 @@ router.post("/api/clause-library/templates/:id/apply/:contractId", requireAuth, 
 
     res.json({ ...updated, currentVersion: newVersion });
   } catch (err) {
-    console.error("[ClauseLibrary] Apply template error:", err);
+    logError("[ClauseLibrary] Apply template error:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to apply template" });
   }
 });

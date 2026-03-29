@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { insertNotification } from "./services/notificationService";
@@ -37,7 +38,7 @@ router.get("/api/projects/:projectId/material-budgets", requireAuth, async (req:
 
     res.json(budgets);
   } catch (error) {
-    console.error("Get material budgets error:", error);
+    logError("Get material budgets error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -70,7 +71,7 @@ router.get("/api/projects/:projectId/material-budgets/summary", requireAuth, asy
       alertsTriggered,
     });
   } catch (error) {
-    console.error("Get material budget summary error:", error);
+    logError("Get material budget summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -105,7 +106,7 @@ router.get("/api/projects/:projectId/material-usage", requireAuth, async (req: A
 
     res.json(usage);
   } catch (error) {
-    console.error("Get material usage error:", error);
+    logError("Get material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -192,7 +193,7 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
               }
             }
           } catch (notifError) {
-            console.error("Failed to create material alert notification:", notifError);
+            logError("Failed to create material alert notification:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
           }
         }
       }
@@ -200,7 +201,7 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
 
     res.status(201).json(newUsage);
   } catch (error) {
-    console.error("Create material usage error:", error);
+    logError("Create material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -280,7 +281,7 @@ router.patch("/api/projects/:projectId/material-usage/:usageId", requireAuth, as
 
     res.json(updated);
   } catch (error) {
-    console.error("Update material usage error:", error);
+    logError("Update material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -346,7 +347,7 @@ router.delete("/api/projects/:projectId/material-usage/:usageId", requireAuth, a
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete material usage error:", error);
+    logError("Delete material usage error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

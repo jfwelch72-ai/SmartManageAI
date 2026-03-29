@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { timeClockShifts, users, projects, overtimeRequests, overtimeRules } from "@shared/schema";
@@ -23,7 +24,7 @@ router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequ
       .orderBy(users.firstName);
     res.json(approvers);
   } catch (error) {
-    console.error("Get OT approvers error:", error);
+    logError("Get OT approvers error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -88,7 +89,7 @@ router.post("/api/overtime-requests", requireAuth, async (req: AuthRequest, res)
 
     res.status(201).json(otRequest);
   } catch (error) {
-    console.error("Create OT request error:", error);
+    logError("Create OT request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -113,7 +114,7 @@ router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, re
 
     res.json(enriched);
   } catch (error) {
-    console.error("Get my OT requests error:", error);
+    logError("Get my OT requests error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -129,7 +130,7 @@ router.post("/api/overtime-requests/by-shifts", requireAuth, async (req: AuthReq
       .where(sql`${overtimeRequests.shiftId} IN (${sql.join(shiftIds.map((id: string) => sql`${id}`), sql`, `)})`);
     res.json(requests);
   } catch (error) {
-    console.error("Get OT by shifts error:", error);
+    logError("Get OT by shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -178,7 +179,7 @@ router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "
 
     res.json(enriched);
   } catch (error) {
-    console.error("Get pending OT requests error:", error);
+    logError("Get pending OT requests error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -224,7 +225,7 @@ router.post("/api/overtime-requests/:id/approve", requireAuth, requireRole("ADMI
 
     res.json(updated);
   } catch (error) {
-    console.error("Approve OT request error:", error);
+    logError("Approve OT request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -269,7 +270,7 @@ router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN
 
     res.json(updated);
   } catch (error) {
-    console.error("Reject OT request error:", error);
+    logError("Reject OT request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -282,7 +283,7 @@ router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), 
       .orderBy(desc(overtimeRules.createdAt));
     res.json(rules.map(formatRuleResponse));
   } catch (error) {
-    console.error("Get overtime rules error:", error);
+    logError("Get overtime rules error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -294,7 +295,7 @@ router.get("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER
     if (!rule) { res.status(404).json({ error: "Rule not found" }); return; }
     res.json(formatRuleResponse(rule));
   } catch (error) {
-    console.error("Get overtime rule error:", error);
+    logError("Get overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -414,7 +415,7 @@ router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"),
       res.status(400).json({ error: "Invalid input", details: error.errors });
       return;
     }
-    console.error("Create overtime rule error:", error);
+    logError("Create overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -506,7 +507,7 @@ router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAG
       res.status(400).json({ error: "Invalid input", details: error.errors });
       return;
     }
-    console.error("Update overtime rule error:", error);
+    logError("Update overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -531,7 +532,7 @@ router.delete("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANA
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete overtime rule error:", error);
+    logError("Delete overtime rule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

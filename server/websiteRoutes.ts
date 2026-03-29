@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -68,6 +69,7 @@ router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
           return res.status(404).json({ error: "Logo not found" });
         }
       } catch {
+        logWarn("Non-critical operation failed");
         return res.status(404).json({ error: "Logo not found" });
       }
       return res.redirect(org.logoUrl);
@@ -76,7 +78,7 @@ router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
     const objectFile = await objectStorageService.getObjectEntityFile(normalizedPath);
     objectStorageService.downloadObject(objectFile, res);
   } catch (error: any) {
-    console.error("Error serving org logo:", error);
+    logError("Error serving org logo:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error instanceof ObjectNotFoundError) {
       return res.status(404).json({ error: "Logo file not found" });
     }
@@ -104,7 +106,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ hasWebsite: true, website });
   } catch (error) {
-    console.error("Error fetching website:", error);
+    logError("Error fetching website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch website" });
   }
 });
@@ -160,7 +162,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(website);
   } catch (error) {
-    console.error("Error saving website:", error);
+    logError("Error saving website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to save website" });
   }
 });
@@ -213,7 +215,7 @@ router.post("/publish", requireAuth, async (req: AuthRequest, res: Response) => 
       siteUrl: `https://${website.subdomain}.smartmanageai-sites.com`,
     });
   } catch (error) {
-    console.error("Error publishing website:", error);
+    logError("Error publishing website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to publish website" });
   }
 });
@@ -317,7 +319,7 @@ router.get("/public/:subdomain", async (req: Request, res: Response) => {
       careersIntroText: website.careersIntroText || null,
     });
   } catch (error) {
-    console.error("Error fetching public website:", error);
+    logError("Error fetching public website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch website" });
   }
 });
@@ -396,7 +398,7 @@ router.get("/public/:subdomain/sitemap.xml", async (req: Request, res: Response)
     res.set("Content-Type", "application/xml");
     res.send(xml);
   } catch (error) {
-    console.error("Error generating sitemap:", error);
+    logError("Error generating sitemap:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).send("Failed to generate sitemap");
   }
 });
@@ -431,7 +433,7 @@ router.get("/public/:subdomain/robots.txt", async (req: Request, res: Response) 
     res.set("Content-Type", "text/plain");
     res.send(robotsTxt);
   } catch (error) {
-    console.error("Error generating robots.txt:", error);
+    logError("Error generating robots.txt:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).send("Failed to generate robots.txt");
   }
 });
@@ -453,7 +455,7 @@ router.get("/staging-token", requireAuth, async (req: AuthRequest, res: Response
 
     res.json({ token: website.stagingToken || null, subdomain: website.subdomain });
   } catch (error) {
-    console.error("Error fetching staging token:", error);
+    logError("Error fetching staging token:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch staging token" });
   }
 });
@@ -480,7 +482,7 @@ router.post("/staging-token", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json({ token, subdomain: website.subdomain });
   } catch (error) {
-    console.error("Error generating staging token:", error);
+    logError("Error generating staging token:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate staging token" });
   }
 });
@@ -583,7 +585,7 @@ router.get("/staging/:subdomain", async (req: Request, res: Response) => {
       isStaging: true,
     });
   } catch (error) {
-    console.error("Error fetching staging website:", error);
+    logError("Error fetching staging website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch staging website" });
   }
 });
@@ -678,7 +680,7 @@ router.get("/preview", requireAuth, async (req: AuthRequest, res: Response) => {
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Error fetching preview data:", error);
+    logError("Error fetching preview data:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch preview data" });
   }
 });
@@ -701,7 +703,7 @@ router.get("/global-components", requireAuth, async (req: AuthRequest, res: Resp
     const components = (website.globalComponentsConfig as any)?.components || [];
     res.json({ components });
   } catch (error) {
-    console.error("Error fetching global components:", error);
+    logError("Error fetching global components:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch global components" });
   }
 });
@@ -737,7 +739,7 @@ router.post("/global-components", requireAuth, async (req: AuthRequest, res: Res
 
     res.json(newGlobalComp);
   } catch (error) {
-    console.error("Error saving global component:", error);
+    logError("Error saving global component:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to save global component" });
   }
 });
@@ -771,7 +773,7 @@ router.patch("/global-components/:id", requireAuth, async (req: AuthRequest, res
 
     res.json(existing[idx]);
   } catch (error) {
-    console.error("Error updating global component:", error);
+    logError("Error updating global component:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update global component" });
   }
 });
@@ -810,7 +812,7 @@ router.post("/global-components/:id/duplicate", requireAuth, async (req: AuthReq
 
     res.json(duplicated);
   } catch (error) {
-    console.error("Error duplicating global component:", error);
+    logError("Error duplicating global component:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to duplicate global component" });
   }
 });
@@ -840,7 +842,7 @@ router.delete("/global-components/:id", requireAuth, async (req: AuthRequest, re
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting global component:", error);
+    logError("Error deleting global component:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete global component" });
   }
 });
@@ -891,7 +893,7 @@ router.post("/unpublish", requireAuth, async (req: AuthRequest, res: Response) =
 
     res.json({ success: true, website: updated });
   } catch (error) {
-    console.error("Error unpublishing website:", error);
+    logError("Error unpublishing website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to unpublish website" });
   }
 });
@@ -942,7 +944,7 @@ router.post("/maintenance", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ success: true, website: updated, maintenanceMode: !isCurrentlyMaintenance });
   } catch (error) {
-    console.error("Error toggling maintenance mode:", error);
+    logError("Error toggling maintenance mode:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to toggle maintenance mode" });
   }
 });
@@ -995,7 +997,7 @@ router.post("/domain", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ success: true, website: updated });
   } catch (error) {
-    console.error("Error updating custom domain:", error);
+    logError("Error updating custom domain:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update custom domain" });
   }
 });
@@ -1046,7 +1048,7 @@ router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json({ success: true, website: updated, verified: true });
   } catch (error) {
-    console.error("Error verifying domain:", error);
+    logError("Error verifying domain:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to verify domain" });
   }
 });
@@ -1076,7 +1078,7 @@ router.get("/deployments", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.json(deployments);
   } catch (error) {
-    console.error("Error fetching deployments:", error);
+    logError("Error fetching deployments:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch deployment history" });
   }
 });
@@ -1129,7 +1131,7 @@ router.post("/republish", requireAuth, async (req: AuthRequest, res: Response) =
       siteUrl: `https://${website.subdomain}.smartmanageai-sites.com`,
     });
   } catch (error) {
-    console.error("Error republishing website:", error);
+    logError("Error republishing website:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to republish website" });
   }
 });
@@ -1226,7 +1228,7 @@ router.post("/upload-image", requireAuth, upload.single("image"), async (req: Au
       mimeType: file.mimetype,
     });
   } catch (error) {
-    console.error("Error uploading image:", error);
+    logError("Error uploading image:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to upload image" });
   }
 });
@@ -1244,7 +1246,7 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
 
     objectStorage.downloadObject(file, res, 86400);
   } catch (error: any) {
-    console.error("Error serving website image:", error);
+    logError("Error serving website image:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error instanceof ObjectNotFoundError) {
       return res.status(404).json({ error: "Image not found" });
     }
@@ -1303,7 +1305,7 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json({ files, totalSize, storageLimit: STORAGE_LIMIT_BYTES });
   } catch (error) {
-    console.error("Error listing media files:", error);
+    logError("Error listing media files:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to list media files" });
   }
 });
@@ -1349,7 +1351,7 @@ router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Res
     await blob.delete();
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting media file:", error);
+    logError("Error deleting media file:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete file" });
   }
 });
@@ -1380,7 +1382,7 @@ router.get("/projects", requireAuth, async (req: AuthRequest, res: Response) => 
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching gallery projects:", error);
+    logError("Error fetching gallery projects:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch gallery projects" });
   }
 });
@@ -1435,7 +1437,7 @@ router.post("/projects", requireAuth, async (req: AuthRequest, res: Response) =>
 
     res.status(201).json(project);
   } catch (error) {
-    console.error("Error creating gallery project:", error);
+    logError("Error creating gallery project:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create gallery project" });
   }
 });
@@ -1465,7 +1467,7 @@ router.get("/projects/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ ...project, images });
   } catch (error) {
-    console.error("Error fetching gallery project:", error);
+    logError("Error fetching gallery project:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch gallery project" });
   }
 });
@@ -1538,7 +1540,7 @@ router.patch("/projects/:id", requireAuth, async (req: AuthRequest, res: Respons
     const updated = result.rows[0];
     res.json(updated);
   } catch (error) {
-    console.error("Error updating gallery project:", error);
+    logError("Error updating gallery project:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update gallery project" });
   }
 });
@@ -1578,7 +1580,7 @@ router.post("/projects/:id/images", requireAuth, async (req: AuthRequest, res: R
 
     res.status(201).json(image);
   } catch (error) {
-    console.error("Error adding project image:", error);
+    logError("Error adding project image:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to add project image" });
   }
 });
@@ -1638,7 +1640,7 @@ Return a JSON object with:
 
     res.json(content);
   } catch (error) {
-    console.error("Error generating project description:", error);
+    logError("Error generating project description:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate description" });
   }
 });
@@ -1659,7 +1661,7 @@ router.get("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(links || {});
   } catch (error) {
-    console.error("Error fetching social links:", error);
+    logError("Error fetching social links:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch social links" });
   }
 });
@@ -1699,7 +1701,7 @@ router.post("/social", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(links);
   } catch (error) {
-    console.error("Error saving social links:", error);
+    logError("Error saving social links:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to save social links" });
   }
 });
@@ -1804,7 +1806,7 @@ Return a JSON object with:
 
     res.json(postContent);
   } catch (error) {
-    console.error("Error generating social post:", error);
+    logError("Error generating social post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate social post" });
   }
 });
@@ -1823,7 +1825,7 @@ router.get("/social/history", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json(history);
   } catch (error) {
-    console.error("Error fetching social history:", error);
+    logError("Error fetching social history:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch social history" });
   }
 });
@@ -1964,13 +1966,13 @@ router.post("/contact", async (req: Request, res: Response) => {
           replyTo: email,
         });
       } catch (emailErr) {
-        console.error("Error sending form notification email:", emailErr);
+        logError("Error sending form notification email:", {}, emailErr instanceof Error ? emailErr : new Error(String(emailErr)));
       }
     }
 
     res.json({ success: true, id: submission.id });
   } catch (error) {
-    console.error("Error submitting contact form:", error);
+    logError("Error submitting contact form:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to submit contact form" });
   }
 });
@@ -1988,7 +1990,7 @@ router.get("/contact/submissions", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(submissions);
   } catch (error) {
-    console.error("Error fetching submissions:", error);
+    logError("Error fetching submissions:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch submissions" });
   }
 });
@@ -2035,7 +2037,7 @@ router.patch("/contact/submissions/:id", requireAuth, async (req: AuthRequest, r
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating submission:", error);
+    logError("Error updating submission:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update submission" });
   }
 });
@@ -2106,7 +2108,7 @@ router.post("/contact/submissions/:id/convert-to-crm", requireAuth, async (req: 
       crmContactId: crmContact.id,
     });
   } catch (error) {
-    console.error("Error converting to CRM:", error);
+    logError("Error converting to CRM:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to convert to CRM" });
   }
 });
@@ -2189,7 +2191,7 @@ router.get("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.json(pages);
   } catch (error) {
-    console.error("Error fetching pages:", error);
+    logError("Error fetching pages:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch pages" });
   }
 });
@@ -2256,7 +2258,7 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response) => {
 
     res.status(201).json(page);
   } catch (error) {
-    console.error("Error creating page:", error);
+    logError("Error creating page:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create page" });
   }
 });
@@ -2281,7 +2283,7 @@ router.get("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) =>
 
     res.json(page);
   } catch (error) {
-    console.error("Error fetching page:", error);
+    logError("Error fetching page:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch page" });
   }
 });
@@ -2339,13 +2341,13 @@ router.patch("/pages/:id", requireAuth, async (req: AuthRequest, res: Response) 
       try {
         await createVersionSnapshot(existing, user, "publish", "Published page");
       } catch (e) {
-        console.error("Error creating version snapshot on publish:", e);
+        logError("Error creating version snapshot on publish:", {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating page:", error);
+    logError("Error updating page:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update page" });
   }
 });
@@ -2384,7 +2386,7 @@ router.delete("/pages/:id", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting page:", error);
+    logError("Error deleting page:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete page" });
   }
 });
@@ -2420,7 +2422,7 @@ router.post("/pages/:pageId/presence", requireAuth, async (req: AuthRequest, res
 
     res.json({ users: activeUsers });
   } catch (error) {
-    console.error("Error updating presence:", error);
+    logError("Error updating presence:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update presence" });
   }
 });
@@ -2476,7 +2478,7 @@ router.get("/pages/:pageId/check-conflict", requireAuth, async (req: AuthRequest
       lastSaved: lastVersion?.createdAt || null,
     });
   } catch (error) {
-    console.error("Error checking conflict:", error);
+    logError("Error checking conflict:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to check conflict" });
   }
 });
@@ -2581,7 +2583,7 @@ router.get("/versions/diff/:versionIdA/:versionIdB", requireAuth, async (req: Au
       },
     });
   } catch (error) {
-    console.error("Error computing version diff:", error);
+    logError("Error computing version diff:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to compute version diff" });
   }
 });
@@ -2643,6 +2645,7 @@ function generateChangeSummary(oldContent: string | null, newContent: string | n
     if (parts.length === 0) return "Page content updated";
     return parts.join(", ");
   } catch {
+    logWarn("Non-critical operation failed");
     return "Page content updated";
   }
 }
@@ -2683,7 +2686,7 @@ router.post("/pages/:pageId/preview-link", requireAuth, async (req: AuthRequest,
 
     res.json(link);
   } catch (error) {
-    console.error("Error creating preview link:", error);
+    logError("Error creating preview link:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create preview link" });
   }
 });
@@ -2708,7 +2711,7 @@ router.get("/pages/:pageId/preview-links", requireAuth, async (req: AuthRequest,
 
     res.json(links);
   } catch (error) {
-    console.error("Error listing preview links:", error);
+    logError("Error listing preview links:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to list preview links" });
   }
 });
@@ -2730,7 +2733,7 @@ router.delete("/preview-links/:linkId", requireAuth, async (req: AuthRequest, re
     if (!updated) return res.status(404).json({ error: "Preview link not found" });
     res.json({ success: true });
   } catch (error) {
-    console.error("Error revoking preview link:", error);
+    logError("Error revoking preview link:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revoke preview link" });
   }
 });
@@ -2783,7 +2786,7 @@ router.get("/shared-preview/:token", async (req: Request, res: Response) => {
       expiresAt: link.expiresAt,
     });
   } catch (error) {
-    console.error("Error fetching shared preview:", error);
+    logError("Error fetching shared preview:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch preview" });
   }
 });
@@ -2814,7 +2817,7 @@ router.post("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res
     const version = await createVersionSnapshot(page, user, req.body.trigger || "manual", changeSummary);
     res.json(version);
   } catch (error) {
-    console.error("Error creating version:", error);
+    logError("Error creating version:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create version" });
   }
 });
@@ -2836,7 +2839,7 @@ router.get("/pages/:pageId/versions", requireAuth, async (req: AuthRequest, res:
 
     res.json(versions);
   } catch (error) {
-    console.error("Error listing versions:", error);
+    logError("Error listing versions:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to list versions" });
   }
 });
@@ -2857,7 +2860,7 @@ router.get("/versions/:versionId", requireAuth, async (req: AuthRequest, res: Re
     if (!version) return res.status(404).json({ error: "Version not found" });
     res.json(version);
   } catch (error) {
-    console.error("Error fetching version:", error);
+    logError("Error fetching version:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch version" });
   }
 });
@@ -2903,7 +2906,7 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
         if (settings.canonicalUrl !== undefined) settingsToRestore.canonicalUrl = settings.canonicalUrl;
         if (settings.noIndex !== undefined) settingsToRestore.noIndex = settings.noIndex;
         if (settings.ogImageUrl !== undefined) settingsToRestore.ogImageUrl = settings.ogImageUrl;
-      } catch {}
+      } catch { logWarn("Non-critical operation failed"); }
     }
 
     const [updated] = await db.update(organizationWebsitePages)
@@ -2913,7 +2916,7 @@ router.post("/pages/:pageId/revert/:versionId", requireAuth, async (req: AuthReq
 
     res.json(updated);
   } catch (error) {
-    console.error("Error reverting version:", error);
+    logError("Error reverting version:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to revert to version" });
   }
 });
@@ -2963,7 +2966,7 @@ router.get("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) =
     const result = await db.execute(query);
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching blog posts:", error);
+    logError("Error fetching blog posts:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch blog posts" });
   }
 });
@@ -3023,7 +3026,7 @@ router.post("/blog/posts", requireAuth, async (req: AuthRequest, res: Response) 
 
     res.status(201).json(post);
   } catch (error) {
-    console.error("Error creating blog post:", error);
+    logError("Error creating blog post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create blog post" });
   }
 });
@@ -3048,7 +3051,7 @@ router.get("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respons
 
     res.json(post);
   } catch (error) {
-    console.error("Error fetching blog post:", error);
+    logError("Error fetching blog post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch blog post" });
   }
 });
@@ -3115,7 +3118,7 @@ router.patch("/blog/posts/:id", requireAuth, async (req: AuthRequest, res: Respo
     const updated = result.rows[0];
     res.json(updated);
   } catch (error) {
-    console.error("Error updating blog post:", error);
+    logError("Error updating blog post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update blog post" });
   }
 });
@@ -3155,7 +3158,7 @@ router.post("/blog/posts/:id/publish", requireAuth, async (req: AuthRequest, res
 
     res.json(updated);
   } catch (error) {
-    console.error("Error publishing blog post:", error);
+    logError("Error publishing blog post:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to publish blog post" });
   }
 });
@@ -3231,7 +3234,7 @@ Return a JSON object with:
 
     const rawContent = govResult;
     if (!rawContent) {
-      console.error("OpenAI returned empty content");
+      logError("OpenAI returned empty content");
       return res.status(500).json({ error: "AI returned empty response. Please try again." });
     }
 
@@ -3239,12 +3242,12 @@ Return a JSON object with:
     try {
       content = JSON.parse(rawContent);
     } catch (parseError) {
-      console.error("Failed to parse OpenAI response:", rawContent);
+      logError("Failed to parse OpenAI response:", {}, rawContent instanceof Error ? rawContent : new Error(String(rawContent)));
       return res.status(500).json({ error: "Failed to parse AI response. Please try again." });
     }
 
     if (!content.title || !content.content) {
-      console.error("OpenAI response missing required fields:", content);
+      logError("OpenAI response missing required fields:", { detail: String(content) });
       return res.status(500).json({ error: "AI response missing required fields. Please try again." });
     }
 
@@ -3254,7 +3257,7 @@ Return a JSON object with:
       aiPrompt: topic,
     });
   } catch (error: any) {
-    console.error("Error generating blog post:", error);
+    logError("Error generating blog post:", {}, error instanceof Error ? error : new Error(String(error)));
     const errorMessage = error?.message?.includes("API key") 
       ? "OpenAI API key not configured" 
       : "Failed to generate blog post. Please try again.";
@@ -3344,7 +3347,7 @@ router.post("/blog/generate-image", requireAuth, async (req: AuthRequest, res: R
 
     res.json({ imageUrl: proxyUrl });
   } catch (error: any) {
-    console.error("Error generating blog image:", error);
+    logError("Error generating blog image:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.code === "content_policy_violation") {
       return res.status(400).json({ error: "The image could not be generated due to content policy. Try a different title." });
     }
@@ -3426,7 +3429,7 @@ router.get("/public/:subdomain/careers", async (req: Request, res: Response) => 
       introText: website.careersIntroText || null,
     });
   } catch (error) {
-    console.error("Error fetching public careers:", error);
+    logError("Error fetching public careers:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch careers" });
   }
 });
@@ -3476,7 +3479,7 @@ router.get("/public/:subdomain/careers/:jobId", async (req: Request, res: Respon
       publishedAt: job.publishedAt,
     });
   } catch (error) {
-    console.error("Error fetching public job detail:", error);
+    logError("Error fetching public job detail:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch job details" });
   }
 });
@@ -3575,7 +3578,7 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
         });
         resumeStorageKey = fullPath;
       } catch (uploadErr) {
-        console.error("Resume upload failed:", uploadErr);
+        logError("Resume upload failed:", {}, uploadErr instanceof Error ? uploadErr : new Error(String(uploadErr)));
         return res.status(500).json({ error: "Failed to upload resume. Please try again." });
       }
     }
@@ -3584,7 +3587,7 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
     if (screeningAnswers) {
       try {
         parsedAnswers = typeof screeningAnswers === 'string' ? screeningAnswers : JSON.stringify(screeningAnswers);
-      } catch { /* ignore */ }
+      } catch { logWarn("Non-critical operation failed"); }
     }
 
     const [candidate] = await db.insert(hiringCandidates).values({
@@ -3619,12 +3622,12 @@ router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.singl
           relatedEntityId: candidate.id,
           relatedEntityType: "hiring_candidate",
         });
-      } catch { /* notification failure shouldn't block response */ }
+      } catch { logWarn("Non-critical operation failed"); }
     }
 
     res.status(201).json({ success: true, message: "Application submitted successfully" });
   } catch (error) {
-    console.error("Error submitting job application:", error);
+    logError("Error submitting job application:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to submit application" });
   }
 });

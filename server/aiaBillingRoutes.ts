@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -74,7 +75,7 @@ router.get("/pay-applications", async (req: AuthRequest, res: Response) => {
 
     res.json(apps);
   } catch (error) {
-    console.error("Get pay applications error:", error);
+    logError("Get pay applications error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -95,7 +96,7 @@ router.get("/pay-applications/:id", async (req: AuthRequest, res: Response) => {
 
     res.json({ ...app, lineItems, project, sov });
   } catch (error) {
-    console.error("Get pay application error:", error);
+    logError("Get pay application error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -194,7 +195,7 @@ router.post("/pay-applications", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
 
     res.status(201).json(newApp);
   } catch (error) {
-    console.error("Create pay application error:", error);
+    logError("Create pay application error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -293,7 +294,7 @@ router.patch("/pay-applications/:id/status", requireRole("SUPER_ADMIN", "ADMIN",
 
     res.json(updated);
   } catch (error) {
-    console.error("Update pay app status error:", error);
+    logError("Update pay app status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -374,7 +375,7 @@ router.post("/pay-applications/:id/record-payment", requireRole("SUPER_ADMIN", "
 
     res.json(updated);
   } catch (error) {
-    console.error("Record payment error:", error);
+    logError("Record payment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -440,7 +441,7 @@ router.post("/pay-applications/:id/sync-totals", requireRole("SUPER_ADMIN", "ADM
 
     res.json(updated);
   } catch (error) {
-    console.error("Sync pay app totals error:", error);
+    logError("Sync pay app totals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -499,7 +500,7 @@ router.get("/pay-applications/:id/g702-pdf", async (req: AuthRequest, res: Respo
 
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("G702 PDF error:", error);
+    logError("G702 PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -542,7 +543,7 @@ router.get("/pay-applications/:id/g703-pdf", async (req: AuthRequest, res: Respo
 
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("G703 PDF error:", error);
+    logError("G703 PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -713,7 +714,7 @@ router.post("/pay-applications/roll-forward", requireRole("SUPER_ADMIN", "ADMIN"
     const [createdSOV] = await db.select().from(scheduleOfValues).where(eq(scheduleOfValues.id, newSOV.id)).limit(1);
     res.status(201).json({ sov: createdSOV, payApplication: newPayApp });
   } catch (error) {
-    console.error("Roll-forward error:", error);
+    logError("Roll-forward error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -758,7 +759,7 @@ router.get("/stored-materials", async (req: AuthRequest, res: Response) => {
 
     res.json(materials);
   } catch (error) {
-    console.error("Get stored materials error:", error);
+    logError("Get stored materials error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -842,7 +843,7 @@ router.post("/stored-materials", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
 
     res.status(201).json(material);
   } catch (error) {
-    console.error("Create stored material error:", error);
+    logError("Create stored material error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -896,7 +897,7 @@ router.patch("/stored-materials/:id/incorporate", requireRole("SUPER_ADMIN", "AD
 
     res.json(updated);
   } catch (error) {
-    console.error("Incorporate material error:", error);
+    logError("Incorporate material error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -934,7 +935,7 @@ router.get("/billing-integration/change-orders/:projectId", async (req: AuthRequ
 
     res.json(cos.map(co => ({ ...co, isLinkedToSOV: linkedCoIds.has(co.id) })));
   } catch (error) {
-    console.error("Get billing COs error:", error);
+    logError("Get billing COs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -982,7 +983,7 @@ router.post("/billing-integration/add-co-to-sov", requireRole("SUPER_ADMIN", "AD
 
     res.status(201).json(newItem);
   } catch (error) {
-    console.error("Add CO to SOV error:", error);
+    logError("Add CO to SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1009,7 +1010,7 @@ router.get("/billing-integration/tm-tickets/:projectId", async (req: AuthRequest
 
     res.json(tickets);
   } catch (error) {
-    console.error("Get billing T&M tickets error:", error);
+    logError("Get billing T&M tickets error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1050,7 +1051,7 @@ router.get("/billing-integration/po-costs/:projectId", async (req: AuthRequest, 
 
     res.json({ purchaseOrders: pos, committedByCostCode });
   } catch (error) {
-    console.error("Get billing PO costs error:", error);
+    logError("Get billing PO costs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1140,7 +1141,7 @@ router.post("/billing-integration/import-tm-tickets", requireRole("SUPER_ADMIN",
 
     res.status(201).json({ imported: newItems.length, message: `Imported ${newItems.length} T&M line item(s) into SOV` });
   } catch (error) {
-    console.error("Import T&M tickets error:", error);
+    logError("Import T&M tickets error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1179,7 +1180,7 @@ router.get("/retention-releases", async (req: AuthRequest, res: Response) => {
 
     res.json(releases);
   } catch (error) {
-    console.error("Get retention releases error:", error);
+    logError("Get retention releases error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1236,7 +1237,7 @@ router.post("/retention-releases", requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"
 
     res.status(201).json(release);
   } catch (error) {
-    console.error("Create retention release error:", error);
+    logError("Create retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1278,7 +1279,7 @@ router.patch("/retention-releases/:id/status", requireRole("SUPER_ADMIN", "ADMIN
     const [updated] = await db.update(retentionReleases).set(updates).where(eq(retentionReleases.id, id)).returning();
     res.json(updated);
   } catch (error) {
-    console.error("Update retention release error:", error);
+    logError("Update retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1465,7 +1466,7 @@ router.get("/billing-hub/summary", async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error) {
-    console.error("Billing hub summary error:", error);
+    logError("Billing hub summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1539,7 +1540,7 @@ export async function syncApprovedCOToSOV(changeOrderId: string) {
     const totals = calculateSOVTotals(allLineItems, retainagePct);
     await db.update(scheduleOfValues).set({ ...totals, updatedAt: new Date() }).where(eq(scheduleOfValues.id, sov.id));
   } catch (error) {
-    console.error("Auto-sync CO to SOV error:", error);
+    logError("Auto-sync CO to SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 

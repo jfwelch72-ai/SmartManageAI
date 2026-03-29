@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -42,7 +43,7 @@ router.get("/api/revenue-recognition/project/:projectId", requireAuth, requireFe
     const wipData = await calculateProjectWip(projectId);
     res.json(wipData);
   } catch (error) {
-    console.error("Get project WIP error:", error);
+    logError("Get project WIP error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -73,7 +74,7 @@ router.get("/api/revenue-recognition/project-by-code/:code", requireAuth, requir
     const wipData = await calculateProjectWip(project.id);
     res.json(wipData);
   } catch (error) {
-    console.error("Get project WIP by code error:", error);
+    logError("Get project WIP by code error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -130,7 +131,7 @@ router.get("/api/revenue-recognition/wip-report", requireAuth, requireFeaturePer
       },
     });
   } catch (error) {
-    console.error("WIP report error:", error);
+    logError("WIP report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -146,7 +147,7 @@ router.post("/api/revenue-recognition/snapshot", requireAuth, requireFeaturePerm
     const count = await generateMonthlySnapshot(orgId);
     res.json({ message: `Snapshot generated for ${count} projects`, count });
   } catch (error) {
-    console.error("Generate snapshot error:", error);
+    logError("Generate snapshot error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -167,7 +168,7 @@ router.get("/api/revenue-recognition/history", requireAuth, requireFeaturePermis
     const snapshots = await getHistoricalSnapshots(orgId, projectId, months, startDate, endDate);
     res.json(snapshots);
   } catch (error) {
-    console.error("Get history error:", error);
+    logError("Get history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -298,7 +299,7 @@ router.get("/api/revenue-recognition/wip-report/csv", requireAuth, requireFeatur
     res.setHeader("Content-Disposition", `attachment; filename="wip-report-${new Date().toISOString().split("T")[0]}.csv"`);
     res.send(csv);
   } catch (error) {
-    console.error("WIP CSV export error:", error);
+    logError("WIP CSV export error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -474,7 +475,7 @@ router.get("/api/revenue-recognition/wip-report/pdf", requireAuth, requireFeatur
     res.setHeader("Content-Disposition", `attachment; filename="wip-report-${new Date().toISOString().split("T")[0]}.pdf"`);
     res.send(pdfBuffer);
   } catch (error) {
-    console.error("WIP PDF export error:", error);
+    logError("WIP PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

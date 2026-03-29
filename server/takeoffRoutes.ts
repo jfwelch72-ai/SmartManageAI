@@ -1,4 +1,5 @@
-import { Router } from "express";
+import {logError, logWarn } from "./utils/logger";
+import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { bids, bidDocuments, takeoffSheets, quantityCategories, bimStoreyAssociations, projects, subcontractorContracts, subcontractors, subcontractorPayments, filePermissions } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -19,6 +20,7 @@ function safeParsePoints(raw: any): any[] | null {
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : null;
   } catch {
+    logWarn("Non-critical operation failed");
     return null;
   }
 }
@@ -35,7 +37,7 @@ async function getBidWithAccess(req: AuthRequest, res: any): Promise<any | null>
   return bid;
 }
 
-router.get("/api/bids/:bidId/takeoff/sheets", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:bidId/takeoff/sheets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -45,12 +47,11 @@ router.get("/api/bids/:bidId/takeoff/sheets", requireAuth, async (req: AuthReque
       .orderBy(takeoffSheets.sheetIndex);
     res.json(sheets);
   } catch (error) {
-    console.error("Get bid takeoff sheets error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -82,7 +83,7 @@ router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("AD
         const pdfDoc = await loadingTask.promise;
         pageCount = pdfDoc.numPages;
       } catch (error: any) {
-        console.error("Error processing PDF:", error);
+        logError("Error processing PDF:", {}, error instanceof Error ? error : new Error(String(error)));
         return res.status(400).json({ error: "Failed to process PDF file" });
       }
     }
@@ -102,12 +103,11 @@ router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("AD
 
     res.status(201).json({ sheets });
   } catch (error) {
-    console.error("Import bid plan to takeoff error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/bids/:bidId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:bidId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -127,12 +127,11 @@ router.post("/api/bids/:bidId/takeoff/plans", requireAuth, requireRole("ADMIN", 
 
     res.status(201).json({ sheets: [sheet] });
   } catch (error) {
-    console.error("Upload bid plan error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/bids/:bidId/takeoff/categories", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:bidId/takeoff/categories", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -142,12 +141,11 @@ router.get("/api/bids/:bidId/takeoff/categories", requireAuth, async (req: AuthR
       .orderBy(quantityCategories.displayOrder);
     res.json(categories);
   } catch (error) {
-    console.error("Get bid quantity categories error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:projectId/takeoff/categories", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/takeoff/categories", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -162,12 +160,11 @@ router.get("/api/projects/:projectId/takeoff/categories", requireAuth, async (re
       .orderBy(quantityCategories.displayOrder);
     res.json(categories);
   } catch (error) {
-    console.error("Get project quantity categories error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -191,12 +188,11 @@ router.post("/api/bids/:bidId/takeoff/categories", requireAuth, requireRole("ADM
 
     res.status(201).json(category);
   } catch (error) {
-    console.error("Create bid quantity category error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.patch("/api/bids/:bidId/takeoff/sheets/reorder", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/bids/:bidId/takeoff/sheets/reorder", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -220,12 +216,11 @@ router.patch("/api/bids/:bidId/takeoff/sheets/reorder", requireAuth, requireRole
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Reorder bid sheets error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/bids/:bidId/bim/storey-associations", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:bidId/bim/storey-associations", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -235,12 +230,11 @@ router.get("/api/bids/:bidId/bim/storey-associations", requireAuth, async (req: 
 
     res.json(associations);
   } catch (error) {
-    console.error("Get storey associations error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/bids/:bidId/bim/storey-associations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/bids/:bidId/bim/storey-associations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -291,12 +285,11 @@ router.post("/api/bids/:bidId/bim/storey-associations", requireAuth, requireRole
 
     res.status(201).json(association);
   } catch (error) {
-    console.error("Create storey association error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.delete("/api/bids/:bidId/bim/storey-associations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.delete("/api/bids/:bidId/bim/storey-associations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const bid = await getBidWithAccess(req, res);
     if (!bid) return;
@@ -309,12 +302,11 @@ router.delete("/api/bids/:bidId/bim/storey-associations/:id", requireAuth, requi
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete storey association error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:projectId/bim/storey-associations", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/bim/storey-associations", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -329,12 +321,11 @@ router.get("/api/projects/:projectId/bim/storey-associations", requireAuth, asyn
 
     res.json(associations);
   } catch (error) {
-    console.error("Get project storey associations error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:projectId/bim/storey-associations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:projectId/bim/storey-associations", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -392,12 +383,11 @@ router.post("/api/projects/:projectId/bim/storey-associations", requireAuth, req
 
     res.status(201).json(association);
   } catch (error) {
-    console.error("Create project storey association error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.delete("/api/projects/:projectId/bim/storey-associations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.delete("/api/projects/:projectId/bim/storey-associations/:id", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -415,8 +405,7 @@ router.delete("/api/projects/:projectId/bim/storey-associations/:id", requireAut
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete project storey association error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -472,7 +461,7 @@ function canWrite(role: string): boolean {
   return WRITE_ROLES.includes(role) || role === "SUPER_ADMIN";
 }
 
-router.get("/api/takeoff/sheets/:sheetId/issues", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/sheets/:sheetId/issues", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffIssues, takeoffIssueComments, users } = await import("@shared/schema");
@@ -533,12 +522,11 @@ router.get("/api/takeoff/sheets/:sheetId/issues", requireAuth, async (req: AuthR
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching takeoff issues:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/takeoff/issues", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/issues", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
 
@@ -595,12 +583,11 @@ router.post("/api/takeoff/issues", requireAuth, async (req: AuthRequest, res) =>
 
     res.status(201).json(issue);
   } catch (error) {
-    console.error("Error creating takeoff issue:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     const { issueId } = req.params;
@@ -672,12 +659,11 @@ router.patch("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReques
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating takeoff issue:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.delete("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     const { issueId } = req.params;
@@ -710,12 +696,11 @@ router.delete("/api/takeoff/issues/:issueId", requireAuth, async (req: AuthReque
     }
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting takeoff issue:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/takeoff/issues/:issueId/comments", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/issues/:issueId/comments", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     const { issueId } = req.params;
@@ -757,12 +742,11 @@ router.post("/api/takeoff/issues/:issueId/comments", requireAuth, async (req: Au
       authorAvatarUrl: userRecord?.profilePhotoUrl,
     });
   } catch (error) {
-    console.error("Error creating takeoff issue comment:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.delete("/api/takeoff/issue-comments/:commentId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/issue-comments/:commentId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     const { commentId } = req.params;
@@ -794,8 +778,7 @@ router.delete("/api/takeoff/issue-comments/:commentId", requireAuth, async (req:
     await db.delete(takeoffIssueComments).where(eq(takeoffIssueComments.id, commentId));
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting takeoff issue comment:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -865,7 +848,7 @@ async function verifySheetAccess(sheetId: string, user: { id: string; organizati
 // ====================
 
 // Get subcontractor contracts for a project
-router.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { code } = req.params;
 
@@ -910,13 +893,12 @@ router.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRe
 
     res.json(contracts);
   } catch (error) {
-    console.error("Error fetching subcontractor contracts:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Get payments for a contract
-router.get("/api/subcontractor-contracts/:contractId/payments", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/subcontractor-contracts/:contractId/payments", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { contractId } = req.params;
 
@@ -944,13 +926,12 @@ router.get("/api/subcontractor-contracts/:contractId/payments", requireAuth, asy
 
     res.json(payments);
   } catch (error) {
-    console.error("Error fetching payments:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Create payment for a contract (Admin/Manager only)
-router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const { contractId } = req.params;
     const { insertSubcontractorPaymentSchema } = await import("@shared/schema");
@@ -1005,9 +986,8 @@ router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, re
     });
 
     res.status(201).json(newPayment);
-  } catch (error: any) {
-    console.error("Create subcontractor payment error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1016,7 +996,7 @@ router.post("/api/subcontractor-contracts/:contractId/payments", requireAuth, re
 // ====================
 
 // Get all subcontractor payables (for CFO/Office Manager dashboard)
-router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
     const isSuperAdmin = user.role === "SUPER_ADMIN";
@@ -1042,8 +1022,7 @@ router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async
 
     res.json(payables);
   } catch (error) {
-    console.error("Error fetching subcontractor payables:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -1052,7 +1031,7 @@ router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async
 // ====================
 
 // Get data quality score for a project (UI-facing endpoint with boolean flags)
-router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { code } = req.params;
 
@@ -1162,8 +1141,7 @@ router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequ
       has_billing_setup
     });
   } catch (error) {
-    console.error("Error fetching data quality score:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -1172,7 +1150,7 @@ router.get("/api/projects/:code/data-quality", requireAuth, async (req: AuthRequ
 // ====================
 
 // Get all takeoff sheets for a project
-router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const user = req.user!;
@@ -1216,13 +1194,12 @@ router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: A
 
     res.json(sheets);
   } catch (error) {
-    console.error("Error fetching takeoff sheets:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Supersede a sheet: mark old sheet as superseded, new sheet as active revision
-router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { newSheetId, revisionLabel } = req.body;
@@ -1273,14 +1250,13 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
     }, req);
 
     res.json({ oldSheet, newSheet });
-  } catch (error: any) {
-    console.error("Error superseding sheet:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Stream PDF directly for a takeoff sheet (with authorization)
-router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffSheets, projectPlans, planDocuments, bidDocuments, bids } = await import("@shared/schema");
@@ -1322,6 +1298,7 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
       try {
         return await objectStorageService.getObjectEntityFile(rawUrl);
       } catch {
+        logWarn("Non-critical operation failed");
         return null;
       }
     }
@@ -1373,14 +1350,13 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
     } else {
       res.status(404).json({ error: "Sheet has no parent" });
     }
-  } catch (error: any) {
-    console.error("Stream sheet PDF error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Import a plan document to takeoff workspace
-router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const { documentId } = req.body;
@@ -1462,7 +1438,7 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
       const pdfDoc = await loadingTask.promise;
       pageCount = pdfDoc.numPages;
     } catch (error: any) {
-      console.error("Error processing PDF:", error);
+      logError("Error processing PDF:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(400).json({ 
         error: "Failed to process PDF file. The file may be corrupted or not a valid PDF document." 
       });
@@ -1516,13 +1492,12 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
 
     res.status(201).json({ plan, sheets });
   } catch (error) {
-    console.error("Error importing plan to takeoff:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Upload a plan PDF and create sheets
-router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const { fileUrl, fileName } = req.body;
@@ -1586,13 +1561,12 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
 
     res.status(201).json({ plan, sheets: [sheet] });
   } catch (error) {
-    console.error("Error uploading plan:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Get all measurements across all sheets for a project
-router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const user = req.user!;
@@ -1650,13 +1624,12 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
 
     res.json(parsedMeasurements);
   } catch (error) {
-    console.error("Error fetching all measurements:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Get all measurements across all sheets for a bid
-router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { bidId } = req.params;
     const user = req.user!;
@@ -1701,13 +1674,12 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
 
     res.json(parsedMeasurements);
   } catch (error) {
-    console.error("Error fetching all bid measurements:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Get measurements for a sheet
-router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffMeasurements } = await import("@shared/schema");
@@ -1731,13 +1703,12 @@ router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req:
 
     res.json(parsedMeasurements);
   } catch (error) {
-    console.error("Error fetching measurements:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Create a new measurement
-router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffMeasurements, insertTakeoffMeasurementSchema } = await import("@shared/schema");
@@ -1759,7 +1730,7 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
 
     res.status(201).json(measurement);
   } catch (error: any) {
-    console.error("Error creating measurement:", error);
+    logError("Error creating measurement:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid measurement data", details: error.errors });
     } else {
@@ -1769,7 +1740,7 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
 });
 
 // Update a measurement
-router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffMeasurements, takeoffSheets, insertTakeoffMeasurementSchema } = await import("@shared/schema");
@@ -1815,7 +1786,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
               console.log(`[Arc Measurement Update] Recomputed arc length: ${arcSegment.arcLength.toFixed(2)} LF`);
             }
           } catch (error) {
-            console.error("Error computing arc length during update:", error);
+            logError("Error computing arc length during update:", {}, error instanceof Error ? error : new Error(String(error)));
           }
         }
       }
@@ -1829,7 +1800,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Error updating measurement:", error);
+    logError("Error updating measurement:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid measurement data", details: error.errors });
     } else {
@@ -1839,7 +1810,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
 });
 
 // Create a new measurement (with sheetId in body)
-router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { takeoffMeasurements, takeoffSheets, projects, bids, crewProjectAssignments, crewMembers, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
@@ -1932,14 +1903,14 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
             finalValues.computedLengthFt = arcSegment.arcLength;
           }
         } catch (error) {
-          console.error("Error computing arc length:", error);
+          logError("Error computing arc length:", {}, error instanceof Error ? error : new Error(String(error)));
         }
       } else if (validated.type === "LINEAR" && points && points.length >= 2 && !finalValues.computedLengthFt) {
         try {
           const { computeDistanceInFeet } = await import("@shared/utils/geometry");
           finalValues.computedLengthFt = computeDistanceInFeet(points, sheet.scalePxPerFoot);
         } catch (error) {
-          console.error("Error computing linear length:", error);
+          logError("Error computing linear length:", {}, error instanceof Error ? error : new Error(String(error)));
         }
       }
 
@@ -1948,7 +1919,7 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
           const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
           finalValues.computedAreaFt2 = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
         } catch (error) {
-          console.error("Error computing area:", error);
+          logError("Error computing area:", {}, error instanceof Error ? error : new Error(String(error)));
         }
       }
 
@@ -1961,7 +1932,7 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
             finalValues.computedVolumeCy = computeVolumeInCY(areaFt2, validated.depthFeet);
           }
         } catch (error) {
-          console.error("Error computing volume:", error);
+          logError("Error computing volume:", {}, error instanceof Error ? error : new Error(String(error)));
         }
       }
     }
@@ -1970,7 +1941,7 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
 
     res.status(201).json(measurement);
   } catch (error: any) {
-    console.error("Error creating measurement:", error);
+    logError("Error creating measurement:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid measurement data", details: error.errors });
     } else {
@@ -1980,7 +1951,7 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
 });
 
 // Delete a measurement
-router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffMeasurements } = await import("@shared/schema");
@@ -1999,8 +1970,7 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting measurement:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -2017,7 +1987,7 @@ async function verifyGroupAccess(groupId: string, user: { id: string; organizati
 }
 
 // Get groups for a sheet
-router.get("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const access = await verifySheetAccess(sheetId, req.user!);
@@ -2031,13 +2001,12 @@ router.get("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthR
       .orderBy(takeoffMeasurementGroups.sortOrder);
     res.json(groups);
   } catch (error) {
-    console.error("Error fetching groups:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Create a group
-router.post("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const access = await verifySheetAccess(sheetId, req.user!);
@@ -2064,13 +2033,12 @@ router.post("/api/takeoff/sheets/:sheetId/groups", requireAuth, async (req: Auth
 
     res.status(201).json(group);
   } catch (error) {
-    console.error("Error creating group:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Update a group
-router.patch("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const groupAccess = await verifyGroupAccess(id, req.user!);
@@ -2088,13 +2056,12 @@ router.patch("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, re
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating group:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Delete a group (measurements get groupId set to null via FK constraint)
-router.delete("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const groupAccess = await verifyGroupAccess(id, req.user!);
@@ -2107,15 +2074,14 @@ router.delete("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, r
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting group:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Reorder groups
 const groupReorderItemSchema = z.object({ id: z.string().min(1), sortOrder: z.number().int().min(0) });
 const groupReorderSchema = z.object({ order: z.array(groupReorderItemSchema).min(1) });
-router.patch("/api/takeoff/sheets/:sheetId/groups/reorder", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/sheets/:sheetId/groups/reorder", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const access = await verifySheetAccess(sheetId, req.user!);
@@ -2137,13 +2103,12 @@ router.patch("/api/takeoff/sheets/:sheetId/groups/reorder", requireAuth, async (
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error reordering groups:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Bulk visibility toggle for a group's measurements
-router.patch("/api/takeoff/groups/:id/visibility", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/groups/:id/visibility", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const groupAccess = await verifyGroupAccess(id, req.user!);
@@ -2157,13 +2122,12 @@ router.patch("/api/takeoff/groups/:id/visibility", requireAuth, async (req: Auth
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error toggling group visibility:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Update sheet calibration
-router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { scalePxPerFoot, units } = req.body;
@@ -2217,7 +2181,7 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
           ? JSON.parse(measurement.points) 
           : measurement.points as any;
       } catch (parseError) {
-        console.error(`Error parsing points for measurement ${measurement.id}:`, parseError);
+        logError(`Error parsing points for measurement ${measurement.id}:`, {}, parseError instanceof Error ? parseError : new Error(String(parseError)));
         continue;
       }
 
@@ -2274,7 +2238,7 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
             .where(eq(takeoffMeasurements.id, measurement.id));
         }
       } catch (error) {
-        console.error(`Error recalculating measurement ${measurement.id}:`, error);
+        logError(`Error recalculating measurement ${measurement.id}:`, {}, error instanceof Error ? error : new Error(String(error)));
         // Continue with other measurements even if one fails
       }
     }
@@ -2282,13 +2246,12 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
     console.log(`Successfully recalculated ${measurements.length} measurements`);
     res.json(updated);
   } catch (error) {
-    console.error("Error updating calibration:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Batch update calibration for multiple sheets
-router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetIds, scalePxPerFoot, units } = req.body;
     const { takeoffSheets, takeoffMeasurements, projects } = await import("@shared/schema");
@@ -2395,7 +2358,7 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
                   .where(eq(takeoffMeasurements.id, measurement.id));
               }
             } catch (error) {
-              console.error(`Error recalculating measurement ${measurement.id}:`, error);
+              logError(`Error recalculating measurement ${measurement.id}:`, {}, error instanceof Error ? error : new Error(String(error)));
             }
           }
         }
@@ -2405,13 +2368,12 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
     console.log(`Batch calibration: updated ${updatedCount}/${sheetIds.length} sheets, skipped ${skippedCount} already calibrated`);
     res.json({ updated: updatedCount, skipped: skippedCount, sheets: results });
   } catch (error) {
-    console.error("Error in batch calibration:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Update sheet rotation
-router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { rotation } = req.body;
@@ -2437,8 +2399,7 @@ router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRe
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating rotation:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -2447,7 +2408,7 @@ router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRe
 // ====================
 
 // Get all quantity categories for a project
-router.get("/api/projects/:code/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/quantity-categories", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { code } = req.params;
     const { quantityCategories } = await import("@shared/schema");
@@ -2472,13 +2433,12 @@ router.get("/api/projects/:code/quantity-categories", requireAuth, async (req: A
 
     res.json(categories);
   } catch (error) {
-    console.error("Error fetching quantity categories:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Create a new quantity category
-router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { code } = req.params;
     const { quantityCategories, insertQuantityCategorySchema } = await import("@shared/schema");
@@ -2514,7 +2474,7 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
 
     res.status(201).json(category);
   } catch (error: any) {
-    console.error("Error creating quantity category:", error);
+    logError("Error creating quantity category:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
@@ -2524,7 +2484,7 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
 });
 
 // Update a quantity category
-router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { quantityCategories, insertQuantityCategorySchema, takeoffSheets, projects, bids } = await import("@shared/schema");
@@ -2570,7 +2530,7 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Error updating quantity category:", error);
+    logError("Error updating quantity category:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
@@ -2585,7 +2545,7 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
 
 // Rename a sheet
 const renameSchema = z.object({ sheetName: z.string().min(1).max(200) });
-router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffSheets } = await import("@shared/schema");
@@ -2610,14 +2570,13 @@ router.patch("/api/takeoff/sheets/:id/rename", requireAuth, async (req: AuthRequ
       .returning();
 
     res.json(updated);
-  } catch (error: any) {
-    console.error("Error renaming sheet:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 const folderGroupSchema = z.object({ folderGroup: z.string().min(1).max(200) });
-router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffSheets } = await import("@shared/schema");
@@ -2642,16 +2601,15 @@ router.patch("/api/takeoff/sheets/:id/folder-group", requireAuth, async (req: Au
       .returning();
 
     res.json(updated);
-  } catch (error: any) {
-    console.error("Error updating sheet folder group:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Reorder sheets (batch update sheetIndex)
 const reorderItemSchema = z.object({ id: z.string().min(1), sheetIndex: z.number().int().min(0) });
 const reorderSchema = z.object({ order: z.array(reorderItemSchema).min(1) });
-router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { projectId } = req.params;
     const { takeoffSheets, projects } = await import("@shared/schema");
@@ -2710,14 +2668,13 @@ router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, asy
       .orderBy(takeoffSheets.sheetIndex);
 
     res.json(sheets);
-  } catch (error: any) {
-    console.error("Error reordering sheets:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Duplicate a sheet (copies sheet + its measurements)
-router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
@@ -2799,14 +2756,13 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
     }
 
     res.status(201).json({ sheet: newSheet, measurementsCopied: sourceMeasurements.length });
-  } catch (error: any) {
-    console.error("Error duplicating sheet:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Delete a sheet and its measurements
-router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { takeoffSheets } = await import("@shared/schema");
@@ -2820,14 +2776,13 @@ router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, r
     await db.delete(takeoffSheets).where(eq(takeoffSheets.id, id));
 
     res.json({ success: true });
-  } catch (error: any) {
-    console.error("Error deleting sheet:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Delete a quantity category
-router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const { quantityCategories, projects, bids } = await import("@shared/schema");
@@ -2856,8 +2811,7 @@ router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthReque
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting quantity category:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -2866,7 +2820,7 @@ router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthReque
 // ====================
 
 // Get markups for a sheet
-router.get("/api/takeoff/sheets/:sheetId/markups", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/sheets/:sheetId/markups", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffMarkups, users } = await import("@shared/schema");
@@ -2906,13 +2860,12 @@ router.get("/api/takeoff/sheets/:sheetId/markups", requireAuth, async (req: Auth
 
     res.json(parsed);
   } catch (error) {
-    console.error("Error fetching markups:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Create a markup
-router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { takeoffMarkups, insertTakeoffMarkupSchema } = await import("@shared/schema");
 
@@ -2939,7 +2892,7 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
       authorName: req.user!.name,
     });
   } catch (error: any) {
-    console.error("Error creating markup:", error);
+    logError("Error creating markup:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid markup data", details: error.errors });
     } else {
@@ -2949,7 +2902,7 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
 });
 
 // Delete a markup
-router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { markupId } = req.params;
     const { takeoffMarkups } = await import("@shared/schema");
@@ -2992,12 +2945,11 @@ router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthReq
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting markup:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffSheetLinks } = await import("@shared/schema");
@@ -3015,12 +2967,11 @@ router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRe
 
     res.json(links);
   } catch (error) {
-    console.error("Error fetching sheet links:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
@@ -3032,12 +2983,11 @@ router.get("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res)
       .orderBy(sql`${takeoffConditions.lastUsedAt} DESC NULLS LAST`, takeoffConditions.sortOrder);
     res.json(conditions);
   } catch (error) {
-    console.error("Error fetching conditions:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { takeoffSheetLinks, insertTakeoffSheetLinkSchema, takeoffSheets } = await import("@shared/schema");
 
@@ -3082,7 +3032,7 @@ router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAG
 
     res.status(201).json(link);
   } catch (error: any) {
-    console.error("Error creating sheet link:", error);
+    logError("Error creating sheet link:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
       res.status(400).json({ error: "Invalid link data", details: error.errors });
     } else {
@@ -3091,7 +3041,7 @@ router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAG
   }
 });
 
-router.delete("/api/takeoff/sheet-links/:linkId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/sheet-links/:linkId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { linkId } = req.params;
     const { takeoffSheetLinks } = await import("@shared/schema");
@@ -3117,12 +3067,11 @@ router.delete("/api/takeoff/sheet-links/:linkId", requireAuth, requireRole("ADMI
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting sheet link:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const { sheetId } = req.params;
     const { takeoffSheetLinks, takeoffSheets } = await import("@shared/schema");
@@ -3306,7 +3255,7 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
             }
         }
       } catch (pdfError) {
-        console.error("PDF link detection error:", pdfError);
+        logError("PDF link detection error:", {}, pdfError instanceof Error ? pdfError : new Error(String(pdfError)));
       }
     }
 
@@ -3321,12 +3270,11 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
 
     res.json({ detected: detectedLinks.length, links: allLinks });
   } catch (error) {
-    console.error("Error detecting links:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgCtx = requireOrgOwnership(req, res);
     if (!orgCtx) return;
@@ -3345,12 +3293,12 @@ router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res
       res.status(400).json({ error: "Invalid condition data", details: error.errors });
       return;
     }
-    console.error("Error creating condition:", error);
+    logError("Error creating condition:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgCtx = requireOrgOwnership(req, res);
     if (!orgCtx) return;
@@ -3371,12 +3319,12 @@ router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest
       res.status(400).json({ error: "Invalid condition data", details: error.errors });
       return;
     }
-    console.error("Error updating condition:", error);
+    logError("Error updating condition:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.delete("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgCtx = requireOrgOwnership(req, res);
     if (!orgCtx) return;
@@ -3390,8 +3338,7 @@ router.delete("/api/takeoff/conditions/:id", requireAuth, async (req: AuthReques
     await db.delete(takeoffConditions).where(and(...conditions));
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting condition:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 

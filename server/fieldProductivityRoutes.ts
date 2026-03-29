@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { voiceLogs, issueCaptures, offlineSyncQueue, media, projects, insertVoiceLogSchema, insertIssueCaptureSchema, insertOfflineSyncQueueSchema } from "@shared/schema";
@@ -51,7 +52,7 @@ router.get("/voice-logs", requireAuth, async (req: AuthenticatedRequest, res: Re
 
     res.json(logs);
   } catch (error) {
-    console.error("Error fetching voice logs:", error);
+    logError("Error fetching voice logs:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch voice logs" });
   }
 });
@@ -72,7 +73,7 @@ router.get("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, res
 
     res.json(log);
   } catch (error) {
-    console.error("Error fetching voice log:", error);
+    logError("Error fetching voice log:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch voice log" });
   }
 });
@@ -94,7 +95,7 @@ router.post("/voice-logs", requireAuth, async (req: AuthenticatedRequest, res: R
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error creating voice log:", error);
+    logError("Error creating voice log:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create voice log" });
   }
 });
@@ -158,7 +159,7 @@ router.patch("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, r
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error updating voice log:", error);
+    logError("Error updating voice log:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update voice log" });
   }
 });
@@ -180,7 +181,7 @@ router.delete("/voice-logs/:id", requireAuth, async (req: AuthenticatedRequest, 
     await db.delete(voiceLogs).where(eq(voiceLogs.id, id));
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting voice log:", error);
+    logError("Error deleting voice log:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete voice log" });
   }
 });
@@ -218,7 +219,7 @@ router.get("/issue-captures", requireAuth, async (req: AuthenticatedRequest, res
 
     res.json(issues);
   } catch (error) {
-    console.error("Error fetching issue captures:", error);
+    logError("Error fetching issue captures:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch issue captures" });
   }
 });
@@ -239,7 +240,7 @@ router.get("/issue-captures/:id", requireAuth, async (req: AuthenticatedRequest,
 
     res.json(issue);
   } catch (error) {
-    console.error("Error fetching issue capture:", error);
+    logError("Error fetching issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch issue capture" });
   }
 });
@@ -261,7 +262,7 @@ router.post("/issue-captures", requireAuth, async (req: AuthenticatedRequest, re
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error creating issue capture:", error);
+    logError("Error creating issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create issue capture" });
   }
 });
@@ -336,7 +337,7 @@ router.patch("/issue-captures/:id", requireAuth, async (req: AuthenticatedReques
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error updating issue capture:", error);
+    logError("Error updating issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update issue capture" });
   }
 });
@@ -358,7 +359,7 @@ router.delete("/issue-captures/:id", requireAuth, async (req: AuthenticatedReque
     await db.delete(issueCaptures).where(eq(issueCaptures.id, id));
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting issue capture:", error);
+    logError("Error deleting issue capture:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete issue capture" });
   }
 });
@@ -395,7 +396,7 @@ router.get("/issue-captures/stats/summary", requireAuth, async (req: Authenticat
 
     res.json(stats);
   } catch (error) {
-    console.error("Error fetching issue stats:", error);
+    logError("Error fetching issue stats:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch issue stats" });
   }
 });
@@ -432,7 +433,7 @@ router.get("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: 
 
     res.json(queue);
   } catch (error) {
-    console.error("Error fetching offline sync queue:", error);
+    logError("Error fetching offline sync queue:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch offline sync queue" });
   }
 });
@@ -454,7 +455,7 @@ router.post("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res:
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error creating offline sync item:", error);
+    logError("Error creating offline sync item:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create offline sync item" });
   }
 });
@@ -483,7 +484,7 @@ router.post("/offline-sync/batch", requireAuth, async (req: AuthenticatedRequest
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error creating batch offline sync items:", error);
+    logError("Error creating batch offline sync items:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create batch offline sync items" });
   }
 });
@@ -557,7 +558,7 @@ router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest,
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error updating offline sync item:", error);
+    logError("Error updating offline sync item:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update offline sync item" });
   }
 });
@@ -579,7 +580,7 @@ router.delete("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest
     await db.delete(offlineSyncQueue).where(eq(offlineSyncQueue.id, id));
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting offline sync item:", error);
+    logError("Error deleting offline sync item:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete offline sync item" });
   }
 });
@@ -599,7 +600,7 @@ router.delete("/offline-sync/clear/synced", requireAuth, async (req: Authenticat
 
     res.json({ message: "Synced items cleared" });
   } catch (error) {
-    console.error("Error clearing synced items:", error);
+    logError("Error clearing synced items:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to clear synced items" });
   }
 });
@@ -633,7 +634,7 @@ router.get("/offline-sync/stats", requireAuth, async (req: AuthenticatedRequest,
 
     res.json(stats);
   } catch (error) {
-    console.error("Error fetching offline sync stats:", error);
+    logError("Error fetching offline sync stats:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch offline sync stats" });
   }
 });
@@ -695,7 +696,7 @@ Respond with valid JSON only.`;
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Invalid data", details: error.errors });
     }
-    console.error("Error parsing voice log:", error);
+    logError("Error parsing voice log:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to parse voice log" });
   }
 });
@@ -774,7 +775,7 @@ Respond with valid JSON only: { "tags": [...], "description": "..." }`;
 
     res.json({ tags, description, mediaId: updated?.id });
   } catch (error) {
-    console.error("Error auto-tagging photo:", error);
+    logError("Error auto-tagging photo:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to auto-tag photo" });
   }
 });

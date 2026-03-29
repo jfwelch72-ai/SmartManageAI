@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -58,7 +59,7 @@ router.get("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature(["
 
     res.json(items);
   } catch (error) {
-    console.error("Get subcontract SOV error:", error);
+    logError("Get subcontract SOV error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -113,7 +114,7 @@ router.post("/subcontracts/:contractId/sov", requireAuth, requireRoleOrFeature([
 
     res.status(201).json(newItem);
   } catch (error) {
-    console.error("Create SOV line item error:", error);
+    logError("Create SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -171,7 +172,7 @@ router.patch("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleOr
 
     res.json(updated);
   } catch (error) {
-    console.error("Update SOV line item error:", error);
+    logError("Update SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -203,7 +204,7 @@ router.delete("/subcontracts/:contractId/sov/:itemId", requireAuth, requireRoleO
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete SOV line item error:", error);
+    logError("Delete SOV line item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -222,7 +223,7 @@ router.get("/subcontracts/:contractId/pay-applications", requireAuth, requireRol
 
     res.json(apps);
   } catch (error) {
-    console.error("Get sub pay applications error:", error);
+    logError("Get sub pay applications error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -253,7 +254,7 @@ router.get("/subcontracts/:contractId/pay-applications/:payAppId", requireAuth, 
 
     res.json({ ...payApp, lineItems: lineItems.map(li => ({ ...li.lineItem, sovItem: li.sovItem })) });
   } catch (error) {
-    console.error("Get sub pay application detail error:", error);
+    logError("Get sub pay application detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -406,7 +407,7 @@ router.get("/subcontracts/:contractId/pay-applications/:payAppId/pdf", requireAu
     res.setHeader("Content-Disposition", `attachment; filename="PayApp-${contract.contractNumber}-${payApp.applicationNumber}.pdf"`);
     stream.pipe(res);
   } catch (error) {
-    console.error("Generate pay app PDF error:", error);
+    logError("Generate pay app PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -510,7 +511,7 @@ router.post("/subcontracts/:contractId/pay-applications", requireAuth, requireRo
 
     res.status(201).json(newApp);
   } catch (error) {
-    console.error("Create sub pay application error:", error);
+    logError("Create sub pay application error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -627,7 +628,7 @@ router.patch("/subcontracts/:contractId/pay-applications/:payAppId/line-items", 
 
     res.json(updated);
   } catch (error) {
-    console.error("Update sub pay app line items error:", error);
+    logError("Update sub pay app line items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -713,13 +714,13 @@ router.patch("/subcontracts/:contractId/pay-applications/:payAppId/status", requ
           }
         }
       } catch (e) {
-        console.error("Pay app status notification error (non-blocking):", e);
+        logError("Pay app status notification error (non-blocking):", {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
 
     res.json(updated);
   } catch (error) {
-    console.error("Update sub pay app status error:", error);
+    logError("Update sub pay app status error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -763,7 +764,7 @@ router.get("/subcontracts/:contractId/retention", requireAuth, requireRoleOrFeat
       releases,
     });
   } catch (error) {
-    console.error("Get retention summary error:", error);
+    logError("Get retention summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -838,7 +839,7 @@ router.get("/subcontracts/retention/summary", requireAuth, requireRoleOrFeature(
       contracts: summaries,
     });
   } catch (error) {
-    console.error("Get retention dashboard error:", error);
+    logError("Get retention dashboard error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -907,7 +908,7 @@ router.post("/subcontracts/:contractId/retention/release", requireAuth, requireR
 
     res.status(201).json(newRelease);
   } catch (error) {
-    console.error("Create retention release error:", error);
+    logError("Create retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -963,7 +964,7 @@ router.patch("/subcontracts/:contractId/retention/release/:releaseId", requireAu
 
     res.json(updated);
   } catch (error) {
-    console.error("Update retention release error:", error);
+    logError("Update retention release error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -992,7 +993,7 @@ router.get("/subcontracts/:contractId/performance", requireAuth, requireRoleOrFe
       history: scores,
     });
   } catch (error) {
-    console.error("Get performance scores error:", error);
+    logError("Get performance scores error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1043,7 +1044,7 @@ router.post("/subcontracts/:contractId/performance", requireAuth, requireRoleOrF
 
     res.status(201).json(newScore);
   } catch (error) {
-    console.error("Create performance score error:", error);
+    logError("Create performance score error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1113,7 +1114,7 @@ router.get("/subcontracts/performance/summary", requireAuth, requireRoleOrFeatur
 
     res.json(summaries);
   } catch (error) {
-    console.error("Get performance summary error:", error);
+    logError("Get performance summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1139,7 +1140,7 @@ router.get("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrFe
 
     res.json(attachments.map(a => ({ ...a.attachment, uploadedBy: a.uploadedBy })));
   } catch (error) {
-    console.error("Get attachments error:", error);
+    logError("Get attachments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1172,7 +1173,7 @@ router.post("/subcontracts/:contractId/attachments", requireAuth, requireRoleOrF
 
     res.status(201).json(attachment);
   } catch (error) {
-    console.error("Create attachment error:", error);
+    logError("Create attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1188,7 +1189,7 @@ router.delete("/subcontracts/:contractId/attachments/:attachmentId", requireAuth
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete attachment error:", error);
+    logError("Delete attachment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1216,7 +1217,7 @@ router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOr
 
     res.json(revisions.map(r => ({ ...r.revision, sovItem: r.sovItem, changedBy: r.changedBy })));
   } catch (error) {
-    console.error("Get SOV revisions error:", error);
+    logError("Get SOV revisions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1377,12 +1378,12 @@ router.post("/portal/subcontracts/:contractId/pay-applications", requirePortalAu
         }
       }
     } catch (notifErr) {
-      console.error("Portal pay app notification error:", notifErr);
+      logError("Portal pay app notification error:", {}, notifErr instanceof Error ? notifErr : new Error(String(notifErr)));
     }
 
     res.status(201).json(payApp);
   } catch (error) {
-    console.error("Portal pay app submission error:", error);
+    logError("Portal pay app submission error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

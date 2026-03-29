@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { skills, userSkills, insertSkillSchema } from "@shared/schema";
@@ -13,7 +14,7 @@ router.get("/api/skills", requireAuth, async (req: AuthRequest, res) => {
     const allSkills = await db.select().from(skills).orderBy(skills.category, skills.name);
     res.json(allSkills);
   } catch (error) {
-    console.error("Error fetching skills:", error);
+    logError("Error fetching skills:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -42,7 +43,7 @@ router.post("/api/skills", requireRole("ADMIN", "MANAGER"), async (req: AuthRequ
 
     res.status(201).json(newSkill);
   } catch (error: any) {
-    console.error("Error creating skill:", error);
+    logError("Error creating skill:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.constraint === "skills_name_unique") {
       res.status(400).json({ error: "A skill with this name already exists" });
       return;
@@ -125,7 +126,7 @@ router.post("/api/skills/generate", requireRole("ADMIN", "MANAGER"), async (req:
       skills: createdSkills 
     });
   } catch (error) {
-    console.error("Error generating skills:", error);
+    logError("Error generating skills:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -146,7 +147,7 @@ router.delete("/api/skills/:id", requireRole("ADMIN"), async (req: AuthRequest, 
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting skill:", error);
+    logError("Error deleting skill:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -167,7 +168,7 @@ router.get("/api/users/:userId/skills", requireAuth, async (req: AuthRequest, re
 
     res.json(userSkillsList);
   } catch (error) {
-    console.error("Error fetching user skills:", error);
+    logError("Error fetching user skills:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -206,7 +207,7 @@ router.post("/api/users/:userId/skills", requireRole("ADMIN", "MANAGER"), async 
 
     res.status(201).json(newUserSkill);
   } catch (error) {
-    console.error("Error assigning skill:", error);
+    logError("Error assigning skill:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -237,7 +238,7 @@ router.delete("/api/users/:userId/skills/:skillId", requireRole("ADMIN", "MANAGE
 
     res.json({ success: true});
   } catch (error) {
-    console.error("Error removing skill:", error);
+    logError("Error removing skill:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

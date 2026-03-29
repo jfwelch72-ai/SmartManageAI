@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import * as cron from 'node-cron';
 import { db } from "../db";
 import { aiSettings, changeOrders, projects, users, notifications } from "@shared/schema";
@@ -27,7 +28,7 @@ export async function initializeAIScheduler() {
   const [hour, minute] = settings.dailyRunTime.split(':').map(Number);
 
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-    console.error('❌ Invalid daily run time in settings:', settings.dailyRunTime);
+    logError('Invalid daily run time in settings', { dailyRunTime: settings.dailyRunTime });
     return;
   }
 
@@ -46,7 +47,7 @@ export async function initializeAIScheduler() {
       await runAIAnalysis(null);
       console.log('✅ Scheduled AI analysis completed successfully');
     } catch (error) {
-      console.error('❌ Scheduled AI analysis failed:', error);
+      logError('❌ Scheduled AI analysis failed:', {}, error instanceof Error ? error : new Error(String(error)));
     }
   }, {
     timezone: 'America/New_York',
@@ -77,7 +78,7 @@ async function initializeWeeklyChangeOrderAlerts() {
       await checkStaleChangeOrders();
       console.log('✅ Weekly change order check completed');
     } catch (error) {
-      console.error('❌ Weekly change order check failed:', error);
+      logError('❌ Weekly change order check failed:', {}, error instanceof Error ? error : new Error(String(error)));
     }
   }, {
     timezone: 'America/New_York',
@@ -198,7 +199,7 @@ async function checkStaleChangeOrders() {
       await insertNotifications(notificationsToCreate);
       console.log(`📋 Created ${notificationsToCreate.length} weekly CO alert notification(s)`);
     } catch (insertError) {
-      console.error('❌ Failed to insert weekly CO alert notifications:', insertError);
+      logError('❌ Failed to insert weekly CO alert notifications:', {}, insertError instanceof Error ? insertError : new Error(String(insertError)));
     }
   }
 }

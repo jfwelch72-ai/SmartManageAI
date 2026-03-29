@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from 'express';
 import PDFDocument from 'pdfkit';
 import fs from 'fs';
@@ -329,7 +330,7 @@ router.get('/marketing-document', (req, res) => {
 
     doc.end();
   } catch (error: any) {
-    console.error('Error generating marketing PDF:', error);
+    logError('Error generating marketing PDF:', {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to generate PDF' });
     }

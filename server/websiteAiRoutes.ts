@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -105,7 +106,7 @@ Be helpful, professional, and focused on helping contractors present themselves 
       response: aiResponse,
     });
   } catch (error) {
-    console.error("Error in AI assistant:", error);
+    logError("Error in AI assistant:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "AI assistant unavailable" });
   }
 });
@@ -192,7 +193,7 @@ Include: Contact form, phone/email, business hours, service area map, FAQ.`,
 
     res.json(pageContent);
   } catch (error) {
-    console.error("Error generating page:", error);
+    logError("Error generating page:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate page content" });
   }
 });
@@ -268,7 +269,7 @@ Consider:
 
     res.json(colors);
   } catch (error) {
-    console.error("Error suggesting colors:", error);
+    logError("Error suggesting colors:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to suggest colors" });
   }
 });
@@ -355,7 +356,7 @@ router.post("/seo/scan", requireAuth, async (req: AuthRequest, res: Response) =>
       pages: issues,
     });
   } catch (error) {
-    console.error("Error scanning SEO:", error);
+    logError("Error scanning SEO:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to scan SEO" });
   }
 });
@@ -434,7 +435,7 @@ Generate optimized SEO content. Return JSON:
 
     res.json(seoContent);
   } catch (error) {
-    console.error("Error optimizing SEO:", error);
+    logError("Error optimizing SEO:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to optimize SEO" });
   }
 });
@@ -473,7 +474,7 @@ router.post("/analytics/track", async (req: Request, res: Response) => {
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Error tracking event:", error);
+    logError("Error tracking event:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to track event" });
   }
 });
@@ -580,7 +581,7 @@ router.get("/analytics/summary", requireAuth, async (req: AuthRequest, res: Resp
       referrers,
     });
   } catch (error) {
-    console.error("Error fetching analytics:", error);
+    logError("Error fetching analytics:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch analytics" });
   }
 });
@@ -894,7 +895,7 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
       },
     });
   } catch (error) {
-    console.error("Error in AI website wizard:", error);
+    logError("Error in AI website wizard:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "AI website wizard failed. Please try again." });
   }
 });

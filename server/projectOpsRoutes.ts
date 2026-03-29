@@ -9,7 +9,7 @@ import { insertNotification, insertNotifications } from "./services/notification
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
 import * as healthService from "./services/projectHealthService";
-import { logError } from "./utils/logger";
+import {logError, logWarn } from "./utils/logger";
 import { eventBus } from "./events";
 
 const router = Router();
@@ -91,7 +91,7 @@ router.get("/api/projects/:code/receipts", requireAuth, async (req: AuthRequest,
 
     res.json(projectReceipts);
   } catch (error) {
-    console.error("Get receipts error:", error);
+    logError("Get receipts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -118,7 +118,7 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
     }).safeParse(transformedData);
     
     if (!validationResult.success) {
-      console.error("Receipt validation errors:", JSON.stringify(validationResult.error.errors, null, 2));
+      logError("Receipt validation errors", { errors: validationResult.error.errors });
       res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
       return;
     }
@@ -146,7 +146,7 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
     }]);
 
     if (newReceipt.projectId) {
-      import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(newReceipt.projectId!)).catch(e => console.error("Budget alert eval after receipt:", e));
+      import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(newReceipt.projectId!)).catch(e => logError("Budget alert eval after receipt:", {}, e instanceof Error ? e : new Error(String(e))));
 
       try {
         await eventBus.emit({
@@ -164,13 +164,13 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res) => {
           },
         });
       } catch (emitErr) {
-        console.error("Failed to emit receipt.created event:", emitErr);
+        logError("Failed to emit receipt.created event:", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
       }
     }
 
     res.status(201).json(newReceipt);
   } catch (error: any) {
-    console.error("Create receipt error:", error);
+    logError("Create receipt error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -206,7 +206,7 @@ router.get("/api/projects/:code/documents", requireAuth, async (req: AuthRequest
 
     res.json(docs);
   } catch (error) {
-    console.error("Get documents error:", error);
+    logError("Get documents error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -244,7 +244,7 @@ router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, asyn
     });
     res.json({ url: signedUrl });
   } catch (error) {
-    console.error("Project document preview-url error:", error);
+    logError("Project document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate preview URL" });
   }
 });
@@ -277,7 +277,7 @@ router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (re
     const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
     await objectStorageService.downloadObject(objectFile, res, 3600);
   } catch (error) {
-    console.error("Project document stream error:", error);
+    logError("Project document stream error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
       res.status(500).json({ error: "Failed to stream document" });
     }
@@ -322,7 +322,7 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     res.status(201).json(newDoc);
   } catch (error: any) {
-    console.error("Create document error:", error);
+    logError("Create document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -348,6 +348,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
     try {
       parsedUrl = new URL(url);
     } catch {
+      logWarn("Non-critical operation failed");
       res.status(400).json({ error: "Invalid URL format" });
       return;
     }
@@ -412,6 +413,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
           return "This URL points to an internal network address and can't be accessed. Please use a publicly accessible link.";
         }
       } catch {
+        logWarn("Non-critical operation failed");
         return "Could not resolve the hostname. Please check the URL and try again.";
       }
       return null;
@@ -455,6 +457,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
           try {
             redirectUrl = new URL(location, currentUrl);
           } catch {
+            logWarn("Non-critical operation failed");
             clearTimeout(timeout);
             res.status(400).json({ error: "The link redirected to an invalid URL. Please try a different link." });
             return;
@@ -569,7 +572,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.status(201).json(newDoc);
   } catch (error: any) {
-    console.error("Create document from URL error:", error);
+    logError("Create document from URL error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -752,7 +755,7 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
 
     res.status(201).json(newDoc);
   } catch (error: any) {
-    console.error("Create document from cloud error:", error);
+    logError("Create document from cloud error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -799,7 +802,7 @@ router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest
         const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
         await objectFile.delete();
       } catch (error) {
-        console.error("Error deleting file from object storage:", error);
+        logError("Error deleting file from object storage:", {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 
@@ -818,7 +821,7 @@ router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest
 
     res.json({ message: "Document deleted successfully" });
   } catch (error: any) {
-    console.error("Delete document error:", error);
+    logError("Delete document error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -875,14 +878,14 @@ router.get("/api/documents/:documentId/download-url", requireAuth, async (req: A
 
         res.json({ url: signedUrl });
       } catch (error) {
-        console.error("Error generating presigned URL:", error);
+        logError("Error generating presigned URL:", {}, error instanceof Error ? error : new Error(String(error)));
         res.json({ url: document.fileUrl });
       }
     } else {
       res.json({ url: document.fileUrl });
     }
   } catch (error: any) {
-    console.error("Get document download URL error:", error);
+    logError("Get document download URL error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -930,7 +933,7 @@ router.post("/api/file-permissions", requireAuth, requireRole("ADMIN", "MANAGER"
     
     res.status(201).json(newPermission);
   } catch (error: any) {
-    console.error("Grant file permission error:", error);
+    logError("Grant file permission error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -949,7 +952,7 @@ router.delete("/api/file-permissions/:id", requireAuth, requireRole("ADMIN", "MA
 
     res.json({ message: "Permission revoked successfully" });
   } catch (error) {
-    console.error("Revoke file permission error:", error);
+    logError("Revoke file permission error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -984,7 +987,7 @@ router.get("/api/file-permissions/:fileType/:fileId", requireAuth, requireRole("
 
     res.json(permissions);
   } catch (error) {
-    console.error("Get file permissions error:", error);
+    logError("Get file permissions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1006,7 +1009,7 @@ router.get("/api/users/:userId/file-permissions", requireAuth, async (req: AuthR
 
     res.json(permissions);
   } catch (error) {
-    console.error("Get user file permissions error:", error);
+    logError("Get user file permissions error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1065,7 +1068,7 @@ router.get("/api/change-orders", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(result.map(r => ({ ...r.order, project: r.project })));
   } catch (error) {
-    console.error("List change orders error:", error);
+    logError("List change orders error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1110,7 +1113,7 @@ router.get("/api/projects/:code/change-orders", requireAuth, async (req: AuthReq
 
     res.json(enrichedOrders);
   } catch (error) {
-    console.error("Get change orders error:", error);
+    logError("Get change orders error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1221,7 +1224,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
     } catch (err: unknown) {
       const pgErr = err as { code?: string; constraint?: string };
       if (pgErr.code === "23505" && (pgErr.constraint?.includes("change_orders_project_number_uniq") || pgErr.constraint?.includes("change_order_number"))) {
-        return res.status(409).json({ message: `Change order number "${changeOrderNumber}" already exists for this project. Please use a different number.` });
+        return res.status(409).json({ error: `Change order number "${changeOrderNumber}" already exists for this project. Please use a different number.` });
       }
       throw err;
     }
@@ -1246,7 +1249,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
 
     res.status(201).json(newOrder);
   } catch (error: any) {
-    console.error("Create change order error:", error);
+    logError("Create change order error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1300,12 +1303,12 @@ router.patch("/api/change-orders/:id", requireAuth, requireRole("ADMIN", "MANAGE
 
     if (updatedOrder.status === "APPROVED") {
       const { syncApprovedCOToSOV } = await import("./aiaBillingRoutes");
-      syncApprovedCOToSOV(updatedOrder.id).catch(e => console.error("CO auto-sync error:", e));
+      syncApprovedCOToSOV(updatedOrder.id).catch(e => logError("CO auto-sync error:", {}, e instanceof Error ? e : new Error(String(e))));
     }
 
     res.json(updatedOrder);
   } catch (error: any) {
-    console.error("Update change order error:", error);
+    logError("Update change order error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1340,7 +1343,7 @@ router.get("/api/change-orders/:id/line-items", requireAuth, async (req: AuthReq
       subcontractorMarkupPercent: order?.subcontractorMarkupPercent ?? "5",
     });
   } catch (error) {
-    console.error("Get change order line items error:", error);
+    logError("Get change order line items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1524,7 +1527,7 @@ router.put("/api/change-orders/:id/line-items", requireAuth, requireRole("ADMIN"
       total: grandTotal
     });
   } catch (error) {
-    console.error("Update change order line items error:", error);
+    logError("Update change order line items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1590,7 +1593,7 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =>
 
     res.json(eventsWithUser);
   } catch (error) {
-    console.error("Get calendar events error:", error);
+    logError("Get calendar events error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1622,7 +1625,7 @@ router.get("/api/calendar/my-events", requireAuth, async (req: AuthRequest, res)
 
     res.json(eventsWithUser);
   } catch (error) {
-    console.error("Get user calendar events error:", error);
+    logError("Get user calendar events error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1674,7 +1677,7 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res) =
 
     res.status(201).json(newEvent);
   } catch (error: any) {
-    console.error("Create calendar event error:", error);
+    logError("Create calendar event error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1703,7 +1706,7 @@ router.delete("/api/calendar/events/:id", requireAuth, async (req: AuthRequest, 
     await db.delete(calendarEvents).where(eq(calendarEvents.id, req.params.id));
     res.status(204).send();
   } catch (error: any) {
-    console.error("Delete calendar event error:", error);
+    logError("Delete calendar event error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1910,7 +1913,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch {}
+        } catch { logWarn("Non-critical operation failed"); }
       }
     }
 
@@ -1939,7 +1942,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch {}
+        } catch { logWarn("Non-critical operation failed"); }
       }
     }
 
@@ -1968,7 +1971,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch {}
+        } catch { logWarn("Non-critical operation failed"); }
       }
     }
 
@@ -2068,7 +2071,7 @@ async function buildVaultDocuments(projectId: string, projectCode: string, userI
               });
             }
           }
-        } catch {}
+        } catch { logWarn("Non-critical operation failed"); }
       }
     }
   }
@@ -2109,7 +2112,7 @@ router.get("/api/projects/:code/vault", requireAuth, requireRole(...VAULT_MANAGE
 
     res.json(filtered);
   } catch (error) {
-    console.error("Project vault error:", error);
+    logError("Project vault error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2145,6 +2148,7 @@ router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRo
           return;
         }
       } catch {
+        logWarn("Non-critical operation failed");
         res.status(400).json({ error: "Invalid file URL" });
         return;
       }
@@ -2159,7 +2163,7 @@ router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRo
 
     res.json({ url: signedUrl, fileName: doc.fileName, mimeType: doc.mimeType });
   } catch (error) {
-    console.error("Vault signed URL error:", error);
+    logError("Vault signed URL error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate signed URL" });
   }
 });
@@ -2245,6 +2249,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
         if (resp.ok) return Buffer.from(await resp.arrayBuffer());
         return null;
       } catch {
+        logWarn("Non-critical operation failed");
         return null;
       }
     };
@@ -2273,6 +2278,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
               doc.text("[Image could not be embedded]");
             }
           } catch {
+            logWarn("Non-critical operation failed");
             doc.text("[Image could not be embedded]");
           }
           if (d.name) {
@@ -2323,6 +2329,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
         mergedPdf.addPage(page);
       }
     } catch {
+      logWarn("Non-critical operation failed");
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Project_Vault_${project.code}_${new Date().toISOString().slice(0, 10)}.pdf"`);
       res.send(coverPdfBytes);
@@ -2339,7 +2346,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
             mergedPdf.addPage(page);
           }
         }
-      } catch {}
+      } catch { logWarn("Non-critical operation failed"); }
     }
 
     const finalPdfBytes = await mergedPdf.save();
@@ -2347,7 +2354,7 @@ router.post("/api/projects/:code/vault/export-pdf", requireAuth, requireRole(...
     res.setHeader("Content-Disposition", `attachment; filename="Project_Vault_${project.code}_${new Date().toISOString().slice(0, 10)}.pdf"`);
     res.send(Buffer.from(finalPdfBytes));
   } catch (error) {
-    console.error("Project vault PDF export error:", error);
+    logError("Project vault PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate PDF" });
   }
 });

@@ -1,3 +1,4 @@
+import {logError, logWarn } from "../utils/logger";
 import { openai, AI_MODEL_GPT4O } from './openaiClient';
 import { db } from '../db';
 import { 
@@ -199,7 +200,7 @@ Return JSON with:
 
     return result;
   } catch (error) {
-    console.error('Email analysis failed:', error);
+    logError('Email analysis failed:', {}, error instanceof Error ? error : new Error(String(error)));
     // Return default result on error
     return {
       classification: 'OTHER',
@@ -246,7 +247,7 @@ ${m.bodyText?.substring(0, 1500) || '(No content)'}
 
     return JSON.parse(content) as ThreadSummaryResult;
   } catch (error) {
-    console.error('Thread summary failed:', error);
+    logError('Thread summary failed:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       summary: 'Unable to generate summary',
       keyPoints: [],
@@ -299,7 +300,7 @@ Return JSON with subject and body fields.` }
         });
       }
     } catch (error) {
-      console.error(`Failed to generate ${tone} reply:`, error);
+      logError(`Failed to generate ${tone} reply:`, {}, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -375,7 +376,7 @@ Return JSON with:
       summaryNarrative: parsed.summaryNarrative || 'No summary available.',
     };
   } catch (error) {
-    console.error('Summary generation failed:', error);
+    logError('Summary generation failed:', {}, error instanceof Error ? error : new Error(String(error)));
     return {
       periodDescription: periodType === 'DAILY' ? 'Last 24 hours' : 'Last 7 days',
       totalEmails: emails.length,
@@ -592,7 +593,7 @@ export async function createTaskFromEmail(
         dueDate = undefined;
       }
     } catch {
-      // Ignore parsing errors
+      logWarn("Non-critical operation failed");
     }
   }
 

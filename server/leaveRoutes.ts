@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { leaveTypes, leaveRequests, users, calendarEvents, organizations } from "@shared/schema";
@@ -46,7 +47,7 @@ router.get("/api/leave/types", async (req: AuthRequest, res) => {
 
     res.json(types);
   } catch (error: any) {
-    console.error("Get leave types error:", error.message);
+    logError("Get leave types error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch leave types" });
   }
 });
@@ -78,7 +79,7 @@ router.post("/api/leave/types", requireAuth, requireRole("ADMIN", "MANAGER", "HR
 
     res.status(201).json(newType);
   } catch (error: any) {
-    console.error("Create leave type error:", error.message);
+    logError("Create leave type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create leave type" });
   }
 });
@@ -113,7 +114,7 @@ router.patch("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Update leave type error:", error.message);
+    logError("Update leave type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update leave type" });
   }
 });
@@ -154,7 +155,7 @@ router.delete("/api/leave/types/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Delete leave type error:", error.message);
+    logError("Delete leave type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete leave type" });
   }
 });
@@ -233,7 +234,7 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res) => 
 
     res.json(balances);
   } catch (error: any) {
-    console.error("Get leave balances error:", error.message, "| user:", req.user?.id, "| role:", req.user?.role, "| stack:", error.stack);
+    logError("Get leave balances error", { userId: req.user?.id, role: req.user?.role }, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch leave balances" });
   }
 });
@@ -294,7 +295,7 @@ router.get("/api/leave/requests", requireAuth, async (req: AuthRequest, res) => 
 
     res.json(requests);
   } catch (error: any) {
-    console.error("Get leave requests error:", error.message);
+    logError("Get leave requests error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch leave requests" });
   }
 });
@@ -366,7 +367,7 @@ router.post("/api/leave/requests", requireAuth, async (req: AuthRequest, res) =>
 
     res.status(201).json(newRequest);
   } catch (error: any) {
-    console.error("Create leave request error:", error.message);
+    logError("Create leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create leave request" });
   }
 });
@@ -431,7 +432,7 @@ router.post("/api/leave/requests/:id/approve", requireAuth, requireRole("ADMIN",
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Approve leave request error:", error.message);
+    logError("Approve leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to approve leave request" });
   }
 });
@@ -498,7 +499,7 @@ router.post("/api/leave/requests/:id/deny", requireAuth, requireRole("ADMIN", "M
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Deny leave request error:", error.message);
+    logError("Deny leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to deny leave request" });
   }
 });
@@ -533,7 +534,7 @@ router.get("/api/leave/team-calendar", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(approvedLeave);
   } catch (error: any) {
-    console.error("Get team calendar error:", error.message);
+    logError("Get team calendar error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch team calendar" });
   }
 });
@@ -580,7 +581,7 @@ router.delete("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, r
 
     res.json({ success: true });
   } catch (error: any) {
-    console.error("Cancel leave request error:", error.message);
+    logError("Cancel leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to cancel leave request" });
   }
 });
@@ -651,7 +652,7 @@ router.patch("/api/leave/requests/:id", requireAuth, async (req: AuthRequest, re
 
     res.json(updated);
   } catch (error: any) {
-    console.error("Update leave request error:", error.message);
+    logError("Update leave request error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update leave request" });
   }
 });

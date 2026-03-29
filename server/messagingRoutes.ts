@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, projects as projectsTable, aiTasks } from "@shared/schema";
@@ -134,7 +135,7 @@ const messagingSetup = (async () => {
 
       res.json(conversationsWithDetails);
     } catch (error) {
-      console.error("Get conversations error:", error);
+      logError("Get conversations error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -163,7 +164,7 @@ const messagingSetup = (async () => {
 
       res.json(orgChannels);
     } catch (error) {
-      console.error("Get channels error:", error);
+      logError("Get channels error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -215,7 +216,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(newChannel);
     } catch (error) {
-      console.error("Create channel error:", error);
+      logError("Create channel error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -257,7 +258,7 @@ const messagingSetup = (async () => {
 
       res.json({ success: true });
     } catch (error) {
-      console.error("Join channel error:", error);
+      logError("Join channel error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -279,7 +280,7 @@ const messagingSetup = (async () => {
       await db.update(conversations).set({ isArchived: true }).where(eq(conversations.id, conversationId));
       res.json({ success: true });
     } catch (error) {
-      console.error("Archive channel error:", error);
+      logError("Archive channel error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -369,7 +370,7 @@ const messagingSetup = (async () => {
 
       res.json(companyChannel);
     } catch (error) {
-      console.error("Get company channel error:", error);
+      logError("Get company channel error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -472,7 +473,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(newConversation);
     } catch (error) {
-      console.error("Create conversation error:", error);
+      logError("Create conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -571,7 +572,7 @@ const messagingSetup = (async () => {
 
       res.json({ messages: messagesWithExtras, hasMore });
     } catch (error) {
-      console.error("Get messages error:", error);
+      logError("Get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -703,7 +704,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(fullMessage);
     } catch (error) {
-      console.error("Send message error:", error);
+      logError("Send message error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -785,7 +786,7 @@ const messagingSetup = (async () => {
         size: file.size,
       });
     } catch (error) {
-      console.error("File upload error:", error);
+      logError("File upload error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to upload file" });
     }
   });
@@ -917,7 +918,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(voiceMsg);
     } catch (error) {
-      console.error("Voice upload error:", error);
+      logError("Voice upload error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to upload voice message" });
     }
   });
@@ -947,7 +948,7 @@ const messagingSetup = (async () => {
 
       objectStorage.downloadObject(file, res, 86400);
     } catch (error: any) {
-      console.error("Serve file error:", error);
+      logError("Serve file error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
       res.status(500).json({ error: "Failed to serve file" });
     }
@@ -970,7 +971,7 @@ const messagingSetup = (async () => {
     }
     const stream = file.createReadStream();
     stream.on("error", (err: Error) => {
-      console.error("Voice stream error:", err);
+      logError("Voice stream error:", {}, err instanceof Error ? err : new Error(String(err)));
       if (!res.headersSent) res.status(500).json({ error: "Stream error" });
     });
     stream.pipe(res);
@@ -1005,7 +1006,7 @@ const messagingSetup = (async () => {
 
       await serveVoiceStream(file, req, res);
     } catch (error: any) {
-      console.error("Serve voice error:", error);
+      logError("Serve voice error:", {}, error instanceof Error ? error : new Error(String(error)));
       if (error instanceof ObjectNotFoundError) return res.status(404).json({ error: "File not found" });
       res.status(500).json({ error: "Failed to serve voice file" });
     }
@@ -1078,7 +1079,7 @@ const messagingSetup = (async () => {
 
       res.json(combined);
     } catch (error) {
-      console.error("Task mention search error:", error);
+      logError("Task mention search error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1143,7 +1144,7 @@ const messagingSetup = (async () => {
 
       res.json({ success: true, markedAsRead: unreadMessages.length });
     } catch (error) {
-      console.error("Mark messages read error:", error);
+      logError("Mark messages read error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1185,7 +1186,7 @@ const messagingSetup = (async () => {
 
       res.json({ unreadCount: Number(unreadCount[0]?.count || 0) });
     } catch (error) {
-      console.error("Get unread count error:", error);
+      logError("Get unread count error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1223,7 +1224,7 @@ const messagingSetup = (async () => {
 
       res.json(availableUsers);
     } catch (error) {
-      console.error("Get messaging users error:", error);
+      logError("Get messaging users error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1256,6 +1257,7 @@ const messagingSetup = (async () => {
       try {
         res.write(": ping\n\n");
       } catch {
+        logWarn("Non-critical operation failed");
         clearInterval(pingInterval);
       }
     }, 25_000);
@@ -1445,7 +1447,7 @@ const messagingSetup = (async () => {
 
       res.json(updatedMsg);
     } catch (error) {
-      console.error("Edit message error:", error);
+      logError("Edit message error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1494,7 +1496,7 @@ const messagingSetup = (async () => {
 
       res.json(deletedMsg);
     } catch (error) {
-      console.error("Delete message error:", error);
+      logError("Delete message error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1546,7 +1548,7 @@ const messagingSetup = (async () => {
 
       res.json({ reactions });
     } catch (error) {
-      console.error("Toggle reaction error:", error);
+      logError("Toggle reaction error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1588,7 +1590,7 @@ const messagingSetup = (async () => {
 
       res.json({ reactions });
     } catch (error) {
-      console.error("Remove reaction error:", error);
+      logError("Remove reaction error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1676,7 +1678,7 @@ const messagingSetup = (async () => {
 
       res.json({ projectCode });
     } catch (error) {
-      console.error("Entity project lookup error:", error);
+      logError("Entity project lookup error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1732,7 +1734,7 @@ const messagingSetup = (async () => {
 
       res.json(results);
     } catch (error) {
-      console.error("Entity search error:", error);
+      logError("Entity search error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1774,7 +1776,7 @@ const messagingSetup = (async () => {
       const inserted = await db.insert(messageEntityLinks).values(values).onConflictDoNothing().returning();
       res.status(201).json(inserted);
     } catch (error) {
-      console.error("Add entity links error:", error);
+      logError("Add entity links error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1794,7 +1796,7 @@ const messagingSetup = (async () => {
       await db.delete(messageEntityLinks).where(and(eq(messageEntityLinks.id, linkId), eq(messageEntityLinks.messageId, msgId)));
       res.json({ success: true });
     } catch (error) {
-      console.error("Remove entity link error:", error);
+      logError("Remove entity link error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1813,7 +1815,7 @@ const messagingSetup = (async () => {
       const links = await db.select().from(messageEntityLinks).where(eq(messageEntityLinks.messageId, msgId));
       res.json(links);
     } catch (error) {
-      console.error("Get entity links error:", error);
+      logError("Get entity links error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1873,7 +1875,7 @@ const messagingSetup = (async () => {
 
       res.json(result);
     } catch (error) {
-      console.error("Get entity messages error:", error);
+      logError("Get entity messages error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1902,7 +1904,7 @@ const messagingSetup = (async () => {
       }
       res.json(existing || null);
     } catch (error) {
-      console.error("Entity conversation lookup error:", error);
+      logError("Entity conversation lookup error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -2004,7 +2006,7 @@ const messagingSetup = (async () => {
 
       res.status(201).json(newConversation);
     } catch (error) {
-      console.error("Entity conversation error:", error);
+      logError("Entity conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });

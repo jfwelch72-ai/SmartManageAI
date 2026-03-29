@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import {
@@ -142,7 +143,7 @@ router.get("/projects/:code/punch-list", requireAuth, async (req: AuthRequest, r
 
     res.json(items.map(enrichItem));
   } catch (err) {
-    console.error("Error listing punch list items:", err);
+    logError("Error listing punch list items:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch punch list items" });
   }
 });
@@ -207,7 +208,7 @@ router.post(
 
       res.status(201).json(enrichItem(item));
     } catch (err) {
-      console.error("Error creating punch list item:", err);
+      logError("Error creating punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create punch list item" });
     }
   },
@@ -225,7 +226,7 @@ router.get("/projects/:code/punch-list/:id", requireAuth, async (req: AuthReques
     }
     res.json(enrichItem(item));
   } catch (err) {
-    console.error("Error fetching punch list item:", err);
+    logError("Error fetching punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to fetch punch list item" });
   }
 });
@@ -387,7 +388,7 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
 
     res.json(enrichItem(updated));
   } catch (err) {
-    console.error("Error updating punch list item:", err);
+    logError("Error updating punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to update punch list item" });
   }
 });
@@ -419,7 +420,7 @@ router.delete(
 
       res.status(204).send();
     } catch (err) {
-      console.error("Error deleting punch list item:", err);
+      logError("Error deleting punch list item:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to delete punch list item" });
     }
   },
@@ -459,7 +460,7 @@ router.post(
 
       res.json(enrichItem(updatedItem));
     } catch (err) {
-      console.error("Error adding attachment:", err);
+      logError("Error adding attachment:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to add attachment" });
     }
   },
@@ -490,7 +491,7 @@ router.delete(
 
       res.json(enrichItem(updatedItem));
     } catch (err) {
-      console.error("Error removing attachment:", err);
+      logError("Error removing attachment:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to remove attachment" });
     }
   },
@@ -591,7 +592,7 @@ router.get("/projects/:code/punch-list/export/pdf", requireAuth, async (req: Aut
     res.setHeader("Content-Disposition", `inline; filename="punch-list-${project.code}.html"`);
     res.send(html);
   } catch (err) {
-    console.error("Error exporting punch list:", err);
+    logError("Error exporting punch list:", {}, err instanceof Error ? err : new Error(String(err)));
     res.status(500).json({ error: "Failed to export punch list" });
   }
 });
@@ -706,7 +707,7 @@ router.post(
 
       res.status(201).json(createdItems.map(enrichItem));
     } catch (err) {
-      console.error("Error creating punch list items from inspection:", err);
+      logError("Error creating punch list items from inspection:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Failed to create punch list items from inspection" });
     }
   },

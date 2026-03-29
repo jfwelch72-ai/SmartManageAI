@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { projectSchedules, projectScheduleTasks, scheduleForecastSnapshots, projects, changeOrders, projectDelays, crews, aiGanttRecommendations } from "@shared/schema";
@@ -45,7 +46,7 @@ router.post("/projects/:code/schedule/recalculate", requireAuth, requireRole("AD
 
     res.json({ schedule: updatedSchedule, tasks: updatedTasks, cpm: result });
   } catch (error) {
-    console.error("Recalculate schedule error:", error);
+    logError("Recalculate schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -95,7 +96,7 @@ router.post("/projects/:code/schedule/lock-baseline", requireAuth, requireRole("
 
     res.json({ schedule: updatedSchedule, tasks: updatedTasks });
   } catch (error) {
-    console.error("Lock baseline error:", error);
+    logError("Lock baseline error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -119,7 +120,7 @@ router.post("/projects/:code/schedule/unlock-baseline", requireAuth, requireRole
 
     res.json({ schedule: updatedSchedule });
   } catch (error) {
-    console.error("Unlock baseline error:", error);
+    logError("Unlock baseline error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -170,7 +171,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId/dependencies", requireAuth,
 
     res.json({ schedule: updatedSchedule, tasks: updatedTasks, cpm: result });
   } catch (error) {
-    console.error("Update dependencies error:", error);
+    logError("Update dependencies error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -207,7 +208,7 @@ router.patch("/projects/:code/schedule/tasks/:taskId/crews", requireAuth, requir
 
     res.json(updatedTask);
   } catch (error) {
-    console.error("Update task crews error:", error);
+    logError("Update task crews error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -275,7 +276,7 @@ router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", 
 
     res.status(201).json({ task: newTask, tasks });
   } catch (error) {
-    console.error("Create schedule task error:", error);
+    logError("Create schedule task error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -311,7 +312,7 @@ router.delete("/projects/:code/schedule/tasks/:taskId", requireAuth, requireRole
 
     res.json({ tasks: remainingTasks });
   } catch (error) {
-    console.error("Delete schedule task error:", error);
+    logError("Delete schedule task error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -400,7 +401,7 @@ router.get("/projects/:code/schedule/resource-loading", requireAuth, async (req:
 
     res.json({ allocations, overAllocations, crews: allCrews });
   } catch (error) {
-    console.error("Resource loading error:", error);
+    logError("Resource loading error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -454,7 +455,7 @@ router.get("/projects/:code/schedule/forecast", requireAuth, async (req: AuthReq
       snapshots: snapshots.reverse(),
     });
   } catch (error) {
-    console.error("Forecast error:", error);
+    logError("Forecast error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -487,7 +488,7 @@ router.post("/projects/:code/schedule/delay-impact", requireAuth, async (req: Au
       criticalPathTaskCount: criticalTasks.length,
     });
   } catch (error) {
-    console.error("Delay impact error:", error);
+    logError("Delay impact error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -535,7 +536,7 @@ router.post("/projects/:code/schedule/delay-change-order", requireAuth, requireR
 
     res.json({ changeOrder: newCO, delayId });
   } catch (error) {
-    console.error("Delay change order error:", error);
+    logError("Delay change order error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -554,7 +555,7 @@ router.get("/projects/:code/schedule/recommendations", requireAuth, async (req: 
 
     res.json({ recommendations });
   } catch (error) {
-    console.error("Get recommendations error:", error);
+    logError("Get recommendations error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -573,7 +574,7 @@ router.patch("/projects/:code/schedule/recommendations/:recId/dismiss", requireA
     if (!updated) return res.status(404).json({ error: "Recommendation not found" });
     res.json({ recommendation: updated });
   } catch (error) {
-    console.error("Dismiss recommendation error:", error);
+    logError("Dismiss recommendation error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -621,7 +622,7 @@ router.post("/projects/:code/schedule/create", requireAuth, requireRole("ADMIN",
 
     res.status(201).json({ schedule: newSchedule, tasks: [] });
   } catch (error) {
-    console.error("Create manual schedule error:", error);
+    logError("Create manual schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

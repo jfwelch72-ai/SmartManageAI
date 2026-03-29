@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -147,7 +148,7 @@ router.get("/api/production-rates", requireAuth, requireRole("ADMIN", "MANAGER",
       availableUnits,
     });
   } catch (error) {
-    console.error("Get production rates error:", error);
+    logError("Get production rates error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -273,7 +274,7 @@ router.get("/api/production-rates/detail", requireAuth, requireRole("ADMIN", "MA
       }),
     });
   } catch (error) {
-    console.error("Get production rate detail error:", error);
+    logError("Get production rate detail error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -551,7 +552,7 @@ router.get("/api/production-rates/unified", requireAuth, requireRole("ADMIN", "M
       availableCategories,
     });
   } catch (error) {
-    console.error("Get unified production rates error:", error);
+    logError("Get unified production rates error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -783,7 +784,7 @@ router.get("/api/production-rates/metrics", requireAuth, requireRole("ADMIN", "M
       availableUnits,
     });
   } catch (error) {
-    console.error("Get production rate metrics error:", error);
+    logError("Get production rate metrics error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -830,7 +831,7 @@ router.get("/api/production-rates/estimate", requireAuth, requireRole("ADMIN", "
       },
     });
   } catch (error) {
-    console.error("Get production rate estimate error:", error);
+    logError("Get production rate estimate error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

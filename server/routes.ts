@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
@@ -535,7 +536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPerformanceRoutes(app);
 
   seedCoreTradeModifierCategories().catch(err => {
-    console.error("Failed to seed core modifier categories:", err);
+    logError("Failed to seed core modifier categories:", {}, err instanceof Error ? err : new Error(String(err)));
   });
 
   const cron = await import("node-cron");
@@ -543,7 +544,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await checkCertificationExpiry();
     } catch (err) {
-      console.error("[Cert Expiry] Scheduled check failed:", err);
+      logError("[Cert Expiry] Scheduled check failed:", {}, err instanceof Error ? err : new Error(String(err)));
     }
   });
 
@@ -554,7 +555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const result = await runOrphanScan();
       res.json(result);
     } catch (err: any) {
-      console.error("Orphan scan error:", err);
+      logError("Orphan scan error:", {}, err instanceof Error ? err : new Error(String(err)));
       res.status(500).json({ error: "Orphan scan failed", detail: err?.message });
     }
   });

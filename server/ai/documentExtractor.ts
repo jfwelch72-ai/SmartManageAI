@@ -1,3 +1,4 @@
+import {logError, logWarn } from "../utils/logger";
 import { objectStorageClient } from "../objectStorage";
 import { createCanvas } from "canvas";
 
@@ -16,6 +17,7 @@ function parseGcsUrl(url: string): { bucketName: string; objectName: string } | 
     }
     return null;
   } catch {
+    logWarn("Non-critical operation failed");
     return null;
   }
 }
@@ -39,6 +41,7 @@ async function downloadFromGcs(url: string): Promise<GcsDownloadResult> {
     const [metadata] = await file.getMetadata();
     contentType = metadata.contentType || null;
   } catch {
+    logWarn("Non-critical operation failed");
   }
 
   const [contents] = await file.download();
@@ -134,7 +137,7 @@ async function renderPdfToImages(pdfBuffer: Buffer): Promise<ImageContentBlock[]
 
       page.cleanup();
     } catch (pageError) {
-      console.error(`[DocumentExtractor] Failed to render PDF page ${pageNum}:`, pageError);
+      logError(`[DocumentExtractor] Failed to render PDF page ${pageNum}:`, {}, pageError instanceof Error ? pageError : new Error(String(pageError)));
     }
   }
 
@@ -181,12 +184,13 @@ export async function extractDocumentContent(
         return images;
       }
     } catch {
+      logWarn("Non-critical operation failed");
     }
 
     console.warn(`[DocumentExtractor] Unable to process file, skipping`);
     return [];
   } catch (error) {
-    console.error(`[DocumentExtractor] Error processing ${documentUrl}:`, error);
+    logError(`[DocumentExtractor] Error processing ${documentUrl}:`, {}, error instanceof Error ? error : new Error(String(error)));
     return [];
   }
 }

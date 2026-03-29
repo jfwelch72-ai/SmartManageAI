@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { db } from "./db";
 import { projectScheduleTasks, projectSchedules, scheduleForecastSnapshots } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
@@ -367,7 +368,7 @@ export async function recalculateSchedule(scheduleId: string): Promise<CPMResult
       overallProgress,
     });
   } catch (e) {
-    console.error("Failed to save forecast snapshot:", e);
+    logError("Failed to save forecast snapshot:", {}, e instanceof Error ? e : new Error(String(e)));
   }
 
   return result;

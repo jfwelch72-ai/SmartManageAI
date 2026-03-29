@@ -1,3 +1,4 @@
+import { logWarn } from "../utils/logger";
 import type { Request, Response } from "express";
 import type { AuthRequest } from "../auth";
 
@@ -32,6 +33,7 @@ export function isRedirectUriValid(uri: string): boolean {
     const parsed = new URL(uri);
     return parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1" && parsed.hostname !== "";
   } catch {
+    logWarn("Non-critical operation failed");
     return false;
   }
 }

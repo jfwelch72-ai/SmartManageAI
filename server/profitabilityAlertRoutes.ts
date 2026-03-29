@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { requireAuth } from "./auth";
 import type { AuthRequest } from "./auth";
@@ -49,7 +50,7 @@ router.get("/api/projects/:code/profitability/live", requireAuth, async (req: Au
       } : null,
     });
   } catch (error) {
-    console.error("Live profitability error:", error);
+    logError("Live profitability error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to calculate profitability" });
   }
 });
@@ -79,7 +80,7 @@ router.get("/api/projects/:code/profitability/history", requireAuth, async (req:
 
     return res.json(snapshots);
   } catch (error) {
-    console.error("Profitability history error:", error);
+    logError("Profitability history error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch profitability history" });
   }
 });

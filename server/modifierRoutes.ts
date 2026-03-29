@@ -1,3 +1,5 @@
+import { logError, logWarn } from "./utils/logger";
+import { sendValidationError } from "./utils/validation";
 import { Router, type Response } from "express";
 import { eq, and, or, isNull, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -150,7 +152,7 @@ async function seedModifiersIfNeeded() {
 }
 
 seedModifiersIfNeeded().catch((err: unknown) => {
-  console.error("[Modifiers] Seed failed:", err);
+  logError("[Modifiers] Seed failed:", {}, err instanceof Error ? err : new Error(String(err)));
 });
 
 function matchesScopePattern(mod: Modifier, pattern: string): boolean {
@@ -160,6 +162,7 @@ function matchesScopePattern(mod: Modifier, pattern: string): boolean {
     try {
       return new RegExp(p, "i").test(lowerPattern);
     } catch {
+      logWarn("Non-critical operation failed");
       return lowerPattern.includes(p.toLowerCase());
     }
   });
@@ -178,6 +181,7 @@ function matchesRule(rule: ScopeModifierRule, scopeName: string): boolean {
       try {
         return new RegExp(rule.pattern, "i").test(scopeName);
       } catch {
+        logWarn("Non-critical operation failed");
         return lowerScope.includes(lowerPattern);
       }
     default:
@@ -229,8 +233,8 @@ router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(filtered);
   } catch (err: unknown) {
-    console.error("[Modifiers] List error:", err);
-    res.status(500).json({ message: "Failed to list modifiers" });
+    logError("[Modifiers] List error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to list modifiers" });
   }
 });
 
@@ -239,7 +243,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
     const { tradeId, scopeName } = req.query;
 
     if (!tradeId || !scopeName || typeof tradeId !== "string" || typeof scopeName !== "string") {
-      return res.status(400).json({ message: "tradeId and scopeName are required" });
+      return res.status(400).json({ error: "tradeId and scopeName are required" });
     }
 
     const orgId = req.user?.organizationId;
@@ -292,8 +296,8 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
       matchedRuleModifierIds: Array.from(matchedModifierIds),
     });
   } catch (err: unknown) {
-    console.error("[Modifiers] for-scope error:", err);
-    res.status(500).json({ message: "Failed to get modifiers for scope" });
+    logError("[Modifiers] for-scope error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to get modifiers for scope" });
   }
 });
 
@@ -322,17 +326,17 @@ const createModifierSchema = z.object({
 router.post("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrManager(req.user?.role)) {
-      return res.status(403).json({ message: "Insufficient permissions" });
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
 
     const parsed = createModifierSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      return sendValidationError(res, parsed.error);
     }
 
     const orgId = req.user?.organizationId;
     if (!orgId) {
-      return res.status(400).json({ message: "Organization required" });
+      return res.status(400).json({ error: "Organization required" });
     }
 
     const [created] = await db
@@ -342,8 +346,8 @@ router.post("/api/modifiers", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    console.error("[Modifiers] Create error:", err);
-    res.status(500).json({ message: "Failed to create modifier" });
+    logError("[Modifiers] Create error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to create modifier" });
   }
 });
 
@@ -352,7 +356,7 @@ const updateModifierSchema = createModifierSchema.partial();
 router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrManager(req.user?.role)) {
-      return res.status(403).json({ message: "Insufficient permissions" });
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
 
     const { id } = req.params;
@@ -364,16 +368,16 @@ router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Re
       .where(eq(modifiers.id, id));
 
     if (!existing) {
-      return res.status(404).json({ message: "Modifier not found" });
+      return res.status(404).json({ error: "Modifier not found" });
     }
 
     if (!existing.organizationId || existing.organizationId !== orgId) {
-      return res.status(403).json({ message: "Can only edit org-specific modifiers" });
+      return res.status(403).json({ error: "Can only edit org-specific modifiers" });
     }
 
     const parsed = updateModifierSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      return sendValidationError(res, parsed.error);
     }
 
     const [updated] = await db
@@ -384,15 +388,15 @@ router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(updated);
   } catch (err: unknown) {
-    console.error("[Modifiers] Update error:", err);
-    res.status(500).json({ message: "Failed to update modifier" });
+    logError("[Modifiers] Update error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to update modifier" });
   }
 });
 
 router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (!isAdminOrManager(req.user?.role)) {
-      return res.status(403).json({ message: "Insufficient permissions" });
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
 
     const { id } = req.params;
@@ -404,11 +408,11 @@ router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: R
       .where(eq(modifiers.id, id));
 
     if (!existing) {
-      return res.status(404).json({ message: "Modifier not found" });
+      return res.status(404).json({ error: "Modifier not found" });
     }
 
     if (!existing.organizationId || existing.organizationId !== orgId) {
-      return res.status(403).json({ message: "Can only delete org-specific modifiers" });
+      return res.status(403).json({ error: "Can only delete org-specific modifiers" });
     }
 
     const [updated] = await db
@@ -419,8 +423,8 @@ router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: R
 
     res.json(updated);
   } catch (err: unknown) {
-    console.error("[Modifiers] Delete error:", err);
-    res.status(500).json({ message: "Failed to delete modifier" });
+    logError("[Modifiers] Delete error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to delete modifier" });
   }
 });
 
@@ -434,8 +438,8 @@ router.get("/api/modifiers/rules", requireAuth, async (_req: AuthRequest, res: R
 
     res.json(results);
   } catch (err: unknown) {
-    console.error("[Modifiers] List rules error:", err);
-    res.status(500).json({ message: "Failed to list rules" });
+    logError("[Modifiers] List rules error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to list rules" });
   }
 });
 
@@ -451,12 +455,12 @@ const createRuleSchema = z.object({
 router.post("/api/modifiers/rules", requireAuth, async (req: AuthRequest, res: Response) => {
   try {
     if (req.user?.role !== "SUPER_ADMIN") {
-      return res.status(403).json({ message: "Only platform admins can create scope rules" });
+      return res.status(403).json({ error: "Only platform admins can create scope rules" });
     }
 
     const parsed = createRuleSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      return sendValidationError(res, parsed.error);
     }
 
     const [created] = await db
@@ -466,8 +470,8 @@ router.post("/api/modifiers/rules", requireAuth, async (req: AuthRequest, res: R
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    console.error("[Modifiers] Create rule error:", err);
-    res.status(500).json({ message: "Failed to create rule" });
+    logError("[Modifiers] Create rule error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to create rule" });
   }
 });
 
@@ -483,12 +487,12 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
   try {
     const parsed = createSelectionSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      return sendValidationError(res, parsed.error);
     }
 
     const orgId = req.user?.organizationId;
     if (!orgId) {
-      return res.status(400).json({ message: "Organization required" });
+      return res.status(400).json({ error: "Organization required" });
     }
 
     const [bid] = await db
@@ -497,7 +501,7 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
       .where(eq(bids.id, parsed.data.bidId));
 
     if (!bid || bid.gcOrganizationId !== orgId) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ error: "Access denied" });
     }
 
     const [lineItem] = await db
@@ -512,7 +516,7 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
       );
 
     if (!lineItem) {
-      return res.status(400).json({ message: "Line item does not belong to the specified bid" });
+      return res.status(400).json({ error: "Line item does not belong to the specified bid" });
     }
 
     const [modifier] = await db
@@ -521,15 +525,15 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
       .where(eq(modifiers.id, parsed.data.modifierId));
 
     if (!modifier) {
-      return res.status(400).json({ message: "Modifier not found" });
+      return res.status(400).json({ error: "Modifier not found" });
     }
 
     if (!modifier.isActive) {
-      return res.status(400).json({ message: "Modifier is not active" });
+      return res.status(400).json({ error: "Modifier is not active" });
     }
 
     if (modifier.organizationId !== null && modifier.organizationId !== orgId) {
-      return res.status(403).json({ message: "Access denied to this modifier" });
+      return res.status(403).json({ error: "Access denied to this modifier" });
     }
 
     const factor = parsed.data.selectedFactor;
@@ -568,8 +572,8 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    console.error("[Modifiers] Create selection error:", err);
-    res.status(500).json({ message: "Failed to save selection" });
+    logError("[Modifiers] Create selection error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to save selection" });
   }
 });
 
@@ -579,7 +583,7 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
     const orgId = req.user?.organizationId;
 
     if (!orgId) {
-      return res.status(400).json({ message: "Organization required" });
+      return res.status(400).json({ error: "Organization required" });
     }
 
     const hasAccess = await verifyLineItemOrgOwnership(lineItemId, orgId);
@@ -594,8 +598,8 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
 
     res.json(results);
   } catch (err: unknown) {
-    console.error("[Modifiers] Get selections error:", err);
-    res.status(500).json({ message: "Failed to get selections" });
+    logError("[Modifiers] Get selections error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to get selections" });
   }
 });
 
@@ -615,12 +619,12 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
     const userId = req.user?.id || null;
 
     if (!orgId) {
-      return res.status(400).json({ message: "Organization required" });
+      return res.status(400).json({ error: "Organization required" });
     }
 
     const parsed = aiSuggestSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ message: "Invalid data", errors: parsed.error.flatten() });
+      return sendValidationError(res, parsed.error);
     }
 
     const { trade_name, scope_name, uom, material_families, estimator_notes, description, existing_modifier_ids } = parsed.data;
@@ -710,14 +714,14 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
 
     const validated = aiResponseSchema.safeParse(aiResult.result);
     if (!validated.success) {
-      console.error("[Modifiers] AI response validation failed:", validated.error.flatten());
-      return res.status(502).json({ message: "AI returned an invalid response format" });
+      logError("[Modifiers] AI response validation failed", { details: validated.error.flatten() });
+      return res.status(502).json({ error: "AI returned an invalid response format" });
     }
 
     res.json(validated.data);
   } catch (err: unknown) {
-    console.error("[Modifiers] AI suggest error:", err);
-    res.status(500).json({ message: "Failed to generate AI modifier suggestions" });
+    logError("[Modifiers] AI suggest error:", {}, err instanceof Error ? err : new Error(String(err)));
+    res.status(500).json({ error: "Failed to generate AI modifier suggestions" });
   }
 });
 

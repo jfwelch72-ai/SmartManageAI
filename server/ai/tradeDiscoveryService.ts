@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { openai, AI_MODEL_GPT4O } from './openaiClient';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
@@ -206,7 +207,7 @@ Identify the primary trade and all related trades that would be involved in this
     
     return result;
   } catch (error) {
-    console.error('[TradeDiscoveryService] Error:', error);
+    logError('[TradeDiscoveryService] Error:', {}, error instanceof Error ? error : new Error(String(error)));
     
     // Return a safe fallback
     return {

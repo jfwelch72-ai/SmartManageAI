@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { crmOrganisations, crmContacts, crmOrganisationNotes, insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema, auditLog, users, emailThreads, emailMessages, calendarEvents, projects, crmOpportunities, vendorPricingCatalogs, vendorPricebooks, vendorPricebookItems, subcontractorContracts, rentalVendors, rentalEquipmentCatalog, vendorEnrollments, vendorUsers, websiteContactSubmissions, emailTasks, pricebookImportJobs, vendorScores, materialPriceIndex, rfis, transmittalRecipients, submittals, subcontractorPortalTokens, bidDocumentDistributions, insertCrmContactSchema, crmOpportunityActivities, insertCrmOpportunitySchema, insertCrmOpportunityActivitySchema, notifications, organizationNetworkSettings } from "@shared/schema";
@@ -66,7 +67,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
       
       res.json(results);
     } catch (error) {
-      console.error("Get CRM organisations error:", error);
+      logError("Get CRM organisations error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -152,7 +153,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
         items,
       });
     } catch (error) {
-      console.error("Expiring compliance check error:", error);
+      logError("Expiring compliance check error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -262,7 +263,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
 
       res.json({ pairs, total: pairs.length });
     } catch (error) {
-      console.error("Duplicate detection error:", error);
+      logError("Duplicate detection error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -454,7 +455,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
 
       res.json({ success: true, winnerId, loserId });
     } catch (error) {
-      console.error("Merge CRM organisations error:", error);
+      logError("Merge CRM organisations error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -492,7 +493,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
       
       res.json({ ...organisation, contacts });
     } catch (error) {
-      console.error("Get CRM organisation error:", error);
+      logError("Get CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -531,7 +532,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
       
       res.status(201).json(newOrg);
     } catch (error) {
-      console.error("Create CRM organisation error:", error);
+      logError("Create CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -590,7 +591,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
       
       res.json(updated);
     } catch (error) {
-      console.error("Update CRM organisation error:", error);
+      logError("Update CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -632,7 +633,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
       
       res.json({ success: true });
     } catch (error) {
-      console.error("Delete CRM organisation error:", error);
+      logError("Delete CRM organisation error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -682,7 +683,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
 
       res.json(notes);
     } catch (error) {
-      console.error("Get CRM organisation notes error:", error);
+      logError("Get CRM organisation notes error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -749,7 +750,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
 
       res.status(201).json(noteWithDetails);
     } catch (error) {
-      console.error("Create CRM organisation note error:", error);
+      logError("Create CRM organisation note error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -785,7 +786,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
 
       res.json({ success: true });
     } catch (error) {
-      console.error("Delete CRM organisation note error:", error);
+      logError("Delete CRM organisation note error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -833,7 +834,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
       
       res.json({ organisations });
     } catch (error) {
-      console.error("CRM search error:", error);
+      logError("CRM search error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1017,7 +1018,7 @@ router.get("/api/crm/organisations", requireAuth, requireRole("ADMIN", "MANAGER"
         },
       });
     } catch (error) {
-      console.error("Get CRM org communications error:", error);
+      logError("Get CRM org communications error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1080,7 +1081,7 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
 
     res.json(contacts);
   } catch (error) {
-    console.error("Get CRM contacts (all) error:", error);
+    logError("Get CRM contacts (all) error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1109,7 +1110,7 @@ router.get("/api/crm/organisations/:id/contacts", requireAuth, requireRole(...CO
 
     res.json(contacts);
   } catch (error) {
-    console.error("Get CRM contacts error:", error);
+    logError("Get CRM contacts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1163,7 +1164,7 @@ router.post("/api/crm/contacts", requireAuth, requireRole("ADMIN", "MANAGER", "E
 
     res.status(201).json(newContact);
   } catch (error) {
-    console.error("Create CRM contact error:", error);
+    logError("Create CRM contact error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1221,7 +1222,7 @@ router.put("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGER",
 
     res.json(updated);
   } catch (error) {
-    console.error("Update CRM contact error:", error);
+    logError("Update CRM contact error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1257,7 +1258,7 @@ router.delete("/api/crm/contacts/:id", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete CRM contact error:", error);
+    logError("Delete CRM contact error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1297,7 +1298,7 @@ router.get("/api/crm/pipeline/users", requireAuth, requireRole(...PIPELINE_ROLES
 
     res.json(orgUsers);
   } catch (error) {
-    console.error("Get pipeline users error:", error);
+    logError("Get pipeline users error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1354,7 +1355,7 @@ router.get("/api/crm/pipeline/stats", requireAuth, requireRole(...PIPELINE_ROLES
       stageValues,
     });
   } catch (error) {
-    console.error("Pipeline stats error:", error);
+    logError("Pipeline stats error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1433,7 +1434,7 @@ router.get("/api/crm/opportunities", requireAuth, requireRole(...PIPELINE_ROLES)
 
     res.json(results);
   } catch (error) {
-    console.error("Get opportunities error:", error);
+    logError("Get opportunities error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1454,7 +1455,7 @@ router.get("/api/crm/opportunities/:id", requireAuth, requireRole(...PIPELINE_RO
 
     res.json(opp);
   } catch (error) {
-    console.error("Get opportunity error:", error);
+    logError("Get opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1500,7 +1501,7 @@ router.post("/api/crm/opportunities", requireAuth, requireRole(...EDIT_ROLES), a
 
     res.status(201).json(created);
   } catch (error) {
-    console.error("Create opportunity error:", error);
+    logError("Create opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1581,7 +1582,7 @@ router.patch("/api/crm/opportunities/:id", requireAuth, requireRole(...EDIT_ROLE
 
     res.json(updated);
   } catch (error) {
-    console.error("Update opportunity error:", error);
+    logError("Update opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1609,7 +1610,7 @@ router.delete("/api/crm/opportunities/:id", requireAuth, requireRole(...DELETE_R
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete opportunity error:", error);
+    logError("Delete opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1651,7 +1652,7 @@ router.get("/api/crm/opportunities/:id/activities", requireAuth, requireRole(...
 
     res.json(activities);
   } catch (error) {
-    console.error("Get activities error:", error);
+    logError("Get activities error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1711,7 +1712,7 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
 
     res.status(201).json(withUser);
   } catch (error) {
-    console.error("Create activity error:", error);
+    logError("Create activity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1780,7 +1781,7 @@ router.post("/api/crm/opportunities/:id/convert-to-project", requireAuth, requir
 
     res.status(201).json({ project: newProject, opportunityId: opp.id });
   } catch (error) {
-    console.error("Convert to project error:", error);
+    logError("Convert to project error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1834,7 +1835,7 @@ router.post("/api/crm/opportunities/:id/create-bid", requireAuth, requireRole("A
 
     res.status(201).json({ bid: newBid, opportunityId: opp.id });
   } catch (error) {
-    console.error("Create bid from opportunity error:", error);
+    logError("Create bid from opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1899,7 +1900,7 @@ router.get("/api/crm/reports/win-loss", requireAuth, requireRole(...PIPELINE_ROL
       avgLostDeal,
     });
   } catch (error) {
-    console.error("Win-loss report error:", error);
+    logError("Win-loss report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2003,7 +2004,7 @@ router.get("/api/crm/reports/time-in-stage", requireAuth, requireRole(...PIPELIN
 
     res.json({ days, stages });
   } catch (error) {
-    console.error("Time-in-stage report error:", error);
+    logError("Time-in-stage report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2063,7 +2064,7 @@ router.get("/api/crm/reports/rep-performance", requireAuth, requireRole(...PIPEL
 
     res.json({ days, reps });
   } catch (error) {
-    console.error("Rep performance report error:", error);
+    logError("Rep performance report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2084,7 +2085,7 @@ router.post("/api/crm/opportunities/:id/rescore", requireAuth, requireRole(...PI
     const result = await scoreWinProbability(opp.id);
     res.json({ opportunityId: opp.id, aiWinProbability: result.score, aiWinProbabilityRationale: result.rationale });
   } catch (error) {
-    console.error("Re-score opportunity error:", error);
+    logError("Re-score opportunity error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2144,7 +2145,7 @@ router.get("/api/crm/reports/revenue-forecast", requireAuth, requireRole(...PIPE
       monthlyProjections,
     });
   } catch (error) {
-    console.error("Revenue forecast report error:", error);
+    logError("Revenue forecast report error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -1,4 +1,5 @@
-import { Router } from "express";
+import { logError } from "./utils/logger";
+import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { projects, users, scopeItems, changeOrders, projectLaborRates, projectEmployeeRates, insertProjectSchema, timeClockShifts, procurementItems, receipts, subcontractorContracts, subcontractorPayments, tmDailySheets, tmTickets, aiNoteInsights, aiTasks, projectPlans, takeoffMeasurements, takeoffSheets, quantityCategories, tasks, handoffPackets, estimates, estimateLineItems, timeEntries, calendarEvents, media, planDocuments, projectNotes, dailyScopeProgress, conversations, conversationParticipants, crewMembers, crewProjectAssignments, scheduleOfValues, sovLineItems, insertProjectNoteSchema, insertMediaSchema, insertTimeEntrySchema, insertTMDailySheetSchema, insertEstimateSchema, insertProcurementItemSchema, filePermissions, subcontractors, bidSubcontractorQuotes, bidMaterialQuotes, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes } from "@shared/schema";
@@ -88,7 +89,7 @@ async function getNextBidCode(): Promise<string> {
 const createProjectSchema = insertProjectSchema.omit({ code: true });
 const updateProjectSchema = insertProjectSchema.partial();
 
-router.get("/api/projects", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { page = "1", limit = "50", status } = req.query;
     
@@ -185,12 +186,11 @@ router.get("/api/projects", requireAuth, async (req: AuthRequest, res) => {
       },
     });
   } catch (error) {
-    console.error("Get projects error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/with-pending-change-orders", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/with-pending-change-orders", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     if (mustDenyAccess) return res.json([]);
@@ -209,12 +209,11 @@ router.get("/api/projects/with-pending-change-orders", requireAuth, async (req: 
     const projectIds = result.map(r => r.projectId);
     res.json(projectIds);
   } catch (error) {
-    console.error("Get projects with pending COs error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:code", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -232,12 +231,11 @@ router.get("/api/projects/:code", requireAuth, async (req: AuthRequest, res) => 
 
     res.json({ ...project, scopeItems: projectScopeItems });
   } catch (error) {
-    console.error("Get project error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -256,12 +254,11 @@ router.get("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", 
 
     res.json(laborRates || null);
   } catch (error) {
-    console.error("Get project labor rates error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -322,12 +319,11 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRole("ADMIN",
 
     res.json(result);
   } catch (error) {
-    console.error("Create/update project labor rates error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -362,12 +358,11 @@ router.get("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN
 
     res.json(employeeRates);
   } catch (error) {
-    console.error("Get employee rate overrides error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -442,12 +437,11 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRole("ADMI
 
     res.json(result);
   } catch (error) {
-    console.error("Create/update employee rate override error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.delete("/api/projects/:code/employee-rates/:rateId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/projects/:code/employee-rates/:rateId", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -484,12 +478,11 @@ router.delete("/api/projects/:code/employee-rates/:rateId", requireAuth, require
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete employee rate override error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { timeClockShifts, procurementItems, receipts, subcontractorContracts, subcontractorPayments, timeEntries } = await import("@shared/schema");
     const { sum, gte, lte, desc } = await import("drizzle-orm");
@@ -745,12 +738,11 @@ router.get("/api/projects/:code/financials", requireAuth, requireRole("ADMIN", "
       profitVariancePercent: projectedProfit !== 0 ? ((actualProfit - projectedProfit) / projectedProfit) * 100 : 0,
     });
   } catch (error) {
-    console.error("Get project financials error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -908,7 +900,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
     
     throw lastError;
   } catch (error: any) {
-    console.error("Create project error:", error);
+    logError("Create project error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.code === '23505') {
       res.status(409).json({ error: "Unable to generate unique project code - please try again" });
     } else {
@@ -917,7 +909,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
   }
 });
 
-router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const [existingProject] = await db
       .select()
@@ -997,13 +989,12 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
     }
 
     res.json(updatedProject);
-  } catch (error: any) {
-    console.error("Update project error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1039,14 +1030,14 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
                 const objectFile = await objectStorageService.getObjectEntityFile(att.objectKey);
                 await objectFile.delete();
               } catch (e) {
-                console.error("Error deleting change order attachment GCS object:", e);
+                logError("Error deleting change order attachment GCS object:", {}, e instanceof Error ? e : new Error(String(e)));
               }
             }
           }
         }
       }
     } catch (e) {
-      console.error("Error during change order attachment GCS cleanup:", e);
+      logError("Error during change order attachment GCS cleanup:", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(changeOrders).where(eq(changeOrders.projectId, project.id));
 
@@ -1061,12 +1052,12 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
             const objectFile = await objectStorageService.getObjectEntityFile(receipt.objectKey);
             await objectFile.delete();
           } catch (e) {
-            console.error("Error deleting receipt GCS object:", e);
+            logError("Error deleting receipt GCS object:", {}, e instanceof Error ? e : new Error(String(e)));
           }
         }
       }
     } catch (e) {
-      console.error("Error during receipt GCS cleanup:", e);
+      logError("Error during receipt GCS cleanup:", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(receipts).where(eq(receipts.projectId, project.id));
     await db.delete(procurementItems).where(eq(procurementItems.projectId, project.id));
@@ -1090,12 +1081,12 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
             const objectFile = await objectStorageService.getObjectEntityFile(doc.objectKey);
             await objectFile.delete();
           } catch (e) {
-            console.error("Error deleting plan document GCS object:", e);
+            logError("Error deleting plan document GCS object:", {}, e instanceof Error ? e : new Error(String(e)));
           }
         }
       }
     } catch (e) {
-      console.error("Error during plan document GCS cleanup:", e);
+      logError("Error during plan document GCS cleanup:", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(planDocuments).where(eq(planDocuments.projectId, project.id));
     
@@ -1114,12 +1105,12 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
             const objectFile = await objectStorageService.getObjectEntityFile(m.objectKey);
             await objectFile.delete();
           } catch (e) {
-            console.error("Error deleting media GCS object:", e);
+            logError("Error deleting media GCS object:", {}, e instanceof Error ? e : new Error(String(e)));
           }
         }
       }
     } catch (e) {
-      console.error("Error during media GCS cleanup:", e);
+      logError("Error during media GCS cleanup:", {}, e instanceof Error ? e : new Error(String(e)));
     }
     await db.delete(media).where(eq(media.projectId, project.id));
     
@@ -1146,12 +1137,11 @@ router.delete("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json({ success: true, message: `Project ${project.code} deleted successfully` });
   } catch (error) {
-    console.error("Delete project error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const { budget, contractAmount, texturaDrawDate, drawDayOfMonth } = req.body;
 
@@ -1213,13 +1203,12 @@ router.patch("/api/projects/:code/financials", requireAuth, requireRole("ADMIN")
 
     res.json(updated);
   } catch (error) {
-    console.error("Update project financials error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
 // Returns the list of change order IDs that already have a linked SOV line item for this project
-router.get("/api/projects/:code/sov-co-linked-ids", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/sov-co-linked-ids", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const project = await db.query.projects.findFirst({ where: eq(projects.code, req.params.code) });
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -1249,12 +1238,11 @@ router.get("/api/projects/:code/sov-co-linked-ids", requireAuth, async (req: Aut
 
     res.json({ linkedCoIds });
   } catch (error) {
-    console.error("SOV CO linked IDs error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const project = await db.query.projects.findFirst({ where: eq(projects.code, req.params.code) });
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -1326,8 +1314,7 @@ router.get("/api/projects/:code/closeout-readiness", requireAuth, requireRole("A
       unpaidVendorInvoices: Number(unpaidVendorInvoices[0]?.cnt ?? 0),
     });
   } catch (error) {
-    console.error("Closeout readiness error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -1359,7 +1346,7 @@ function validateJSONField(jsonString: string | null | undefined, fieldName: str
 // Project Notes Routes
 // ====================
 
-router.get("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1378,12 +1365,11 @@ router.get("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, re
 
     res.json(notes);
   } catch (error) {
-    console.error("Get notes error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1416,9 +1402,8 @@ router.post("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, r
     const insertData = { ...validationResult.data, projectId: project.id, authorId: req.user!.id };
     const [newNote] = await db.insert(projectNotes).values([insertData]).returning();
     res.status(201).json(newNote);
-  } catch (error: any) {
-    console.error("Create note error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1426,7 +1411,7 @@ router.post("/api/projects/:code/notes", requireAuth, async (req: AuthRequest, r
 // Media Routes
 // ====================
 
-router.get("/api/projects/:code/media", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/media", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1451,12 +1436,11 @@ router.get("/api/projects/:code/media", requireAuth, async (req: AuthRequest, re
 
     res.json(projectMedia);
   } catch (error) {
-    console.error("Get media error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:code/media", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/media", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1507,13 +1491,12 @@ router.post("/api/projects/:code/media", requireAuth, async (req: AuthRequest, r
     }]);
 
     res.status(201).json(newMedia);
-  } catch (error: any) {
-    console.error("Create media error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [mediaItem] = await db.select().from(media).where(eq(media.id, req.params.id)).limit(1);
 
@@ -1539,15 +1522,14 @@ router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res) => {
         const objectFile = await objectStorageService.getObjectEntityFile(mediaItem.objectKey);
         await objectFile.delete();
       } catch (error) {
-        console.error("Error deleting media file from object storage:", error);
+        logError("Error deleting media file from object storage:", {}, error instanceof Error ? error : new Error(String(error)));
       }
     }
 
     await db.delete(media).where(eq(media.id, req.params.id));
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete media error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -1555,7 +1537,7 @@ router.delete("/api/media/:id", requireAuth, async (req: AuthRequest, res) => {
 // Cost Codes Route
 // ====================
 
-router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const projectId = req.params.id;
@@ -1636,12 +1618,12 @@ router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest,
 
     res.json(merged);
   } catch (error) {
-    console.error("Error fetching project cost codes:", error);
+    logError("Error fetching project cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch project cost codes" });
   }
 });
 
-router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const projectId = req.params.id;
@@ -1687,12 +1669,12 @@ router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), a
       .where(and(eq(projectCostCodes.projectId, projectId), eq(projectCostCodes.isActive, true)));
     res.json(updated);
   } catch (error) {
-    console.error("Error updating project cost codes:", error);
+    logError("Error updating project cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update project cost codes" });
   }
 });
 
-router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { getCostCodesForTrade } = await import("@shared/costCodes");
     const orgId = req.user!.organizationId;
@@ -1729,12 +1711,12 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(merged);
   } catch (error) {
-    console.error("Error fetching cost codes:", error);
+    logError("Error fetching cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch cost codes" });
   }
 });
 
-router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const rows = await db
@@ -1756,12 +1738,12 @@ router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res) => 
       .where(eq(orgCostCodes.organizationId, orgId));
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching org cost codes:", error);
+    logError("Error fetching org cost codes:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch custom cost codes" });
   }
 });
 
-router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const isCustom = req.body.isCustom !== false;
@@ -1788,12 +1770,12 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
     if (error?.code === "23505") {
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
-    console.error("Error creating org cost code:", error);
+    logError("Error creating org cost code:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create cost code" });
   }
 });
 
-router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res) => {
+router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
     const id = Number(req.params.id);
@@ -1825,7 +1807,7 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
     if (error?.code === "23505") {
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
-    console.error("Error updating org cost code:", error);
+    logError("Error updating org cost code:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update cost code" });
   }
 });
@@ -1834,7 +1816,7 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
 // Time Entry Routes
 // ====================
 
-router.get("/api/time-entries", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/time-entries", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { page = "1", limit = "50", status, userId, projectId } = req.query;
     
@@ -1909,12 +1891,11 @@ router.get("/api/time-entries", requireAuth, async (req: AuthRequest, res) => {
       },
     });
   } catch (error) {
-    console.error("Get time entries error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:code/time-entries", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/time-entries", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -1933,12 +1914,11 @@ router.get("/api/projects/:code/time-entries", requireAuth, async (req: AuthRequ
 
     res.json(entries);
   } catch (error) {
-    console.error("Get project time entries error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/time-entries", requireAuth, async (req: AuthRequest, res) => {
+router.post("/api/time-entries", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -1986,13 +1966,12 @@ router.post("/api/time-entries", requireAuth, async (req: AuthRequest, res) => {
     await logCreate(req.user!.id, "TIME_ENTRY", newEntry.id, newEntry, req);
     
     res.status(201).json(newEntry);
-  } catch (error: any) {
-    console.error("Create time entry error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.patch("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res) => {
+router.patch("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -2060,12 +2039,11 @@ router.patch("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res)
 
     res.json(updatedEntry);
   } catch (error) {
-    console.error("Update time entry error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.delete("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res) => {
+router.delete("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [existingEntry] = await db
       .select()
@@ -2096,12 +2074,11 @@ router.delete("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete time entry error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [existingEntry] = await db
       .select()
@@ -2128,8 +2105,7 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
 
     res.json(updatedEntry);
   } catch (error) {
-    console.error("Approve time entry error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
@@ -2137,7 +2113,7 @@ router.post("/api/time-entries/:id/approve", requireAuth, requireRole("ADMIN", "
 // T&M Daily Sheet Routes
 // ====================
 
-router.get("/api/projects/:code/tm-sheets", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/tm-sheets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2189,12 +2165,11 @@ router.get("/api/projects/:code/tm-sheets", requireAuth, async (req: AuthRequest
 
     res.json(mappedSheets);
   } catch (error) {
-    console.error("Get T&M sheets error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/tm-sheets", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res) => {
+router.post("/api/tm-sheets", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const sanitizedBody = {
       ...req.body,
@@ -2258,9 +2233,8 @@ router.post("/api/tm-sheets", requireAuth, requireRole("ADMIN", "MANAGER", "SUPE
 
     const [newSheet] = await db.insert(tmDailySheets).values([insertData]).returning();
     res.status(201).json(newSheet);
-  } catch (error: any) {
-    console.error("Create T&M sheet error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -2268,7 +2242,7 @@ router.post("/api/tm-sheets", requireAuth, requireRole("ADMIN", "MANAGER", "SUPE
 // Estimates Routes
 // ====================
 
-router.get("/api/projects/:code/estimates", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/estimates", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2287,12 +2261,11 @@ router.get("/api/projects/:code/estimates", requireAuth, async (req: AuthRequest
 
     res.json(projectEstimates);
   } catch (error) {
-    console.error("Get estimates error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.get("/api/projects/:id/estimate", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:id/estimate", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const projectId = req.params.id;
     
@@ -2346,12 +2319,11 @@ router.get("/api/projects/:id/estimate", requireAuth, async (req: AuthRequest, r
       }
     });
   } catch (error) {
-    console.error("Get project estimate error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:id/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
   try {
     const projectId = req.params.id;
     
@@ -2413,12 +2385,11 @@ router.post("/api/projects/:id/estimate", requireAuth, requireRole("ADMIN", "MAN
       }
     });
   } catch (error) {
-    console.error("Create project estimate error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/estimates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/estimates", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertEstimateSchema.extend({
       createdById: z.string().optional(),
@@ -2453,9 +2424,8 @@ router.post("/api/estimates", requireAuth, requireRole("ADMIN", "MANAGER"), asyn
     const insertData = { ...validationResult.data, createdById: req.user!.id };
     const [newEstimate] = await db.insert(estimates).values([insertData]).returning();
     res.status(201).json(newEstimate);
-  } catch (error: any) {
-    console.error("Create estimate error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -2463,7 +2433,7 @@ router.post("/api/estimates", requireAuth, requireRole("ADMIN", "MANAGER"), asyn
 // Procurement Routes
 // ====================
 
-router.get("/api/projects/:code/procurement", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/procurement", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2481,12 +2451,11 @@ router.get("/api/projects/:code/procurement", requireAuth, async (req: AuthReque
 
     res.json(items);
   } catch (error) {
-    console.error("Get procurement items error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/procurement", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/procurement", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertProcurementItemSchema.safeParse(req.body);
     
@@ -2506,15 +2475,14 @@ router.post("/api/procurement", requireAuth, requireRole("ADMIN", "MANAGER"), as
 
     const [newItem] = await db.insert(procurementItems).values(data).returning();
     res.status(201).json(newItem);
-  } catch (error: any) {
-    console.error("Create procurement item error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 const updateProcurementSchema = insertProcurementItemSchema.omit({ projectId: true }).partial();
 
-router.patch("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.patch("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = updateProcurementSchema.safeParse(req.body);
     
@@ -2541,13 +2509,12 @@ router.patch("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"
       .returning();
 
     res.json(updatedItem);
-  } catch (error: any) {
-    console.error("Update procurement item error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.delete("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.delete("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [existing] = await db.select().from(procurementItems).where(eq(procurementItems.id, req.params.id)).limit(1);
     if (!existing) {
@@ -2560,9 +2527,8 @@ router.delete("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
     await db.delete(procurementItems).where(eq(procurementItems.id, req.params.id));
     res.json({ success: true });
-  } catch (error: any) {
-    console.error("Delete procurement item error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -2570,7 +2536,7 @@ router.delete("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER
 // Pending Quotes Routes (for quotes transferred from bids but not yet selected)
 // ====================
 
-router.get("/api/projects/:code/pending-quotes", requireAuth, async (req: AuthRequest, res) => {
+router.get("/api/projects/:code/pending-quotes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2602,12 +2568,11 @@ router.get("/api/projects/:code/pending-quotes", requireAuth, async (req: AuthRe
       materialQuotes: pendingMatQuotes,
     });
   } catch (error) {
-    console.error("Get pending quotes error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:code/pending-quotes/subcontractor/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/pending-quotes/subcontractor/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2708,12 +2673,11 @@ router.post("/api/projects/:code/pending-quotes/subcontractor/:quoteId/select", 
       message: `Subcontractor contract created: ${contractNumber}`
     });
   } catch (error) {
-    console.error("Select pending subcontractor quote error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/api/projects/:code/pending-quotes/material/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res) => {
+router.post("/api/projects/:code/pending-quotes/material/:quoteId/select", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select().from(projects).where(eq(projects.code, req.params.code)).limit(1);
     
@@ -2771,8 +2735,7 @@ router.post("/api/projects/:code/pending-quotes/material/:quoteId/select", requi
       message: `Procurement item created: ${quote.materialName}`
     });
   } catch (error) {
-    console.error("Select pending material quote error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 

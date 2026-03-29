@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
@@ -115,7 +116,7 @@ async function captureKpiFromShift(userId: string, orgId: string, totalHours: nu
       }
     }
   } catch (err) {
-    console.error("KPI auto-capture failed:", err);
+    logError("KPI auto-capture failed:", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -264,7 +265,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
 
     res.status(201).json({ ...newShift, geofenceWarning });
   } catch (error) {
-    console.error("Clock-in error:", error);
+    logError("Clock-in error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -350,7 +351,7 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
 
     res.json(updatedShift);
   } catch (error) {
-    console.error("Clock-out error:", error);
+    logError("Clock-out error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -383,7 +384,7 @@ router.get("/api/time-clock/my-current-shift", requireAuth, async (req: AuthRequ
 
     res.json({ shift: activeShift, project });
   } catch (error) {
-    console.error("Get current shift error:", error);
+    logError("Get current shift error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -429,7 +430,7 @@ router.get("/api/time-clock/my-shifts", requireAuth, async (req: AuthRequest, re
 
     res.json(enriched);
   } catch (error) {
-    console.error("Get my shifts error:", error);
+    logError("Get my shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -469,7 +470,7 @@ router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: Aut
 
     res.json(updatedShift);
   } catch (error) {
-    console.error("Update notes error:", error);
+    logError("Update notes error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -521,7 +522,7 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
 
     res.json(updatedShift);
   } catch (error) {
-    console.error("Update cost code error:", error);
+    logError("Update cost code error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -567,7 +568,7 @@ router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN"
 
     res.json(formattedShifts);
   } catch (error) {
-    console.error("Get pending approvals error:", error);
+    logError("Get pending approvals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -612,7 +613,7 @@ router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "M
 
     res.json(formattedShifts);
   } catch (error) {
-    console.error("Get active shifts error:", error);
+    logError("Get active shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -650,7 +651,7 @@ router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("
 
     res.json(shifts);
   } catch (error) {
-    console.error("Get employee shifts error:", error);
+    logError("Get employee shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -751,7 +752,7 @@ router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN
 
     res.json(updatedShift);
   } catch (error) {
-    console.error("Adjust shift error:", error);
+    logError("Adjust shift error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -826,7 +827,7 @@ router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRol
 
     res.json(updatedShift);
   } catch (error) {
-    console.error("Admin clock-out error:", error);
+    logError("Admin clock-out error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -902,7 +903,7 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
         
         timeEntryId = newTimeEntry.id;
       } catch (error) {
-        console.error("Failed to create time entry during approval:", error);
+        logError("Failed to create time entry during approval:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
           .update(timeClockShifts)
           .set({ approvalStatus: "PENDING", approvedById: null, approvedAt: null })
@@ -923,22 +924,22 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
     if (shift.projectId && shift.clockIn) {
       const totalHours = parseFloat(shift.totalHours || "0");
       captureProductionRateFromShift(shift.projectId, shift.userId, shift.clockIn, totalHours)
-        .catch(err => console.error("Production rate capture failed:", err));
+        .catch(err => logError("Production rate capture failed:", {}, err instanceof Error ? err : new Error(String(err))));
     }
 
     const [shiftUser] = await db.select().from(users).where(eq(users.id, shift.userId)).limit(1);
     if (shiftUser?.organizationId && shift.clockIn) {
       checkAndNotifyWeeklyReport(shiftUser.organizationId, req.user!.id, shift.clockIn)
-        .catch(err => console.error("Weekly report check failed:", err));
+        .catch(err => logError("Weekly report check failed:", {}, err instanceof Error ? err : new Error(String(err))));
 
       const totalHrs = parseFloat(shift.totalHours || "0");
       captureKpiFromShift(shift.userId, shiftUser.organizationId, totalHrs, shift.clockIn)
-        .catch(err => console.error("KPI auto-capture failed:", err));
+        .catch(err => logError("KPI auto-capture failed:", {}, err instanceof Error ? err : new Error(String(err))));
     }
 
     res.json({ ...updatedShift, timeEntryCreated: !!timeEntryId, timeEntryId });
   } catch (error) {
-    console.error("Approve shift error:", error);
+    logError("Approve shift error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1003,7 +1004,7 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
 
     res.json(updatedShift);
   } catch (error) {
-    console.error("Reject shift error:", error);
+    logError("Reject shift error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1035,7 +1036,7 @@ router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"),
 
     res.json(activeShifts);
   } catch (error) {
-    console.error("Get live shifts error:", error);
+    logError("Get live shifts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1084,7 +1085,7 @@ router.post("/api/time-clock/auto-clock-out-worker", requireAuth, requireRole("A
 
     res.json({ count: results.length, shifts: results });
   } catch (error) {
-    console.error("Auto clock-out worker error:", error);
+    logError("Auto clock-out worker error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1154,7 +1155,7 @@ router.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADM
       summary: { totalShifts: shiftsWithCosts.length, totalHours, totalLaborCost, averageHourlyRate },
     });
   } catch (error) {
-    console.error("Get project labor hours error:", error);
+    logError("Get project labor hours error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

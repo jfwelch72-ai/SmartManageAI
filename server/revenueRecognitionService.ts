@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { db } from "./db";
 import {
   projects,
@@ -130,7 +131,7 @@ export async function calculateAllProjectsWip(orgId?: string): Promise<WipProjec
       const wip = await calculateProjectWip(p.id);
       results.push(wip);
     } catch (error) {
-      console.error(`Error calculating WIP for project ${p.id}:`, error);
+      logError(`Error calculating WIP for project ${p.id}:`, {}, error instanceof Error ? error : new Error(String(error)));
     }
   }
 

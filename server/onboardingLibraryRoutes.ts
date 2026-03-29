@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 import { db } from "./db";
@@ -196,7 +197,7 @@ router.get("/api/onboarding-library/for-org", requireAuth, async (req: Request, 
       materials: { groups, materials: allMaterials },
     });
   } catch (error: any) {
-    console.error("Error fetching org library data:", error);
+    logError("Error fetching org library data:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch library data" });
   }
 });

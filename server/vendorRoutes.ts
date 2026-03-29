@@ -48,7 +48,7 @@ router.get("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json(enrollments);
   } catch (error) {
-    console.error("Get vendor enrollments error:", error);
+    logError("Get vendor enrollments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -97,7 +97,7 @@ router.post("/api/vendor-enrollments", requireAuth, requireRole("ADMIN", "MANAGE
     if (error.code === "23505") {
       return res.status(409).json({ error: "Vendor is already enrolled" });
     }
-    console.error("Create vendor enrollment error:", error);
+    logError("Create vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -135,7 +135,7 @@ router.put("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "MAN
 
     res.json(updated);
   } catch (error) {
-    console.error("Update vendor enrollment error:", error);
+    logError("Update vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -159,7 +159,7 @@ router.delete("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete vendor enrollment error:", error);
+    logError("Delete vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -209,7 +209,7 @@ router.get("/api/vendor-enrollments/by-crm-org/:crmOrgId", requireAuth, requireR
       res.json(null);
     }
   } catch (error) {
-    console.error("Get enrollment by CRM org error:", error);
+    logError("Get enrollment by CRM org error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -339,7 +339,7 @@ SmartManageAI Construction Management Platform
       });
       console.log(`Vendor invitation email ${emailSent ? 'sent' : 'logged'} to: ${vendorEmail}`);
     } catch (emailError) {
-      console.error("Failed to send vendor invitation email:", emailError);
+      logError("Failed to send vendor invitation email:", {}, emailError instanceof Error ? emailError : new Error(String(emailError)));
     }
 
     await db.insert(auditLog).values({
@@ -356,7 +356,7 @@ SmartManageAI Construction Management Platform
       message: `Invitation will be sent to ${vendorEmail}`,
     });
   } catch (error) {
-    console.error("Invite vendor error:", error);
+    logError("Invite vendor error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -390,7 +390,7 @@ router.patch("/api/vendor-enrollments/:id", requireAuth, requireRole("ADMIN", "M
 
     res.json(updated);
   } catch (error) {
-    console.error("Update enrollment settings error:", error);
+    logError("Update enrollment settings error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -434,7 +434,7 @@ router.post("/api/vendor-enrollments/:id/suspend", requireAuth, requireRole("ADM
 
     res.json(updated);
   } catch (error) {
-    console.error("Suspend vendor enrollment error:", error);
+    logError("Suspend vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -479,7 +479,7 @@ router.post("/api/vendor-enrollments/:id/reactivate", requireAuth, requireRole("
 
     res.json(updated);
   } catch (error) {
-    console.error("Reactivate vendor enrollment error:", error);
+    logError("Reactivate vendor enrollment error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -542,7 +542,7 @@ router.get("/api/vendor/portal", requireAuth, requireRole("VENDOR"), async (req:
       enrolledClients: enrollments,
     });
   } catch (error) {
-    console.error("Get vendor portal error:", error);
+    logError("Get vendor portal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -581,7 +581,7 @@ router.get("/api/vendor/enrollments", requireAuth, requireRole("VENDOR"), async 
 
     res.json(enrollments);
   } catch (error) {
-    console.error("Get vendor enrollments error:", error);
+    logError("Get vendor enrollments error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -670,7 +670,7 @@ router.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (re
       enrollmentsServed: enrollments.length,
     });
   } catch (error) {
-    console.error("Submit vendor pricing error:", error);
+    logError("Submit vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -698,7 +698,7 @@ router.get("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (req
 
     res.json(items);
   } catch (error) {
-    console.error("Get vendor pricing error:", error);
+    logError("Get vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -738,7 +738,7 @@ router.get("/api/vendor/pricing/csv-template", requireAuth, requireRole("VENDOR"
     res.setHeader("Content-Disposition", "attachment; filename=pricing_template.csv");
     res.send(csvContent);
   } catch (error) {
-    console.error("Get CSV template error:", error);
+    logError("Get CSV template error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -916,7 +916,7 @@ router.post("/api/vendor/pricing/bulk", requireAuth, requireRole("VENDOR"), asyn
       validationWarnings: errors.length > 0 ? errors : undefined
     });
   } catch (error) {
-    console.error("Bulk upload vendor pricing error:", error);
+    logError("Bulk upload vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1001,7 +1001,7 @@ router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res) => {
       },
     });
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to fetch import jobs: ${error.message}`);
+    logError("[VendorPricebook] Failed to fetch import jobs", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch import jobs" });
   }
 });
@@ -1056,7 +1056,7 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
       extractedItems,
     });
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to fetch import job: ${error.message}`);
+    logError("[VendorPricebook] Failed to fetch import job", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch import job" });
   }
 });
@@ -1140,7 +1140,7 @@ router.post("/pricebook-imports", requireAuth, upload.single('file'), async (req
       message: "Pricebook uploaded. AI extraction will begin shortly.",
     });
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to create import job: ${error.message}`);
+    logError("[VendorPricebook] Failed to create import job", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to upload pricebook" });
   }
 });
@@ -1244,7 +1244,7 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
       res.status(500).json({ error: "AI extraction failed", details: extractionError.message });
     }
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to process import job: ${error.message}`);
+    logError("[VendorPricebook] Failed to process import job", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to process import job" });
   }
 });
@@ -1315,7 +1315,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
 
     res.json({ success: true, message: "Item approved" });
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to approve item: ${error.message}`);
+    logError("[VendorPricebook] Failed to approve item", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to approve item" });
   }
 });
@@ -1358,7 +1358,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async
 
     res.json({ success: true, message: "Item rejected" });
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to reject item: ${error.message}`);
+    logError("[VendorPricebook] Failed to reject item", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to reject item" });
   }
 });
@@ -1410,7 +1410,7 @@ router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: Au
 
     res.json({ success: true, message: "All items approved" });
   } catch (error: any) {
-    logError(`[VendorPricebook] Failed to approve all items: ${error.message}`);
+    logError("[VendorPricebook] Failed to approve all items", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to approve all items" });
   }
 });
@@ -1441,7 +1441,7 @@ router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRe
     
     res.json(items);
   } catch (error) {
-    console.error("Get vendor pricing error:", error);
+    logError("Get vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1463,7 +1463,7 @@ router.get("/api/crm/organisations/:id/pricing/current", requireAuth, async (req
     
     res.json(items);
   } catch (error) {
-    console.error("Get current vendor pricing error:", error);
+    logError("Get current vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1503,7 +1503,7 @@ router.post("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthR
 
     res.status(201).json(newItem);
   } catch (error) {
-    console.error("Create vendor pricing error:", error);
+    logError("Create vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1545,7 +1545,7 @@ router.put("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res) =>
 
     res.json(updated);
   } catch (error) {
-    console.error("Update vendor pricing error:", error);
+    logError("Update vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1570,7 +1570,7 @@ router.delete("/api/crm/pricing/:id", requireAuth, async (req: AuthRequest, res)
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete vendor pricing error:", error);
+    logError("Delete vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1617,7 +1617,7 @@ router.get("/api/vendor-pricing/search", requireAuth, async (req: AuthRequest, r
 
     res.json(items);
   } catch (error) {
-    console.error("Search vendor pricing error:", error);
+    logError("Search vendor pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1647,7 +1647,7 @@ router.get("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req:
     
     res.json(items);
   } catch (error) {
-    console.error("Get CRM rental catalog error:", error);
+    logError("Get CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1697,7 +1697,7 @@ router.post("/api/crm/organisations/:id/rental-catalog", requireAuth, async (req
 
     res.status(201).json(newItem);
   } catch (error) {
-    console.error("Create CRM rental catalog error:", error);
+    logError("Create CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1751,7 +1751,7 @@ router.put("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthRequest, 
 
     res.json(updated);
   } catch (error) {
-    console.error("Update CRM rental catalog error:", error);
+    logError("Update CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1793,7 +1793,7 @@ router.delete("/api/crm/rental-catalog/:id", requireAuth, async (req: AuthReques
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete CRM rental catalog error:", error);
+    logError("Delete CRM rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1850,7 +1850,7 @@ router.get("/api/rental-catalog/search", requireAuth, async (req: AuthRequest, r
 
     res.json(items);
   } catch (error) {
-    console.error("Search rental catalog error:", error);
+    logError("Search rental catalog error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1889,7 +1889,7 @@ router.get("/api/crm/organisations/:id/pricing/pending", requireAuth, async (req
 
     res.json(pendingPricing);
   } catch (error) {
-    console.error("Get pending pricing error:", error);
+    logError("Get pending pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1938,7 +1938,7 @@ router.post("/api/crm/pricing/:id/approve", requireAuth, async (req: AuthRequest
 
     res.json(updated);
   } catch (error) {
-    console.error("Approve pricing error:", error);
+    logError("Approve pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1987,7 +1987,7 @@ router.post("/api/crm/pricing/:id/reject", requireAuth, async (req: AuthRequest,
 
     res.json(updated);
   } catch (error) {
-    console.error("Reject pricing error:", error);
+    logError("Reject pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2027,7 +2027,7 @@ router.get("/api/crm/pricing-reviews", requireAuth, async (req: AuthRequest, res
 
     res.json(items);
   } catch (error) {
-    console.error("Get pricing reviews error:", error);
+    logError("Get pricing reviews error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2070,7 +2070,7 @@ router.post("/api/crm/pricing-reviews/:id/:action", requireAuth, async (req: Aut
 
     res.json(updated);
   } catch (error) {
-    console.error("Review pricing error:", error);
+    logError("Review pricing error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2103,7 +2103,7 @@ router.get("/api/ai-features/vendor-pricebooks", requireAuth, async (req: AuthRe
 
     res.json({ pricebooks });
   } catch (error) {
-    console.error("Get vendor pricebooks error:", error);
+    logError("Get vendor pricebooks error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2136,7 +2136,7 @@ router.get("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth,
 
     res.json({ items });
   } catch (error) {
-    console.error("Get pricebook items error:", error);
+    logError("Get pricebook items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2234,7 +2234,7 @@ router.post("/api/ai-features/vendor-pricebooks/upload", requireAuth, upload.sin
       message: `Successfully imported ${itemsCreated} items`,
     });
   } catch (error) {
-    console.error("Upload pricebook error:", error);
+    logError("Upload pricebook error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to process pricebook file" });
   }
 });
@@ -2277,7 +2277,7 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/items", requireAuth
 
     res.status(201).json(item);
   } catch (error) {
-    console.error("Add pricebook item error:", error);
+    logError("Add pricebook item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2317,7 +2317,7 @@ router.patch("/api/ai-features/vendor-pricebooks/items/:id", requireAuth, async 
 
     res.json(updated);
   } catch (error) {
-    console.error("Update pricebook item error:", error);
+    logError("Update pricebook item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2399,7 +2399,7 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth,
       message: `Successfully synced ${syncedCount} items to catalog`,
     });
   } catch (error) {
-    console.error("Sync pricebook error:", error);
+    logError("Sync pricebook error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

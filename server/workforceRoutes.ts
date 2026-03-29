@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import crypto from "crypto";
 import { db } from "./db";
@@ -131,7 +132,7 @@ const router = Router();
 
       res.json(results);
     } catch (error) {
-      console.error("Error fetching manage-workers list:", error);
+      logError("Error fetching manage-workers list:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -260,7 +261,7 @@ const router = Router();
         topPerformers,
       });
     } catch (error) {
-      console.error("Error fetching KPI dashboard:", error);
+      logError("Error fetching KPI dashboard:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -387,7 +388,7 @@ const router = Router();
         currentShift: currentShiftRaw || null,
       });
     } catch (error) {
-      console.error("Error fetching worker profile:", error);
+      logError("Error fetching worker profile:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -439,7 +440,7 @@ const router = Router();
 
       res.status(201).json(newLog);
     } catch (error) {
-      console.error("Error creating worker log:", error);
+      logError("Error creating worker log:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -487,7 +488,7 @@ const router = Router();
 
       res.status(201).json(newNote);
     } catch (error) {
-      console.error("Error creating supervisor note:", error);
+      logError("Error creating supervisor note:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -570,7 +571,7 @@ const router = Router();
 
       res.status(201).json({ shift: newShift, projectName: project.name });
     } catch (error) {
-      console.error("Error assigning worker to project:", error);
+      logError("Error assigning worker to project:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -621,7 +622,7 @@ const router = Router();
 
       res.status(201).json({ userSkill: newUserSkill, skillName: existingSkill.name });
     } catch (error) {
-      console.error("Error adding skill to worker:", error);
+      logError("Error adding skill to worker:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -661,7 +662,7 @@ const router = Router();
       await db.delete(userSkills).where(eq(userSkills.id, userSkillId));
       res.json({ success: true });
     } catch (error) {
-      console.error("Error removing skill from worker:", error);
+      logError("Error removing skill from worker:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -714,7 +715,7 @@ const router = Router();
 
       res.json(updated);
     } catch (error) {
-      console.error("Error updating skill rating:", error);
+      logError("Error updating skill rating:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -761,7 +762,7 @@ const router = Router();
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      console.error("Error updating worker status:", error);
+      logError("Error updating worker status:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -776,7 +777,7 @@ const router = Router();
         .orderBy(desc(userEquipmentCompetencies.createdAt));
       res.json(competencies);
     } catch (error) {
-      console.error("Error fetching equipment competencies:", error);
+      logError("Error fetching equipment competencies:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -807,7 +808,7 @@ const router = Router();
 
       res.status(201).json(comp);
     } catch (error) {
-      console.error("Error adding equipment competency:", error);
+      logError("Error adding equipment competency:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -825,7 +826,7 @@ const router = Router();
       await db.delete(userEquipmentCompetencies).where(eq(userEquipmentCompetencies.id, compId));
       res.json({ message: "Equipment competency removed" });
     } catch (error) {
-      console.error("Error removing equipment competency:", error);
+      logError("Error removing equipment competency:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -895,7 +896,7 @@ const router = Router();
 
       res.json({ features, tradeType: org.tradeType });
     } catch (error) {
-      console.error("Error fetching trade features:", error);
+      logError("Error fetching trade features:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -929,7 +930,7 @@ const router = Router();
         message: "Admin user created. Email: admin@tfrllc.com, Password: admin123. Please change this password!"
       });
     } catch (error) {
-      console.error("Init error:", error);
+      logError("Init error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -985,14 +986,14 @@ const router = Router();
           console.log(`Credential reset email sent successfully for: ${sanitizedEmail}`);
         } else {
           // Log failure but don't expose to user (security: prevents email enumeration)
-          console.error(`CRITICAL: Credential reset email FAILED to send for: ${sanitizedEmail}`);
+          logError(`CRITICAL: Credential reset email FAILED to send for: ${sanitizedEmail}`);
         }
       }
 
       // Always return success message to prevent email enumeration attacks
       res.json({ message: "If an account with that email exists, a password reset link has been sent." });
     } catch (error) {
-      console.error("Forgot password error:", error);
+      logError("Forgot password error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1059,7 +1060,7 @@ const router = Router();
       console.log(`Credential reset completed for user: ${completedUserId}`);
       res.json({ message: "Password has been reset successfully. Please login with your new password." });
     } catch (error) {
-      console.error("Reset password error:", error);
+      logError("Reset password error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1099,7 +1100,7 @@ const router = Router();
 
       res.json({ valid: true });
     } catch (error) {
-      console.error("Validate token error:", error);
+      logError("Validate token error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ valid: false, error: "Internal server error" });
     }
   });

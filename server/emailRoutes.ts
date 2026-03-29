@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task } from "@shared/schema";
@@ -95,7 +96,7 @@ router.get("/accounts", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(sanitizedAccounts);
   } catch (error) {
-    console.error("Error fetching email accounts:", error);
+    logError("Error fetching email accounts:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email accounts" });
   }
 });
@@ -130,7 +131,7 @@ router.get("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(sanitizeAccountForResponse(account));
   } catch (error) {
-    console.error("Error fetching email account:", error);
+    logError("Error fetching email account:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email account" });
   }
 });
@@ -227,19 +228,19 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res) => {
             .where(eq(emailAccounts.id, newAccount.id));
         }
       }).catch((err) => {
-        console.error(`Initial IMAP sync failed for ${newAccount.emailAddress}:`, err);
+        logError(`Initial IMAP sync failed for ${newAccount.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
     } else if (newAccount.provider === "OUTLOOK" && newAccount.accessToken) {
       syncOutlookAccount(newAccount, req.user.id).then((syncResult) => {
         console.log(`Initial Outlook sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
       }).catch((err) => {
-        console.error(`Initial Outlook sync failed for ${newAccount.emailAddress}:`, err);
+        logError(`Initial Outlook sync failed for ${newAccount.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
     }
 
     return res.status(201).json(sanitizeAccountForResponse(newAccount));
   } catch (error) {
-    console.error("Error creating email account:", error);
+    logError("Error creating email account:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to create email account" });
   }
 });
@@ -303,7 +304,7 @@ router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(sanitizeAccountForResponse(updated));
   } catch (error) {
-    console.error("Error updating email account:", error);
+    logError("Error updating email account:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to update email account" });
   }
 });
@@ -360,12 +361,12 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
           );
           const failures = deleteResults.filter((r) => r.status === "rejected");
           if (failures.length > 0) {
-            console.error(`Failed to delete ${failures.length}/${attachments.length} attachment files for account ${existing.id}`);
+            logError(`Failed to delete ${failures.length}/${attachments.length} attachment files for account ${existing.id}`);
           }
         }
       }
     } catch (storageError) {
-      console.error("Error cleaning up attachment files from object storage:", storageError);
+      logError("Error cleaning up attachment files from object storage:", {}, storageError instanceof Error ? storageError : new Error(String(storageError)));
     }
 
     // Delete ALL dependent rows inside a single transaction so failures roll back cleanly
@@ -449,7 +450,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
         return result;
       });
     } catch (deleteError) {
-      console.error("Error during account delete transaction:", deleteError);
+      logError("Error during account delete transaction:", {}, deleteError instanceof Error ? deleteError : new Error(String(deleteError)));
       const message = deleteError instanceof Error ? deleteError.message : "Unknown error";
       return res.status(500).json({ success: false, error: `Failed to delete email account: ${message}` });
     }
@@ -479,7 +480,7 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
         }
       }
       const [summaryCount] = await db.select({ count: sql<number>`count(*)` }).from(emailSummaries).where(and(eq(emailSummaries.userId, existing.userId), eq(emailSummaries.organizationId, existing.organizationId)));
-      console.error(`Post-delete verification failed: account ${existing.id} still exists after transaction. Remaining rows — threads: ${remainingThreadIds.length}, messages: ${messageCount?.count ?? 0}, tasks: ${taskCount}, emailTasks: ${emailTaskCount}, attachments: ${attachmentCount}, summaries: ${summaryCount?.count ?? 0}`);
+      logError(`Post-delete verification failed: account ${existing.id} still exists after transaction. Remaining rows — threads: ${remainingThreadIds.length}, messages: ${messageCount?.count ?? 0}, tasks: ${taskCount}, emailTasks: ${emailTaskCount}, attachments: ${attachmentCount}, summaries: ${summaryCount?.count ?? 0}`);
       return res.status(500).json({ success: false, error: "Email account deletion appeared to succeed but the record still exists. Please try again." });
     }
 
@@ -493,12 +494,12 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res) => {
         req
       );
     } catch (auditError) {
-      console.error("Error logging account deletion (account was already deleted):", auditError);
+      logError("Error logging account deletion (account was already deleted):", {}, auditError instanceof Error ? auditError : new Error(String(auditError)));
     }
 
     return res.json({ success: true, message: "Email account removed" });
   } catch (error) {
-    console.error("Error deleting email account:", error);
+    logError("Error deleting email account:", {}, error instanceof Error ? error : new Error(String(error)));
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(500).json({ success: false, error: `Failed to delete email account: ${message}` });
   }
@@ -574,7 +575,7 @@ router.post("/accounts/:id/test", requireAuth, async (req: AuthRequest, res) => 
       provider: account.provider
     });
   } catch (error) {
-    console.error("Error testing email account:", error);
+    logError("Error testing email account:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to test email account" });
   }
 });
@@ -637,7 +638,7 @@ router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) =
     const gmailRedirectUri = getGmailRedirectUri(req);
 
     if (!isRedirectUriValid(gmailRedirectUri)) {
-      console.error("[OAuth] Gmail redirect URI is invalid:", gmailRedirectUri);
+      logError("[OAuth] Gmail redirect URI is invalid:", {}, gmailRedirectUri instanceof Error ? gmailRedirectUri : new Error(String(gmailRedirectUri)));
       return res.status(400).json({
         error: "OAuth redirect URI misconfigured",
         message: `The Gmail redirect URI resolved to "${gmailRedirectUri}" which points to localhost or is empty. Set the APP_BASE_URL or GOOGLE_REDIRECT_URI environment variable to your public domain.`,
@@ -655,7 +656,7 @@ router.get("/oauth/gmail/initiate", requireAuth, async (req: AuthRequest, res) =
 
     return res.redirect(authUrl.toString());
   } catch (error) {
-    console.error("Error initiating Gmail OAuth:", error);
+    logError("Error initiating Gmail OAuth:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.redirect("/email-assistant?error=oauth_init_failed");
   }
 });
@@ -666,7 +667,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
     const { code, state, error: oauthError } = req.query;
 
     if (oauthError) {
-      console.error("Gmail OAuth error:", oauthError);
+      logError("Gmail OAuth error:", {}, oauthError instanceof Error ? oauthError : new Error(String(oauthError)));
       return res.redirect("/email-assistant?error=oauth_denied");
     }
 
@@ -679,6 +680,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
     try {
       userInfo = JSON.parse(Buffer.from(state as string, "base64url").toString());
     } catch {
+      logWarn("Non-critical operation failed");
       return res.redirect("/email-assistant?error=invalid_state");
     }
 
@@ -701,7 +703,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
     });
 
     if (!tokenResponse.ok) {
-      console.error("Failed to exchange Gmail code:", await tokenResponse.text());
+      logError("Failed to exchange Gmail code", { detail: await tokenResponse.text() });
       return res.redirect("/email-assistant?error=token_exchange_failed");
     }
 
@@ -769,7 +771,7 @@ router.get("/oauth/gmail/callback", async (req, res) => {
 
     return res.redirect("/email-assistant?success=gmail_connected");
   } catch (error) {
-    console.error("Error in Gmail OAuth callback:", error);
+    logError("Error in Gmail OAuth callback:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.redirect("/email-assistant?error=callback_failed");
   }
 });
@@ -798,7 +800,7 @@ router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res)
     const outlookRedirectUri = getOutlookRedirectUri(req);
 
     if (!isRedirectUriValid(outlookRedirectUri)) {
-      console.error("[OAuth] Outlook redirect URI is invalid:", outlookRedirectUri);
+      logError("[OAuth] Outlook redirect URI is invalid:", {}, outlookRedirectUri instanceof Error ? outlookRedirectUri : new Error(String(outlookRedirectUri)));
       return res.status(400).json({
         error: "OAuth redirect URI misconfigured",
         message: `The Outlook redirect URI resolved to "${outlookRedirectUri}" which points to localhost or is empty. Set the APP_BASE_URL or MICROSOFT_REDIRECT_URI environment variable to your public domain.`,
@@ -815,7 +817,7 @@ router.get("/oauth/outlook/initiate", requireAuth, async (req: AuthRequest, res)
 
     return res.redirect(authUrl.toString());
   } catch (error) {
-    console.error("Error initiating Outlook OAuth:", error);
+    logError("Error initiating Outlook OAuth:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.redirect("/email-assistant?error=oauth_init_failed");
   }
 });
@@ -826,7 +828,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
     const { code, state, error: oauthError, error_description } = req.query;
 
     if (oauthError) {
-      console.error("Outlook OAuth error:", oauthError, error_description);
+      logError("Outlook OAuth error", { oauthError: String(oauthError), error_description: String(error_description) });
       return res.redirect("/email-assistant?error=oauth_denied");
     }
 
@@ -839,6 +841,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
     try {
       userInfo = JSON.parse(Buffer.from(state as string, "base64url").toString());
     } catch {
+      logWarn("Non-critical operation failed");
       return res.redirect("/email-assistant?error=invalid_state");
     }
 
@@ -861,7 +864,7 @@ router.get("/oauth/outlook/callback", async (req, res) => {
     });
 
     if (!tokenResponse.ok) {
-      console.error("Failed to exchange Outlook code:", await tokenResponse.text());
+      logError("Failed to exchange Outlook code", { detail: await tokenResponse.text() });
       return res.redirect("/email-assistant?error=token_exchange_failed");
     }
 
@@ -944,13 +947,13 @@ router.get("/oauth/outlook/callback", async (req, res) => {
       syncOutlookAccount(savedAccount, userInfo.userId).then((syncResult) => {
         console.log(`Initial Outlook OAuth sync for ${emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
       }).catch((err) => {
-        console.error(`Initial Outlook OAuth sync failed for ${emailAddress}:`, err);
+        logError(`Initial Outlook OAuth sync failed for ${emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
     }
 
     return res.redirect("/email-assistant?success=outlook_connected");
   } catch (error) {
-    console.error("Error in Outlook OAuth callback:", error);
+    logError("Error in Outlook OAuth callback:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.redirect("/email-assistant?error=callback_failed");
   }
 });
@@ -1008,7 +1011,7 @@ router.get("/threads", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(threads);
   } catch (error) {
-    console.error("Error fetching email threads:", error);
+    logError("Error fetching email threads:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email threads" });
   }
 });
@@ -1062,7 +1065,7 @@ router.get("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
       tasks: linkedTasks,
     });
   } catch (error) {
-    console.error("Error fetching email thread:", error);
+    logError("Error fetching email thread:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email thread" });
   }
 });
@@ -1175,7 +1178,7 @@ router.patch("/threads/:id", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(updated);
   } catch (error) {
-    console.error("Error updating email thread:", error);
+    logError("Error updating email thread:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to update email thread" });
   }
 });
@@ -1209,7 +1212,7 @@ router.get("/messages", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(messages);
   } catch (error) {
-    console.error("Error fetching email messages:", error);
+    logError("Error fetching email messages:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email messages" });
   }
 });
@@ -1250,7 +1253,7 @@ router.get("/messages/:id", requireAuth, async (req: AuthRequest, res) => {
       attachments,
     });
   } catch (error) {
-    console.error("Error fetching email message:", error);
+    logError("Error fetching email message:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email message" });
   }
 });
@@ -1273,7 +1276,7 @@ async function refreshGmailAccessToken(account: typeof emailAccounts.$inferSelec
 
   if (!response.ok) {
     const errText = await response.text();
-    console.error("Gmail token refresh failed:", errText);
+    logError("Gmail token refresh failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
     throw new Error("Failed to refresh Gmail access token");
   }
 
@@ -1317,7 +1320,7 @@ async function refreshOutlookAccessToken(account: typeof emailAccounts.$inferSel
 
   if (!response.ok) {
     const errText = await response.text();
-    console.error("Outlook token refresh failed:", errText);
+    logError("Outlook token refresh failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
     throw new Error("Failed to refresh Outlook access token");
   }
 
@@ -1497,7 +1500,7 @@ async function syncGmailAccount(
 
     if (!listResponse.ok) {
       const errText = await listResponse.text();
-      console.error("Gmail list messages failed:", errText);
+      logError("Gmail list messages failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
       throw new Error(`Gmail API error: ${listResponse.status}`);
     }
 
@@ -1686,7 +1689,7 @@ async function syncGmailAccount(
         matchedEntities,
       );
     } catch (err) {
-      console.error(`AI classification failed for message ${msg.messageId}:`, err);
+      logError(`AI classification failed for message ${msg.messageId}:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -1806,7 +1809,7 @@ export async function syncOutlookAccount(
 
     if (!listResponse.ok) {
       const errText = await listResponse.text();
-      console.error("Outlook list messages failed:", errText);
+      logError("Outlook list messages failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
       throw new Error(`Outlook Graph API error: ${listResponse.status}`);
     }
 
@@ -1992,7 +1995,7 @@ export async function syncOutlookAccount(
         matchedEntities,
       );
     } catch (err) {
-      console.error(`AI classification failed for Outlook message ${msg.messageId}:`, err);
+      logError(`AI classification failed for Outlook message ${msg.messageId}:`, {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -2202,7 +2205,7 @@ export async function syncImapAccount(
           matchedEntities,
         );
       } catch (err) {
-        console.error(`AI classification failed for IMAP message ${msg.messageId}:`, err);
+        logError(`AI classification failed for IMAP message ${msg.messageId}:`, {}, err instanceof Error ? err : new Error(String(err)));
       }
     }
 
@@ -2297,7 +2300,7 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
           });
         }
       } catch (err) {
-        console.error(`Sync failed for account ${account.emailAddress}:`, err);
+        logError(`Sync failed for account ${account.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
         syncResults.push({
           account: account.emailAddress,
           messagesImported: 0,
@@ -2319,7 +2322,7 @@ router.post("/sync", requireAuth, async (req: AuthRequest, res) => {
       details: syncResults,
     });
   } catch (error) {
-    console.error("Error syncing emails:", error);
+    logError("Error syncing emails:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to sync emails" });
   }
 });
@@ -2442,7 +2445,7 @@ router.post("/messages/:id/analyze", requireAuth, async (req: AuthRequest, res) 
       taskId,
     });
   } catch (error) {
-    console.error("Error analyzing email:", error);
+    logError("Error analyzing email:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to analyze email" });
   }
 });
@@ -2506,7 +2509,7 @@ router.post("/messages/:id/suggest-reply", requireAuth, async (req: AuthRequest,
 
     return res.json({ drafts });
   } catch (error) {
-    console.error("Error generating reply suggestions:", error);
+    logError("Error generating reply suggestions:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to generate reply suggestions" });
   }
 });
@@ -2667,7 +2670,7 @@ router.post("/send", requireAuth, async (req: AuthRequest, res) => {
 
     return res.status(400).json({ error: `Sending via ${account.provider} is not yet supported from this endpoint` });
   } catch (error) {
-    console.error("Error sending email:", error);
+    logError("Error sending email:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to send email" });
   }
 });
@@ -2744,7 +2747,7 @@ router.post("/threads/:id/summarize", requireAuth, async (req: AuthRequest, res)
 
     return res.json(summary);
   } catch (error) {
-    console.error("Error summarizing thread:", error);
+    logError("Error summarizing thread:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to summarize thread" });
   }
 });
@@ -2835,7 +2838,7 @@ router.post("/summary/daily", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(summary);
   } catch (error) {
-    console.error("Error generating daily summary:", error);
+    logError("Error generating daily summary:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to generate daily summary" });
   }
 });
@@ -2926,7 +2929,7 @@ router.post("/summary/weekly", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(summary);
   } catch (error) {
-    console.error("Error generating weekly summary:", error);
+    logError("Error generating weekly summary:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to generate weekly summary" });
   }
 });
@@ -2956,7 +2959,7 @@ router.get("/summary/latest", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(summaries);
   } catch (error) {
-    console.error("Error fetching summaries:", error);
+    logError("Error fetching summaries:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch summaries" });
   }
 });
@@ -3006,7 +3009,7 @@ router.get("/tasks", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(taskResults);
   } catch (error) {
-    console.error("Error fetching email tasks:", error);
+    logError("Error fetching email tasks:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch email tasks" });
   }
 });
@@ -3067,7 +3070,7 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res) => {
 
     return res.status(201).json(task);
   } catch (error) {
-    console.error("Error creating email task:", error);
+    logError("Error creating email task:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to create email task" });
   }
 });
@@ -3160,7 +3163,7 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res) => {
 
     return res.json(updated);
   } catch (error) {
-    console.error("Error updating email task:", error);
+    logError("Error updating email task:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to update email task" });
   }
 });

@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { organizations, organizationSowItems, masterSowItems, masterModifierCategories, masterModifiers, scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers, insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema, insertScopeModifierCategorySchema, insertScopeModifierSchema, tradeTypeEnum, bids, bidModifierSelections, estimateLineItems, estimates, modifiers as modifiersTable, projects, users, scopeItems, insertScopeItemSchema, dailyScopeProgress, insertDailyScopeProgressSchema, projectMaterialBudgets, notifications } from "@shared/schema";
@@ -150,7 +151,7 @@ router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res) =
     const categoriesWithTypes = Array.from(categoryMap.values());
     res.json(categoriesWithTypes);
   } catch (error) {
-    console.error("Get scope work types error:", error);
+    logError("Get scope work types error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -229,7 +230,7 @@ router.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res) =>
     console.log(`[Modifiers] No trade-specific modifiers found for trade: ${org.tradeType}`);
     res.json([]);
   } catch (error) {
-    console.error("Get scope modifiers error:", error);
+    logError("Get scope modifiers error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -250,7 +251,7 @@ router.post("/api/scope/work-type-categories", requireAuth, requireRole("ADMIN",
 
     res.status(201).json(newCategory);
   } catch (error) {
-    console.error("Create work type category error:", error);
+    logError("Create work type category error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -359,7 +360,7 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
       res.status(400).json({ error: "A work type with this code already exists in your organization" });
       return;
     }
-    console.error("Create work type error:", error);
+    logError("Create work type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -425,7 +426,7 @@ router.put("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN", "MANAG
 
     res.json(updated);
   } catch (error) {
-    console.error("Update work type error:", error);
+    logError("Update work type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -452,7 +453,7 @@ router.delete("/api/scope/work-types/:id", requireAuth, requireRole("ADMIN"), as
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete work type error:", error);
+    logError("Delete work type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -473,7 +474,7 @@ router.post("/api/scope/modifier-categories", requireAuth, requireRole("ADMIN", 
 
     res.status(201).json(newCategory);
   } catch (error) {
-    console.error("Create modifier category error:", error);
+    logError("Create modifier category error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -501,7 +502,7 @@ router.post("/api/scope/modifiers", requireAuth, requireRole("ADMIN", "MANAGER")
       res.status(400).json({ error: "A modifier with this code already exists" });
       return;
     }
-    console.error("Create modifier error:", error);
+    logError("Create modifier error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -531,7 +532,7 @@ router.put("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(updated);
   } catch (error) {
-    console.error("Update modifier error:", error);
+    logError("Update modifier error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -558,7 +559,7 @@ router.delete("/api/scope/modifiers/:id", requireAuth, requireRole("ADMIN"), asy
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete modifier error:", error);
+    logError("Delete modifier error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -664,7 +665,7 @@ router.get("/api/scope/hierarchical", requireAuth, async (req: AuthRequest, res)
       hierarchy,
     });
   } catch (error) {
-    console.error("Get hierarchical scope error:", error);
+    logError("Get hierarchical scope error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -711,7 +712,7 @@ router.get("/api/scope/work-types-by-cost-code", requireAuth, async (req: AuthRe
 
     res.json(mapping);
   } catch (error) {
-    console.error("Get work types by cost code error:", error);
+    logError("Get work types by cost code error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -738,7 +739,7 @@ router.get("/api/material-calculator/presets", requireAuth, async (req: AuthRequ
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Get material calculator presets error:", error);
+    logError("Get material calculator presets error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -764,7 +765,7 @@ router.get("/api/material-calculator/presets/by-work-type/:workTypeCode", requir
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Get presets by work type error:", error);
+    logError("Get presets by work type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -823,7 +824,7 @@ router.post("/api/material-calculator/presets", requireAuth, async (req: AuthReq
 
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error("Create material calculator preset error:", error);
+    logError("Create material calculator preset error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -895,7 +896,7 @@ router.put("/api/material-calculator/presets/:id", requireAuth, async (req: Auth
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error("Update material calculator preset error:", error);
+    logError("Update material calculator preset error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -923,7 +924,7 @@ router.delete("/api/material-calculator/presets/:id", requireAuth, async (req: A
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete material calculator preset error:", error);
+    logError("Delete material calculator preset error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1234,7 +1235,7 @@ router.get("/api/organization/work-categories", requireAuth, async (req: AuthReq
     // Ultimate fallback - return default construction categories using legacy enums
     return res.json(defaultCategories);
   } catch (error) {
-    console.error("Get organization work categories error:", error);
+    logError("Get organization work categories error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1290,7 +1291,7 @@ router.get("/api/organization/trade-config", requireAuth, async (req: AuthReques
       tradeTypes
     });
   } catch (error) {
-    console.error("Get trade config error:", error);
+    logError("Get trade config error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1357,7 +1358,7 @@ router.post("/api/organization/update-trade-type", requireAuth, requireRole("ADM
       newTradeType
     });
   } catch (error) {
-    console.error("Update trade type error:", error);
+    logError("Update trade type error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1538,7 +1539,7 @@ router.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMI
       categories: newCategories,
     });
   } catch (error) {
-    console.error("Reinitialize SOW error:", error);
+    logError("Reinitialize SOW error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1612,7 +1613,7 @@ router.get("/api/organization/sow-preview/:tradeType", requireAuth, async (req: 
       categories
     });
   } catch (error) {
-    console.error("Get SOW preview error:", error);
+    logError("Get SOW preview error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1707,6 +1708,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
         }))];
       }
     } catch {
+      logWarn("Non-critical operation failed");
       usedModifiersTable = false;
     }
 
@@ -1827,7 +1829,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
       persistenceEnabled: usedModifiersTable,
     });
   } catch (error) {
-    console.error("Get modifiers for scope error:", error);
+    logError("Get modifiers for scope error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1897,7 +1899,7 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
 
     res.json(selections);
   } catch (error) {
-    console.error("Get bid modifier selections error:", error);
+    logError("Get bid modifier selections error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -1942,7 +1944,7 @@ router.get("/api/bid-modifier-selections/by-bid/:bidId", requireAuth, async (req
 
     res.json({ selections });
   } catch (error) {
-    console.error("Get bid modifier selections by bid error:", error);
+    logError("Get bid modifier selections by bid error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2050,7 +2052,7 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
 
     res.json(saved);
   } catch (error) {
-    console.error("Save bid modifier selections error:", error);
+    logError("Save bid modifier selections error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2130,7 +2132,7 @@ async function syncMaterialBudgetsFromScopeItem(scopeItemId: string, completedQu
         .where(eq(projectMaterialBudgets.id, materialBudget.id));
     }
   } catch (error) {
-    console.error("Error syncing material budgets:", error);
+    logError("Error syncing material budgets:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -2185,7 +2187,7 @@ router.get("/api/projects/:code/scope", requireAuth, async (req: AuthRequest, re
 
     res.json(enrichedItems);
   } catch (error) {
-    console.error("Get scope items error:", error);
+    logError("Get scope items error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2219,7 +2221,7 @@ router.post("/api/projects/:code/scope", requireAuth, requireRole("ADMIN", "MANA
     const [newScopeItem] = await db.insert(scopeItems).values([insertData]).returning();
     res.status(201).json(newScopeItem);
   } catch (error: any) {
-    console.error("Create scope item error:", error);
+    logError("Create scope item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2290,7 +2292,7 @@ router.patch("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER"
 
     res.json(updatedItem);
   } catch (error: any) {
-    console.error("Update scope item error:", error);
+    logError("Update scope item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2324,7 +2326,7 @@ router.delete("/api/scope-items/:id", requireAuth, requireRole("ADMIN", "MANAGER
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete scope item error:", error);
+    logError("Delete scope item error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2443,7 +2445,7 @@ router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN",
 
     res.json(updatedItem);
   } catch (error: any) {
-    console.error("Update scope item materials error:", error);
+    logError("Update scope item materials error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2495,7 +2497,7 @@ router.get("/api/projects/:projectId/material-overages", requireAuth, requireRol
 
     res.json({ overages: overageItems, count: overageItems.length });
   } catch (error) {
-    console.error("Get material overages error:", error);
+    logError("Get material overages error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2518,7 +2520,7 @@ router.get("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: Au
 
     res.json(progressEntries);
   } catch (error) {
-    console.error("Get daily progress error:", error);
+    logError("Get daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2633,12 +2635,12 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
         }
       }
     } catch (notifError) {
-      console.error("Failed to create billing progress notifications:", notifError);
+      logError("Failed to create billing progress notifications:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
     }
 
     res.status(201).json(newProgress);
   } catch (error: any) {
-    console.error("Create daily progress error:", error);
+    logError("Create daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2740,7 +2742,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
           }
         }
       } catch (notificationError) {
-        console.error("Failed to create notifications:", notificationError);
+        logError("Failed to create notifications:", {}, notificationError instanceof Error ? notificationError : new Error(String(notificationError)));
       }
     }
 
@@ -2767,7 +2769,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
 
     res.json(updatedProgress);
   } catch (error: any) {
-    console.error("Update daily progress error:", error);
+    logError("Update daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -2818,7 +2820,7 @@ router.delete("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth,
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Delete daily progress error:", error);
+    logError("Delete daily progress error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

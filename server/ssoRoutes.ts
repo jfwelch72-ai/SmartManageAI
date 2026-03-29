@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, Response } from "express";
 import { AuthRequest, requireAuth, requireRole, generateToken, setAuthCookie } from "./auth";
 import { requireFeature } from "./middleware/requireFeature";
@@ -35,7 +36,7 @@ router.get(
 
       return res.json({ config: config || null, orgSlug: org?.slug || null });
     } catch (error: any) {
-      console.error("Error fetching SSO config:", error);
+      logError("Error fetching SSO config:", {}, error instanceof Error ? error : new Error(String(error)));
       return res.status(500).json({ error: "Failed to fetch SSO configuration" });
     }
   }
@@ -122,7 +123,7 @@ router.put(
 
       return res.json({ config });
     } catch (error: any) {
-      console.error("Error saving SSO config:", error);
+      logError("Error saving SSO config:", {}, error instanceof Error ? error : new Error(String(error)));
       return res.status(500).json({ error: "Failed to save SSO configuration" });
     }
   }
@@ -149,6 +150,7 @@ router.post(
             errors.push("Certificate is not valid base64");
           }
         } catch {
+          logWarn("Non-critical operation failed");
           errors.push("Certificate is not valid base64");
         }
       } else {
@@ -159,6 +161,7 @@ router.post(
         try {
           new URL(ssoLoginUrl);
         } catch {
+          logWarn("Non-critical operation failed");
           errors.push("SSO Login URL is not a valid URL");
         }
       } else {
@@ -171,7 +174,7 @@ router.post(
 
       return res.json({ valid: true, message: "SSO configuration appears valid" });
     } catch (error: any) {
-      console.error("Error testing SSO config:", error);
+      logError("Error testing SSO config:", {}, error instanceof Error ? error : new Error(String(error)));
       return res.status(500).json({ error: "Failed to test SSO configuration" });
     }
   }
@@ -217,7 +220,7 @@ router.get("/:orgSlug/login", async (req: AuthRequest, res: Response) => {
     const loginUrl = await saml.getAuthorizeUrlAsync("", req.headers.host || "", {});
     return res.redirect(loginUrl);
   } catch (error: any) {
-    console.error("Error initiating SSO login:", error);
+    logError("Error initiating SSO login:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to initiate SSO login" });
   }
 });
@@ -322,7 +325,7 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response) => {
 
     return res.redirect("/dashboard");
   } catch (error: any) {
-    console.error("Error processing SSO callback:", error);
+    logError("Error processing SSO callback:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to process SSO callback" });
   }
 });

@@ -160,6 +160,7 @@ export function sanitizeUrl(url: string | null | undefined): string | undefined 
 
     return urlObj.toString();
   } catch {
+    logWarn("Non-critical operation failed");
     return undefined;
   }
 }

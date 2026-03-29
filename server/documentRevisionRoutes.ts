@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import * as docService from "./services/documentRevisionService";
 import { getOrgId, getUserOrThrow } from "./utils/routeHelpers";
-import { logError } from "./utils/logger";
+import {logError, logWarn } from "./utils/logger";
 
 const router = Router();
 
@@ -86,6 +86,7 @@ router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, r
       });
       res.json({ url: signedUrl });
     } catch {
+      logWarn("Non-critical operation failed");
       res.status(500).json({ error: "Failed to generate preview URL" });
     }
   } catch (err) {

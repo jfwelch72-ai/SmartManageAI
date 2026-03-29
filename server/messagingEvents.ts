@@ -1,3 +1,4 @@
+import { logWarn } from "./utils/logger";
 import type { Response } from "express";
 
 interface SseClient {
@@ -29,6 +30,7 @@ function sendEvent(client: SseClient, event: string, data: unknown): void {
   try {
     client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   } catch {
+    logWarn("Non-critical operation failed");
     clients.delete(client.userId);
   }
 }

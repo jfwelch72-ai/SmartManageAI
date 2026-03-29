@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import { tasks, aiNoteInsights, users, projects, taskSubtasks, taskComments, taskAttachments } from "@shared/schema";
@@ -120,7 +121,7 @@ router.patch("/api/insights/:insightId/status", requireAuth, async (req: AuthReq
 
     res.json(response);
   } catch (error) {
-    console.error("Error updating insight status:", error);
+    logError("Error updating insight status:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update insight status" });
   }
 });
@@ -155,7 +156,7 @@ router.post("/api/insights/:insightId/acknowledge", requireAuth, async (req: Aut
 
     res.json(response);
   } catch (error) {
-    console.error("Error acknowledging insight:", error);
+    logError("Error acknowledging insight:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to acknowledge insight" });
   }
 });
@@ -273,7 +274,7 @@ router.get("/api/tasks", requireAuth, async (req: AuthRequest, res) => {
 
     res.json(taskList);
   } catch (error) {
-    console.error("Error fetching tasks:", error);
+    logError("Error fetching tasks:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch tasks" });
   }
 });
@@ -305,7 +306,7 @@ router.get("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Resp
 
     res.json(task);
   } catch (error) {
-    console.error("Error fetching task:", error);
+    logError("Error fetching task:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch task" });
   }
 });
@@ -366,7 +367,7 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response) =
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Error creating task:", error);
+    logError("Error creating task:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create task" });
   }
 });
@@ -448,7 +449,7 @@ router.patch("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Re
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Error updating task:", error);
+    logError("Error updating task:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update task" });
   }
 });
@@ -483,7 +484,7 @@ router.delete("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: R
 
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting task:", error);
+    logError("Error deleting task:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete task" });
   }
 });
@@ -505,7 +506,7 @@ router.get("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest, 
       .orderBy(asc(taskSubtasks.createdAt));
     res.json(subtaskList);
   } catch (error) {
-    console.error("Error fetching subtasks:", error);
+    logError("Error fetching subtasks:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch subtasks" });
   }
 });
@@ -529,7 +530,7 @@ router.post("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest,
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Error creating subtask:", error);
+    logError("Error creating subtask:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create subtask" });
   }
 });
@@ -558,7 +559,7 @@ router.patch("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: 
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Error updating subtask:", error);
+    logError("Error updating subtask:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update subtask" });
   }
 });
@@ -576,7 +577,7 @@ router.delete("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req:
     if (!deleted) return res.status(404).json({ error: "Subtask not found" });
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting subtask:", error);
+    logError("Error deleting subtask:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete subtask" });
   }
 });
@@ -609,7 +610,7 @@ router.get("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest, 
       .orderBy(desc(taskComments.createdAt));
     res.json(commentList);
   } catch (error) {
-    console.error("Error fetching comments:", error);
+    logError("Error fetching comments:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch comments" });
   }
 });
@@ -650,7 +651,7 @@ router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest,
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Error creating comment:", error);
+    logError("Error creating comment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create comment" });
   }
 });
@@ -685,7 +686,7 @@ router.get("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthReques
       .orderBy(desc(taskAttachments.createdAt));
     res.json(attachmentList);
   } catch (error) {
-    console.error("Error fetching attachments:", error);
+    logError("Error fetching attachments:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch attachments" });
   }
 });
@@ -714,7 +715,7 @@ router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthReque
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: "Validation error", details: error.errors });
     }
-    console.error("Error creating attachment:", error);
+    logError("Error creating attachment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create attachment" });
   }
 });
@@ -756,7 +757,7 @@ router.post("/api/tasks/:taskId/attachments/upload", requireAuth, taskUpload.sin
       .returning();
     res.status(201).json(attachment);
   } catch (error) {
-    console.error("Error uploading attachment:", error);
+    logError("Error uploading attachment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to upload attachment" });
   }
 });
@@ -774,7 +775,7 @@ router.delete("/api/tasks/:taskId/attachments/:attachmentId", requireAuth, async
     if (!deleted) return res.status(404).json({ error: "Attachment not found" });
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting attachment:", error);
+    logError("Error deleting attachment:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete attachment" });
   }
 });
@@ -850,7 +851,7 @@ router.get("/api/tasks/:taskId/activity", requireAuth, async (req: AuthRequest, 
 
     res.json(activity);
   } catch (error) {
-    console.error("Error fetching activity:", error);
+    logError("Error fetching activity:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch activity" });
   }
 });

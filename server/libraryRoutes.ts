@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import { eq, and, ilike, inArray, sql, desc } from "drizzle-orm";
@@ -414,7 +415,7 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
       tradeIds,
     });
   } catch (error: any) {
-    console.error("Seed error:", error);
+    logError("Seed error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: error.message });
   }
 });

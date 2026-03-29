@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { portalChatThreads, portalChatMessages, clientPortalAccess } from "@shared/schema";
@@ -51,7 +52,7 @@ async function requireClientPortalAuth(req: ClientPortalChatRequest, res: Respon
 
     next();
   } catch (error) {
-    console.error("Client portal auth error:", error);
+    logError("Client portal auth error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Authentication failed" });
   }
 }
@@ -87,7 +88,7 @@ router.get("/client-portal/chat/threads", requireClientPortalAuth as any, async 
 
     res.json(threadsWithPreview);
   } catch (error) {
-    console.error("Client portal chat threads list error:", error);
+    logError("Client portal chat threads list error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -131,7 +132,7 @@ router.post("/client-portal/chat/threads", requireClientPortalAuth as any, async
 
     res.status(201).json({ ...thread, message: msg });
   } catch (error) {
-    console.error("Client portal chat create thread error:", error);
+    logError("Client portal chat create thread error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -179,7 +180,7 @@ router.get("/client-portal/chat/threads/:threadId/messages", requireClientPortal
 
     res.json(messages);
   } catch (error) {
-    console.error("Client portal chat get messages error:", error);
+    logError("Client portal chat get messages error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -239,7 +240,7 @@ router.post("/client-portal/chat/threads/:threadId/messages", requireClientPorta
 
     res.status(201).json(msg);
   } catch (error) {
-    console.error("Client portal chat send message error:", error);
+    logError("Client portal chat send message error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -278,7 +279,7 @@ router.post("/client-portal/chat/threads/:threadId/read", requireClientPortalAut
 
     res.json({ success: true });
   } catch (error) {
-    console.error("Client portal chat mark read error:", error);
+    logError("Client portal chat mark read error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

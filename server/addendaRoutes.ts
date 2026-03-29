@@ -3,7 +3,7 @@ import { requireAuth } from "./auth";
 import { db } from "./db";
 import { addenda, addendumAcknowledgments } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { logInfo, logError } from "./utils/logger";
+import {logInfo, logError, logWarn } from "./utils/logger";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
 
 const router = Router();
@@ -267,6 +267,7 @@ router.get("/addenda/:id/preview-url", requireAuth, async (req, res) => {
       });
       res.json({ url: signedUrl });
     } catch {
+      logWarn("Non-critical operation failed");
       if (addendum.fileUrl) return res.json({ url: addendum.fileUrl });
       res.status(500).json({ error: "Failed to generate preview URL" });
     }

@@ -2,7 +2,7 @@ import { eventBus } from "../eventBus";
 import { db } from "../../db";
 import { notifications, users, bids } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { logError } from "../../utils/logger";
+import {logError, logWarn } from "../../utils/logger";
 import { deliverNotifications } from "../../services/notificationDelivery";
 import type {
   ChangeOrderApprovedEvent,
@@ -37,6 +37,7 @@ async function getAdminUserIds(orgId: string): Promise<string[]> {
       );
     return rows.map((r) => r.id);
   } catch {
+    logWarn("Non-critical operation failed");
     return [];
   }
 }

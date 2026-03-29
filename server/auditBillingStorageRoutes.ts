@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, auditLog, billingEvents } from "@shared/schema";
@@ -34,7 +35,7 @@ router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("
 
     res.json(events);
   } catch (error) {
-    console.error("Get billing events error:", error);
+    logError("Get billing events error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -61,7 +62,7 @@ router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER", 
 
     res.status(201).json(newEvent);
   } catch (error) {
-    console.error("Create billing event error:", error);
+    logError("Create billing event error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -111,7 +112,7 @@ router.get("/api/audit-logs", requireAuth, requireRole("ADMIN"), async (req: Aut
 
     res.json(logs);
   } catch (error) {
-    console.error("Get audit logs error:", error);
+    logError("Get audit logs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -130,7 +131,7 @@ router.get("/api/audit-logs/:entityType/:entityId", requireAuth, requireRole("AD
 
     res.json(logs);
   } catch (error) {
-    console.error("Get entity audit logs error:", error);
+    logError("Get entity audit logs error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -205,7 +206,7 @@ router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res) =>
 
     res.json({ uploadURL, intentId: intent.id, objectKey });
   } catch (error: any) {
-    console.error("Get upload URL error:", error);
+    logError("Get upload URL error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -253,7 +254,7 @@ router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res)
 
     res.json({ uploadId: intent.id, key: objectKey });
   } catch (error: any) {
-    console.error("createMultipartUpload error:", error);
+    logError("createMultipartUpload error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -296,7 +297,7 @@ router.get("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthRequ
     }
     res.json({ parts: [] });
   } catch (error: any) {
-    console.error("listParts error:", error);
+    logError("listParts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -326,7 +327,7 @@ router.get("/api/objects/multipart/:uploadId/:partNumber", requireAuth, async (r
     const proxyUrl = `/api/objects/multipart/${uploadId}/${partNumber}/upload?start=${partStart}&end=${partEnd}&total=${intent.fileSize}`;
     res.json({ url: proxyUrl, headers: {} });
   } catch (error: any) {
-    console.error("signPart error:", error);
+    logError("signPart error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -376,7 +377,7 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
     res.setHeader("ETag", etag);
     res.json({ ETag: etag });
   } catch (error: any) {
-    console.error("multipart part upload proxy error:", error);
+    logError("multipart part upload proxy error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -408,7 +409,7 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req
     uploadPartQueues.delete(uploadId);
     res.json({ location: normalizedPath, objectPath: normalizedPath });
   } catch (error: any) {
-    console.error("completeMultipartUpload error:", error);
+    logError("completeMultipartUpload error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -432,7 +433,7 @@ router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthR
     uploadPartQueues.delete(uploadId);
     res.status(204).send();
   } catch (error: any) {
-    console.error("abortMultipartUpload error:", error);
+    logError("abortMultipartUpload error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -488,7 +489,7 @@ router.post("/api/objects/confirm", requireAuth, async (req: AuthRequest, res) =
 
     res.json({ objectPath: normalizedPath, intentId });
   } catch (error: any) {
-    console.error("Confirm upload error:", error);
+    logError("Confirm upload error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -535,7 +536,7 @@ router.get("/objects/:objectPath(*)", requireAuth, async (req: AuthRequest, res)
 
     objectStorageService.downloadObject(objectFile, res);
   } catch (error: any) {
-    console.error("Object download error:", error);
+    logError("Object download error:", {}, error instanceof Error ? error : new Error(String(error)));
     const { ObjectNotFoundError } = await objectStoragePromise;
     if (error instanceof ObjectNotFoundError) {
       res.status(404).json({ error: "Object not found" });

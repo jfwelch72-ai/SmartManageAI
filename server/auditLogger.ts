@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { db } from "./db";
 import { auditLog, type InsertAuditLog } from "@shared/schema";
 import type { Request } from "express";
@@ -19,7 +20,7 @@ export async function logAudit(
       userAgent: req?.get("user-agent") || null,
     });
   } catch (error) {
-    console.error("Audit logging failed:", error);
+    logError("Audit logging failed:", {}, error instanceof Error ? error : new Error(String(error)));
     // Don't throw - audit failure shouldn't break the operation
   }
 }

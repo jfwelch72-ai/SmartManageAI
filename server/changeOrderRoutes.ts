@@ -1,4 +1,5 @@
-import { Router, type Request, type Response } from "express";
+import {logError, logWarn } from "./utils/logger";
+import { Router, type Request, type Response, NextFunction } from "express";
 import { eventBus } from "./events";
 import { db } from "./db";
 import { changeOrders, insertChangeOrderSchema, users, notifications, projects, changeOrderRevisions, changeOrderApprovals, changeOrderAttachments, changeOrderComments, tmTickets, rfis, scheduleOfValues, sovLineItems, budgetLineItems, orgCostCodes } from "@shared/schema";
@@ -123,7 +124,7 @@ async function notifyStatusChange(
       });
     }
   } catch (error) {
-    console.error("Failed to create change order notifications:", error);
+    logError("Failed to create change order notifications:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -167,7 +168,7 @@ async function createRevision(
  * For backward compatibility, this now redirects to SUBMITTED status directly
  * Also handles migrating any existing PENDING_APPROVAL records to SUBMITTED
  */
-router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -246,9 +247,8 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Request approval error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -256,7 +256,7 @@ router.post("/:id/request-approval", requireAuth, requireRole("ADMIN", "MANAGER"
  * Submit a change order to client
  * DRAFT -> SUBMITTED (simplified workflow)
  */
-router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -328,7 +328,7 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
         });
       }
     } catch (approvalErr) {
-      console.error("Failed to auto-bootstrap approval chain:", approvalErr);
+      logError("Failed to auto-bootstrap approval chain:", {}, approvalErr instanceof Error ? approvalErr : new Error(String(approvalErr)));
     }
 
     await createRevision(order.id, order.status, "SUBMITTED", req.user!.id, "Submitted to client", order.amount);
@@ -364,9 +364,8 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Submit change order error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -374,7 +373,7 @@ router.post("/:id/submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (
  * Approve a change order
  * SUBMITTED -> APPROVED (simplified workflow)
  */
-router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -481,7 +480,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
           }
         }
       } catch (ledgerError) {
-        console.error("Failed to update cost ledger for approved CO:", ledgerError);
+        logError("Failed to update cost ledger for approved CO:", {}, ledgerError instanceof Error ? ledgerError : new Error(String(ledgerError)));
       }
     }
 
@@ -525,7 +524,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
         }
       }
     } catch (notifError) {
-      console.error("Failed to create CO approval billing notification:", notifError);
+      logError("Failed to create CO approval billing notification:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
     }
 
     await eventBus.emit({
@@ -583,13 +582,12 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
       const { syncApprovedCOToSOV } = await import("./aiaBillingRoutes");
       await syncApprovedCOToSOV(updatedOrder.id);
     } catch (syncErr) {
-      console.error("Auto-sync CO to SOV after approval:", syncErr);
+      logError("Auto-sync CO to SOV after approval:", {}, syncErr instanceof Error ? syncErr : new Error(String(syncErr)));
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Approve change order error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -597,7 +595,7 @@ router.post("/:id/approve", requireAuth, requireRole("ADMIN", "MANAGER"), async 
  * Reject a change order
  * Any non-terminal state -> REJECTED
  */
-router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     // SECURITY: Sanitize text inputs for data integrity
     const rejectionReason = req.body.rejectionReason ? sanitizeText(req.body.rejectionReason) : undefined;
@@ -703,9 +701,8 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
     });
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Reject change order error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -713,7 +710,7 @@ router.post("/:id/reject", requireAuth, requireRole("ADMIN", "MANAGER"), async (
  * Promote a PCO to pricing review
  * PCO -> PRICING_REVIEW
  */
-router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER", "PROJECT_ENGINEER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -780,9 +777,8 @@ router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Promote to review error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -790,7 +786,7 @@ router.post("/:id/promote-to-review", requireAuth, requireRole("ADMIN", "MANAGER
  * Approve pricing and submit to client
  * PRICING_REVIEW -> SUBMITTED
  */
-router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -871,9 +867,8 @@ router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER")
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Approve pricing error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -881,7 +876,7 @@ router.post("/:id/approve-pricing", requireAuth, requireRole("ADMIN", "MANAGER")
  * Return a change order from pricing review back to PCO
  * PRICING_REVIEW -> PCO
  */
-router.post("/:id/return-to-pco", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/return-to-pco", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;
 
@@ -931,9 +926,8 @@ router.post("/:id/return-to-pco", requireAuth, requireRole("ADMIN", "MANAGER"), 
     await notifyStatusChange(updatedOrder, "PCO", `Change order ${updatedOrder.changeOrderNumber} has been returned to PCO for revision${reason ? `: ${reason}` : ""}`, true);
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Return to PCO error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -941,7 +935,7 @@ router.post("/:id/return-to-pco", requireAuth, requireRole("ADMIN", "MANAGER"), 
  * Void an approved change order
  * APPROVED -> VOIDED
  */
-router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next) => {
   try {
     const voidReason = req.body.voidReason ? sanitizeText(req.body.voidReason) : undefined;
 
@@ -1015,9 +1009,8 @@ router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequ
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Void change order error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1025,7 +1018,7 @@ router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequ
  * Return a change order to draft for revision
  * PENDING_APPROVAL -> DRAFT or SUBMITTED -> DRAFT or REJECTED -> DRAFT
  */
-router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     // SECURITY: Sanitize text inputs for data integrity
     const reason = req.body.reason ? sanitizeText(req.body.reason) : undefined;
@@ -1103,9 +1096,8 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
     );
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Return to draft error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1113,7 +1105,7 @@ router.post("/:id/return-to-draft", requireAuth, requireRole("ADMIN", "MANAGER")
 // Change Order Revision History
 // ====================
 
-router.get("/:id/revisions", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:id/revisions", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
     if (!result?.order) {
@@ -1144,9 +1136,8 @@ router.get("/:id/revisions", requireAuth, async (req: AuthRequest, res: Response
       .orderBy(desc(changeOrderRevisions.revisionNumber));
 
     res.json(revisions);
-  } catch (error: any) {
-    console.error("Get revisions error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1154,7 +1145,7 @@ router.get("/:id/revisions", requireAuth, async (req: AuthRequest, res: Response
 // Change Order Approval Chain
 // ====================
 
-router.get("/:id/approvals", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:id/approvals", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
     if (!result?.order) {
@@ -1185,13 +1176,12 @@ router.get("/:id/approvals", requireAuth, async (req: AuthRequest, res: Response
       .orderBy(changeOrderApprovals.stepOrder);
 
     res.json(approvals);
-  } catch (error: any) {
-    console.error("Get approvals error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/:id/approve-step", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/approve-step", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const { comments } = req.body;
     const result = await getChangeOrderById(req.params.id);
@@ -1292,20 +1282,19 @@ router.post("/:id/approve-step", requireAuth, requireRole("ADMIN", "MANAGER"), a
         const { syncApprovedCOToSOV } = await import("./aiaBillingRoutes");
         await syncApprovedCOToSOV((updatedOrder || order).id);
       } catch (syncErr) {
-        console.error("Auto-sync CO to SOV after step-approval:", syncErr);
+        logError("Auto-sync CO to SOV after step-approval:", {}, syncErr instanceof Error ? syncErr : new Error(String(syncErr)));
       }
 
       res.json({ approval: updatedApproval, order: updatedOrder, allApproved: true });
     } else {
       res.json({ approval: updatedApproval, allApproved: false, remainingSteps: remainingPending.length });
     }
-  } catch (error: any) {
-    console.error("Approve step error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const rejectionReason = req.body.rejectionReason ? sanitizeText(req.body.rejectionReason) : undefined;
 
@@ -1402,13 +1391,12 @@ router.post("/:id/reject-step", requireAuth, requireRole("ADMIN", "MANAGER"), as
     );
 
     res.json({ order: updatedOrder, rejectedStep: currentStep.stepOrder });
-  } catch (error: any) {
-    console.error("Reject step error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const chainSchema = z.object({
       steps: z.array(z.object({
@@ -1453,9 +1441,8 @@ router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANA
     }).where(eq(changeOrders.id, req.params.id));
 
     res.json({ message: "Approval chain configured", steps: approvalEntries.length });
-  } catch (error: any) {
-    console.error("Setup approval chain error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1463,7 +1450,7 @@ router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANA
 // Change Order Link Routes
 // ====================
 
-router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const { tmTicketId } = req.body;
     if (!tmTicketId || typeof tmTicketId !== "string") {
@@ -1522,18 +1509,17 @@ router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async 
           relatedEntityType: "changeOrder",
         });
       } catch (e) {
-        console.error("Failed to notify TM ticket submitter:", e);
+        logError("Failed to notify TM ticket submitter:", {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Link TM ticket error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const { rfiId } = req.body;
     if (!rfiId || typeof rfiId !== "string") {
@@ -1592,18 +1578,17 @@ router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async
           relatedEntityType: "changeOrder",
         });
       } catch (e) {
-        console.error("Failed to notify RFI submitter:", e);
+        logError("Failed to notify RFI submitter:", {}, e instanceof Error ? e : new Error(String(e)));
       }
     }
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Link RFI error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/:id/link-contract", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/link-contract", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const { contractId } = req.body;
     if (!contractId || typeof contractId !== "string") {
@@ -1653,9 +1638,8 @@ router.post("/:id/link-contract", requireAuth, requireRole("ADMIN", "MANAGER"), 
     );
 
     res.json(updatedOrder);
-  } catch (error: any) {
-    console.error("Link contract error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -1663,7 +1647,7 @@ router.post("/:id/link-contract", requireAuth, requireRole("ADMIN", "MANAGER"), 
 // Change Order File Attachments (GCS-sidecar-backed normalized table)
 // ====================
 
-router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -1722,6 +1706,7 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
     try {
       parsedUrl = new URL(fileUrl);
     } catch {
+      logWarn("Non-critical operation failed");
       res.status(400).json({ error: "Invalid fileUrl" });
       return;
     }
@@ -1747,14 +1732,14 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
       });
       if (!response.ok) {
         const errBody = await response.text().catch(() => "");
-        console.error(`GCS sidecar upload failed (${response.status}): ${errBody}`);
+        logError(`GCS sidecar upload failed (${response.status}): ${errBody}`);
         res.status(502).json({ error: "File storage upload failed" });
         return;
       }
       const data = await response.json() as { storageKey?: string };
       storageKey = data.storageKey || objectPath;
     } catch (sidecarErr) {
-      console.error("GCS sidecar unreachable:", sidecarErr);
+      logError("GCS sidecar unreachable:", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
       res.status(502).json({ error: "File storage service unavailable" });
       return;
     }
@@ -1789,13 +1774,12 @@ router.post("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =
     }, req);
 
     res.status(201).json(newAttachment);
-  } catch (error: any) {
-    console.error("Upload change order file error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -1849,7 +1833,7 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =>
           });
           fileUrl = signedUrl;
         } catch (e) {
-          console.error(`Failed to get signed URL for attachment ${att.id}:`, e);
+          logError(`Failed to get signed URL for attachment ${att.id}:`, {}, e instanceof Error ? e : new Error(String(e)));
         }
         return {
           id: att.id,
@@ -1869,13 +1853,12 @@ router.get("/:id/files", requireAuth, async (req: AuthRequest, res: Response) =>
     );
 
     res.json(result2);
-  } catch (error: any) {
-    console.error("Get change order files error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: Response) => {
+router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
 
@@ -1937,12 +1920,12 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
         });
         if (!delResponse.ok) {
           const errBody = await delResponse.text().catch(() => "");
-          console.error(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
+          logError(`GCS sidecar delete failed (${delResponse.status}): ${errBody}`);
           res.status(502).json({ error: "File storage deletion failed; attachment record not removed" });
           return;
         }
       } catch (sidecarErr) {
-        console.error("GCS sidecar unreachable during delete:", sidecarErr);
+        logError("GCS sidecar unreachable during delete:", {}, sidecarErr instanceof Error ? sidecarErr : new Error(String(sidecarErr)));
         res.status(502).json({ error: "File storage service unavailable; attachment record not removed" });
         return;
       }
@@ -1960,14 +1943,13 @@ router.delete("/:id/files/:fileId", requireAuth, async (req: AuthRequest, res: R
     }, req);
 
     res.status(204).send();
-  } catch (error: any) {
-    console.error("Delete change order file error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
 // Add approved CO as a new SOV line item on the project's latest DRAFT SOV
-router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFFICE_MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const [co] = await db.select().from(changeOrders).where(eq(changeOrders.id, req.params.id)).limit(1);
     if (!co) return res.status(404).json({ error: "Change order not found" });
@@ -2052,13 +2034,12 @@ router.post("/:id/add-to-sov", requireAuth, requireRole("ADMIN", "MANAGER", "OFF
     }, req);
 
     res.json({ success: true, sovLineItemId: newLineItem.id, sovId: targetSovId });
-  } catch (error: any) {
-    console.error("Add CO to SOV error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
-router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -2114,9 +2095,8 @@ router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async 
 
     const succeeded = results.filter(r => r.success).length;
     res.json({ results, summary: { total: ids.length, succeeded, failed: ids.length - succeeded } });
-  } catch (error: any) {
-    console.error("Bulk submit error:", error);
-    res.status(500).json({ error: "Internal server error" });
+  } catch (error) {
+  next(error);
   }
 });
 
@@ -2124,7 +2104,7 @@ router.post("/bulk-submit", requireAuth, requireRole("ADMIN", "MANAGER"), async 
 // PDF Export Routes
 // ====================
 
-router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
     if (!result?.order) {
@@ -2249,12 +2229,12 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response) => {
     res.setHeader('Content-Disposition', `attachment; filename="ChangeOrder_${safeNumber}.pdf"`);
     stream.pipe(res);
   } catch (error: any) {
-    console.error("PDF generation error:", error);
+    logError("PDF generation error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate PDF" });
   }
 });
 
-router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response) => {
+router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
     const projectId = req.params.projectId;
 
@@ -2394,20 +2374,20 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRole("ADMIN", "MA
         const safeNumber = co.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
         archive.append(stream, { name: `${safeNumber}.pdf` });
       } catch (coErr) {
-        console.error(`Failed to generate PDF for CO ${co.changeOrderNumber}:`, coErr);
+        logError(`Failed to generate PDF for CO ${co.changeOrderNumber}:`, {}, coErr instanceof Error ? coErr : new Error(String(coErr)));
       }
     }
 
     await archive.finalize();
   } catch (error: any) {
-    console.error("Bulk PDF export error:", error);
+    logError("Bulk PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
       res.status(500).json({ error: "Failed to generate bulk PDF export" });
     }
   }
 });
 
-router.get("/:id/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.get("/:id/comments", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
     if (!result?.order) {
@@ -2428,12 +2408,11 @@ router.get("/:id/comments", requireAuth, async (req: AuthRequest, res: Response)
 
     res.json(comments);
   } catch (error) {
-    console.error("Error fetching CO comments:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 
-router.post("/:id/comments", requireAuth, async (req: AuthRequest, res: Response) => {
+router.post("/:id/comments", requireAuth, async (req: AuthRequest, res: Response, next) => {
   try {
     const result = await getChangeOrderById(req.params.id);
     if (!result?.order) {
@@ -2469,8 +2448,7 @@ router.post("/:id/comments", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(comment);
   } catch (error) {
-    console.error("Error posting CO comment:", error);
-    res.status(500).json({ error: "Internal server error" });
+  next(error);
   }
 });
 

@@ -2,7 +2,7 @@ import { eventBus } from "../eventBus";
 import { db } from "../../db";
 import { changeOrders, projectRisks, projects, notifications, users } from "@shared/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
-import { logError, logInfo } from "../../utils/logger";
+import {logError, logInfo, logWarn } from "../../utils/logger";
 import type { RiskStatusChangedEvent, ProjectCreatedEvent } from "../eventTypes";
 import { openai, AI_MODEL_GPT4O } from "../../ai/openaiClient";
 import { sanitizeShortText, sanitizeText } from "../../sanitization";
@@ -24,6 +24,7 @@ async function getAdminUserIds(orgId: string): Promise<string[]> {
       );
     return rows.map((r) => r.id);
   } catch {
+    logWarn("Non-critical operation failed");
     return [];
   }
 }

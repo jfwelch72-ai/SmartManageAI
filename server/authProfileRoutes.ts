@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import multer from "multer";
 import { db } from "./db";
@@ -111,7 +112,7 @@ const upload = multer({
         subject: "Verify your email - SmartManageAI",
         html: getEmailVerificationHtml(verifyLink, firstName),
         text: getEmailVerificationText(verifyLink, firstName),
-      }).catch(err => console.error("Failed to send verification email:", err));
+      }).catch(err => logError("Failed to send verification email:", {}, err instanceof Error ? err : new Error(String(err))));
 
       const token = generateToken(newUser.id, newUser.tokenVersion);
       setAuthCookie(res, token);
@@ -123,7 +124,7 @@ const upload = multer({
         needsOnboarding: true,
       });
     } catch (error) {
-      console.error("Registration error:", error);
+      logError("Registration error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -211,7 +212,7 @@ const upload = multer({
       const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
       res.json({ user: userWithoutPassword });
     } catch (error) {
-      console.error("Login error:", error);
+      logError("Login error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -250,7 +251,7 @@ const upload = multer({
 
       res.redirect("/?emailVerified=true");
     } catch (error) {
-      console.error("Email verification error:", error);
+      logError("Email verification error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Verification failed" });
     }
   });
@@ -283,7 +284,7 @@ const upload = multer({
 
       res.json({ message: "Verification email sent" });
     } catch (error) {
-      console.error("Resend verification error:", error);
+      logError("Resend verification error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Failed to send verification email" });
     }
   });
@@ -366,7 +367,7 @@ const upload = multer({
         isDevAccount: true
       });
     } catch (error) {
-      console.error("[DEV] Test login error:", error);
+      logError("[DEV] Test login error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -424,7 +425,7 @@ const upload = multer({
         redirectTo: "/onboarding"
       });
     } catch (error) {
-      console.error("[DEV] Fresh admin login error:", error);
+      logError("[DEV] Fresh admin login error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -445,7 +446,7 @@ const upload = multer({
       }
       res.json({ user: req.user, organizationName, organizationOnboardingStatus });
     } catch (error) {
-      console.error("Error fetching user org:", error);
+      logError("Error fetching user org:", {}, error instanceof Error ? error : new Error(String(error)));
       res.json({ user: req.user, organizationName: null, organizationOnboardingStatus: null });
     }
   });
@@ -500,7 +501,7 @@ const upload = multer({
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      console.error("Error updating profile:", error);
+      logError("Error updating profile:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -536,7 +537,7 @@ const upload = multer({
 
       res.json({ message: "Password changed successfully" });
     } catch (error) {
-      console.error("Error changing password:", error);
+      logError("Error changing password:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -577,7 +578,7 @@ const upload = multer({
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
     } catch (error) {
-      console.error("Error uploading avatar:", error);
+      logError("Error uploading avatar:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -590,7 +591,7 @@ const upload = multer({
       const photos = await db.select().from(userPhotos).where(eq(userPhotos.userId, userId)).orderBy(desc(userPhotos.uploadedAt));
       res.json(photos);
     } catch (error) {
-      console.error("Error fetching user photos:", error);
+      logError("Error fetching user photos:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -640,7 +641,7 @@ const upload = multer({
 
       res.status(201).json(uploadedPhotos);
     } catch (error) {
-      console.error("Error uploading photos:", error);
+      logError("Error uploading photos:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -668,14 +669,14 @@ const upload = multer({
           const objectFile = bucket.file(objectName);
           await objectFile.delete().catch(() => {});
         } catch (e) {
-          console.error("Error deleting user photo from storage:", e);
+          logError("Error deleting user photo from storage:", {}, e instanceof Error ? e : new Error(String(e)));
         }
       }
 
       await db.delete(userPhotos).where(eq(userPhotos.id, photoId));
       res.json({ message: "Photo deleted" });
     } catch (error) {
-      console.error("Error deleting photo:", error);
+      logError("Error deleting photo:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -719,7 +720,7 @@ const upload = multer({
       });
       objectFile.createReadStream().pipe(res);
     } catch (error) {
-      console.error("Error serving profile file:", error);
+      logError("Error serving profile file:", {}, error instanceof Error ? error : new Error(String(error)));
       if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -761,7 +762,7 @@ const upload = multer({
 
       res.json(enrichedResults);
     } catch (error) {
-      console.error("Error fetching user skills:", error);
+      logError("Error fetching user skills:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -789,7 +790,7 @@ const upload = multer({
       const [newUserSkill] = await db.insert(userSkills).values({ userId, skillId: existingSkill.id }).returning();
       res.status(201).json({ id: newUserSkill.id, skillId: existingSkill.id, skillName: existingSkill.name, category: existingSkill.category });
     } catch (error) {
-      console.error("Error adding skill:", error);
+      logError("Error adding skill:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -807,7 +808,7 @@ const upload = multer({
       await db.delete(userSkills).where(eq(userSkills.id, userSkillId));
       res.json({ message: "Skill removed" });
     } catch (error) {
-      console.error("Error removing skill:", error);
+      logError("Error removing skill:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -832,7 +833,7 @@ const upload = multer({
         .returning();
       res.json(updated);
     } catch (error) {
-      console.error("Error updating skill rating:", error);
+      logError("Error updating skill rating:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -903,7 +904,7 @@ const upload = multer({
 
       res.status(201).json({ message: "Verification request sent", requests: createdRequests });
     } catch (error) {
-      console.error("Error requesting skill verification:", error);
+      logError("Error requesting skill verification:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -949,7 +950,7 @@ const upload = multer({
 
       res.json(enrichedRequests);
     } catch (error) {
-      console.error("Error fetching verification requests:", error);
+      logError("Error fetching verification requests:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1012,7 +1013,7 @@ const upload = multer({
 
       res.json({ message: `Verification request ${newStatus}` });
     } catch (error) {
-      console.error("Error resolving verification request:", error);
+      logError("Error resolving verification request:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1027,7 +1028,7 @@ const upload = multer({
         .orderBy(desc(userCertifications.createdAt));
       res.json(certs);
     } catch (error) {
-      console.error("Error fetching certifications:", error);
+      logError("Error fetching certifications:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1081,7 +1082,7 @@ const upload = multer({
 
       res.status(201).json(cert);
     } catch (error) {
-      console.error("Error adding certification:", error);
+      logError("Error adding certification:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1117,7 +1118,7 @@ const upload = multer({
         .returning();
       res.json(updated);
     } catch (error) {
-      console.error("Error updating certification:", error);
+      logError("Error updating certification:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1145,14 +1146,14 @@ const upload = multer({
           const objectFile = bucket.file(objectName);
           await objectFile.delete().catch(() => {});
         } catch (e) {
-          console.error("Error deleting certification file from storage:", e);
+          logError("Error deleting certification file from storage:", {}, e instanceof Error ? e : new Error(String(e)));
         }
       }
 
       await db.delete(userCertifications).where(eq(userCertifications.id, certId));
       res.json({ message: "Certification deleted" });
     } catch (error) {
-      console.error("Error deleting certification:", error);
+      logError("Error deleting certification:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1183,7 +1184,7 @@ const upload = multer({
           const objectFile = bucket.file(objectName);
           await objectFile.delete().catch(() => {});
         } catch (e) {
-          console.error("Error deleting old certification file:", e);
+          logError("Error deleting old certification file:", {}, e instanceof Error ? e : new Error(String(e)));
         }
       }
 
@@ -1206,7 +1207,7 @@ const upload = multer({
 
       res.json(updated);
     } catch (error) {
-      console.error("Error uploading certification file:", error);
+      logError("Error uploading certification file:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1248,7 +1249,7 @@ const upload = multer({
       });
       objectFile.createReadStream().pipe(res);
     } catch (error) {
-      console.error("Error serving certification file:", error);
+      logError("Error serving certification file:", {}, error instanceof Error ? error : new Error(String(error)));
       if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1262,7 +1263,7 @@ const upload = multer({
       const [profile] = await db.select().from(employeePerformanceProfiles).where(eq(employeePerformanceProfiles.userId, userId));
       res.json(profile || null);
     } catch (error) {
-      console.error("Error fetching performance profile:", error);
+      logError("Error fetching performance profile:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1293,7 +1294,7 @@ const upload = multer({
         res.json(created);
       }
     } catch (error) {
-      console.error("Error updating performance profile:", error);
+      logError("Error updating performance profile:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1305,7 +1306,7 @@ const upload = multer({
       const logs = await db.select().from(attendanceLogs).where(eq(attendanceLogs.userId, userId)).orderBy(desc(attendanceLogs.date));
       res.json(logs);
     } catch (error) {
-      console.error("Error fetching attendance logs:", error);
+      logError("Error fetching attendance logs:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1332,7 +1333,7 @@ const upload = multer({
       const [log] = await db.insert(attendanceLogs).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
       res.json(log);
     } catch (error) {
-      console.error("Error creating attendance log:", error);
+      logError("Error creating attendance log:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1344,7 +1345,7 @@ const upload = multer({
       const incidents = await db.select().from(safetyIncidents).where(eq(safetyIncidents.userId, userId)).orderBy(desc(safetyIncidents.date));
       res.json(incidents);
     } catch (error) {
-      console.error("Error fetching safety incidents:", error);
+      logError("Error fetching safety incidents:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1383,10 +1384,10 @@ const upload = multer({
             severity: parsed.data.severity,
           },
         });
-      } catch {}
+      } catch { logWarn("Non-critical operation failed"); }
       res.json(incident);
     } catch (error) {
-      console.error("Error creating safety incident:", error);
+      logError("Error creating safety incident:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1398,7 +1399,7 @@ const upload = multer({
       const issues = await db.select().from(qualityIssues).where(eq(qualityIssues.userId, userId)).orderBy(desc(qualityIssues.date));
       res.json(issues);
     } catch (error) {
-      console.error("Error fetching quality issues:", error);
+      logError("Error fetching quality issues:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1426,7 +1427,7 @@ const upload = multer({
       const [issue] = await db.insert(qualityIssues).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
       res.json(issue);
     } catch (error) {
-      console.error("Error creating quality issue:", error);
+      logError("Error creating quality issue:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1438,7 +1439,7 @@ const upload = multer({
       const reviews = await db.select().from(performanceReviews).where(eq(performanceReviews.userId, userId)).orderBy(desc(performanceReviews.reviewDate));
       res.json(reviews);
     } catch (error) {
-      console.error("Error fetching performance reviews:", error);
+      logError("Error fetching performance reviews:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1475,7 +1476,7 @@ const upload = multer({
       const [review] = await db.insert(performanceReviews).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
       res.json(review);
     } catch (error) {
-      console.error("Error creating performance review:", error);
+      logError("Error creating performance review:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1487,7 +1488,7 @@ const upload = multer({
       const notes = await db.select().from(supervisorNotes).where(eq(supervisorNotes.userId, userId)).orderBy(desc(supervisorNotes.createdAt));
       res.json(notes);
     } catch (error) {
-      console.error("Error fetching supervisor notes:", error);
+      logError("Error fetching supervisor notes:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1520,7 +1521,7 @@ const upload = multer({
       }).returning();
       res.json(note);
     } catch (error) {
-      console.error("Error creating supervisor note:", error);
+      logError("Error creating supervisor note:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });

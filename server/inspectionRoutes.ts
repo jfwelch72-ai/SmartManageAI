@@ -1,3 +1,4 @@
+import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";
 import { 
@@ -119,7 +120,7 @@ router.get("/projects/:projectId/inspections", requireAuth, async (req: AuthRequ
 
     res.json(enrichedInspections);
   } catch (error) {
-    console.error("Error fetching project inspections:", error);
+    logError("Error fetching project inspections:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch inspections" });
   }
 });
@@ -194,7 +195,7 @@ router.post("/projects/:projectId/inspections", requireAuth, requireRole("ADMIN"
 
     res.status(201).json(enrichInspection(newInspection));
   } catch (error) {
-    console.error("Error creating inspection:", error);
+    logError("Error creating inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to create inspection" });
   }
 });
@@ -210,7 +211,7 @@ router.get("/inspections/:id", requireAuth, async (req: AuthRequest, res: Respon
 
     res.json(enrichInspection(inspection));
   } catch (error) {
-    console.error("Error fetching inspection:", error);
+    logError("Error fetching inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fetch inspection" });
   }
 });
@@ -280,7 +281,7 @@ router.patch("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER", "S
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    console.error("Error updating inspection:", error);
+    logError("Error updating inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to update inspection" });
   }
 });
@@ -327,7 +328,7 @@ router.post("/inspections/:id/schedule", requireAuth, requireRole("ADMIN", "MANA
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    console.error("Error scheduling inspection:", error);
+    logError("Error scheduling inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to schedule inspection" });
   }
 });
@@ -382,11 +383,11 @@ router.post("/inspections/:id/pass", requireAuth, requireRole("ADMIN", "MANAGER"
           status: "PASSED",
         },
       });
-    } catch {}
+    } catch { logWarn("Non-critical operation failed"); }
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    console.error("Error passing inspection:", error);
+    logError("Error passing inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to pass inspection" });
   }
 });
@@ -444,11 +445,11 @@ router.post("/inspections/:id/fail", requireAuth, requireRole("ADMIN", "MANAGER"
           status: "FAILED",
         },
       });
-    } catch {}
+    } catch { logWarn("Non-critical operation failed"); }
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    console.error("Error failing inspection:", error);
+    logError("Error failing inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to fail inspection" });
   }
 });
@@ -490,7 +491,7 @@ router.post("/inspections/:id/cancel", requireAuth, requireRole("ADMIN", "MANAGE
 
     res.json(enrichInspection(updatedInspection));
   } catch (error) {
-    console.error("Error cancelling inspection:", error);
+    logError("Error cancelling inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to cancel inspection" });
   }
 });
@@ -526,7 +527,7 @@ router.delete("/inspections/:id", requireAuth, requireRole("ADMIN", "MANAGER"), 
 
     res.status(204).send();
   } catch (error) {
-    console.error("Error deleting inspection:", error);
+    logError("Error deleting inspection:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to delete inspection" });
   }
 });
@@ -603,7 +604,7 @@ router.post("/inspections/:id/generate-pdf", requireAuth, requireRole("SUPER_ADM
 
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("Error generating inspection PDF:", error);
+    logError("Error generating inspection PDF:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate PDF" });
   }
 });
@@ -680,7 +681,7 @@ router.get("/inspections/:id/pdf", requireAuth, requireRole("SUPER_ADMIN", "HUST
 
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("Error serving inspection PDF:", error);
+    logError("Error serving inspection PDF:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to serve PDF" });
   }
 });

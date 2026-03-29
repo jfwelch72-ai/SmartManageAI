@@ -130,7 +130,7 @@ Return a JSON array of items. Be thorough and extract ALL pricing items visible 
       return validateAndNormalizeItems(items);
     }
   } catch (error: any) {
-    logError(`[VendorPriceExtractor] PDF extraction failed: ${error.message}`);
+    logError("[VendorPriceExtractor] PDF extraction failed", {}, error instanceof Error ? error : new Error(String(error)));
     
     if (error.message.includes("Could not process") || error.message.includes("format")) {
       return await extractWithTextFallback(fileRef, vendorId, effectiveQuarter, govContext);

@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -98,7 +99,7 @@ router.get("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "A
 
     res.json(result);
   } catch (error) {
-    console.error("Get all subcontracts error:", error);
+    logError("Get all subcontracts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -128,7 +129,7 @@ router.get("/subcontracts/projects", requireAuth, requireRoleOrFeature(["SUPER_A
     const projectList = await query;
     res.json(projectList);
   } catch (error) {
-    console.error("Get projects for subcontracts error:", error);
+    logError("Get projects for subcontracts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -158,7 +159,7 @@ router.get("/subcontracts/subcontractors", requireAuth, requireRoleOrFeature(["S
 
     res.json(subList);
   } catch (error) {
-    console.error("Get subcontractors error:", error);
+    logError("Get subcontractors error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -195,7 +196,7 @@ router.get("/subcontracts/project/:projectId", requireAuth, requireRoleOrFeature
       subcontractor: c.subcontractor,
     })));
   } catch (error) {
-    console.error("Get subcontracts error:", error);
+    logError("Get subcontracts error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -239,7 +240,7 @@ router.get("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMIN"
       }
     });
   } catch (error) {
-    console.error("Get subcontract error:", error);
+    logError("Get subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -332,7 +333,7 @@ router.post("/subcontracts", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "
       subcontractor
     });
   } catch (error) {
-    console.error("Create subcontract error:", error);
+    logError("Create subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -433,7 +434,7 @@ router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMI
       subcontractor
     });
   } catch (error) {
-    console.error("Update subcontract error:", error);
+    logError("Update subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -458,7 +459,7 @@ router.delete("/subcontracts/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMI
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete subcontract error:", error);
+    logError("Delete subcontract error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -582,7 +583,7 @@ router.get("/subcontracts/:id/pdf", requireAuth, requireRoleOrFeature(["SUPER_AD
     
     pdfStream.pipe(res);
   } catch (error) {
-    console.error("Generate subcontract PDF error:", error);
+    logError("Generate subcontract PDF error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

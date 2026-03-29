@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import { projectRisks, projects, users, type Project } from "@shared/schema";
@@ -110,7 +111,7 @@ router.get("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MANA
 
     res.json(result);
   } catch (error) {
-    console.error("Error fetching risks:", error);
+    logError("Error fetching risks:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -164,7 +165,7 @@ router.get("/projects/:projectId/risks/summary", requireAuth, requireRole("ADMIN
       trend: { newThisPeriod, resolvedThisPeriod, direction },
     });
   } catch (error) {
-    console.error("Error fetching risk summary:", error);
+    logError("Error fetching risk summary:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -205,7 +206,7 @@ router.get("/projects/:projectId/risks/matrix", requireAuth, requireRole("ADMIN"
 
     res.json(matrix);
   } catch (error) {
-    console.error("Error fetching risk matrix:", error);
+    logError("Error fetching risk matrix:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -251,7 +252,7 @@ router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MAN
 
     res.status(201).json(risk);
   } catch (error) {
-    console.error("Error creating risk:", error);
+    logError("Error creating risk:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -328,7 +329,7 @@ router.patch("/projects/:projectId/risks/:riskId", requireAuth, requireRole("ADM
 
     res.json(updated);
   } catch (error) {
-    console.error("Error updating risk:", error);
+    logError("Error updating risk:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -349,7 +350,7 @@ router.delete("/projects/:projectId/risks/:riskId", requireAuth, requireRole("AD
     await db.delete(projectRisks).where(eq(projectRisks.id, riskId));
     res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting risk:", error);
+    logError("Error deleting risk:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -408,7 +409,7 @@ Suggest relevant construction project risks that haven't been identified yet.`;
     const parsed = JSON.parse(content);
     res.json(parsed.risks || []);
   } catch (error) {
-    console.error("Error generating AI risk suggestions:", error);
+    logError("Error generating AI risk suggestions:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to generate risk suggestions" });
   }
 });
@@ -479,7 +480,7 @@ router.get("/risks/portfolio-summary", requireAuth, requireRole("ADMIN", "MANAGE
       })),
     });
   } catch (error) {
-    console.error("Error fetching portfolio risk summary:", error);
+    logError("Error fetching portfolio risk summary:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

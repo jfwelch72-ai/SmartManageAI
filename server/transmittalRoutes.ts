@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
 import {
@@ -60,7 +61,7 @@ router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 
     res.json(result);
   } catch (error) {
-    console.error("Get transmittals error:", error);
+    logError("Get transmittals error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -105,7 +106,7 @@ router.get("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
       recipients,
     });
   } catch (error) {
-    console.error("Get transmittal error:", error);
+    logError("Get transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -186,7 +187,7 @@ router.post("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "M
 
     res.status(201).json(newTransmittal);
   } catch (error) {
-    console.error("Create transmittal error:", error);
+    logError("Create transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -240,7 +241,7 @@ router.patch("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMIN
 
     res.json(updated);
   } catch (error) {
-    console.error("Update transmittal error:", error);
+    logError("Update transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -301,7 +302,7 @@ router.post("/transmittals/:id/send", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(updated);
   } catch (error) {
-    console.error("Send transmittal error:", error);
+    logError("Send transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -350,7 +351,7 @@ router.post("/transmittals/:id/supersede", requireAuth, requireRole("SUPER_ADMIN
 
     res.json(updated);
   } catch (error) {
-    console.error("Supersede transmittal error:", error);
+    logError("Supersede transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -414,7 +415,7 @@ router.post("/transmittals/:id/acknowledge", requireAuth, requireRole("SUPER_ADM
 
     res.json(updated);
   } catch (error) {
-    console.error("Acknowledge transmittal error:", error);
+    logError("Acknowledge transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -453,7 +454,7 @@ router.get("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMIN
 
     res.json(recipients);
   } catch (error) {
-    console.error("Get transmittal recipients error:", error);
+    logError("Get transmittal recipients error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -510,7 +511,7 @@ router.post("/transmittals/:id/recipients", requireAuth, requireRole("SUPER_ADMI
 
     res.status(201).json(newRecipients);
   } catch (error) {
-    console.error("Add transmittal recipients error:", error);
+    logError("Add transmittal recipients error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -556,7 +557,7 @@ router.delete("/transmittals/:id", requireAuth, requireRole("SUPER_ADMIN", "ADMI
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete transmittal error:", error);
+    logError("Delete transmittal error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -639,7 +640,7 @@ router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "
 
     res.status(201).json(newAttachment);
   } catch (error) {
-    console.error("Upload transmittal file error:", error);
+    logError("Upload transmittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -677,7 +678,7 @@ router.get("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "A
 
     res.json(attachments);
   } catch (error) {
-    console.error("Get transmittal files error:", error);
+    logError("Get transmittal files error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -733,7 +734,7 @@ router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER
 
     res.status(204).send();
   } catch (error) {
-    console.error("Delete transmittal file error:", error);
+    logError("Delete transmittal file error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });

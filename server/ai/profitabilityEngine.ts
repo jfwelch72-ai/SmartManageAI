@@ -1,3 +1,4 @@
+import { logError } from "../utils/logger";
 import { db } from "../db";
 import { 
   projects, 
@@ -503,7 +504,7 @@ export async function calculateAllProjectsProfitability(): Promise<ProjectProfit
       const profitability = await calculateProjectProfitability(project.code);
       results.push(profitability);
     } catch (error) {
-      console.error(`Error calculating profitability for ${project.code}:`, error);
+      logError(`Error calculating profitability for ${project.code}:`, {}, error instanceof Error ? error : new Error(String(error)));
     }
   }
 

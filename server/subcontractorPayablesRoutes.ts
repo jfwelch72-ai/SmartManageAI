@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, Response, Request } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -102,7 +103,7 @@ async function sendPayableNotifications(
       await insertNotifications(notificationRecords);
     }
   } catch (error) {
-    console.error("Error sending payable notifications:", error);
+    logError("Error sending payable notifications:", {}, error instanceof Error ? error : new Error(String(error)));
   }
 }
 
@@ -182,7 +183,7 @@ router.get("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER", "
 
     res.json(result);
   } catch (error) {
-    console.error("Get payables error:", error);
+    logError("Get payables error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -227,7 +228,7 @@ router.get("/payables/summary", requireAuth, requireRoleOrFeature(["ADMIN", "MAN
 
     res.json(summary);
   } catch (error) {
-    console.error("Get payables summary error:", error);
+    logError("Get payables summary error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -275,7 +276,7 @@ router.get("/payables/:id", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER
       }
     });
   } catch (error) {
-    console.error("Get payable error:", error);
+    logError("Get payable error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -367,7 +368,7 @@ router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"],
       req.user!.id
     );
 
-    import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(contract.project.id)).catch(e => console.error("Budget alert eval after sub payment:", e));
+    import("./costLedgerRoutes").then(m => m.evaluateBudgetAlerts(contract.project.id)).catch(e => logError("Budget alert eval after sub payment:", {}, e instanceof Error ? e : new Error(String(e))));
 
     res.status(201).json({
       ...newPayment,
@@ -387,7 +388,7 @@ router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"],
       }
     });
   } catch (error) {
-    console.error("Create payable error:", error);
+    logError("Create payable error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -481,7 +482,7 @@ router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN",
       }
     });
   } catch (error) {
-    console.error("Approve payable error:", error);
+    logError("Approve payable error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -590,7 +591,7 @@ router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", 
       }
     });
   } catch (error) {
-    console.error("Reject payable error:", error);
+    logError("Reject payable error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -693,7 +694,7 @@ router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN
         },
       });
     } catch (emitErr) {
-      console.error("Failed to emit subcontractor.payment_made event:", emitErr);
+      logError("Failed to emit subcontractor.payment_made event:", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
     }
 
     res.json({
@@ -712,7 +713,7 @@ router.post("/payables/:id/mark-paid", requireAuth, requireRoleOrFeature(["ADMIN
       }
     });
   } catch (error) {
-    console.error("Mark paid error:", error);
+    logError("Mark paid error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -749,7 +750,7 @@ router.delete("/payables/:id", requireAuth, requireRole("ADMIN"), async (req: Au
 
     res.json({ message: "Payable deleted successfully" });
   } catch (error) {
-    console.error("Delete payable error:", error);
+    logError("Delete payable error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -832,7 +833,7 @@ export async function createAutoPayableFromContract(
 
     return { success: true, paymentId: newPayment.id };
   } catch (error) {
-    console.error("Error creating auto payable:", error);
+    logError("Error creating auto payable:", {}, error instanceof Error ? error : new Error(String(error)));
     return { success: false, error: "Failed to create auto payable" };
   }
 }
@@ -958,7 +959,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
 
         console.log(`Backfill: Created payable ${newPayment.id} for contract ${contract.contractNumber}`);
       } catch (err) {
-        console.error(`Backfill: Failed to create payable for contract ${contract.contractNumber}:`, err);
+        logError(`Backfill: Failed to create payable for contract ${contract.contractNumber}:`, {}, err instanceof Error ? err : new Error(String(err)));
         results.push({
           contractNumber: contract.contractNumber,
           payableId: "",
@@ -978,7 +979,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
       details: results
     });
   } catch (error) {
-    console.error("Error running payables backfill:", error);
+    logError("Error running payables backfill:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Failed to run payables backfill" });
   }
 });

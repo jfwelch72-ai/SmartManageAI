@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";
 import {
@@ -57,7 +58,7 @@ router.get("/templates", requireAuth, async (req: AuthRequest, res: Response) =>
 
     return res.json(templates);
   } catch (error) {
-    console.error("Error fetching KPI templates:", error);
+    logError("Error fetching KPI templates:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch KPI templates" });
   }
 });
@@ -83,7 +84,7 @@ router.post("/templates", requireAuth, async (req: AuthRequest, res: Response) =
 
     return res.status(201).json(template);
   } catch (error) {
-    console.error("Error creating KPI template:", error);
+    logError("Error creating KPI template:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to create KPI template" });
   }
 });
@@ -105,7 +106,7 @@ router.patch("/templates/:id", requireAuth, async (req: AuthRequest, res: Respon
     if (!updated) return res.status(404).json({ error: "Template not found" });
     return res.json(updated);
   } catch (error) {
-    console.error("Error updating KPI template:", error);
+    logError("Error updating KPI template:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to update KPI template" });
   }
 });
@@ -124,7 +125,7 @@ router.delete("/templates/:id", requireAuth, async (req: AuthRequest, res: Respo
     if (!updated) return res.status(404).json({ error: "Template not found" });
     return res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting KPI template:", error);
+    logError("Error deleting KPI template:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to delete KPI template" });
   }
 });
@@ -174,7 +175,7 @@ router.get("/assignments", requireAuth, async (req: AuthRequest, res: Response) 
 
     return res.json(result);
   } catch (error) {
-    console.error("Error fetching KPI assignments:", error);
+    logError("Error fetching KPI assignments:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch KPI assignments" });
   }
 });
@@ -212,7 +213,7 @@ router.get("/assignments/my", requireAuth, async (req: AuthRequest, res: Respons
 
     return res.json(result);
   } catch (error) {
-    console.error("Error fetching my KPIs:", error);
+    logError("Error fetching my KPIs:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch your KPIs" });
   }
 });
@@ -239,7 +240,7 @@ router.post("/assignments", requireAuth, async (req: AuthRequest, res: Response)
 
     return res.status(201).json(assignment);
   } catch (error) {
-    console.error("Error creating KPI assignment:", error);
+    logError("Error creating KPI assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to create KPI assignment" });
   }
 });
@@ -269,7 +270,7 @@ router.patch("/assignments/:id", requireAuth, async (req: AuthRequest, res: Resp
     if (!updated) return res.status(404).json({ error: "Assignment not found" });
     return res.json(updated);
   } catch (error) {
-    console.error("Error updating KPI assignment:", error);
+    logError("Error updating KPI assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to update KPI assignment" });
   }
 });
@@ -287,7 +288,7 @@ router.delete("/assignments/:id", requireAuth, async (req: AuthRequest, res: Res
     if (!deleted) return res.status(404).json({ error: "Assignment not found" });
     return res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting KPI assignment:", error);
+    logError("Error deleting KPI assignment:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to delete KPI assignment" });
   }
 });
@@ -319,7 +320,7 @@ router.get("/entries", requireAuth, async (req: AuthRequest, res: Response) => {
 
     return res.json(entries);
   } catch (error) {
-    console.error("Error fetching KPI entries:", error);
+    logError("Error fetching KPI entries:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch KPI entries" });
   }
 });
@@ -356,7 +357,7 @@ router.post("/entries", requireAuth, async (req: AuthRequest, res: Response) => 
 
     return res.status(201).json(entry);
   } catch (error) {
-    console.error("Error creating KPI entry:", error);
+    logError("Error creating KPI entry:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to create KPI entry" });
   }
 });
@@ -397,7 +398,7 @@ router.patch("/entries/:id", requireAuth, async (req: AuthRequest, res: Response
     if (!updated) return res.status(404).json({ error: "Entry not found" });
     return res.json(updated);
   } catch (error) {
-    console.error("Error updating KPI entry:", error);
+    logError("Error updating KPI entry:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to update KPI entry" });
   }
 });
@@ -415,7 +416,7 @@ router.delete("/entries/:id", requireAuth, async (req: AuthRequest, res: Respons
     if (!deleted) return res.status(404).json({ error: "Entry not found" });
     return res.json({ success: true });
   } catch (error) {
-    console.error("Error deleting KPI entry:", error);
+    logError("Error deleting KPI entry:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to delete KPI entry" });
   }
 });
@@ -488,7 +489,7 @@ router.get("/summary", requireAuth, async (req: AuthRequest, res: Response) => {
 
     return res.json(summary);
   } catch (error) {
-    console.error("Error fetching KPI summary:", error);
+    logError("Error fetching KPI summary:", {}, error instanceof Error ? error : new Error(String(error)));
     return res.status(500).json({ error: "Failed to fetch KPI summary" });
   }
 });

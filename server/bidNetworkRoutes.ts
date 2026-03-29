@@ -1098,7 +1098,7 @@ router.patch("/responses/:id/status", requireAuth, requireRole("ADMIN", "MANAGER
           await insertNotifications(notificationValues);
         }
       } catch (notifError) {
-        console.error("Failed to create bid award notifications:", notifError);
+        logError("Failed to create bid award notifications:", {}, notifError instanceof Error ? notifError : new Error(String(notifError)));
       }
     }
     
