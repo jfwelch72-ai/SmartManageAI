@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { DashboardCustomizationProvider, useDashboardCustomization, type FeaturePermissionKey } from "@/hooks/use-dashboard-customization";
-import { RoutePermissions } from "@/lib/rbac";
+import { RoutePermissions, hasManagementAccess, hasCrmAccess } from "@/lib/rbac";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import TopHeader from "@/components/TopHeader";
@@ -81,6 +81,9 @@ const CompanySettingsPage = lazy(() => import("@/pages/company-settings"));
 const VendorDashboard = lazy(() => import("@/pages/vendor/index"));
 const VendorPortalPricing = lazy(() => import("@/pages/vendor/pricing"));
 const VendorClients = lazy(() => import("@/pages/vendor/clients"));
+const VendorMessages = lazy(() => import("@/pages/vendor/messages"));
+const VendorDocuments = lazy(() => import("@/pages/vendor/documents"));
+const ViewAsOrganization = lazy(() => import("@/pages/view-as-organization"));
 const AIBidAnalysisPage = lazy(() => import("@/pages/ai-bid-analysis"));
 const AIContractAnalysisPage = lazy(() => import("@/pages/ai-contract-analysis"));
 const AIDocumentAnalysisPage = lazy(() => import("@/pages/ai-document-analysis"));
@@ -298,7 +301,7 @@ function Router() {
       
       {/* Marketplace routes */}
       <Route path="/marketplace/contractors/:orgId" component={() => <ProtectedRoute component={ContractorProfilePage} />} />
-      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={RoutePermissions.CRM} />} />
+      <Route path="/marketplace" component={() => <ProtectedRoute component={MarketplacePage} permission={(role?: string) => hasCrmAccess(role) || role === "MARKETING"} />} />
       <Route path="/vendor-scores" component={() => <ProtectedRoute component={VendorScoresPage} permission={RoutePermissions.CRM} />} />
       <Route path="/material-price-index" component={() => <ProtectedRoute component={MaterialPriceIndexPage} permission={RoutePermissions.CRM} />} />
       <Route path="/crew-marketplace" component={() => <ProtectedRoute component={() => <Redirect to="/marketplace?tab=crews" />} permission={RoutePermissions.CRM} />} />
@@ -329,7 +332,7 @@ function Router() {
       <Route path="/subcontracts" component={() => <ProtectedRoute component={SubcontractsPage} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canAccessFinancials" />} />
       <Route path="/website-builder" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=website" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/social-media" component={() => <ProtectedRoute component={SocialMediaPage} permission={RoutePermissions.SOCIAL_MEDIA} featurePerm="canPostSocialMedia" />} />
-      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} featurePerm="canUseAiFeatures" />} />
+      <Route path="/email-assistant" component={() => <ProtectedRoute component={EmailAssistantPage} permission={(role?: string) => hasManagementAccess(role) || role === "SALES" || role === "MARKETING"} featurePerm="canUseAiFeatures" />} />
       <Route path="/procurement-module" component={() => <ProtectedRoute component={ProcurementModulePage} permission={RoutePermissions.PROCUREMENT} featurePerm="canManageProcurement" />} />
       <Route path="/billing" component={() => <ProtectedRoute component={BillingPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
 
@@ -353,10 +356,13 @@ function Router() {
       {/* Vendor Portal routes (VENDOR only) */}
       <Route path="/vendor/pricing" component={() => <ProtectedRoute component={VendorPortalPricing} permission={VendorRoutePermissions.VENDOR_PRICING} skipOnboardingCheck />} />
       <Route path="/vendor/clients" component={() => <ProtectedRoute component={VendorClients} permission={VendorRoutePermissions.VENDOR_CLIENTS} skipOnboardingCheck />} />
+      <Route path="/vendor/messages" component={() => <ProtectedRoute component={VendorMessages} permission={VendorRoutePermissions.VENDOR_MESSAGES} skipOnboardingCheck />} />
+      <Route path="/vendor/documents" component={() => <ProtectedRoute component={VendorDocuments} permission={VendorRoutePermissions.VENDOR_DOCUMENTS} skipOnboardingCheck />} />
       <Route path="/vendor" component={() => <ProtectedRoute component={VendorDashboard} permission={VendorRoutePermissions.VENDOR_DASHBOARD} skipOnboardingCheck />} />
       
       {/* Platform Admin routes (SUPER_ADMIN only) */}
       <Route path="/admin" component={() => <ProtectedRoute component={PlatformAdminDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/organizations/:id/view" component={() => <ProtectedRoute component={ViewAsOrganization} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations/:id" component={() => <ProtectedRoute component={PlatformOrganizationDetail} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/organizations" component={() => <ProtectedRoute component={PlatformOrganizations} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={PlatformSubscriptions} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

@@ -2033,4 +2033,106 @@ router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requi
   }
 });
 
+// ========================================
+// View as Organization (Read-only dashboard for support)
+// ========================================
+
+router.get("/platform/organizations/:orgId/view-dashboard", requireAuth, requireSuperAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const [org] = await db.select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+      tradeType: organizations.tradeType,
+      isActive: organizations.isActive,
+      region: organizations.region,
+      createdAt: organizations.createdAt,
+    }).from(organizations).where(eq(organizations.id, orgId));
+
+    if (!org) {
+      return res.status(404).json({ error: "Organization not found" });
+    }
+
+    const orgUsers = await db.select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      role: users.role,
+      isActive: users.isActive,
+    })
+    .from(users)
+    .where(eq(users.organizationId, orgId))
+    .orderBy(users.role);
+
+    const userIds = orgUsers.map(u => u.id);
+
+    let orgProjects: { id: string; name: string; status: string; createdAt: Date }[] = [];
+    if (userIds.length > 0) {
+      orgProjects = await db.select({
+        id: projects.id,
+        name: projects.name,
+        status: projects.status,
+        createdAt: projects.createdAt,
+      })
+      .from(projects)
+      .where(
+        or(
+          inArray(projects.estimatorId, userIds),
+          inArray(projects.superintendentId, userIds),
+          inArray(projects.projectManagerId, userIds),
+        )
+      )
+      .orderBy(desc(projects.createdAt))
+      .limit(50);
+    }
+
+    let orgBids: { id: string; name: string; status: string; createdAt: Date }[] = [];
+    if (userIds.length > 0) {
+      orgBids = await db.select({
+        id: bids.id,
+        name: bids.name,
+        status: bids.status,
+        createdAt: bids.createdAt,
+      })
+      .from(bids)
+      .where(inArray(bids.estimatorId, userIds))
+      .orderBy(desc(bids.createdAt))
+      .limit(50);
+    }
+
+    const [equipmentCount] = await db.select({ count: count() })
+      .from(equipment)
+      .where(eq(equipment.organizationId, orgId));
+
+    const [taskCount] = await db.select({ count: count() })
+      .from(tasks)
+      .where(eq(tasks.organizationId, orgId));
+
+    const activeProjects = orgProjects.filter(p => p.status === "ACTIVE").length;
+    const completedProjects = orgProjects.filter(p => p.status === "COMPLETE" || p.status === "CLOSED").length;
+
+    res.json({
+      organization: org,
+      stats: {
+        userCount: orgUsers.length,
+        projectCount: orgProjects.length,
+        bidCount: orgBids.length,
+        activeProjects,
+        completedProjects,
+        totalEquipment: equipmentCount?.count || 0,
+        totalTasks: taskCount?.count || 0,
+      },
+      recentProjects: orgProjects,
+      recentBids: orgBids,
+      users: orgUsers,
+    });
+  } catch (error: any) {
+    console.error("View as organization error:", error.message);
+    res.status(500).json({ error: "Failed to load organization dashboard" });
+  }
+});
+
 export default router;

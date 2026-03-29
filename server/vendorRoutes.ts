@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "./db";
 import { insertNotification } from "./services/notificationService";
-import { crmOrganisations, vendorEnrollments, vendorUsers, vendorPricingCatalogs, auditLog, users, organizations, notifications, pricebookImportJobs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, vendorPricebooks, vendorPricebookItems } from "@shared/schema";
+import { crmOrganisations, vendorEnrollments, vendorUsers, vendorPricingCatalogs, auditLog, users, organizations, notifications, pricebookImportJobs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, vendorPricebooks, vendorPricebookItems, conversations, conversationParticipants, messages, planDocuments, filePermissions } from "@shared/schema";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest, requireFeaturePermission } from "./auth";
 import { sendEmail } from "./email";
@@ -2400,6 +2400,441 @@ router.post("/api/ai-features/vendor-pricebooks/:pricebookId/sync", requireAuth,
     });
   } catch (error) {
     logError("Sync pricebook error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ========================================
+// Vendor Messaging Routes
+// ========================================
+
+router.get("/api/vendor/messages/conversations", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+
+    if (!vendorUser) return res.json([]);
+
+    const enrollments = await db.select({
+      contractorOrgId: vendorEnrollments.contractorOrgId,
+      contractorOrgName: organizations.name,
+    })
+      .from(vendorEnrollments)
+      .innerJoin(organizations, eq(organizations.id, vendorEnrollments.contractorOrgId))
+      .where(and(
+        eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+        eq(vendorEnrollments.status, "ACTIVE")
+      ));
+
+    const enrolledOrgIds = enrollments.map(e => e.contractorOrgId);
+    const orgNameMap: Record<string, string> = Object.fromEntries(
+      enrollments.map(e => [e.contractorOrgId, e.contractorOrgName])
+    );
+
+    const vendorConvos = enrolledOrgIds.length > 0
+      ? await db
+          .select({
+            convId: conversations.id,
+            orgId: conversations.organizationId,
+          })
+          .from(conversations)
+          .innerJoin(conversationParticipants, eq(conversationParticipants.conversationId, conversations.id))
+          .where(and(
+            eq(conversationParticipants.userId, userId),
+            eq(conversations.type, "DIRECT"),
+            inArray(conversations.organizationId, enrolledOrgIds)
+          ))
+      : [];
+
+    const convByOrg: Record<string, string> = {};
+    for (const vc of vendorConvos) {
+      if (vc.orgId && !convByOrg[vc.orgId]) {
+        convByOrg[vc.orgId] = vc.convId;
+      }
+    }
+
+    const activeConvIds = Object.values(convByOrg);
+
+    const lastMessages = activeConvIds.length > 0
+      ? await db.execute(sql`
+          SELECT DISTINCT ON (m.conversation_id)
+            m.conversation_id AS "conversationId",
+            m.content,
+            m.created_at AS "createdAt"
+          FROM messages m
+          WHERE m.conversation_id IN (${sql.join(activeConvIds.map(id => sql`${id}`), sql`, `)})
+          ORDER BY m.conversation_id, m.created_at DESC
+        `)
+      : { rows: [] };
+
+    const lastMsgMap: Record<string, { content: string; createdAt: Date }> = {};
+    for (const row of lastMessages.rows as Array<{ conversationId: string; content: string; createdAt: Date }>) {
+      lastMsgMap[row.conversationId] = { content: row.content, createdAt: row.createdAt };
+    }
+
+    const unreadCounts = activeConvIds.length > 0
+      ? await db.execute(sql`
+          SELECT m.conversation_id AS "conversationId", COUNT(*) AS count
+          FROM messages m
+          LEFT JOIN conversation_participants cp
+            ON cp.conversation_id = m.conversation_id AND cp.user_id = ${userId}
+          WHERE m.conversation_id IN (${sql.join(activeConvIds.map(id => sql`${id}`), sql`, `)})
+            AND m.sender_id != ${userId}
+            AND m.created_at > COALESCE(cp.last_read_at, '1970-01-01')
+          GROUP BY m.conversation_id
+        `)
+      : { rows: [] };
+
+    const unreadMap: Record<string, number> = {};
+    for (const row of unreadCounts.rows as Array<{ conversationId: string; count: string }>) {
+      unreadMap[row.conversationId] = Number(row.count);
+    }
+
+    const result = enrollments.map(enrollment => {
+      const convId = convByOrg[enrollment.contractorOrgId];
+      if (convId) {
+        const lastMsg = lastMsgMap[convId];
+        return {
+          id: convId,
+          contractorOrgId: enrollment.contractorOrgId,
+          contractorOrgName: enrollment.contractorOrgName,
+          lastMessageAt: lastMsg?.createdAt || null,
+          lastMessagePreview: lastMsg?.content?.substring(0, 100) || null,
+          unreadCount: unreadMap[convId] || 0,
+        };
+      }
+      return {
+        id: `pending-${enrollment.contractorOrgId}`,
+        contractorOrgId: enrollment.contractorOrgId,
+        contractorOrgName: enrollment.contractorOrgName,
+        lastMessageAt: null,
+        lastMessagePreview: null,
+        unreadCount: 0,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get vendor conversations error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/vendor/messages/conversations/:id/messages", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const conversationId = req.params.id;
+
+    if (conversationId.startsWith("pending-")) {
+      return res.json([]);
+    }
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+    if (!vendorUser) return res.status(403).json({ error: "Vendor account not linked" });
+
+    const [participant] = await db.select()
+      .from(conversationParticipants)
+      .where(and(
+        eq(conversationParticipants.conversationId, conversationId),
+        eq(conversationParticipants.userId, userId)
+      ))
+      .limit(1);
+
+    if (!participant) {
+      return res.status(403).json({ error: "Not a participant" });
+    }
+
+    const [conv] = await db.select({ organizationId: conversations.organizationId })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+
+    if (!conv?.organizationId) {
+      return res.status(403).json({ error: "Conversation not found" });
+    }
+
+    const [enrollment] = await db.select().from(vendorEnrollments)
+      .where(and(
+        eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+        eq(vendorEnrollments.contractorOrgId, conv.organizationId),
+        eq(vendorEnrollments.status, "ACTIVE")
+      ))
+      .limit(1);
+
+    if (!enrollment) {
+      return res.status(403).json({ error: "No active enrollment for this conversation" });
+    }
+
+    const convMessages = await db
+      .select({
+        id: messages.id,
+        conversationId: messages.conversationId,
+        senderId: messages.senderId,
+        senderName: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+        senderRole: users.role,
+        content: messages.content,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .innerJoin(users, eq(messages.senderId, users.id))
+      .where(and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.isDeleted, false)
+      ))
+      .orderBy(messages.createdAt)
+      .limit(200);
+
+    await db.update(conversationParticipants)
+      .set({ lastReadAt: new Date() })
+      .where(and(
+        eq(conversationParticipants.conversationId, conversationId),
+        eq(conversationParticipants.userId, userId)
+      ));
+
+    res.json(convMessages);
+  } catch (error) {
+    console.error("Get vendor messages error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post("/api/vendor/messages/conversations/:id/messages", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const { content } = req.body;
+    if (!content || typeof content !== "string" || !content.trim()) {
+      return res.status(400).json({ error: "Message content is required" });
+    }
+
+    let conversationId = req.params.id;
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+
+    if (!vendorUser) {
+      return res.status(403).json({ error: "Vendor account not linked" });
+    }
+
+    if (conversationId.startsWith("pending-")) {
+      const contractorOrgId = conversationId.replace("pending-", "");
+
+      const [enrollment] = await db.select().from(vendorEnrollments)
+        .where(and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+          eq(vendorEnrollments.contractorOrgId, contractorOrgId),
+          eq(vendorEnrollments.status, "ACTIVE")
+        ))
+        .limit(1);
+
+      if (!enrollment) {
+        return res.status(403).json({ error: "No active enrollment with this contractor" });
+      }
+
+      const [newConv] = await db.insert(conversations).values({
+        type: "DIRECT",
+        name: `Vendor Channel`,
+        organizationId: contractorOrgId,
+        isCompanyChannel: false,
+        createdById: userId,
+      }).returning();
+
+      conversationId = newConv.id;
+
+      await db.insert(conversationParticipants).values({
+        conversationId,
+        userId,
+        isAdmin: false,
+      });
+
+      let contractorParticipantId = enrollment.invitedByUserId;
+      if (!contractorParticipantId) {
+        const [adminUser] = await db.select({ id: users.id })
+          .from(users)
+          .where(and(
+            eq(users.organizationId, contractorOrgId),
+            eq(users.role, "ADMIN"),
+            eq(users.isActive, true)
+          ))
+          .limit(1);
+        contractorParticipantId = adminUser?.id || null;
+      }
+      if (!contractorParticipantId) {
+        const [managerUser] = await db.select({ id: users.id })
+          .from(users)
+          .where(and(
+            eq(users.organizationId, contractorOrgId),
+            eq(users.role, "MANAGER"),
+            eq(users.isActive, true)
+          ))
+          .limit(1);
+        contractorParticipantId = managerUser?.id || null;
+      }
+
+      if (contractorParticipantId) {
+        await db.insert(conversationParticipants).values({
+          conversationId,
+          userId: contractorParticipantId,
+          isAdmin: true,
+        }).onConflictDoNothing();
+      }
+    } else {
+      const [participant] = await db.select()
+        .from(conversationParticipants)
+        .where(and(
+          eq(conversationParticipants.conversationId, conversationId),
+          eq(conversationParticipants.userId, userId)
+        ))
+        .limit(1);
+
+      if (!participant) {
+        return res.status(403).json({ error: "Not a participant" });
+      }
+
+      const [conv] = await db.select({ organizationId: conversations.organizationId })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .limit(1);
+
+      if (!conv?.organizationId) {
+        return res.status(403).json({ error: "Conversation not found" });
+      }
+
+      const [enrollCheck] = await db.select().from(vendorEnrollments)
+        .where(and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+          eq(vendorEnrollments.contractorOrgId, conv.organizationId),
+          eq(vendorEnrollments.status, "ACTIVE")
+        ))
+        .limit(1);
+
+      if (!enrollCheck) {
+        return res.status(403).json({ error: "No active enrollment for this conversation" });
+      }
+    }
+
+    const [newMessage] = await db.insert(messages).values({
+      conversationId,
+      senderId: userId,
+      content: content.trim(),
+    }).returning();
+
+    await db.update(conversations)
+      .set({ updatedAt: new Date() })
+      .where(eq(conversations.id, conversationId));
+
+    res.status(201).json(newMessage);
+  } catch (error) {
+    console.error("Send vendor message error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ========================================
+// Vendor Documents Routes (Read-only)
+// ========================================
+
+router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db.select().from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+
+    if (!vendorUser) return res.json([]);
+
+    const enrollments = await db.select({
+      contractorOrgId: vendorEnrollments.contractorOrgId,
+      contractorOrgName: organizations.name,
+    })
+      .from(vendorEnrollments)
+      .innerJoin(organizations, eq(organizations.id, vendorEnrollments.contractorOrgId))
+      .where(and(
+        eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+        eq(vendorEnrollments.status, "ACTIVE")
+      ));
+
+    if (enrollments.length === 0) return res.json([]);
+
+    const orgNameMap: Record<string, string> = Object.fromEntries(enrollments.map(e => [e.contractorOrgId, e.contractorOrgName]));
+
+    const enrolledOrgIds = enrollments.map(e => e.contractorOrgId);
+
+    const sharedFiles = await db
+      .select({
+        fileId: filePermissions.fileId,
+        fileType: filePermissions.fileType,
+        grantedAt: filePermissions.grantedAt,
+        grantedByFirstName: users.firstName,
+        grantedByLastName: users.lastName,
+        grantedByOrgId: users.organizationId,
+      })
+      .from(filePermissions)
+      .innerJoin(users, eq(filePermissions.grantedById, users.id))
+      .where(and(
+        eq(filePermissions.userId, userId),
+        eq(filePermissions.fileType, "DOCUMENT"),
+        inArray(users.organizationId, enrolledOrgIds)
+      ))
+      .orderBy(desc(filePermissions.grantedAt))
+      .limit(50);
+
+    if (sharedFiles.length === 0) return res.json([]);
+
+    const docIds = sharedFiles.map(f => f.fileId);
+
+    const docs = await db
+      .select({
+        id: planDocuments.id,
+        title: planDocuments.title,
+        fileName: planDocuments.fileName,
+        fileSize: planDocuments.fileSize,
+        mimeType: planDocuments.mimeType,
+        type: planDocuments.type,
+        uploadedAt: planDocuments.uploadedAt,
+        projectId: planDocuments.projectId,
+      })
+      .from(planDocuments)
+      .where(inArray(planDocuments.id, docIds));
+
+    const sharedFileMap: Record<string, { grantedAt: Date; sharedByName: string; grantedByOrgId: string | null }> = {};
+    for (const sf of sharedFiles) {
+      sharedFileMap[sf.fileId] = {
+        grantedAt: sf.grantedAt,
+        sharedByName: `${sf.grantedByFirstName || ""} ${sf.grantedByLastName || ""}`.trim(),
+        grantedByOrgId: sf.grantedByOrgId,
+      };
+    }
+
+    const result = docs.map(doc => {
+      const shared = sharedFileMap[doc.id];
+      return {
+        id: doc.id,
+        fileName: doc.title || doc.fileName || "Untitled",
+        fileType: doc.mimeType?.split("/").pop() || doc.type || "file",
+        fileSize: doc.fileSize || 0,
+        category: doc.type,
+        sharedByName: shared?.sharedByName || "",
+        contractorOrgName: (shared?.grantedByOrgId && orgNameMap[shared.grantedByOrgId]) || "Contractor",
+        sharedAt: shared?.grantedAt || doc.uploadedAt,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get vendor documents error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

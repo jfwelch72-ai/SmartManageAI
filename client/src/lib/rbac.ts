@@ -514,7 +514,7 @@ export const NavigationConfig = {
       href: "/email-assistant",
       label: "Email Assistant",
       testId: "nav-email-assistant",
-      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || perms?.canUseAiFeatures === true,
+      visible: (role?: string, perms?: FeaturePerms) => hasManagementAccess(role) || role === "SALES" || role === "MARKETING" || perms?.canUseAiFeatures === true,
     },
     {
       href: "/projects",
@@ -673,7 +673,7 @@ export const NavigationConfig = {
       href: "/marketplace",
       label: "Marketplace",
       testId: "nav-marketplace",
-      visible: (role?: string) => hasManagementAccess(role),
+      visible: (role?: string) => hasManagementAccess(role) || role === "MARKETING",
     },
   ],
 
@@ -887,6 +887,18 @@ export const VendorPortalNavConfig = {
       testId: "nav-vendor-clients",
       visible: (role?: string) => isVendor(role),
     },
+    {
+      href: "/vendor/messages",
+      label: "Messages",
+      testId: "nav-vendor-messages",
+      visible: (role?: string) => isVendor(role),
+    },
+    {
+      href: "/vendor/documents",
+      label: "Documents",
+      testId: "nav-vendor-documents",
+      visible: (role?: string) => isVendor(role),
+    },
   ],
 };
 
@@ -897,4 +909,6 @@ export const VendorRoutePermissions = {
   VENDOR_DASHBOARD: (role?: string) => isVendor(role),
   VENDOR_PRICING: (role?: string) => isVendor(role),
   VENDOR_CLIENTS: (role?: string) => isVendor(role),
+  VENDOR_MESSAGES: (role?: string) => isVendor(role),
+  VENDOR_DOCUMENTS: (role?: string) => isVendor(role),
 };

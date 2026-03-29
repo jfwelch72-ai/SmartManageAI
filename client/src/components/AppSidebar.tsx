@@ -221,6 +221,8 @@ export function AppSidebar() {
                         {item.href === "/vendor" && <LayoutDashboard className="w-4 h-4" />}
                         {item.href === "/vendor/pricing" && <Package className="w-4 h-4" />}
                         {item.href === "/vendor/clients" && <Store className="w-4 h-4" />}
+                        {item.href === "/vendor/messages" && <MessageSquare className="w-4 h-4" />}
+                        {item.href === "/vendor/documents" && <FileSearch className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>

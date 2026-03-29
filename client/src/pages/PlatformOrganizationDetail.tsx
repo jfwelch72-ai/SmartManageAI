@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck, Download, Trash2, Gavel, HardHat } from "lucide-react";
+import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck, Download, Trash2, Gavel, HardHat, Eye } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -402,6 +402,12 @@ export default function PlatformOrganizationDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Link href={`/admin/organizations/${orgId}/view`}>
+            <Button variant="outline" data-testid="button-view-as-org">
+              <Eye className="h-4 w-4 mr-2" />
+              View as Organization
+            </Button>
+          </Link>
           <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending} data-testid="button-export-org">
             <Download className="h-4 w-4 mr-2" />
             {exportMutation.isPending ? "Exporting..." : "Export Data"}
