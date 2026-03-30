@@ -2491,15 +2491,48 @@ const messagingSetup = (async () => {
         return res.status(409).json({ error: "A call is already active in this conversation", call: existingActive[0] });
       }
 
-      const [call] = await db
-        .insert(videoCalls)
-        .values({ conversationId, initiatorId: userId, status: "RINGING" })
-        .returning();
+      let call;
+      try {
+        [call] = await db
+          .insert(videoCalls)
+          .values({ conversationId, initiatorId: userId, status: "RINGING" })
+          .returning();
+      } catch (insertError: unknown) {
+        const pgErr = insertError as { code?: string; constraint?: string };
+        if (pgErr?.code === "23505" && pgErr?.constraint?.includes("video_calls_unique_active")) {
+          const [existingCall] = await db
+            .select()
+            .from(videoCalls)
+            .where(and(
+              eq(videoCalls.conversationId, conversationId),
+              sql`${videoCalls.status} IN ('RINGING', 'ACTIVE')`
+            ))
+            .limit(1);
+          if (existingCall) {
+            const participants = await db
+              .select()
+              .from(videoCallParticipants)
+              .where(eq(videoCallParticipants.callId, existingCall.id));
+            const participantUsers = await Promise.all(
+              participants.map(async (p) => {
+                const [u] = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+                  .from(users).where(eq(users.id, p.userId)).limit(1);
+                return { ...p, user: u };
+              })
+            );
+            const [initiator] = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+              .from(users).where(eq(users.id, existingCall.initiatorId)).limit(1);
+            return res.status(200).json({ ...existingCall, initiator, participants: participantUsers });
+          }
+          return res.status(409).json({ error: "A call is already active in this conversation" });
+        }
+        throw insertError;
+      }
 
-      await db.insert(videoCallParticipants).values({
+      const [participant] = await db.insert(videoCallParticipants).values({
         callId: call.id,
         userId,
-      });
+      }).returning();
 
       const initiatorInfo = await db.select({
         id: users.id,
@@ -2511,7 +2544,7 @@ const messagingSetup = (async () => {
       const callWithInitiator = {
         ...call,
         initiator: initiatorInfo[0],
-        participants: [{ callId: call.id, userId, user: initiatorInfo[0], joinedAt: new Date().toISOString(), leftAt: null }],
+        participants: [{ id: participant.id, callId: call.id, userId, user: initiatorInfo[0], joinedAt: participant.joinedAt?.toISOString() ?? new Date().toISOString(), leftAt: null }],
       };
 
       const participantIds = await getConversationParticipantIds(conversationId);

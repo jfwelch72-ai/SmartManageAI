@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS "video_calls_unique_active" ON "video_calls" USING btree ("conversation_id") WHERE status IN ('RINGING', 'ACTIVE');

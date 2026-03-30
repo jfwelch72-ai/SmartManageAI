@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
@@ -28,6 +29,7 @@ import {
 
 export function TeamMessagesContent() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const searchString = useSearch();
   const [, navigate] = useLocation();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
@@ -76,6 +78,12 @@ export function TeamMessagesContent() {
   const [activeCall, setActiveCall] = useState<VideoCallData | null>(null);
   const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [activeCallConversationIds, setActiveCallConversationIds] = useState<Set<string>>(new Set());
+  const [startingCall, setStartingCall] = useState(false);
+  const activeCallRef = useRef<VideoCallData | null>(null);
+  const incomingCallRef = useRef<VideoCallData | null>(null);
+
+  useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
+  useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
 
   // ── Hydrate active call when selecting a conversation ──
   useEffect(() => {
@@ -116,7 +124,7 @@ export function TeamMessagesContent() {
         next.add(data.call.conversationId);
         return next;
       });
-      if (activeCall) return;
+      if (activeCallRef.current) return;
       if (data.call.initiatorId === user?.id) {
         setActiveCall(data.call);
       } else {
@@ -157,16 +165,16 @@ export function TeamMessagesContent() {
         next.delete(data.conversationId);
         return next;
       });
-      if (activeCall?.id === data.callId) {
+      if (activeCallRef.current?.id === data.callId) {
         setActiveCall(null);
       }
-      if (incomingCall?.id === data.callId) {
+      if (incomingCallRef.current?.id === data.callId) {
         setIncomingCall(null);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", data.conversationId, "messages"] });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations", data.conversationId, "calls"] });
     },
-  }), [activeCall, incomingCall, user?.id]);
+  }), [user?.id]);
 
   const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage, callEventHandler);
 
@@ -565,13 +573,22 @@ export function TeamMessagesContent() {
   };
 
   const handleStartCall = async () => {
-    if (!selectedConversationId || activeCall) return;
+    if (!selectedConversationId || activeCall || startingCall) return;
+    setStartingCall(true);
     try {
       const res = await apiRequest("POST", `/api/conversations/${selectedConversationId}/calls`);
       const callData = await res.json();
       setActiveCall(callData);
-    } catch (err) {
-      console.error("Failed to start call:", err);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const statusMatch = errMsg.match(/^(\d+):/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+      const message = status === 409
+        ? "A call is already active in this conversation"
+        : "Failed to start video call. Please try again.";
+      toast({ title: "Call Error", description: message, variant: "destructive" });
+    } finally {
+      setStartingCall(false);
     }
   };
 
@@ -776,10 +793,10 @@ export function TeamMessagesContent() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={handleStartCall}
-                          disabled={!!activeCall}
+                          disabled={!!activeCall || startingCall}
                           data-testid="button-start-call"
                         >
-                          <Video className="w-4 h-4" />
+                          {startingCall ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Start video call</TooltipContent>
