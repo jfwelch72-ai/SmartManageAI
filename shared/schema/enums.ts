@@ -49,6 +49,7 @@ export const conversationTypeEnum = pgEnum("conversation_type", ["DIRECT", "GROU
 export const messageEntityTypeEnum = pgEnum("message_entity_type", ["RFI", "CHANGE_ORDER", "TASK"]);
 export const messageStatusEnum = pgEnum("message_status", ["SENT", "DELIVERED", "READ"]);
 export const fileTypeEnum = pgEnum("file_type", ["MEDIA", "DOCUMENT", "RECEIPT"]);
+export const videoCallStatusEnum = pgEnum("video_call_status", ["RINGING", "ACTIVE", "ENDED"]);
 export const domainEventStatusEnum = pgEnum("domain_event_status", ["PENDING", "PROCESSED", "FAILED"]);
 
 export const auditActionEnum = pgEnum("audit_action", [

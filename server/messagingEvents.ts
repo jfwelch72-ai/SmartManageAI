@@ -130,3 +130,73 @@ export function emitTyping(
     }
   }
 }
+
+export function emitCallStarted(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  call: unknown,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_started", { conversationId, call });
+    }
+  }
+}
+
+export function emitCallJoined(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  callId: string,
+  userId: string,
+  userName: string,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_joined", { conversationId, callId, userId, userName });
+    }
+  }
+}
+
+export function emitCallLeft(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  callId: string,
+  userId: string,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_left", { conversationId, callId, userId });
+    }
+  }
+}
+
+export function emitCallEnded(
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  callId: string,
+): void {
+  for (const uid of participantUserIds) {
+    const client = clients.get(uid);
+    if (client && client.orgId === orgId) {
+      sendEvent(client, "call_ended", { conversationId, callId });
+    }
+  }
+}
+
+export function emitWebRTCSignal(
+  orgId: string,
+  targetUserId: string,
+  signal: unknown,
+): void {
+  const client = clients.get(targetUserId);
+  if (client && client.orgId === orgId) {
+    sendEvent(client, "webrtc_signal", signal);
+  }
+}

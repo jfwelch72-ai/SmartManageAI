@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare } from "lucide-react";
+import { Search, Plus, Hash, Building2, FolderOpen, HardHat, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video } from "lucide-react";
 import { SidebarSection } from "./SidebarSection";
 import { getInitials, type User, type Channel, type Conversation, type ChannelRow } from "./types";
 import { cn } from "@/lib/utils";
@@ -74,6 +74,7 @@ interface SidebarProps {
   selectedConversationId: string | null;
   onSelectConversation: (id: string) => void;
   availableUsers: User[];
+  activeCallConversationIds?: Set<string>;
 }
 
 export function Sidebar({
@@ -84,6 +85,7 @@ export function Sidebar({
   selectedConversationId,
   onSelectConversation,
   availableUsers,
+  activeCallConversationIds = new Set(),
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [newChannelOpen, setNewChannelOpen] = useState(false);
@@ -296,6 +298,9 @@ export function Sidebar({
                 <Hash className="w-4 h-4 text-muted-foreground shrink-0" />
                 <span className="flex-1 truncate">{c.name}</span>
                 <EntityBadge conversation={c} />
+                {activeCallConversationIds.has(c.id) && (
+                  <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                )}
                 {c.unreadCount > 0 && (
                   <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
                 )}
@@ -335,6 +340,9 @@ export function Sidebar({
                     <span className="flex-1 truncate">{c.channelSlug ?? c.name}</span>
                     {!unjoined && <EntityBadge conversation={c as Conversation} />}
                     {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
+                    {!unjoined && activeCallConversationIds.has(c.id) && (
+                      <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                    )}
                     {!unjoined && (c as Conversation).unreadCount > 0 && (
                       <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
                     )}
@@ -364,6 +372,9 @@ export function Sidebar({
                     <span className="flex-1 truncate">{c.channelSlug ?? c.name}</span>
                     {!unjoined && <EntityBadge conversation={c as Conversation} />}
                     {unjoined && <span className="text-[10px] text-muted-foreground">Join</span>}
+                    {!unjoined && activeCallConversationIds.has(c.id) && (
+                      <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                    )}
                     {!unjoined && (c as Conversation).unreadCount > 0 && (
                       <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{(c as Conversation).unreadCount}</Badge>
                     )}
@@ -442,6 +453,9 @@ export function Sidebar({
                   <span className="flex-1 truncate">
                     {other ? `${other.user.firstName} ${other.user.lastName}` : "Unknown"}
                   </span>
+                  {activeCallConversationIds.has(c.id) && (
+                    <Video className="w-3.5 h-3.5 text-green-500 animate-pulse shrink-0" data-testid={`call-indicator-${c.id}`} />
+                  )}
                   {c.unreadCount > 0 && (
                     <Badge className="h-4 min-w-[16px] px-1 text-[10px]">{c.unreadCount}</Badge>
                   )}

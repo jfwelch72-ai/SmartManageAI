@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { queryClient } from "@/lib/queryClient";
+import type { VideoCallData } from "@/components/messaging/types";
 
 export interface MessageReaction {
   emoji: string;
@@ -60,6 +61,43 @@ interface MessageReactionEvent {
   reactions: MessageReaction[];
 }
 
+interface CallStartedEvent {
+  conversationId: string;
+  call: VideoCallData;
+}
+
+interface CallJoinedEvent {
+  conversationId: string;
+  callId: string;
+  userId: string;
+  userName: string;
+}
+
+interface CallLeftEvent {
+  conversationId: string;
+  callId: string;
+  userId: string;
+}
+
+interface CallEndedEvent {
+  conversationId: string;
+  callId: string;
+}
+
+interface WebRTCSignalEvent {
+  callId: string;
+  fromUserId: string;
+  signal: unknown;
+}
+
+export type CallEventHandler = {
+  onCallStarted?: (data: CallStartedEvent) => void;
+  onCallJoined?: (data: CallJoinedEvent) => void;
+  onCallLeft?: (data: CallLeftEvent) => void;
+  onCallEnded?: (data: CallEndedEvent) => void;
+  onWebRTCSignal?: (data: WebRTCSignalEvent) => void;
+};
+
 /** Called when a message in olderMessages needs updating (SSE events for historical messages). */
 export type OlderMessageUpdater = (messageId: string, updater: (m: Message) => Message) => void;
 
@@ -75,12 +113,15 @@ export type OlderMessageUpdater = (messageId: string, updater: (m: Message) => M
 export function useMessagingEvents(
   activeConversationId: string | null,
   onUpdateOlderMessage?: OlderMessageUpdater,
+  callEventHandler?: CallEventHandler,
 ): {
   sseLive: boolean;
   typingNames: Record<string, string>;
 } {
   const [sseLive, setSseLive] = useState(false);
   const [typingNames, setTypingNames] = useState<Record<string, string>>({});
+  const callHandlerRef = useRef<CallEventHandler | undefined>(callEventHandler);
+  useEffect(() => { callHandlerRef.current = callEventHandler; }, [callEventHandler]);
 
   // Keep stable refs so SSE callbacks always read the latest values
   const activeConvIdRef = useRef<string | null>(activeConversationId);
@@ -205,12 +246,52 @@ export function useMessagingEvents(
       }
     };
 
+    const handleCallStarted = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as CallStartedEvent;
+        callHandlerRef.current?.onCallStarted?.(data);
+      } catch {}
+    };
+
+    const handleCallJoined = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as CallJoinedEvent;
+        callHandlerRef.current?.onCallJoined?.(data);
+      } catch {}
+    };
+
+    const handleCallLeft = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as CallLeftEvent;
+        callHandlerRef.current?.onCallLeft?.(data);
+      } catch {}
+    };
+
+    const handleCallEnded = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as CallEndedEvent;
+        callHandlerRef.current?.onCallEnded?.(data);
+      } catch {}
+    };
+
+    const handleWebRTCSignal = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data) as WebRTCSignalEvent;
+        callHandlerRef.current?.onWebRTCSignal?.(data);
+      } catch {}
+    };
+
     es.addEventListener("connected", handleConnected);
     es.addEventListener("message_new", handleMessageNew);
     es.addEventListener("message_edited", handleMessageEdited);
     es.addEventListener("message_deleted", handleMessageDeleted);
     es.addEventListener("message_reaction", handleMessageReaction);
     es.addEventListener("user_typing", handleTyping);
+    es.addEventListener("call_started", handleCallStarted);
+    es.addEventListener("call_joined", handleCallJoined);
+    es.addEventListener("call_left", handleCallLeft);
+    es.addEventListener("call_ended", handleCallEnded);
+    es.addEventListener("webrtc_signal", handleWebRTCSignal);
     es.onerror = () => setSseLive(false);
 
     return () => {
@@ -220,6 +301,11 @@ export function useMessagingEvents(
       es.removeEventListener("message_deleted", handleMessageDeleted);
       es.removeEventListener("message_reaction", handleMessageReaction);
       es.removeEventListener("user_typing", handleTyping);
+      es.removeEventListener("call_started", handleCallStarted);
+      es.removeEventListener("call_joined", handleCallJoined);
+      es.removeEventListener("call_left", handleCallLeft);
+      es.removeEventListener("call_ended", handleCallEnded);
+      es.removeEventListener("webrtc_signal", handleWebRTCSignal);
       es.close();
       setSseLive(false);
     };

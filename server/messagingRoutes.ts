@@ -446,7 +446,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
-import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping } from "./messagingEvents";
+import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping, emitCallStarted, emitCallJoined, emitCallLeft, emitCallEnded, emitWebRTCSignal } from "./messagingEvents";
 import { fileTypeFromBuffer } from "file-type";
 
 const router = Router();
@@ -478,6 +478,9 @@ const messagingSetup = (async () => {
     notifications,
     rfis,
     changeOrders,
+    videoCalls,
+    videoCallParticipants,
+    videoCallNotes,
   } = await import("@shared/schema");
 
   // ── Helper: ensure user is a participant (or auto-join for org channels) ──
@@ -2444,6 +2447,442 @@ const messagingSetup = (async () => {
       res.status(201).json(newConversation);
     } catch (error) {
       logError("Entity conversation error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ── VIDEO CALLS ──
+
+  async function getConversationParticipantIds(conversationId: string): Promise<Set<string>> {
+    const parts = await db
+      .select({ userId: conversationParticipants.userId })
+      .from(conversationParticipants)
+      .where(eq(conversationParticipants.conversationId, conversationId));
+    return new Set(parts.map(p => p.userId));
+  }
+
+  async function getConversationOrgId(conversationId: string): Promise<string | null> {
+    const [conv] = await db
+      .select({ organizationId: conversations.organizationId })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    return conv?.organizationId ?? null;
+  }
+
+  router.post("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const conversationId = req.params.id;
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const existingActive = await db
+        .select()
+        .from(videoCalls)
+        .where(and(
+          eq(videoCalls.conversationId, conversationId),
+          sql`${videoCalls.status} IN ('RINGING', 'ACTIVE')`
+        ))
+        .limit(1);
+
+      if (existingActive.length > 0) {
+        return res.status(409).json({ error: "A call is already active in this conversation", call: existingActive[0] });
+      }
+
+      const [call] = await db
+        .insert(videoCalls)
+        .values({ conversationId, initiatorId: userId, status: "RINGING" })
+        .returning();
+
+      await db.insert(videoCallParticipants).values({
+        callId: call.id,
+        userId,
+      });
+
+      const initiatorInfo = await db.select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        role: users.role,
+      }).from(users).where(eq(users.id, userId)).limit(1);
+
+      const callWithInitiator = {
+        ...call,
+        initiator: initiatorInfo[0],
+        participants: [{ callId: call.id, userId, user: initiatorInfo[0], joinedAt: new Date().toISOString(), leftAt: null }],
+      };
+
+      const participantIds = await getConversationParticipantIds(conversationId);
+      const orgId = await getConversationOrgId(conversationId);
+      if (orgId) {
+        emitCallStarted(orgId, conversationId, participantIds, callWithInitiator);
+      }
+
+      res.status(201).json(callWithInitiator);
+    } catch (error) {
+      logError("Start call error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.post("/api/calls/:callId/join", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+      if (call.status === "ENDED") return res.status(400).json({ error: "Call has ended" });
+
+      const isParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant of this conversation" });
+
+      const existingParticipant = await db.select().from(videoCallParticipants)
+        .where(and(eq(videoCallParticipants.callId, callId), eq(videoCallParticipants.userId, userId)))
+        .limit(1);
+
+      if (existingParticipant.length === 0) {
+        await db.insert(videoCallParticipants).values({ callId, userId });
+      } else if (existingParticipant[0].leftAt) {
+        await db.update(videoCallParticipants)
+          .set({ leftAt: null, joinedAt: new Date() })
+          .where(eq(videoCallParticipants.id, existingParticipant[0].id));
+      }
+
+      if (call.status === "RINGING") {
+        await db.update(videoCalls).set({ status: "ACTIVE" }).where(eq(videoCalls.id, callId));
+      }
+
+      const userInfo = await db.select({
+        id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+      }).from(users).where(eq(users.id, userId)).limit(1);
+
+      const participantIds = await getConversationParticipantIds(call.conversationId);
+      const orgId = await getConversationOrgId(call.conversationId);
+      if (orgId) {
+        emitCallJoined(orgId, call.conversationId, participantIds, callId, userId, `${userInfo[0].firstName} ${userInfo[0].lastName}`);
+      }
+
+      const updatedCall = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      const allParticipants = await db
+        .select({
+          participant: videoCallParticipants,
+          user: { id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role },
+        })
+        .from(videoCallParticipants)
+        .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+        .where(and(eq(videoCallParticipants.callId, callId), sql`${videoCallParticipants.leftAt} IS NULL`));
+
+      const initiatorData = await db.select({
+        id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+      }).from(users).where(eq(users.id, call.initiatorId)).limit(1);
+
+      res.json({
+        ...updatedCall[0],
+        initiator: initiatorData[0],
+        participants: allParticipants.map(p => ({ ...p.participant, user: p.user })),
+      });
+    } catch (error) {
+      logError("Join call error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.post("/api/calls/:callId/leave", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const isConvParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      await db.update(videoCallParticipants)
+        .set({ leftAt: new Date() })
+        .where(and(eq(videoCallParticipants.callId, callId), eq(videoCallParticipants.userId, userId)));
+
+      const remainingActive = await db.select().from(videoCallParticipants)
+        .where(and(eq(videoCallParticipants.callId, callId), sql`${videoCallParticipants.leftAt} IS NULL`));
+
+      const participantIds = await getConversationParticipantIds(call.conversationId);
+      const orgId = await getConversationOrgId(call.conversationId);
+
+      if (remainingActive.length === 0) {
+        await db.update(videoCalls).set({ status: "ENDED", endedAt: new Date() }).where(eq(videoCalls.id, callId));
+
+        const callParticipants = await db
+          .select({ userId: videoCallParticipants.userId, firstName: users.firstName, lastName: users.lastName })
+          .from(videoCallParticipants)
+          .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+          .where(eq(videoCallParticipants.callId, callId));
+
+        const duration = Math.round((Date.now() - new Date(call.startedAt).getTime()) / 1000);
+        const participantNames = callParticipants.map(p => `${p.firstName} ${p.lastName}`).join(", ");
+        const durationFormatted = duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
+
+        await db.insert(messages).values({
+          conversationId: call.conversationId,
+          senderId: call.initiatorId,
+          content: `📹 Video call ended • ${durationFormatted} • ${participantNames}`,
+        });
+
+        if (orgId) {
+          emitCallEnded(orgId, call.conversationId, participantIds, callId);
+          const [systemMsg] = await db.select().from(messages)
+            .where(eq(messages.conversationId, call.conversationId))
+            .orderBy(desc(messages.createdAt)).limit(1);
+          if (systemMsg) {
+            const senderInfo = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+              .from(users).where(eq(users.id, call.initiatorId)).limit(1);
+            emitMessageNew(orgId, call.conversationId, participantIds, { ...systemMsg, reactions: [], entityLinks: [], sender: senderInfo[0] });
+          }
+        }
+      } else if (orgId) {
+        emitCallLeft(orgId, call.conversationId, participantIds, callId, userId);
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logError("Leave call error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.post("/api/calls/:callId/end", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+      if (call.status === "ENDED") return res.json({ success: true });
+
+      const isConvParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      await db.update(videoCallParticipants)
+        .set({ leftAt: new Date() })
+        .where(and(eq(videoCallParticipants.callId, callId), sql`${videoCallParticipants.leftAt} IS NULL`));
+
+      await db.update(videoCalls).set({ status: "ENDED", endedAt: new Date() }).where(eq(videoCalls.id, callId));
+
+      const callParticipants = await db
+        .select({ userId: videoCallParticipants.userId, firstName: users.firstName, lastName: users.lastName })
+        .from(videoCallParticipants)
+        .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+        .where(eq(videoCallParticipants.callId, callId));
+
+      const duration = Math.round((Date.now() - new Date(call.startedAt).getTime()) / 1000);
+      const participantNames = callParticipants.map(p => `${p.firstName} ${p.lastName}`).join(", ");
+      const durationFormatted = duration >= 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
+
+      const callNotes = await db.select().from(videoCallNotes).where(eq(videoCallNotes.callId, callId));
+      const notesSuffix = callNotes.length > 0 ? ` • ${callNotes.length} note(s) taken` : "";
+
+      await db.insert(messages).values({
+        conversationId: call.conversationId,
+        senderId: call.initiatorId,
+        content: `📹 Video call ended • ${durationFormatted} • ${participantNames}${notesSuffix}`,
+      });
+
+      const participantIds = await getConversationParticipantIds(call.conversationId);
+      const orgId = await getConversationOrgId(call.conversationId);
+      if (orgId) {
+        emitCallEnded(orgId, call.conversationId, participantIds, callId);
+        const [systemMsg] = await db.select().from(messages)
+          .where(eq(messages.conversationId, call.conversationId))
+          .orderBy(desc(messages.createdAt)).limit(1);
+        if (systemMsg) {
+          const senderInfo = await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
+            .from(users).where(eq(users.id, call.initiatorId)).limit(1);
+          emitMessageNew(orgId, call.conversationId, participantIds, { ...systemMsg, reactions: [], entityLinks: [], sender: senderInfo[0] });
+        }
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logError("End call error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.post("/api/calls/:callId/signal", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+      const { targetUserId, signal } = req.body;
+
+      if (!targetUserId || !signal) return res.status(400).json({ error: "targetUserId and signal required" });
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const isConvParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const isTargetParticipant = await ensureParticipant(call.conversationId, targetUserId);
+      if (!isTargetParticipant) return res.status(403).json({ error: "Target user not a participant" });
+
+      const orgId = await getConversationOrgId(call.conversationId);
+      if (orgId) {
+        emitWebRTCSignal(orgId, targetUserId, { callId, fromUserId: userId, signal });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logError("WebRTC signal error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.put("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+      const { content } = req.body;
+
+      if (typeof content !== "string") return res.status(400).json({ error: "content required" });
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const isConvParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const existing = await db.select().from(videoCallNotes)
+        .where(and(eq(videoCallNotes.callId, callId), eq(videoCallNotes.authorId, userId)))
+        .limit(1);
+
+      if (existing.length > 0) {
+        const [updated] = await db.update(videoCallNotes)
+          .set({ content, updatedAt: new Date() })
+          .where(eq(videoCallNotes.id, existing[0].id))
+          .returning();
+        return res.json(updated);
+      }
+
+      const [note] = await db.insert(videoCallNotes)
+        .values({ callId, authorId: userId, content })
+        .returning();
+      res.status(201).json(note);
+    } catch (error) {
+      logError("Save call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/calls/:callId/notes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const callId = req.params.callId;
+
+      const [call] = await db.select().from(videoCalls).where(eq(videoCalls.id, callId)).limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const isConvParticipant = await ensureParticipant(call.conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const notes = await db.select().from(videoCallNotes)
+        .where(and(eq(videoCallNotes.callId, callId), eq(videoCallNotes.authorId, userId)))
+        .orderBy(desc(videoCallNotes.createdAt));
+      res.json(notes);
+    } catch (error) {
+      logError("Get call notes error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/conversations/:id/calls", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const conversationId = req.params.id;
+
+      const isParticipant = await ensureParticipant(conversationId, userId);
+      if (!isParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const calls = await db.select().from(videoCalls)
+        .where(eq(videoCalls.conversationId, conversationId))
+        .orderBy(desc(videoCalls.startedAt))
+        .limit(50);
+
+      const callsWithDetails = await Promise.all(calls.map(async (call) => {
+        const participantsData = await db
+          .select({
+            participant: videoCallParticipants,
+            user: { id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role },
+          })
+          .from(videoCallParticipants)
+          .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+          .where(eq(videoCallParticipants.callId, call.id));
+
+        const initiatorData = await db.select({
+          id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+        }).from(users).where(eq(users.id, call.initiatorId)).limit(1);
+
+        const notes = await db.select().from(videoCallNotes)
+          .where(and(eq(videoCallNotes.callId, call.id), eq(videoCallNotes.authorId, userId)));
+
+        const durationSeconds = call.endedAt
+          ? Math.round((new Date(call.endedAt).getTime() - new Date(call.startedAt).getTime()) / 1000)
+          : null;
+
+        return {
+          ...call,
+          durationSeconds,
+          initiator: initiatorData[0],
+          participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
+          notes,
+        };
+      }));
+
+      res.json(callsWithDetails);
+    } catch (error) {
+      logError("Get call history error:", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  router.get("/api/conversations/:id/active-call", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.id;
+      const conversationId = req.params.id;
+
+      const isConvParticipant = await ensureParticipant(conversationId, userId);
+      if (!isConvParticipant) return res.status(403).json({ error: "Not a participant" });
+
+      const [activeCall] = await db.select().from(videoCalls)
+        .where(and(
+          eq(videoCalls.conversationId, conversationId),
+          sql`${videoCalls.status} IN ('RINGING', 'ACTIVE')`
+        ))
+        .limit(1);
+
+      if (!activeCall) return res.json(null);
+
+      const participantsData = await db
+        .select({
+          participant: videoCallParticipants,
+          user: { id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role },
+        })
+        .from(videoCallParticipants)
+        .innerJoin(users, eq(videoCallParticipants.userId, users.id))
+        .where(and(eq(videoCallParticipants.callId, activeCall.id), sql`${videoCallParticipants.leftAt} IS NULL`));
+
+      const initiatorData = await db.select({
+        id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role,
+      }).from(users).where(eq(users.id, activeCall.initiatorId)).limit(1);
+
+      res.json({
+        ...activeCall,
+        initiator: initiatorData[0],
+        participants: participantsData.map(p => ({ ...p.participant, user: p.user })),
+      });
+    } catch (error) {
+      logError("Get active call error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Internal server error" });
     }
   });

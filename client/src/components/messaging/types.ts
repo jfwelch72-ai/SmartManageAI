@@ -99,6 +99,48 @@ export interface TaskMention {
   projectName: string | null;
 }
 
+export interface VideoCallData {
+  id: string;
+  conversationId: string;
+  initiatorId: string;
+  status: "RINGING" | "ACTIVE" | "ENDED";
+  startedAt: string;
+  endedAt: string | null;
+  initiator: User;
+  participants: VideoCallParticipantData[];
+}
+
+export interface VideoCallParticipantData {
+  id: string;
+  callId: string;
+  userId: string;
+  joinedAt: string;
+  leftAt: string | null;
+  user: User;
+}
+
+export interface VideoCallNoteData {
+  id: string;
+  callId: string;
+  authorId: string;
+  content: string;
+  updatedAt: string;
+  createdAt: string;
+}
+
+export interface CallHistoryEntry {
+  id: string;
+  conversationId: string;
+  initiatorId: string;
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number | null;
+  initiator: User;
+  participants: VideoCallParticipantData[];
+  notes: VideoCallNoteData[];
+}
+
 export function getInitials(firstName: string, lastName: string) {
   return `${firstName?.charAt(0) || ""}${lastName?.charAt(0) || ""}`.toUpperCase();
 }

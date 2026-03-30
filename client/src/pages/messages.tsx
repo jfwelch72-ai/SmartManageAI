@@ -1,17 +1,20 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearch, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useMessagingEvents } from "@/hooks/use-messaging-events";
+import { useMessagingEvents, type CallEventHandler } from "@/hooks/use-messaging-events";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
+import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
+import { VideoCallOverlay } from "@/components/messaging/VideoCallOverlay";
+import { IncomingCallBanner } from "@/components/messaging/IncomingCallBanner";
+import { CallHistory } from "@/components/messaging/CallHistory";
 import {
   type User,
   type Channel,
@@ -20,6 +23,7 @@ import {
   type MessageReaction,
   type TaskMention,
   type EntitySearchResult,
+  type VideoCallData,
 } from "@/components/messaging/types";
 
 export function TeamMessagesContent() {
@@ -68,6 +72,35 @@ export function TeamMessagesContent() {
   const scrollTopRef = useRef<number>(Infinity);
   const lastTypingSignalRef = useRef<number>(0);
 
+  // ── Video call state ──
+  const [activeCall, setActiveCall] = useState<VideoCallData | null>(null);
+  const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
+  const [activeCallConversationIds, setActiveCallConversationIds] = useState<Set<string>>(new Set());
+
+  // ── Hydrate active call when selecting a conversation ──
+  useEffect(() => {
+    if (!selectedConversationId) return;
+    let cancelled = false;
+    fetch(`/api/conversations/${selectedConversationId}/active-call`, { credentials: "include" })
+      .then(res => res.ok ? res.json() : null)
+      .then((callData: VideoCallData | null) => {
+        if (cancelled || !callData) return;
+        if (activeCall?.id === callData.id) return;
+        if (callData.initiatorId === user?.id || callData.participants.some(p => p.userId === user?.id)) {
+          setActiveCall(callData);
+        } else {
+          setIncomingCall(callData);
+        }
+        setActiveCallConversationIds(prev => {
+          const next = new Set(prev);
+          next.add(callData.conversationId);
+          return next;
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedConversationId]);
+
   // ── Stable updater for SSE hook ──
   const updateOlderMessage = useCallback(
     (messageId: string, updater: (m: Message) => Message) => {
@@ -76,7 +109,66 @@ export function TeamMessagesContent() {
     []
   );
 
-  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage);
+  const callEventHandler = useMemo<CallEventHandler>(() => ({
+    onCallStarted: (data) => {
+      setActiveCallConversationIds(prev => {
+        const next = new Set(prev);
+        next.add(data.call.conversationId);
+        return next;
+      });
+      if (activeCall) return;
+      if (data.call.initiatorId === user?.id) {
+        setActiveCall(data.call);
+      } else {
+        setIncomingCall(data.call);
+      }
+    },
+    onCallJoined: (data) => {
+      setActiveCall(prev => {
+        if (!prev || prev.id !== data.callId) return prev;
+        const alreadyIn = prev.participants.some(p => p.userId === data.userId);
+        if (alreadyIn) return prev;
+        return {
+          ...prev,
+          status: "ACTIVE",
+          participants: [...prev.participants, {
+            id: "",
+            callId: data.callId,
+            userId: data.userId,
+            joinedAt: new Date().toISOString(),
+            leftAt: null,
+            user: { id: data.userId, firstName: data.userName.split(" ")[0] || "", lastName: data.userName.split(" ").slice(1).join(" ") || "", role: "" },
+          }],
+        };
+      });
+    },
+    onCallLeft: (data) => {
+      setActiveCall(prev => {
+        if (!prev || prev.id !== data.callId) return prev;
+        return {
+          ...prev,
+          participants: prev.participants.filter(p => p.userId !== data.userId),
+        };
+      });
+    },
+    onCallEnded: (data) => {
+      setActiveCallConversationIds(prev => {
+        const next = new Set(prev);
+        next.delete(data.conversationId);
+        return next;
+      });
+      if (activeCall?.id === data.callId) {
+        setActiveCall(null);
+      }
+      if (incomingCall?.id === data.callId) {
+        setIncomingCall(null);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", data.conversationId, "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", data.conversationId, "calls"] });
+    },
+  }), [activeCall, incomingCall, user?.id]);
+
+  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage, callEventHandler);
 
   // ── Pagination state ──
   const [olderMessages, setOlderMessages] = useState<Message[]>([]);
@@ -472,6 +564,63 @@ export function TeamMessagesContent() {
     });
   };
 
+  const handleStartCall = async () => {
+    if (!selectedConversationId || activeCall) return;
+    try {
+      const res = await apiRequest("POST", `/api/conversations/${selectedConversationId}/calls`);
+      const callData = await res.json();
+      setActiveCall(callData);
+    } catch (err) {
+      console.error("Failed to start call:", err);
+    }
+  };
+
+  const handleAcceptCall = async () => {
+    if (!incomingCall) return;
+    try {
+      const res = await apiRequest("POST", `/api/calls/${incomingCall.id}/join`);
+      const fullCallData = await res.json();
+      setActiveCall(fullCallData);
+      setIncomingCall(null);
+    } catch (err) {
+      console.error("Failed to join call:", err);
+    }
+  };
+
+  const handleDeclineCall = () => {
+    setIncomingCall(null);
+  };
+
+  const handleEndCall = async () => {
+    if (!activeCall) return;
+    const convId = activeCall.conversationId;
+    try {
+      await apiRequest("POST", `/api/calls/${activeCall.id}/end`);
+    } catch (err) {
+      console.error("Failed to end call:", err);
+    }
+    setActiveCall(null);
+    setActiveCallConversationIds(prev => {
+      const next = new Set(prev);
+      next.delete(convId);
+      return next;
+    });
+    if (convId) {
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", convId, "messages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations", convId, "calls"] });
+    }
+  };
+
+  const handleLeaveCall = async () => {
+    if (!activeCall) return;
+    try {
+      await apiRequest("POST", `/api/calls/${activeCall.id}/leave`);
+    } catch (err) {
+      console.error("Failed to leave call:", err);
+    }
+    setActiveCall(null);
+  };
+
   const selectedConversation = conversations.find(c => c.id === selectedConversationId);
   const companyConversation = conversations.find(c => c.isCompanyChannel);
 
@@ -523,6 +672,7 @@ export function TeamMessagesContent() {
                 selectedConversationId={selectedConversationId}
                 onSelectConversation={setSelectedConversationId}
                 availableUsers={availableUsers}
+                activeCallConversationIds={activeCallConversationIds}
               />
             )}
 
@@ -536,6 +686,7 @@ export function TeamMessagesContent() {
                 selectedConversationId={selectedConversationId}
                 onSelectConversation={setSelectedConversationId}
                 availableUsers={availableUsers}
+                activeCallConversationIds={activeCallConversationIds}
               />
             )}
 
@@ -616,7 +767,34 @@ export function TeamMessagesContent() {
                       <span className="truncate">{selectedConversation.topic}</span>
                     </div>
                   )}
+                  <div className={cn("flex items-center gap-1", !selectedConversation.topic && "ml-auto")}>
+                    <CallHistory conversationId={selectedConversationId!} />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={handleStartCall}
+                          disabled={!!activeCall}
+                          data-testid="button-start-call"
+                        >
+                          <Video className="w-4 h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Start video call</TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
+
+                {incomingCall && incomingCall.conversationId === selectedConversationId && (
+                  <IncomingCallBanner
+                    call={incomingCall}
+                    conversationName={getConversationName(selectedConversation)}
+                    onAccept={handleAcceptCall}
+                    onDecline={handleDeclineCall}
+                  />
+                )}
 
                 <MessageList
                   conversation={selectedConversation}
@@ -684,6 +862,16 @@ export function TeamMessagesContent() {
             )}
           </div>
         </Card>
+
+        {activeCall && selectedConversation && (
+          <VideoCallOverlay
+            call={activeCall}
+            conversation={selectedConversation}
+            currentUserId={user?.id ?? ""}
+            onEndCall={handleEndCall}
+            onLeaveCall={handleLeaveCall}
+          />
+        )}
       </div>
     </TooltipProvider>
   );
