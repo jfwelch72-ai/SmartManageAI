@@ -789,6 +789,12 @@ export const NavigationConfig = {
       testId: "nav-enterprise-settings",
       visible: (role?: string) => isOrganizationAdmin(role),
     },
+    {
+      href: "/test-flow",
+      label: "Test Flow",
+      testId: "nav-test-flow",
+      visible: (role?: string) => isOrganizationAdmin(role),
+    },
   ],
 
   toolsMenu: [

@@ -145,6 +145,7 @@ const ContractsPage = lazy(() => import("@/pages/contracts"));
 const ClauseLibraryPage = lazy(() => import("@/pages/clause-library"));
 const ProgressBillingPage = lazy(() => import("@/pages/progress-billing"));
 const WipReportPage = lazy(() => import("@/pages/wip-report"));
+const TestFlowPage = lazy(() => import("@/pages/test-flow"));
 
 function ProtectedRoute({ 
   component: Component,
@@ -350,6 +351,9 @@ function Router() {
       <Route path="/hiring/settings" component={() => <ProtectedRoute component={HiringSettingsPage} permission={RoutePermissions.HIRING_SETTINGS} featurePerm="canManageHiring" />} />
       <Route path="/hiring" component={() => <ProtectedRoute component={HiringDashboardPage} permission={RoutePermissions.HIRING_REVIEW} featurePerm="canManageHiring" />} />
 
+      {/* Test Flow (manual E2E walkthrough) */}
+      <Route path="/test-flow" component={() => <ProtectedRoute component={TestFlowPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
+      
       {/* Overhead & Fixed Costs Manager */}
       <Route path="/overhead-costs" component={() => <Redirect to="/company-settings?tab=overhead-costs" />} />
       
