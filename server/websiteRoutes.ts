@@ -9,7 +9,7 @@ import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageClient } from "./objectStorage";
 import multer from "multer";
 import { openai } from "./ai/openaiClient";
-import { sendEmail } from "./services/emailService";
+import { sendEmail } from "./email";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
 import { insertNotification } from "./services/notificationService";
 

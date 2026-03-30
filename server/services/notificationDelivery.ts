@@ -1,7 +1,7 @@
 import { db } from "../db";
 import { users, notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { sendNotificationEmail } from "./emailService";
+import { sendNotificationEmail } from "../email";
 import { sendPushToUser } from "./pushService";
 import { sendSms } from "./smsService";
 import { sendTeamsMessage } from "./teamsService";

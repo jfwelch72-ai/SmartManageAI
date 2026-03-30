@@ -188,7 +188,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovHelpers";
 import { generateAIAG702PDF, generateAIAG703PDF } from "./aia-pdf-service";
 import { insertNotifications } from "./services/notificationService";
-import { sendEmail } from "./services/emailService";
+import { sendEmail } from "./email";
 
 const router = Router();
 
