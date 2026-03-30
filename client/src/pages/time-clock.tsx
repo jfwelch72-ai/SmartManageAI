@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { calculateDistance, GEOFENCE_RADIUS } from "@shared/utils/geofence";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -524,18 +525,14 @@ export default function TimeClockPage() {
                           const mode = proj?.geofenceEnforcement || "OFF";
                           if (mode === "OFF") return null;
 
-                          const hasSiteCoords = proj?.siteLatitude && proj?.siteLongitude;
+                          const hasSiteCoords = proj?.siteLatitude != null && proj?.siteLongitude != null;
                           const hasWorkerCoords = coordinates?.latitude != null && coordinates?.longitude != null;
 
                           let workerInRange = false;
                           let distanceMeters = 0;
-                          const radiusMeters = (proj as Record<string, unknown>)?.geofenceRadius as number || 500;
+                          const radiusMeters = (proj as Record<string, unknown>)?.geofenceRadius as number || GEOFENCE_RADIUS;
                           if (hasSiteCoords && hasWorkerCoords) {
-                            const R = 6371000;
-                            const dLat = ((coordinates!.latitude - proj.siteLatitude!) * Math.PI) / 180;
-                            const dLon = ((coordinates!.longitude - proj.siteLongitude!) * Math.PI) / 180;
-                            const a = Math.sin(dLat / 2) ** 2 + Math.cos((proj.siteLatitude! * Math.PI) / 180) * Math.cos((coordinates!.latitude * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-                            distanceMeters = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                            distanceMeters = calculateDistance(coordinates!.latitude, coordinates!.longitude, proj.siteLatitude!, proj.siteLongitude!);
                             workerInRange = distanceMeters <= radiusMeters;
                           }
 

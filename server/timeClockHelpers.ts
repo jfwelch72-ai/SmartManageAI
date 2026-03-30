@@ -10,7 +10,6 @@ import {
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { calculatePerUnitMetrics } from "./productionRateService";
 
-export const GEOFENCE_RADIUS = 200;
 export const MAX_SHIFT_HOURS = 16;
 
 export async function captureProductionRateFromShift(

@@ -252,10 +252,9 @@ import {
   checkAndNotifyWeeklyReport, 
   MAX_SHIFT_HOURS 
 } from "./timeClockHelpers";
+import { GEOFENCE_RADIUS, calculateDistance } from "@shared/utils/geofence";
 
 const router = Router();
-
-const GEOFENCE_RADIUS = 200;
 
 async function getProjectEligibleCostCodes(organizationId: string, projectId: string | null): Promise<Set<string>> {
   if (projectId) {
@@ -298,16 +297,6 @@ async function validateCostCode(organizationId: string, costCode: string, projec
   return eligible.has(costCode);
 }
 
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
 
 async function captureKpiFromShift(userId: string, orgId: string, totalHours: number, shiftDate: Date) {
   try {
@@ -403,7 +392,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
         return;
       }
       enforcementMode = project?.geofenceEnforcement || "OFF";
-      if (project?.siteLatitude && project?.siteLongitude) {
+      if (project?.siteLatitude != null && project?.siteLongitude != null) {
         if (data.latitude != null && data.longitude != null) {
           const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
           const radius = project.geofenceRadius || GEOFENCE_RADIUS;
@@ -539,12 +528,31 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
     const clockInTime = new Date(activeShift.clockIn);
     const totalHours = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
+    let clockOutGeofenceStatus: string | null = null;
+
+    if (activeShift.projectId) {
+      const [project] = await db.select().from(projects).where(
+        eq(projects.id, activeShift.projectId)
+      ).limit(1);
+
+      if (project?.siteLatitude != null && project?.siteLongitude != null) {
+        if (data.latitude != null && data.longitude != null) {
+          const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
+          const radius = project.geofenceRadius || GEOFENCE_RADIUS;
+          clockOutGeofenceStatus = distance <= radius ? "WITHIN_RANGE" : "OUT_OF_RANGE";
+        } else {
+          clockOutGeofenceStatus = "NO_GPS";
+        }
+      }
+    }
+
     const [updatedShift] = await db
       .update(timeClockShifts)
       .set({
         clockOut: now,
         clockOutLatitude: data.latitude != null ? data.latitude : null,
         clockOutLongitude: data.longitude != null ? data.longitude : null,
+        clockOutGeofenceStatus,
         totalHours: totalHours.toString(),
         notes: data.notes || activeShift.notes,
         updatedAt: now,
