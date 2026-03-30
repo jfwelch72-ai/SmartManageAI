@@ -454,8 +454,10 @@ function AppContent() {
 }
 
 function AuthGatedWidget() {
+  const [location] = useLocation();
   const { user } = useAuth();
-  if (!user) return null;
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/');
+  if (!user || isStandaloneRoute) return null;
   return (
     <Suspense fallback={null}>
       <VoiceDictation />
