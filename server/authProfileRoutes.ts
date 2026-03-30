@@ -1,3 +1,442 @@
+/**
+ * @openapi
+ * /api/auth/register:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Register a new user
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [firstName, lastName, email, password]
+ *             properties:
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               email: { type: string, format: email }
+ *               password: { type: string, minLength: 8 }
+ *               phone: { type: string }
+ *               role: { type: string }
+ *               organizationName: { type: string }
+ *               tradeType: { type: string }
+ *     responses:
+ *       201: { description: User created successfully }
+ *       400: { description: Invalid input or email already exists }
+ *       429: { description: Rate limit exceeded }
+ * /api/auth/login:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Login with email and password
+ *     description: Authenticates the user and sets an httpOnly JWT cookie (auth_token) valid for 7 days.
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string, format: email }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Login successful, auth_token cookie is set
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       401: { description: Invalid credentials }
+ *       429: { description: Rate limit exceeded }
+ * /api/auth/logout:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Logout and clear auth cookie
+ *     responses:
+ *       200: { description: Logged out successfully }
+ * /api/auth/verify-email:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Verify email address
+ *     security: []
+ *     parameters:
+ *       - name: token
+ *         in: query
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Email verified }
+ *       400: { description: Invalid or expired token }
+ * /api/auth/resend-verification:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Resend email verification
+ *     responses:
+ *       200: { description: Verification email resent }
+ * /api/auth/me:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get current authenticated user
+ *     responses:
+ *       200:
+ *         description: Current user data
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       401: { description: Not authenticated }
+ * /api/auth/profile:
+ *   patch:
+ *     tags: [Authentication]
+ *     summary: Update user profile
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               firstName: { type: string }
+ *               lastName: { type: string }
+ *               phone: { type: string }
+ *               timezone: { type: string }
+ *               profileDescription: { type: string }
+ *     responses:
+ *       200: { description: Profile updated }
+ * /api/auth/change-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Change password for authenticated user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [currentPassword, newPassword]
+ *             properties:
+ *               currentPassword: { type: string }
+ *               newPassword: { type: string, minLength: 8 }
+ *     responses:
+ *       200: { description: Password changed successfully }
+ *       400: { description: Current password incorrect }
+ * /api/auth/upload-avatar:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Upload user avatar
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200: { description: Avatar uploaded }
+ * /api/auth/my-photos:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get user photos
+ *     responses:
+ *       200: { description: List of user photos }
+ * /api/auth/upload-photos:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Upload user photos
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               photos:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                   format: binary
+ *     responses:
+ *       201: { description: Photos uploaded }
+ * /api/auth/my-photos/{photoId}:
+ *   delete:
+ *     tags: [Authentication]
+ *     summary: Delete a user photo
+ *     parameters:
+ *       - name: photoId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Photo deleted }
+ * /api/auth/my-skills:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get user skills
+ *     responses:
+ *       200: { description: List of user skills with ratings }
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Add a skill to user profile
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [skillId]
+ *             properties:
+ *               skillId: { type: string, format: uuid }
+ *               selfRating: { type: integer }
+ *     responses:
+ *       201: { description: Skill added }
+ * /api/auth/my-skills/{userSkillId}:
+ *   delete:
+ *     tags: [Authentication]
+ *     summary: Remove a skill from user profile
+ *     parameters:
+ *       - name: userSkillId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Skill removed }
+ * /api/auth/my-skills/{userSkillId}/rating:
+ *   patch:
+ *     tags: [Authentication]
+ *     summary: Update skill self-rating
+ *     parameters:
+ *       - name: userSkillId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [selfRating]
+ *             properties:
+ *               selfRating: { type: integer }
+ *     responses:
+ *       200: { description: Rating updated }
+ * /api/auth/my-skills/{userSkillId}/request-verification:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Request skill verification
+ *     parameters:
+ *       - name: userSkillId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Verification request created }
+ * /api/auth/skill-verification-requests:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get skill verification requests
+ *     responses:
+ *       200: { description: List of verification requests }
+ * /api/auth/skill-verification-requests/{requestId}:
+ *   patch:
+ *     tags: [Authentication]
+ *     summary: Approve or reject skill verification
+ *     parameters:
+ *       - name: requestId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string, enum: [approved, rejected] }
+ *     responses:
+ *       200: { description: Verification request updated }
+ * /api/auth/my-certifications:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get user certifications
+ *     responses:
+ *       200: { description: List of certifications }
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Add a certification
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               issuingBody: { type: string }
+ *               issueDate: { type: string, format: date }
+ *               expirationDate: { type: string, format: date }
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201: { description: Certification added }
+ * /api/auth/my-certifications/{certId}:
+ *   patch:
+ *     tags: [Authentication]
+ *     summary: Update a certification
+ *     parameters:
+ *       - name: certId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Certification updated }
+ *   delete:
+ *     tags: [Authentication]
+ *     summary: Delete a certification
+ *     parameters:
+ *       - name: certId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Certification deleted }
+ * /api/auth/my-certifications/{certId}/upload:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Upload certification file
+ *     parameters:
+ *       - name: certId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200: { description: File uploaded }
+ * /api/auth/my-performance-profile:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get performance profile
+ *     responses:
+ *       200: { description: Performance profile data }
+ *   put:
+ *     tags: [Authentication]
+ *     summary: Update performance profile
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Performance profile updated }
+ * /api/auth/my-attendance-logs:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get my attendance logs
+ *     responses:
+ *       200: { description: Attendance log history }
+ * /api/auth/attendance-logs:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Create attendance log entry
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Attendance log created }
+ * /api/auth/my-safety-incidents:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get my safety incidents
+ *     responses:
+ *       200: { description: Safety incident history }
+ * /api/auth/safety-incidents:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Report a safety incident
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Safety incident reported }
+ * /api/auth/my-quality-issues:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get my quality issues
+ *     responses:
+ *       200: { description: Quality issue history }
+ * /api/auth/quality-issues:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Report a quality issue
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Quality issue reported }
+ * /api/auth/my-performance-reviews:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get my performance reviews
+ *     responses:
+ *       200: { description: Performance review history }
+ * /api/auth/performance-reviews:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Create performance review
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Performance review created }
+ * /api/auth/my-supervisor-notes:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get supervisor notes about me
+ *     responses:
+ *       200: { description: Supervisor notes }
+ * /api/auth/supervisor-notes:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Create supervisor note
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Supervisor note created }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import multer from "multer";

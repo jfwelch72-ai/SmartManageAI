@@ -1,3 +1,48 @@
+/**
+ * @openapi
+ * /api/notifications/preferences:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Get notification preferences
+ *     description: Returns the user's notification channel and type preferences.
+ *     responses:
+ *       200: { description: Notification preferences }
+ *   put:
+ *     tags: [Notifications]
+ *     summary: Update notification preferences
+ *     description: Updates channel preferences (email, push, SMS, Slack, Teams).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               emailEnabled: { type: boolean }
+ *               pushEnabled: { type: boolean }
+ *               smsEnabled: { type: boolean }
+ *               slackEnabled: { type: boolean }
+ *               teamsEnabled: { type: boolean }
+ *               phoneNumber: { type: string }
+ *     responses:
+ *       200: { description: Preferences updated }
+ * /api/notifications/preferences/webhooks:
+ *   put:
+ *     tags: [Notifications]
+ *     summary: Update webhook notification preferences
+ *     description: Configure Slack or Teams webhook URLs for notifications.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               slackWebhookUrl: { type: string }
+ *               teamsWebhookUrl: { type: string }
+ *     responses:
+ *       200: { description: Webhook preferences updated }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

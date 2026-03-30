@@ -1,3 +1,107 @@
+/**
+ * @openapi
+ * /api/subcontracts:
+ *   get:
+ *     tags: [Subcontractors]
+ *     summary: List subcontracts
+ *     description: Returns all subcontractor contracts for the organization. Requires financials access.
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of subcontracts }
+ *   post:
+ *     tags: [Subcontractors]
+ *     summary: Create a subcontract
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Subcontract created }
+ * /api/subcontracts/projects:
+ *   get:
+ *     tags: [Subcontractors]
+ *     summary: List projects with subcontracts
+ *     responses:
+ *       200: { description: Projects with subcontract summaries }
+ * /api/subcontracts/subcontractors:
+ *   get:
+ *     tags: [Subcontractors]
+ *     summary: List subcontractors
+ *     responses:
+ *       200: { description: List of subcontractors }
+ * /api/subcontracts/project/{projectId}:
+ *   get:
+ *     tags: [Subcontractors]
+ *     summary: Get subcontracts for a project
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Subcontracts for the project }
+ * /api/subcontracts/{id}:
+ *   get:
+ *     tags: [Subcontractors]
+ *     summary: Get subcontract details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Subcontract details with line items }
+ *       404: { description: Subcontract not found }
+ *   patch:
+ *     tags: [Subcontractors]
+ *     summary: Update a subcontract
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Subcontract updated }
+ *   delete:
+ *     tags: [Subcontractors]
+ *     summary: Delete a subcontract
+ *     description: Requires SUPER_ADMIN or ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Subcontract deleted }
+ * /api/subcontracts/{id}/pdf:
+ *   get:
+ *     tags: [Subcontractors]
+ *     summary: Export subcontract as PDF
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: PDF file
+ *         content:
+ *           application/pdf: {}
+ */
 import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";

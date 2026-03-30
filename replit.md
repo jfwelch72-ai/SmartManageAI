@@ -84,6 +84,14 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Revenue Recognition & WIP Reporting**: Cost-to-cost method revenue recognition engine with per-project WIP analysis, standalone WIP Schedule Report page, monthly snapshots, historical comparison, and CSV export. Accessible from CFO dashboard and project financials tab.
 *   **T&M Workflow Enhancements**: Client digital sign-off (name + signature pad capture) on T&M tickets, automatic billing lock (read-only mode when INVOICED/BILLED), and configurable auto-invoice creation (per-project `autoInvoice` setting that auto-creates/appends DRAFT invoices when tickets are approved for billing with notifications to billing-role users).
 
+**API Documentation**:
+*   **Swagger UI** served at `/api-docs` (public, no authentication required). The OpenAPI 3.0 spec is also available at `/api-docs.json`.
+*   Uses `swagger-jsdoc` to auto-generate the OpenAPI 3.0 spec from `@openapi` JSDoc annotations in route files.
+*   Component schemas are generated from Drizzle-Zod insert schemas via `server/swaggerSchemas.ts` (`zodSchemaToOpenApi()` function), plus hand-crafted response schemas for runtime models.
+*   108 documented paths across 18 domain tags: Admin, Authentication, Bids & Estimates, CRM, Change Orders, Documents, Equipment, Financials, Messaging, Notifications, Operations, Payroll, Procurement, Projects, Reports, Safety, Time & Attendance, Workforce.
+*   Auth uses httpOnly JWT cookie (`auth_token`); public endpoints override with `security: []`.
+*   Configuration in `server/swagger.ts`, mounted in `server/routes.ts` before auth middleware.
+
 ## External Dependencies
 *   **PostgreSQL (Neon)**
 *   **Replit Object Storage (Google Cloud Storage backend)**

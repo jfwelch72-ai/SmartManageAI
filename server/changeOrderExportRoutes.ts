@@ -1,3 +1,92 @@
+/**
+ * @openapi
+ * /api/change-orders/{id}/add-to-sov:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Add change order to schedule of values
+ *     description: Links an approved change order to the project's SOV. Requires ADMIN, MANAGER, or OFFICE_MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Change order added to SOV }
+ * /api/change-orders/bulk-submit:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Bulk submit change orders
+ *     description: Submit multiple change orders at once. Requires ADMIN or MANAGER role.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ids]
+ *             properties:
+ *               ids: { type: array, items: { type: string, format: uuid } }
+ *     responses:
+ *       200: { description: Change orders submitted }
+ * /api/change-orders/{id}/pdf:
+ *   get:
+ *     tags: [Change Orders]
+ *     summary: Export change order as PDF
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: PDF file
+ *         content:
+ *           application/pdf: {}
+ * /api/change-orders/project/{projectId}/bulk-pdf:
+ *   get:
+ *     tags: [Change Orders]
+ *     summary: Export all project change orders as PDF
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Combined PDF
+ *         content:
+ *           application/pdf: {}
+ * /api/change-orders/{id}/comments:
+ *   get:
+ *     tags: [Change Orders]
+ *     summary: List comments on a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of comments }
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Add comment to a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [text]
+ *             properties:
+ *               text: { type: string }
+ *     responses:
+ *       201: { description: Comment added }
+ */
 import { Router, type Response , NextFunction } from "express";
 import { db } from "./db";
 import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprovals, changeOrderComments, tmTickets, rfis, scheduleOfValues, sovLineItems, orgCostCodes } from "@shared/schema";

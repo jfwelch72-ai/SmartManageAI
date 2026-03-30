@@ -1,3 +1,139 @@
+/**
+ * @openapi
+ * /api/change-orders/{id}/request-approval:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Request approval for a change order (legacy)
+ *     description: Legacy endpoint. Submits the change order for approval. Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Approval requested }
+ * /api/change-orders/{id}/submit:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Submit a change order
+ *     description: Transitions change order to SUBMITTED status. Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Change order submitted }
+ * /api/change-orders/{id}/approve:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Approve a change order
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes: { type: string }
+ *     responses:
+ *       200: { description: Change order approved }
+ * /api/change-orders/{id}/reject:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Reject a change order
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: Change order rejected }
+ * /api/change-orders/{id}/promote-to-review:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Promote PCO to review status
+ *     description: Requires ADMIN, MANAGER, or PROJECT_ENGINEER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Change order promoted to review }
+ * /api/change-orders/{id}/approve-pricing:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Approve pricing for a change order
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Pricing approved }
+ * /api/change-orders/{id}/return-to-pco:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Return change order to PCO status
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Returned to PCO status }
+ * /api/change-orders/{id}/void:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Void a change order
+ *     description: Requires ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Change order voided }
+ * /api/change-orders/{id}/return-to-draft:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Return change order to draft status
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Returned to draft status }
+ * /api/change-orders/{id}/revisions:
+ *   get:
+ *     tags: [Change Orders]
+ *     summary: Get change order revision history
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of revisions }
+ */
 import { Router, type Request, type Response, NextFunction } from "express";
 import { logError } from "./utils/logger";
 import { eventBus } from "./events";

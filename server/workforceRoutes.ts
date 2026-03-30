@@ -1,3 +1,89 @@
+/**
+ * @openapi
+ * /api/workforce/workers:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: List workers
+ *     description: Returns all workers/employees in the organization.
+ *     parameters:
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *       - name: role
+ *         in: query
+ *         schema: { type: string }
+ *       - name: isActive
+ *         in: query
+ *         schema: { type: boolean }
+ *     responses:
+ *       200: { description: List of workers }
+ * /api/workforce/workers/{id}:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: Get worker details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Worker details with skills and certifications }
+ *       404: { description: Worker not found }
+ *   patch:
+ *     tags: [Workforce]
+ *     summary: Update worker
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Worker updated }
+ * /api/workforce/certifications:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: List certifications
+ *     responses:
+ *       200: { description: List of certifications }
+ * /api/workforce/workers/{id}/certifications:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: Get worker certifications
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Worker certifications }
+ *   post:
+ *     tags: [Workforce]
+ *     summary: Add certification to worker
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, issuedDate]
+ *             properties:
+ *               name: { type: string }
+ *               issuedDate: { type: string, format: date }
+ *               expirationDate: { type: string, format: date }
+ *     responses:
+ *       201: { description: Certification added }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import crypto from "crypto";

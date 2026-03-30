@@ -1,3 +1,178 @@
+/**
+ * @openapi
+ * /api/aia-billing/pay-applications:
+ *   get:
+ *     tags: [Billing]
+ *     summary: List pay applications
+ *     description: Returns AIA G702/G703 pay applications for the organization.
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of pay applications }
+ *   post:
+ *     tags: [Billing]
+ *     summary: Create a pay application
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Pay application created }
+ * /api/aia-billing/pay-applications/{id}:
+ *   get:
+ *     tags: [Billing]
+ *     summary: Get pay application details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Pay application details }
+ * /api/aia-billing/pay-applications/{id}/status:
+ *   patch:
+ *     tags: [Billing]
+ *     summary: Update pay application status
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string }
+ *     responses:
+ *       200: { description: Status updated }
+ * /api/aia-billing/pay-applications/{id}/record-payment:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Record payment for a pay application
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Payment recorded }
+ * /api/aia-billing/pay-applications/{id}/sync-totals:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Sync pay application totals from SOV
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Totals synced }
+ * /api/aia-billing/pay-applications/{id}/g702-pdf:
+ *   get:
+ *     tags: [Billing]
+ *     summary: Generate AIA G702 PDF
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: G702 PDF document
+ *         content:
+ *           application/pdf: {}
+ * /api/aia-billing/pay-applications/{id}/g703-pdf:
+ *   get:
+ *     tags: [Billing]
+ *     summary: Generate AIA G703 PDF
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: G703 PDF document
+ *         content:
+ *           application/pdf: {}
+ * /api/aia-billing/pay-applications/roll-forward:
+ *   post:
+ *     tags: [Billing]
+ *     summary: Roll forward pay application to next period
+ *     responses:
+ *       201: { description: New pay application created }
+ * /api/aia-billing/stored-materials:
+ *   get:
+ *     tags: [Billing]
+ *     summary: List stored materials
+ *     responses:
+ *       200: { description: List of stored materials }
+ *   post:
+ *     tags: [Billing]
+ *     summary: Add stored material
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Stored material added }
+ * /api/aia-billing/stored-materials/{id}/incorporate:
+ *   patch:
+ *     tags: [Billing]
+ *     summary: Incorporate stored material into work
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Material incorporated }
+ * /api/aia-billing/retention-releases:
+ *   get:
+ *     tags: [Billing]
+ *     summary: List retention releases
+ *     responses:
+ *       200: { description: List of retention releases }
+ *   post:
+ *     tags: [Billing]
+ *     summary: Create retention release
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Retention release created }
+ * /api/aia-billing/retention-releases/{id}/status:
+ *   patch:
+ *     tags: [Billing]
+ *     summary: Update retention release status
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Status updated }
+ * /api/aia-billing/billing-hub/summary:
+ *   get:
+ *     tags: [Billing]
+ *     summary: Get billing hub summary
+ *     description: Returns a consolidated view of billing status across projects.
+ *     responses:
+ *       200: { description: Billing hub summary }
+ */
 import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";

@@ -1,3 +1,75 @@
+/**
+ * @openapi
+ * /api/inspections:
+ *   get:
+ *     tags: [Safety]
+ *     summary: List inspections
+ *     description: Returns inspections for the organization. Filter by project or status.
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of inspections }
+ *   post:
+ *     tags: [Safety]
+ *     summary: Create an inspection
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId, type, inspectionDate]
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               type: { type: string }
+ *               inspectionDate: { type: string, format: date }
+ *               notes: { type: string }
+ *     responses:
+ *       201: { description: Inspection created }
+ * /api/inspections/{id}:
+ *   get:
+ *     tags: [Safety]
+ *     summary: Get inspection details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Inspection details with items }
+ *       404: { description: Not found }
+ *   patch:
+ *     tags: [Safety]
+ *     summary: Update an inspection
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Inspection updated }
+ *   delete:
+ *     tags: [Safety]
+ *     summary: Delete an inspection
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Inspection deleted }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import { db } from "./db";

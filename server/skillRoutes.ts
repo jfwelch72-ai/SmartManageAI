@@ -1,3 +1,82 @@
+/**
+ * @openapi
+ * /api/skills:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: List skills
+ *     description: Returns all defined skills for the organization.
+ *     responses:
+ *       200: { description: List of skills }
+ *   post:
+ *     tags: [Workforce]
+ *     summary: Create a skill
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertSkill'
+ *     responses:
+ *       201: { description: Skill created }
+ * /api/skills/{id}:
+ *   patch:
+ *     tags: [Workforce]
+ *     summary: Update a skill
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Skill updated }
+ *   delete:
+ *     tags: [Workforce]
+ *     summary: Delete a skill
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Skill deleted }
+ * /api/users/{userId}/skills:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: Get skills for a user
+ *     parameters:
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of user skills }
+ *   post:
+ *     tags: [Workforce]
+ *     summary: Assign skill to user
+ *     parameters:
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [skillId]
+ *             properties:
+ *               skillId: { type: string, format: uuid }
+ *               proficiencyLevel: { type: integer, minimum: 1, maximum: 5 }
+ *     responses:
+ *       201: { description: Skill assigned }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

@@ -1,3 +1,141 @@
+/**
+ * @openapi
+ * /api/admin/users:
+ *   get:
+ *     tags: [Admin]
+ *     summary: List all users (admin)
+ *     description: Requires SUPER_ADMIN or ADMIN role. Returns all users across organizations.
+ *     parameters:
+ *       - $ref: '#/components/parameters/PageParam'
+ *       - $ref: '#/components/parameters/LimitParam'
+ *       - name: role
+ *         in: query
+ *         schema: { type: string }
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Paginated user list }
+ *       403: { description: Insufficient permissions }
+ *   post:
+ *     tags: [Admin]
+ *     summary: Create a user (admin)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertUser'
+ *     responses:
+ *       201: { description: User created }
+ * /api/admin/users/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Update a user (admin)
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: User updated }
+ *   delete:
+ *     tags: [Admin]
+ *     summary: Deactivate a user
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: User deactivated }
+ * /api/admin/organizations:
+ *   get:
+ *     tags: [Admin]
+ *     summary: List organizations
+ *     description: Requires SUPER_ADMIN role.
+ *     responses:
+ *       200: { description: List of organizations }
+ * /api/admin/organizations/{id}:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Update an organization
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Organization updated }
+ * /api/admin/audit-log:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get audit log
+ *     description: Returns system audit log entries. Requires ADMIN role.
+ *     parameters:
+ *       - $ref: '#/components/parameters/PageParam'
+ *       - $ref: '#/components/parameters/LimitParam'
+ *       - name: action
+ *         in: query
+ *         schema: { type: string }
+ *       - name: userId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Paginated audit log entries }
+ * /api/admin/feature-flags:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get feature flags
+ *     description: Returns current feature flag settings for the organization.
+ *     responses:
+ *       200: { description: Feature flags }
+ *   post:
+ *     tags: [Admin]
+ *     summary: Update feature flags
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Feature flags updated }
+ * /api/admin/announcements:
+ *   get:
+ *     tags: [Admin]
+ *     summary: List platform announcements
+ *     responses:
+ *       200: { description: List of announcements }
+ *   post:
+ *     tags: [Admin]
+ *     summary: Create a platform announcement
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title, content]
+ *             properties:
+ *               title: { type: string }
+ *               content: { type: string }
+ *               priority: { type: string, enum: [low, medium, high, critical] }
+ *     responses:
+ *       201: { description: Announcement created }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

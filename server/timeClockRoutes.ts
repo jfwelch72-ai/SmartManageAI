@@ -1,3 +1,239 @@
+/**
+ * @openapi
+ * /api/time-clock/clock-in:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Clock in
+ *     description: Start a new shift for the authenticated user. Validates geofence if configured.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               costCode: { type: string }
+ *               notes: { type: string }
+ *               latitude: { type: number }
+ *               longitude: { type: number }
+ *     responses:
+ *       201: { description: Clocked in successfully }
+ *       400: { description: Already clocked in }
+ * /api/time-clock/clock-out:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Clock out
+ *     description: End the current active shift for the authenticated user.
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes: { type: string }
+ *               latitude: { type: number }
+ *               longitude: { type: number }
+ *     responses:
+ *       200: { description: Clocked out successfully }
+ *       400: { description: No active shift }
+ * /api/time-clock/my-current-shift:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get current active shift
+ *     description: Returns the currently active shift for the authenticated user, if any.
+ *     responses:
+ *       200:
+ *         description: Active shift or null
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TimeClockShift'
+ * /api/time-clock/my-shifts:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get my shifts
+ *     description: Returns shift history for the authenticated user. Supports date range filtering.
+ *     parameters:
+ *       - name: startDate
+ *         in: query
+ *         schema: { type: string, format: date }
+ *       - name: endDate
+ *         in: query
+ *         schema: { type: string, format: date }
+ *     responses:
+ *       200:
+ *         description: List of shifts
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/TimeClockShift'
+ * /api/time-clock/my-shifts/{id}/notes:
+ *   patch:
+ *     tags: [Time & Attendance]
+ *     summary: Update shift notes
+ *     description: Allows the employee to update notes on their own shift.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes: { type: string }
+ *     responses:
+ *       200: { description: Notes updated }
+ * /api/time-clock/my-shift/cost-code:
+ *   patch:
+ *     tags: [Time & Attendance]
+ *     summary: Update cost code on active shift
+ *     description: Change the cost code on the current active shift.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [costCode]
+ *             properties:
+ *               costCode: { type: string }
+ *     responses:
+ *       200: { description: Cost code updated }
+ *       400: { description: No active shift }
+ * /api/time-clock/pending-approvals:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get shifts pending approval
+ *     description: Returns shifts awaiting manager approval. Requires ADMIN, MANAGER, SUPERINTENDENT, OFFICE_MANAGER, HR_MANAGER, or DISPATCHER role.
+ *     responses:
+ *       200: { description: List of pending shifts }
+ * /api/time-clock/active-shifts:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get all currently active shifts
+ *     description: Returns all employees currently clocked in. Requires manager-level role.
+ *     responses:
+ *       200: { description: List of active shifts }
+ * /api/time-clock/employee/{userId}/shifts:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get shifts for a specific employee
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Employee shift history }
+ * /api/time-clock/shifts/{id}/adjust:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Adjust a shift (manager)
+ *     description: Allows managers to adjust clock-in/out times on a shift. Requires manager-level role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               clockIn: { type: string, format: date-time }
+ *               clockOut: { type: string, format: date-time }
+ *               notes: { type: string }
+ *     responses:
+ *       200: { description: Shift adjusted }
+ * /api/time-clock/shift/{id}/admin-clock-out:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Admin clock out an employee
+ *     description: Forces clock-out for a specific shift. Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Employee clocked out }
+ * /api/time-clock/shifts/{id}/approve:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Approve a shift
+ *     description: Requires ADMIN, MANAGER, SUPERINTENDENT, OFFICE_MANAGER, HR_MANAGER, or DISPATCHER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Shift approved }
+ * /api/time-clock/shifts/{id}/reject:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Reject a shift
+ *     description: Requires manager-level role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: Shift rejected }
+ * /api/time-clock/live:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get live time clock dashboard data
+ *     description: Returns real-time overview of who is clocked in. Requires ADMIN or MANAGER role.
+ *     responses:
+ *       200: { description: Live time clock data }
+ * /api/time-clock/auto-clock-out-worker:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Auto clock-out a worker
+ *     description: Triggers automatic clock-out for a specific worker. Requires ADMIN role.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId]
+ *             properties:
+ *               userId: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Worker auto clocked out }
+ * /api/projects/{projectId}/labor-hours:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get labor hours for a project
+ *     description: Returns labor hour breakdown by employee for a specific project. Requires ADMIN, MANAGER, or SUPERINTENDENT role.
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Labor hours breakdown }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

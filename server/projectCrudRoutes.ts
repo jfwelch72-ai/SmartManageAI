@@ -1,3 +1,176 @@
+/**
+ * @openapi
+ * /api/projects:
+ *   get:
+ *     tags: [Projects]
+ *     summary: List all projects
+ *     description: Returns paginated list of projects for the authenticated user's organization. HOURLY_EMPLOYEE role only sees ACTIVE projects.
+ *     parameters:
+ *       - $ref: '#/components/parameters/PageParam'
+ *       - $ref: '#/components/parameters/LimitParam'
+ *       - name: status
+ *         in: query
+ *         schema: { type: string, enum: [BID, PLANNING, ACTIVE, COMPLETE, CLOSED] }
+ *     responses:
+ *       200:
+ *         description: Paginated project list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Project'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *   post:
+ *     tags: [Projects]
+ *     summary: Create a new project
+ *     description: Requires ADMIN, MANAGER, or ESTIMATOR role. Project code is auto-generated.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               clientName: { type: string }
+ *               description: { type: string }
+ *               contractAmount: { type: string }
+ *               estimatorId: { type: string, format: uuid }
+ *               superintendentId: { type: string, format: uuid }
+ *               status: { type: string, enum: [BID, PLANNING, ACTIVE, COMPLETE, CLOSED] }
+ *     responses:
+ *       201:
+ *         description: Project created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
+ *       403: { description: Insufficient permissions }
+ * /api/projects/{code}:
+ *   get:
+ *     tags: [Projects]
+ *     summary: Get project by code
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Project details with scope items
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
+ *       404: { description: Project not found }
+ *   patch:
+ *     tags: [Projects]
+ *     summary: Update a project
+ *     description: Requires ADMIN or MANAGER role. Validates status transitions.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Project updated }
+ *       404: { description: Project not found }
+ *       422: { description: Invalid status transition }
+ *   delete:
+ *     tags: [Projects]
+ *     summary: Delete a project
+ *     description: Requires ADMIN or MANAGER role. Cascading deletes related entities.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Project deleted }
+ *       404: { description: Project not found }
+ * /api/projects/{code}/financials:
+ *   get:
+ *     tags: [Projects]
+ *     summary: Get project financials
+ *     description: Returns labor costs, material costs, change orders, and budget tracking.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Financial summary }
+ * /api/projects/{code}/labor-rates:
+ *   get:
+ *     tags: [Projects]
+ *     summary: Get project labor rates
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Labor rates }
+ *   post:
+ *     tags: [Projects]
+ *     summary: Set or update project labor rates
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               defaultRegularRate: { type: string }
+ *               defaultOvertimeRate: { type: string }
+ *               burdenMultiplier: { type: string }
+ *     responses:
+ *       200: { description: Labor rates saved }
+ * /api/projects/{code}/scope-items:
+ *   get:
+ *     tags: [Projects]
+ *     summary: Get project scope items
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of scope items }
+ *   post:
+ *     tags: [Projects]
+ *     summary: Add scope item to project
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertScopeItem'
+ *     responses:
+ *       201: { description: Scope item added }
+ */
 import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";

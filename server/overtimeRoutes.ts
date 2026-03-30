@@ -1,3 +1,139 @@
+/**
+ * @openapi
+ * /api/overtime-requests/approvers:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get overtime request approvers
+ *     responses:
+ *       200: { description: List of approvers }
+ * /api/overtime-requests:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Submit overtime request
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [shiftId, reason]
+ *             properties:
+ *               shiftId: { type: string, format: uuid }
+ *               reason: { type: string }
+ *     responses:
+ *       201: { description: Overtime request created }
+ * /api/overtime-requests/my:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get my overtime requests
+ *     responses:
+ *       200: { description: List of overtime requests }
+ * /api/overtime-requests/by-shifts:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Get overtime requests by shift IDs
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               shiftIds: { type: array, items: { type: string, format: uuid } }
+ *     responses:
+ *       200: { description: Overtime requests for given shifts }
+ * /api/overtime-requests/pending:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get pending overtime requests
+ *     description: Requires manager-level role.
+ *     responses:
+ *       200: { description: Pending overtime requests }
+ * /api/overtime-requests/{id}/approve:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Approve overtime request
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Overtime request approved }
+ * /api/overtime-requests/{id}/reject:
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Reject overtime request
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: Overtime request rejected }
+ * /api/overtime-rules:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: List overtime rules
+ *     description: Requires ADMIN or MANAGER role.
+ *     responses:
+ *       200: { description: List of overtime rules }
+ *   post:
+ *     tags: [Time & Attendance]
+ *     summary: Create overtime rule
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Overtime rule created }
+ * /api/overtime-rules/{id}:
+ *   get:
+ *     tags: [Time & Attendance]
+ *     summary: Get overtime rule details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Overtime rule details }
+ *   patch:
+ *     tags: [Time & Attendance]
+ *     summary: Update overtime rule
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Overtime rule updated }
+ *   delete:
+ *     tags: [Time & Attendance]
+ *     summary: Delete overtime rule
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Overtime rule deleted }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

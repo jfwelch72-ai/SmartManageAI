@@ -1,3 +1,94 @@
+/**
+ * @openapi
+ * /api/projects/{code}/sov:
+ *   get:
+ *     tags: [Financials]
+ *     summary: Get schedule of values for a project
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Schedule of values with line items }
+ *       404: { description: Project not found }
+ *   post:
+ *     tags: [Financials]
+ *     summary: Create schedule of values
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title]
+ *             properties:
+ *               title: { type: string }
+ *               contractAmount: { type: string }
+ *     responses:
+ *       201: { description: SOV created }
+ * /api/projects/{code}/sov/{sovId}/line-items:
+ *   get:
+ *     tags: [Financials]
+ *     summary: Get SOV line items
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: sovId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of SOV line items }
+ *   post:
+ *     tags: [Financials]
+ *     summary: Add SOV line item
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: sovId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [description, scheduledValue]
+ *             properties:
+ *               description: { type: string }
+ *               scheduledValue: { type: string }
+ *               itemNumber: { type: string }
+ *     responses:
+ *       201: { description: Line item added }
+ * /api/projects/{code}/sov/{sovId}/pay-app:
+ *   post:
+ *     tags: [Financials]
+ *     summary: Generate AIA pay application
+ *     description: Generates a G702/G703 pay application from the schedule of values.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: sovId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Pay application generated }
+ */
 import { logError } from "./utils/logger";
 import { Router, Response } from "express";
 import { z } from "zod";

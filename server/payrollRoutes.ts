@@ -1,3 +1,315 @@
+/**
+ * @openapi
+ * /api/payroll/overview:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Payroll overview dashboard
+ *     description: Returns summary statistics for payroll including total spend, headcount, and recent pay runs.
+ *     responses:
+ *       200: { description: Payroll overview data }
+ * /api/payroll/pay-runs:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: List pay runs
+ *     responses:
+ *       200: { description: List of pay runs }
+ *   post:
+ *     tags: [Payroll]
+ *     summary: Create a pay run
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [payPeriodStart, payPeriodEnd]
+ *             properties:
+ *               payPeriodStart: { type: string, format: date }
+ *               payPeriodEnd: { type: string, format: date }
+ *     responses:
+ *       201: { description: Pay run created }
+ * /api/payroll/pay-runs/{id}:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get pay run details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Pay run details }
+ *   delete:
+ *     tags: [Payroll]
+ *     summary: Delete a pay run
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Pay run deleted }
+ * /api/payroll/pay-runs/{id}/status:
+ *   put:
+ *     tags: [Payroll]
+ *     summary: Update pay run status (PUT)
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string }
+ *     responses:
+ *       200: { description: Status updated }
+ *   patch:
+ *     tags: [Payroll]
+ *     summary: Update pay run status (PATCH)
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status: { type: string }
+ *     responses:
+ *       200: { description: Status updated }
+ * /api/payroll/pay-runs/{id}/pay-stubs:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get pay stubs for a pay run
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of pay stubs }
+ * /api/payroll/pay-runs/{id}/pay-stubs/{userId}:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get individual pay stub
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Pay stub details }
+ * /api/payroll/pay-runs/{id}/certified-report:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get certified payroll report
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Certified payroll report }
+ * /api/payroll/workers:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: List payroll workers
+ *     responses:
+ *       200: { description: Workers with rates }
+ * /api/payroll/time-entries:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get time entries for payroll
+ *     responses:
+ *       200: { description: Time entries }
+ * /api/projects/{id}/payroll-summary:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get payroll summary for a project
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Project payroll summary }
+ * /api/payroll/deduction-types:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: List deduction types
+ *     responses:
+ *       200: { description: Deduction types }
+ *   post:
+ *     tags: [Payroll]
+ *     summary: Create a deduction type
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, category]
+ *             properties:
+ *               name: { type: string }
+ *               category: { type: string }
+ *               defaultAmount: { type: string }
+ *               isPercentage: { type: boolean }
+ *     responses:
+ *       201: { description: Deduction type created }
+ * /api/payroll/deduction-types/{id}:
+ *   patch:
+ *     tags: [Payroll]
+ *     summary: Update deduction type
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Deduction type updated }
+ *   delete:
+ *     tags: [Payroll]
+ *     summary: Delete deduction type
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Deduction type deleted }
+ * /api/payroll/employee-deductions:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: List all employee deductions
+ *     responses:
+ *       200: { description: Employee deductions }
+ *   post:
+ *     tags: [Payroll]
+ *     summary: Create employee deduction
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Employee deduction created }
+ * /api/payroll/employee-deductions/{userId}:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get deductions for a specific employee
+ *     parameters:
+ *       - name: userId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Employee deductions }
+ * /api/payroll/employee-deductions/{id}:
+ *   patch:
+ *     tags: [Payroll]
+ *     summary: Update employee deduction
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Deduction updated }
+ *   delete:
+ *     tags: [Payroll]
+ *     summary: Delete employee deduction
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Deduction deleted }
+ * /api/payroll-notifications:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get payroll notifications
+ *     responses:
+ *       200: { description: Payroll notifications }
+ *   post:
+ *     tags: [Payroll]
+ *     summary: Create payroll notification
+ *     responses:
+ *       201: { description: Notification created }
+ * /api/payroll-notifications/{id}/process:
+ *   patch:
+ *     tags: [Payroll]
+ *     summary: Process payroll notification
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Notification processed }
+ * /api/payroll/settings:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get payroll settings
+ *     responses:
+ *       200: { description: Organization payroll settings }
+ *   put:
+ *     tags: [Payroll]
+ *     summary: Update payroll settings
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Settings updated }
+ * /api/payroll/weekly-reports:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: List weekly payroll reports
+ *     responses:
+ *       200: { description: Weekly reports }
+ * /api/payroll/weekly-reports/{id}:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get weekly payroll report
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Report details }
+ * /api/payroll/generate-weekly-report:
+ *   post:
+ *     tags: [Payroll]
+ *     summary: Generate weekly payroll report
+ *     responses:
+ *       201: { description: Report generated }
+ * /api/payroll/current-week-summary:
+ *   get:
+ *     tags: [Payroll]
+ *     summary: Get current week payroll summary
+ *     responses:
+ *       200: { description: Current week summary }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";

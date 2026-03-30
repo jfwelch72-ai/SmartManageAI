@@ -1,3 +1,189 @@
+/**
+ * @openapi
+ * /api/dashboard/stats:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get dashboard statistics
+ *     description: Returns KPI metrics and summary statistics for the user's organization.
+ *     responses:
+ *       200: { description: Dashboard statistics }
+ * /api/dashboard/kpi:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get KPI dashboard data
+ *     responses:
+ *       200: { description: KPI metrics }
+ * /api/dashboard/snapshot:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get executive snapshot
+ *     description: Requires ADMIN, MANAGER, or SUPERINTENDENT role.
+ *     responses:
+ *       200: { description: Dashboard snapshot }
+ * /api/dashboard/aggregate-time-tracking:
+ *   post:
+ *     tags: [Reports]
+ *     summary: Aggregate time tracking data
+ *     description: Requires ADMIN, MANAGER, or SUPERINTENDENT role.
+ *     responses:
+ *       200: { description: Aggregated time tracking data }
+ * /api/dashboard/trend:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get dashboard trend data
+ *     responses:
+ *       200: { description: Trend data over time }
+ * /api/dashboard/list:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get dashboard list view
+ *     responses:
+ *       200: { description: Dashboard list data }
+ * /api/dashboard/alerts:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get dashboard alerts
+ *     responses:
+ *       200: { description: Active alerts and warnings }
+ * /api/dashboard/workforce-snapshot:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get workforce snapshot
+ *     description: Headcount, attendance, and labor metrics. Requires payroll access.
+ *     responses:
+ *       200: { description: Workforce snapshot }
+ * /api/dashboard/cash-position:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get cash position dashboard
+ *     description: Requires financials access.
+ *     responses:
+ *       200: { description: Cash position data }
+ * /api/dashboard/sov-progress:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get SOV progress dashboard
+ *     description: Requires financials access.
+ *     responses:
+ *       200: { description: Schedule of values progress }
+ * /api/dashboard/bid-pipeline:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get bid pipeline dashboard
+ *     responses:
+ *       200: { description: Bid pipeline data }
+ * /api/dashboard/cost-code-breakdown:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get cost code breakdown
+ *     description: Requires financials access.
+ *     responses:
+ *       200: { description: Cost breakdown by code }
+ * /api/dashboard/schedule-impact:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get schedule impact dashboard
+ *     responses:
+ *       200: { description: Schedule impact analysis }
+ * /api/dashboard/labor-utilization:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get labor utilization dashboard
+ *     description: Requires payroll access.
+ *     responses:
+ *       200: { description: Labor utilization data }
+ * /api/dashboard/safety-summary:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get safety summary dashboard
+ *     responses:
+ *       200: { description: Safety metrics and trends }
+ * /api/dashboard/change-orders-pending:
+ *   get:
+ *     tags: [Reports]
+ *     summary: Get pending change orders dashboard
+ *     description: Requires financials access.
+ *     responses:
+ *       200: { description: Pending change order summary }
+ * /api/users:
+ *   get:
+ *     tags: [Admin]
+ *     summary: List users
+ *     description: Requires ADMIN, MANAGER, or OFFICE_MANAGER role.
+ *     responses:
+ *       200: { description: List of users }
+ *   post:
+ *     tags: [Admin]
+ *     summary: Create a user
+ *     description: Requires ADMIN role.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: User created }
+ * /api/users/{id}:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get user details
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: User details }
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Update a user
+ *     description: Requires ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: User updated }
+ * /api/users/{id}/cost-rates:
+ *   patch:
+ *     tags: [Admin]
+ *     summary: Update user cost rates
+ *     description: Requires ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Cost rates updated }
+ * /api/users/{id}/revoke-tokens:
+ *   post:
+ *     tags: [Admin]
+ *     summary: Revoke all auth tokens for a user
+ *     description: Requires ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Tokens revoked }
+ * /api/auth/set-initial-password:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Set initial password for invited user
+ *     responses:
+ *       200: { description: Password set }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";

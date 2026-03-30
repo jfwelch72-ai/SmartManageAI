@@ -1,3 +1,370 @@
+/**
+ * @openapi
+ * /api/procurement-module/requests:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: List purchase requests
+ *     description: Returns purchase requests for the authenticated user's organization.
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string, enum: [DRAFT, PENDING_APPROVAL, APPROVED, REJECTED, CONVERTED_TO_PO] }
+ *     responses:
+ *       200: { description: List of purchase requests }
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Create a purchase request
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId, title]
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               title: { type: string }
+ *               neededByDate: { type: string, format: date }
+ *               notes: { type: string }
+ *               items: { type: array, items: { type: object } }
+ *     responses:
+ *       201: { description: Purchase request created }
+ * /api/procurement-module/requests/{id}:
+ *   patch:
+ *     tags: [Procurement]
+ *     summary: Update a purchase request
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Purchase request updated }
+ *   delete:
+ *     tags: [Procurement]
+ *     summary: Delete a purchase request
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase request deleted }
+ * /api/procurement-module/requests/{id}/submit:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Submit purchase request for approval
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submitted for approval }
+ * /api/procurement-module/requests/{id}/approve:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Approve a purchase request
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase request approved }
+ * /api/procurement-module/requests/{id}/reject:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Reject a purchase request
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase request rejected }
+ * /api/procurement-module/requests/{id}/convert-to-po:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Convert purchase request to purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Purchase order created from request }
+ * /api/procurement-module/orders:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: List purchase orders
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of purchase orders }
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Create a purchase order
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId]
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               vendorId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Purchase order created }
+ * /api/procurement-module/orders/{id}:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get purchase order details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase order with items }
+ *   patch:
+ *     tags: [Procurement]
+ *     summary: Update a purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Purchase order updated }
+ *   delete:
+ *     tags: [Procurement]
+ *     summary: Delete a purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase order deleted }
+ * /api/procurement-module/orders/{id}/submit:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Submit purchase order for approval
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submitted for approval }
+ * /api/procurement-module/orders/{id}/approve:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Approve a purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase order approved }
+ * /api/procurement-module/orders/{id}/reject:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Reject a purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase order rejected }
+ * /api/procurement-module/orders/{id}/send:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Send purchase order to vendor
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Purchase order sent }
+ * /api/procurement-module/orders/bulk-approve:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Bulk approve purchase orders
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [ids]
+ *             properties:
+ *               ids: { type: array, items: { type: string, format: uuid } }
+ *     responses:
+ *       200: { description: Orders approved }
+ * /api/procurement-module/summary:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get procurement summary dashboard
+ *     responses:
+ *       200: { description: Procurement summary with stats }
+ * /api/procurement-module/delivery-schedule:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get delivery schedule
+ *     responses:
+ *       200: { description: Delivery schedule }
+ * /api/procurement-module/orders/{id}/receipts:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get receipts for a purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Receipts }
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Record receipt against a purchase order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Receipt recorded }
+ * /api/procurement-module/receipts:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: List all receipts
+ *     responses:
+ *       200: { description: All receipts }
+ * /api/procurement-module/invoices:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: List vendor invoices
+ *     responses:
+ *       200: { description: Vendor invoices }
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Create vendor invoice
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Invoice created }
+ * /api/procurement-module/invoices/{id}:
+ *   patch:
+ *     tags: [Procurement]
+ *     summary: Update vendor invoice
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Invoice updated }
+ * /api/procurement-module/invoices/{id}/file-url:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get invoice file URL
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: File download URL }
+ * /api/procurement-module/invoices/{id}/match:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get invoice three-way match
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Match results }
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Perform invoice three-way match
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Match performed }
+ * /api/procurement-module/invoices/{id}/match/resolve:
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Resolve invoice match discrepancy
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Discrepancy resolved }
+ * /api/procurement-module/invoices/{id}/payments:
+ *   get:
+ *     tags: [Procurement]
+ *     summary: Get invoice payments
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Payment history }
+ *   post:
+ *     tags: [Procurement]
+ *     summary: Record invoice payment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Payment recorded }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

@@ -1,3 +1,51 @@
+/**
+ * @openapi
+ * /api/notifications:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: List user notifications
+ *     description: Returns up to 50 most recent notifications for the authenticated user.
+ *     responses:
+ *       200:
+ *         description: List of notifications
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Notification'
+ * /api/notifications/unread-count:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: Get unread notification count
+ *     responses:
+ *       200:
+ *         description: Count of unread notifications
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count: { type: integer }
+ * /api/notifications/{id}/read:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark a notification as read
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Notification marked as read }
+ *       404: { description: Notification not found }
+ * /api/notifications/read-all:
+ *   post:
+ *     tags: [Notifications]
+ *     summary: Mark all notifications as read
+ *     responses:
+ *       200: { description: All notifications marked as read }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

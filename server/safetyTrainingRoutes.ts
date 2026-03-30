@@ -1,3 +1,101 @@
+/**
+ * @openapi
+ * /api/safety/trainings:
+ *   get:
+ *     tags: [Safety]
+ *     summary: List safety trainings
+ *     description: Returns safety training courses for the organization.
+ *     responses:
+ *       200: { description: List of safety trainings }
+ *   post:
+ *     tags: [Safety]
+ *     summary: Create a safety training
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [title]
+ *             properties:
+ *               title: { type: string }
+ *               description: { type: string }
+ *               durationMinutes: { type: integer }
+ *               isRequired: { type: boolean }
+ *     responses:
+ *       201: { description: Training created }
+ * /api/safety/trainings/{id}:
+ *   get:
+ *     tags: [Safety]
+ *     summary: Get safety training details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Training details with assignments }
+ *       404: { description: Not found }
+ *   patch:
+ *     tags: [Safety]
+ *     summary: Update a safety training
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Training updated }
+ *   delete:
+ *     tags: [Safety]
+ *     summary: Delete a safety training
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Training deleted }
+ * /api/safety/trainings/{id}/assignments:
+ *   get:
+ *     tags: [Safety]
+ *     summary: Get training assignments
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of assignments }
+ *   post:
+ *     tags: [Safety]
+ *     summary: Assign training to users
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userIds]
+ *             properties:
+ *               userIds:
+ *                 type: array
+ *                 items: { type: string, format: uuid }
+ *               dueDate: { type: string, format: date }
+ *     responses:
+ *       201: { description: Training assigned }
+ */
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, requireFeaturePermission } from "./auth";

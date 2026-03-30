@@ -1,3 +1,641 @@
+/**
+ * @openapi
+ * /api/equipment:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: List all equipment
+ *     description: Returns equipment for the authenticated user's organization with optional filters.
+ *     parameters:
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *       - name: type
+ *         in: query
+ *         schema: { type: string }
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of equipment
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Equipment'
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Create equipment
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               type: { type: string }
+ *               make: { type: string }
+ *               model: { type: string }
+ *               year: { type: integer }
+ *               serialNumber: { type: string }
+ *               status: { type: string }
+ *     responses:
+ *       201: { description: Equipment created }
+ * /api/equipment/import:
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Import equipment from CSV/JSON
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Equipment imported }
+ * /api/equipment/available-projects:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get projects available for equipment assignment
+ *     responses:
+ *       200: { description: List of available projects }
+ * /api/equipment/{idOrCode}:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get equipment by ID or code
+ *     parameters:
+ *       - name: idOrCode
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Equipment details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Equipment'
+ *       404: { description: Equipment not found }
+ * /api/equipment/{id}:
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update equipment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Equipment updated }
+ *   delete:
+ *     tags: [Equipment]
+ *     summary: Delete equipment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Equipment deleted }
+ * /api/equipment/maintenance/upcoming:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get upcoming maintenance across all equipment
+ *     responses:
+ *       200: { description: Upcoming maintenance items }
+ * /api/equipment/{equipmentId}/assignments:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get equipment assignments
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of assignments }
+ * /api/equipment/{equipmentId}/assign:
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Assign equipment to a project
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               startDate: { type: string, format: date }
+ *               endDate: { type: string, format: date }
+ *     responses:
+ *       201: { description: Equipment assigned }
+ * /api/equipment/{equipmentId}/return:
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Return equipment from assignment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Equipment returned }
+ * /api/equipment/{equipmentId}/maintenance-schedules:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get maintenance schedules for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Maintenance schedules }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Create maintenance schedule
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Maintenance schedule created }
+ * /api/equipment/{equipmentId}/maintenance-history:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get maintenance history for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Maintenance history }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Log maintenance work
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Maintenance logged }
+ * /api/equipment/{equipmentId}/rate-profiles:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get rate profiles for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Rate profiles }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Create rate profile
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Rate profile created }
+ * /api/equipment/{equipmentId}/active-rate:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get active rate for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Active rate profile }
+ * /api/equipment/{equipmentId}/rate-profiles/{profileId}:
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update rate profile
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: profileId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Rate profile updated }
+ * /api/equipment/{equipmentId}/rate-profiles/{profileId}/activate:
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Activate a rate profile
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: profileId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Rate profile activated }
+ * /api/equipment/rate-profiles/{profileId}:
+ *   delete:
+ *     tags: [Equipment]
+ *     summary: Delete a rate profile
+ *     parameters:
+ *       - name: profileId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Rate profile deleted }
+ * /api/rental-vendors:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: List rental vendors
+ *     responses:
+ *       200: { description: List of rental vendors }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Create rental vendor
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Vendor created }
+ * /api/rental-vendors/{id}:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get rental vendor details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Vendor details }
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update rental vendor
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Vendor updated }
+ *   delete:
+ *     tags: [Equipment]
+ *     summary: Delete rental vendor
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Vendor deleted }
+ * /api/rental-vendors/{vendorId}/catalog:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get vendor rental catalog
+ *     parameters:
+ *       - name: vendorId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Rental catalog items }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Add item to vendor catalog
+ *     parameters:
+ *       - name: vendorId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Catalog item added }
+ * /api/rental-equipment:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: List all rental equipment
+ *     responses:
+ *       200: { description: List of rental equipment }
+ * /api/rental-equipment/{id}:
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update rental equipment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Rental equipment updated }
+ *   delete:
+ *     tags: [Equipment]
+ *     summary: Delete rental equipment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Rental equipment deleted }
+ * /api/projects/{projectId}/equipment:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get equipment assigned to project
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Project equipment list }
+ * /api/projects/{projectId}/equipment-plans:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get equipment plans for project
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Equipment plans }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Create equipment plan for project
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Equipment plan created }
+ * /api/projects/{projectId}/equipment-plans/{planId}:
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update equipment plan
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: planId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Plan updated }
+ *   delete:
+ *     tags: [Equipment]
+ *     summary: Delete equipment plan
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: planId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Plan deleted }
+ * /api/projects/{projectId}/assigned-equipment:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get assigned equipment for project
+ *     parameters:
+ *       - name: projectId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Assigned equipment }
+ * /api/bids/{bidId}/equipment:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get equipment selections for a bid
+ *     parameters:
+ *       - name: bidId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Bid equipment selections }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Add equipment selection to bid
+ *     parameters:
+ *       - name: bidId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Equipment added to bid }
+ * /api/bids/{bidId}/equipment/{selectionId}:
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update bid equipment selection
+ *     parameters:
+ *       - name: bidId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: selectionId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Selection updated }
+ *   delete:
+ *     tags: [Equipment]
+ *     summary: Remove equipment from bid
+ *     parameters:
+ *       - name: bidId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: selectionId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Selection removed }
+ * /api/equipment-for-selection:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get equipment available for selection
+ *     responses:
+ *       200: { description: Available equipment list }
+ * /api/equipment/{equipmentId}/repairs:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get repair history for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Repair history }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Log equipment repair
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Repair logged }
+ * /api/equipment/repairs/{repairId}:
+ *   patch:
+ *     tags: [Equipment]
+ *     summary: Update repair record
+ *     parameters:
+ *       - name: repairId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Repair updated }
+ * /api/equipment/{equipmentId}/hour-logs:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get hour logs for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Hour logs }
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Log equipment hours
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Hours logged }
+ * /api/equipment/{equipmentId}/ai-recommendations:
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Get AI maintenance recommendations
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: AI recommendations }
+ * /api/equipment/notify-maintenance:
+ *   post:
+ *     tags: [Equipment]
+ *     summary: Send maintenance notification
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Notification sent }
+ * /api/equipment/{equipmentId}/depreciation:
+ *   get:
+ *     tags: [Equipment]
+ *     summary: Get depreciation schedule for equipment
+ *     parameters:
+ *       - name: equipmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Depreciation schedule with yearly breakdown }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

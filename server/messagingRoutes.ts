@@ -1,3 +1,440 @@
+/**
+ * @openapi
+ * /api/conversations:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: List conversations
+ *     description: Returns all conversations for the authenticated user including direct messages and group chats.
+ *     responses:
+ *       200: { description: List of conversations with last message preview }
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Create a new conversation
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [participantIds]
+ *             properties:
+ *               name: { type: string }
+ *               participantIds: { type: array, items: { type: string, format: uuid } }
+ *               type: { type: string }
+ *               projectId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Conversation created }
+ *       400: { description: Invalid input }
+ * /api/conversations/company-channel:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get or create the company-wide channel
+ *     description: Returns the organization's company-wide channel, creating it if it doesn't exist.
+ *     responses:
+ *       200: { description: Company channel }
+ * /api/channels:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: List channels
+ *     description: Returns all channels for the organization.
+ *     responses:
+ *       200: { description: List of channels }
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Create a channel
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *     responses:
+ *       201: { description: Channel created }
+ * /api/channels/{id}/join:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Join a channel
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Joined channel }
+ * /api/channels/{id}/archive:
+ *   patch:
+ *     tags: [Messaging]
+ *     summary: Archive a channel
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Channel archived }
+ * /api/conversations/{id}/messages:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get messages in a conversation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: before
+ *         in: query
+ *         schema: { type: string, format: date-time }
+ *       - name: limit
+ *         in: query
+ *         schema: { type: integer, default: 50 }
+ *     responses:
+ *       200: { description: List of messages }
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Send a message
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content: { type: string }
+ *               replyToId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Message sent }
+ * /api/conversations/{id}/upload:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Upload a file to a conversation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201: { description: File uploaded }
+ * /api/conversations/{id}/voice:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Send a voice message
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               audio:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201: { description: Voice message sent }
+ * /api/conversations/{id}/files/{filename}:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Download a file from a conversation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: filename
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: File content }
+ * /api/conversations/{id}/voice/{filename}:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Download a voice message
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: filename
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Voice message audio }
+ * /api/conversations/{id}/mention-search:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Search mentionable users in conversation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: q
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of mentionable users }
+ * /api/conversations/{id}/read:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Mark conversation as read
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Conversation marked as read }
+ * /api/conversations/{id}/typing:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Send typing indicator
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Typing indicator sent }
+ * /api/messages/unread-count:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get total unread message count
+ *     responses:
+ *       200:
+ *         description: Unread count
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 count: { type: integer }
+ * /api/messages/{msgId}:
+ *   patch:
+ *     tags: [Messaging]
+ *     summary: Edit a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content: { type: string }
+ *     responses:
+ *       200: { description: Message updated }
+ *   delete:
+ *     tags: [Messaging]
+ *     summary: Delete a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Message deleted }
+ * /api/messages/{msgId}/reactions:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Add a reaction to a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [emoji]
+ *             properties:
+ *               emoji: { type: string }
+ *     responses:
+ *       201: { description: Reaction added }
+ * /api/messages/{msgId}/reactions/{emoji}:
+ *   delete:
+ *     tags: [Messaging]
+ *     summary: Remove a reaction from a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: emoji
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Reaction removed }
+ * /api/messages/{msgId}/entity-links:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get entity links for a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of entity links }
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Link an entity to a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [entityType, entityId]
+ *             properties:
+ *               entityType: { type: string }
+ *               entityId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Entity linked }
+ * /api/messages/{msgId}/entity-links/{linkId}:
+ *   delete:
+ *     tags: [Messaging]
+ *     summary: Remove entity link from a message
+ *     parameters:
+ *       - name: msgId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: linkId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Entity link removed }
+ * /api/messaging/users:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: List users for messaging
+ *     description: Returns users in the organization available for messaging.
+ *     responses:
+ *       200: { description: List of users }
+ * /api/messaging/events:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Server-Sent Events stream for messaging
+ *     description: Opens an SSE connection for real-time messaging updates (new messages, edits, deletes, reactions, typing).
+ *     responses:
+ *       200:
+ *         description: SSE event stream
+ *         content:
+ *           text/event-stream: {}
+ * /api/entity-search:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Search entities for linking in messages
+ *     parameters:
+ *       - name: q
+ *         in: query
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Search results }
+ * /api/entity-project/{entityType}/{entityId}:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get entity project context
+ *     parameters:
+ *       - name: entityType
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: entityId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Entity project context }
+ * /api/entity-messages/{entityType}/{entityId}:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get messages linked to an entity
+ *     parameters:
+ *       - name: entityType
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: entityId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of linked messages }
+ * /api/entity-conversation/{entityType}/{entityId}:
+ *   get:
+ *     tags: [Messaging]
+ *     summary: Get conversation for an entity
+ *     parameters:
+ *       - name: entityType
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: entityId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Entity conversation }
+ * /api/entity-conversation:
+ *   post:
+ *     tags: [Messaging]
+ *     summary: Create a conversation linked to an entity
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [entityType, entityId]
+ *             properties:
+ *               entityType: { type: string }
+ *               entityId: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Entity conversation created }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

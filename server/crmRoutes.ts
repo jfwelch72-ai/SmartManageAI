@@ -1,3 +1,199 @@
+/**
+ * @openapi
+ * /api/crm/organisations:
+ *   get:
+ *     tags: [CRM]
+ *     summary: List CRM organisations
+ *     description: Returns all CRM organisations (clients, vendors, subcontractors) for the authenticated user's organization.
+ *     parameters:
+ *       - name: type
+ *         in: query
+ *         schema: { type: string, enum: [CLIENT, VENDOR, SUBCONTRACTOR, GC, OTHER] }
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of organisations
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/CrmOrganisation'
+ *   post:
+ *     tags: [CRM]
+ *     summary: Create a CRM organisation
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertCrmOrganisation'
+ *     responses:
+ *       201: { description: Organisation created }
+ *       400: { description: Invalid input }
+ * /api/crm/organisations/{id}:
+ *   get:
+ *     tags: [CRM]
+ *     summary: Get CRM organisation by ID
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Organisation details with contacts }
+ *       404: { description: Organisation not found }
+ *   patch:
+ *     tags: [CRM]
+ *     summary: Update a CRM organisation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Organisation updated }
+ *   delete:
+ *     tags: [CRM]
+ *     summary: Delete a CRM organisation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Organisation deleted }
+ * /api/crm/contacts:
+ *   get:
+ *     tags: [CRM]
+ *     summary: List CRM contacts
+ *     responses:
+ *       200: { description: List of contacts }
+ *   post:
+ *     tags: [CRM]
+ *     summary: Create a CRM contact
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertCrmContact'
+ *     responses:
+ *       201: { description: Contact created }
+ * /api/crm/contacts/{id}:
+ *   patch:
+ *     tags: [CRM]
+ *     summary: Update a CRM contact
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Contact updated }
+ *   delete:
+ *     tags: [CRM]
+ *     summary: Delete a CRM contact
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Contact deleted }
+ * /api/crm/opportunities:
+ *   get:
+ *     tags: [CRM]
+ *     summary: List CRM opportunities
+ *     description: Returns sales opportunities/pipeline for the organization.
+ *     responses:
+ *       200: { description: List of opportunities }
+ *   post:
+ *     tags: [CRM]
+ *     summary: Create a CRM opportunity
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertCrmOpportunity'
+ *     responses:
+ *       201: { description: Opportunity created }
+ * /api/crm/opportunities/{id}:
+ *   get:
+ *     tags: [CRM]
+ *     summary: Get opportunity details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Opportunity details with activities }
+ *   patch:
+ *     tags: [CRM]
+ *     summary: Update an opportunity
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Opportunity updated }
+ * /api/crm/organisations/{id}/notes:
+ *   get:
+ *     tags: [CRM]
+ *     summary: Get notes for an organisation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of notes }
+ *   post:
+ *     tags: [CRM]
+ *     summary: Add a note to an organisation
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [content]
+ *             properties:
+ *               content: { type: string }
+ *     responses:
+ *       201: { description: Note added }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

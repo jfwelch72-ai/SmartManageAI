@@ -1,3 +1,153 @@
+/**
+ * @openapi
+ * /api/change-orders/{id}/approvals:
+ *   get:
+ *     tags: [Change Orders]
+ *     summary: Get approval chain for a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Approval chain with step statuses }
+ * /api/change-orders/{id}/approve-step:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Approve current step in change order workflow
+ *     description: Requires ADMIN or MANAGER role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes: { type: string }
+ *     responses:
+ *       200: { description: Step approved }
+ * /api/change-orders/{id}/reject-step:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Reject current step in change order workflow
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason: { type: string }
+ *     responses:
+ *       200: { description: Step rejected }
+ * /api/change-orders/{id}/setup-approval-chain:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Set up approval chain for a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [steps]
+ *             properties:
+ *               steps: { type: array, items: { type: object } }
+ *     responses:
+ *       200: { description: Approval chain created }
+ * /api/change-orders/{id}/link-tm:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Link T&M ticket to change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: T&M ticket linked }
+ * /api/change-orders/{id}/link-rfi:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Link RFI to change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI linked }
+ * /api/change-orders/{id}/link-contract:
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Link contract to change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Contract linked }
+ * /api/change-orders/{id}/files:
+ *   get:
+ *     tags: [Change Orders]
+ *     summary: List files attached to a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of attached files }
+ *   post:
+ *     tags: [Change Orders]
+ *     summary: Upload a file to a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201: { description: File uploaded }
+ * /api/change-orders/{id}/files/{fileId}:
+ *   delete:
+ *     tags: [Change Orders]
+ *     summary: Delete a file from a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: fileId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: File deleted }
+ */
 import { Router, type Response , NextFunction } from "express";
 import { logError } from "./utils/logger";
 import { db } from "./db";

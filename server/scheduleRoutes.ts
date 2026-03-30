@@ -1,3 +1,206 @@
+/**
+ * @openapi
+ * /api/projects/{code}/schedule/create:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Create project schedule
+ *     description: Creates a new project schedule with tasks and dependencies. Requires manager role.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       201: { description: Schedule created }
+ * /api/projects/{code}/schedule/recalculate:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Recalculate CPM schedule
+ *     description: Recalculates critical path and schedule dates. Requires manager role.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Schedule recalculated }
+ * /api/projects/{code}/schedule/lock-baseline:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Lock schedule baseline
+ *     description: Locks the current schedule as the baseline for variance tracking.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Baseline locked }
+ * /api/projects/{code}/schedule/unlock-baseline:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Unlock schedule baseline
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Baseline unlocked }
+ * /api/projects/{code}/schedule/tasks:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Add a schedule task
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, durationDays]
+ *             properties:
+ *               name: { type: string }
+ *               durationDays: { type: integer }
+ *               startDate: { type: string, format: date }
+ *     responses:
+ *       201: { description: Task added }
+ * /api/projects/{code}/schedule/tasks/{taskId}:
+ *   delete:
+ *     tags: [Scheduling]
+ *     summary: Delete a schedule task
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: taskId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Task deleted }
+ * /api/projects/{code}/schedule/tasks/{taskId}/dependencies:
+ *   patch:
+ *     tags: [Scheduling]
+ *     summary: Update task dependencies
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: taskId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               predecessorIds: { type: array, items: { type: string, format: uuid } }
+ *     responses:
+ *       200: { description: Dependencies updated }
+ * /api/projects/{code}/schedule/tasks/{taskId}/crews:
+ *   patch:
+ *     tags: [Scheduling]
+ *     summary: Assign crews to a task
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: taskId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               crewIds: { type: array, items: { type: string, format: uuid } }
+ *     responses:
+ *       200: { description: Crews assigned }
+ * /api/projects/{code}/schedule/resource-loading:
+ *   get:
+ *     tags: [Scheduling]
+ *     summary: Get resource loading data
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Resource loading by week }
+ * /api/projects/{code}/schedule/forecast:
+ *   get:
+ *     tags: [Scheduling]
+ *     summary: Get schedule forecast
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Schedule forecast with S-curves }
+ * /api/projects/{code}/schedule/delay-impact:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Analyze delay impact on schedule
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Delay impact analysis }
+ * /api/projects/{code}/schedule/delay-change-order:
+ *   post:
+ *     tags: [Scheduling]
+ *     summary: Create change order from delay
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       201: { description: Change order created from delay }
+ * /api/projects/{code}/schedule/recommendations:
+ *   get:
+ *     tags: [Scheduling]
+ *     summary: Get AI schedule recommendations
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: AI-generated schedule recommendations }
+ * /api/projects/{code}/schedule/recommendations/{recId}/dismiss:
+ *   patch:
+ *     tags: [Scheduling]
+ *     summary: Dismiss a schedule recommendation
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: recId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Recommendation dismissed }
+ */
 import { logError } from "./utils/logger";
 import { Router, type Response } from "express";
 import { db } from "./db";

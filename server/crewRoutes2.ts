@@ -1,3 +1,93 @@
+/**
+ * @openapi
+ * /api/crews:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: List crews
+ *     description: Returns all crews for the organization.
+ *     responses:
+ *       200: { description: List of crews }
+ *   post:
+ *     tags: [Workforce]
+ *     summary: Create a crew
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/InsertCrew'
+ *     responses:
+ *       201: { description: Crew created }
+ * /api/crews/{id}:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: Get crew details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Crew details with members }
+ *       404: { description: Crew not found }
+ *   patch:
+ *     tags: [Workforce]
+ *     summary: Update a crew
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Crew updated }
+ *   delete:
+ *     tags: [Workforce]
+ *     summary: Delete a crew
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Crew deleted }
+ * /api/crews/{id}/members:
+ *   get:
+ *     tags: [Workforce]
+ *     summary: Get crew members
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of crew members }
+ *   post:
+ *     tags: [Workforce]
+ *     summary: Add member to crew
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [userId]
+ *             properties:
+ *               userId: { type: string, format: uuid }
+ *               role: { type: string }
+ *     responses:
+ *       201: { description: Member added }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

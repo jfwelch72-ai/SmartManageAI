@@ -3,6 +3,44 @@
  * 
  * Health checks, readiness probes, and operational endpoints
  * for load balancers and monitoring systems.
+ *
+ * @openapi
+ * /healthz:
+ *   get:
+ *     tags: [Operations]
+ *     summary: Health check endpoint
+ *     description: Returns basic health status. Used by load balancers. Always returns 200 if the server is running.
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status: { type: string, example: ok }
+ *                 timestamp: { type: string, format: date-time }
+ * /readyz:
+ *   get:
+ *     tags: [Operations]
+ *     summary: Readiness check
+ *     description: Returns 200 if the server and database are ready to accept traffic.
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Server is ready
+ *       503:
+ *         description: Server is not ready (e.g. database unreachable)
+ * /api/ops/status:
+ *   get:
+ *     tags: [Operations]
+ *     summary: Detailed system status
+ *     description: Returns detailed operational status including database connectivity, uptime, and monitoring metrics.
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Detailed status report
  */
 
 import { Router } from 'express';

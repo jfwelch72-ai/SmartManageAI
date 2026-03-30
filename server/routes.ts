@@ -1,6 +1,7 @@
 import { logError } from "./utils/logger";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { setupSwagger } from "./swagger";
 import crypto from "crypto";
 import multer from "multer";
 import { db } from "./db";
@@ -188,6 +189,9 @@ import riskRoutes from "./riskRoutes";
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
   app.use(opsRoutes);
+
+  // Serve Swagger UI at /api-docs — publicly accessible without authentication
+  setupSwagger(app);
 
   // Apply auth middleware to all routes
   app.use(authMiddleware);

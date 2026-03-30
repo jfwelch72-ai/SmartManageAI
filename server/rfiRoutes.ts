@@ -1,3 +1,283 @@
+/**
+ * @openapi
+ * /api/rfi:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List RFIs
+ *     description: Returns Requests for Information for the organization.
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of RFIs }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Create an RFI
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId, subject, question]
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               subject: { type: string }
+ *               question: { type: string }
+ *               assignedToId: { type: string, format: uuid }
+ *               dueDate: { type: string, format: date }
+ *     responses:
+ *       201: { description: RFI created }
+ * /api/rfi/stats:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Get RFI statistics
+ *     responses:
+ *       200: { description: RFI stats by status }
+ * /api/rfi/{id}:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Get RFI details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI details with responses }
+ *       404: { description: Not found }
+ *   patch:
+ *     tags: [Documents]
+ *     summary: Update an RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: RFI updated }
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete an RFI
+ *     description: Requires SUPER_ADMIN or ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI deleted }
+ * /api/rfi/{id}/submit:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Submit an RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI submitted }
+ * /api/rfi/{id}/review:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Mark RFI as under review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI under review }
+ * /api/rfi/{id}/forward:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Forward RFI to another party
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI forwarded }
+ * /api/rfi/{id}/answer:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Answer an RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [answer]
+ *             properties:
+ *               answer: { type: string }
+ *     responses:
+ *       200: { description: RFI answered }
+ * /api/rfi/{id}/close:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Close an RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI closed }
+ * /api/rfi/{id}/reopen:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Reopen an RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI reopened }
+ * /api/rfi/{id}/link-co:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Link RFI to a change order
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI linked to change order }
+ * /api/rfi/{id}/link-tm:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Link RFI to a T&M ticket
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: RFI linked to T&M ticket }
+ * /api/rfi/{id}/activity:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Get RFI activity log
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Activity log }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Add RFI activity entry
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Activity added }
+ * /api/rfi/{id}/files:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List RFI files
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of files }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Upload file to RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: File uploaded }
+ * /api/rfi/{id}/files/{fileId}:
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete RFI file
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: fileId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: File deleted }
+ * /api/rfi/{id}/attachments:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List RFI attachments
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of attachments }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Add attachment to RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201: { description: Attachment added }
+ * /api/rfi/{id}/attachments/{attachmentId}:
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete RFI attachment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: attachmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Attachment deleted }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";

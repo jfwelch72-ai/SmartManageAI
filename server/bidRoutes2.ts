@@ -1,3 +1,174 @@
+/**
+ * @openapi
+ * /api/bids:
+ *   get:
+ *     tags: [Bids & Estimates]
+ *     summary: List all bids
+ *     description: Returns bids for the authenticated user's organization with latest estimate summaries.
+ *     responses:
+ *       200:
+ *         description: List of bids
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Bid'
+ *   post:
+ *     tags: [Bids & Estimates]
+ *     summary: Create a new bid
+ *     description: Requires ADMIN, MANAGER, or ESTIMATOR role. Bid code is auto-generated.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               clientName: { type: string }
+ *               description: { type: string }
+ *               bidAmount: { type: string }
+ *               dueDate: { type: string, format: date-time }
+ *               estimatorId: { type: string, format: uuid }
+ *     responses:
+ *       201:
+ *         description: Bid created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Bid'
+ * /api/bids/{code}:
+ *   get:
+ *     tags: [Bids & Estimates]
+ *     summary: Get bid by code
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Bid details with estimates
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Bid'
+ *       404: { description: Bid not found }
+ *   patch:
+ *     tags: [Bids & Estimates]
+ *     summary: Update a bid
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Bid updated }
+ *   delete:
+ *     tags: [Bids & Estimates]
+ *     summary: Delete a bid
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Bid deleted }
+ * /api/bids/{code}/estimates:
+ *   get:
+ *     tags: [Bids & Estimates]
+ *     summary: List estimates for a bid
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of estimates }
+ *   post:
+ *     tags: [Bids & Estimates]
+ *     summary: Create an estimate
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string }
+ *               description: { type: string }
+ *     responses:
+ *       201: { description: Estimate created }
+ * /api/bids/{code}/estimates/{estimateId}/line-items:
+ *   get:
+ *     tags: [Bids & Estimates]
+ *     summary: Get estimate line items
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: estimateId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of line items }
+ *   post:
+ *     tags: [Bids & Estimates]
+ *     summary: Add estimate line item
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *       - name: estimateId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [description, quantity, unitPrice]
+ *             properties:
+ *               description: { type: string }
+ *               quantity: { type: number }
+ *               unitPrice: { type: string }
+ *               unit: { type: string }
+ *               costCode: { type: string }
+ *     responses:
+ *       201: { description: Line item added }
+ * /api/bids/{code}/convert-to-project:
+ *   post:
+ *     tags: [Bids & Estimates]
+ *     summary: Convert bid to project
+ *     description: Creates a new project from an awarded bid. Copies scope items and estimates.
+ *     parameters:
+ *       - name: code
+ *         in: path
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       201: { description: Project created from bid }
+ *       400: { description: Bid must be in AWARDED status }
+ */
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";

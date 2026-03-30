@@ -1,3 +1,412 @@
+/**
+ * @openapi
+ * /api/submittals:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List submittals
+ *     description: Returns submittals for the organization.
+ *     parameters:
+ *       - name: projectId
+ *         in: query
+ *         schema: { type: string, format: uuid }
+ *       - name: status
+ *         in: query
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: List of submittals }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Create a submittal
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [projectId, title, specSection]
+ *             properties:
+ *               projectId: { type: string, format: uuid }
+ *               title: { type: string }
+ *               specSection: { type: string }
+ *               description: { type: string }
+ *               assignedToId: { type: string, format: uuid }
+ *               dueDate: { type: string, format: date }
+ *     responses:
+ *       201: { description: Submittal created }
+ * /api/submittals/stats:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Get submittal statistics
+ *     responses:
+ *       200: { description: Submittal stats by status }
+ * /api/submittals/{id}:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Get submittal details
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal details }
+ *       404: { description: Not found }
+ *   patch:
+ *     tags: [Documents]
+ *     summary: Update a submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200: { description: Submittal updated }
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete a submittal
+ *     description: Requires SUPER_ADMIN or ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal deleted }
+ * /api/submittals/{id}/link-rfi:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Link submittal to an RFI
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Linked to RFI }
+ * /api/submittals/{id}/activity:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Get submittal activity log
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Activity log }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Add submittal activity entry
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Activity added }
+ * /api/submittals/{id}/files:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List submittal files
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of files }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Upload file to submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: File uploaded }
+ * /api/submittals/{id}/files/{fileId}:
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete submittal file
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: fileId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: File deleted }
+ * /api/submittals/{id}/items:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List submittal items
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal items }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Add submittal item
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       201: { description: Item added }
+ * /api/submittals/{id}/items/{itemId}:
+ *   patch:
+ *     tags: [Documents]
+ *     summary: Update submittal item
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: itemId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Item updated }
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete submittal item
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: itemId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Item deleted }
+ * /api/submittals/{id}/reviews:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List submittal reviews
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of reviews }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Create submittal review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       201: { description: Review created }
+ * /api/submittals/{id}/reviews/{reviewId}:
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete submittal review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: reviewId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Review deleted }
+ * /api/submittals/{id}/reviews/{reviewId}/start:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Start a submittal review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: reviewId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Review started }
+ * /api/submittals/{id}/reviews/{reviewId}/stamp:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Stamp a submittal review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: reviewId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Review stamped }
+ * /api/submittals/{id}/attachments:
+ *   get:
+ *     tags: [Documents]
+ *     summary: List submittal attachments
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: List of attachments }
+ *   post:
+ *     tags: [Documents]
+ *     summary: Add attachment to submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       201: { description: Attachment added }
+ * /api/submittals/{id}/attachments/{attachmentId}:
+ *   delete:
+ *     tags: [Documents]
+ *     summary: Delete submittal attachment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: attachmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Attachment deleted }
+ * /api/submittals/{id}/attachments/{attachmentId}/download:
+ *   get:
+ *     tags: [Documents]
+ *     summary: Download submittal attachment
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: attachmentId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Attachment file content }
+ * /api/submittals/{id}/submit:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Submit a submittal for review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal submitted }
+ * /api/submittals/{id}/review:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Mark submittal as under review
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Under review }
+ * /api/submittals/{id}/approve:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Approve a submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal approved }
+ * /api/submittals/{id}/approve-as-noted:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Approve submittal as noted
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal approved as noted }
+ * /api/submittals/{id}/reject:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Reject a submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal rejected }
+ * /api/submittals/{id}/revise:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Revise a submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Revision created }
+ * /api/submittals/{id}/resubmit:
+ *   post:
+ *     tags: [Documents]
+ *     summary: Resubmit a submittal
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: Submittal resubmitted }
+ */
 import {logError, logWarn } from "./utils/logger";
 import { Router, Response } from "express";
 import { db } from "./db";
