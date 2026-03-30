@@ -3,6 +3,7 @@ import { db } from "../../db";
 import { changeOrders, projectRisks, projects, notifications, users } from "@shared/schema";
 import { eq, and, sql, inArray, desc } from "drizzle-orm";
 import {logError, logInfo, logWarn } from "../../utils/logger";
+import { deliverNotifications } from "../../services/notificationDelivery";
 import type { RiskStatusChangedEvent, ProjectCreatedEvent } from "../eventTypes";
 import { openai, AI_MODEL_GPT4O } from "../../ai/openaiClient";
 import { sanitizeShortText, sanitizeText } from "../../sanitization";
@@ -284,7 +285,7 @@ async function insertRiskNotifications(
 ): Promise<void> {
   if (userIds.length === 0) return;
   try {
-    await db.insert(notifications).values(
+    const inserted = await db.insert(notifications).values(
       userIds.map((userId) => ({
         userId,
         type: "SYSTEM" as const,
@@ -293,7 +294,10 @@ async function insertRiskNotifications(
         relatedEntityId,
         relatedEntityType,
       }))
-    );
+    ).returning();
+    setImmediate(() => {
+      deliverNotifications(inserted as Parameters<typeof deliverNotifications>[0]).catch(() => undefined);
+    });
   } catch (err) {
     logError("riskEventListener: failed to insert notifications", {
       error: String(err),

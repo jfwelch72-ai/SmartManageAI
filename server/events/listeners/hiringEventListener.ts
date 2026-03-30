@@ -1,5 +1,9 @@
 import { eventBus } from "../eventBus";
+import { db } from "../../db";
+import { notifications, users } from "@shared/schema";
+import { eq, and, inArray } from "drizzle-orm";
 import { logError, logInfo } from "../../utils/logger";
+import { deliverNotifications } from "../../services/notificationDelivery";
 import type {
   HiringJobPublishedEvent,
   HiringCandidateAppliedEvent,
@@ -9,10 +13,64 @@ import type {
   HiringIntegrationConnectedEvent,
 } from "../eventTypes";
 
+type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
+
+const HR_ROLES = ["ADMIN", "MANAGER", "OFFICE_MANAGER", "HR_MANAGER"] as const;
+
+async function getHrUserIds(orgId: string): Promise<string[]> {
+  try {
+    const roles: string[] = [...HR_ROLES];
+    const rows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.organizationId, orgId),
+          eq(users.isActive, true),
+          inArray(users.role, roles)
+        )
+      );
+    return rows.map((r) => r.id);
+  } catch {
+    return [];
+  }
+}
+
+async function insertHiringNotifications(
+  userIds: string[],
+  type: NotificationType,
+  title: string,
+  message: string,
+  relatedEntityId: string,
+  relatedEntityType: string
+): Promise<void> {
+  if (userIds.length === 0) return;
+  const records = userIds.map((userId) => ({
+    userId,
+    type,
+    title,
+    message,
+    relatedEntityId,
+    relatedEntityType,
+  }));
+  const inserted = await db.insert(notifications).values(records).returning();
+  setImmediate(() => {
+    deliverNotifications(inserted as Parameters<typeof deliverNotifications>[0]).catch(() => undefined);
+  });
+}
+
 export function registerHiringEventListener(): void {
   eventBus.on("hiring.job_published", async (event: HiringJobPublishedEvent) => {
     try {
       logInfo("hiring.job_published", { orgId: event.orgId, jobId: event.payload.jobId, title: event.payload.title });
+      await insertHiringNotifications(
+        [event.actorId],
+        "GENERAL",
+        "Job Published",
+        `Your job posting "${event.payload.title}" has been published successfully`,
+        event.payload.jobId,
+        "hiringJob"
+      );
     } catch (err) {
       logError("hiringEventListener: hiring.job_published failed", { error: String(err) });
     }
@@ -21,6 +79,15 @@ export function registerHiringEventListener(): void {
   eventBus.on("hiring.candidate_applied", async (event: HiringCandidateAppliedEvent) => {
     try {
       logInfo("hiring.candidate_applied", { orgId: event.orgId, candidateId: event.payload.candidateId, fullName: event.payload.fullName });
+      const hrIds = await getHrUserIds(event.orgId);
+      await insertHiringNotifications(
+        hrIds,
+        "GENERAL",
+        "New Candidate Application",
+        `${event.payload.fullName} has submitted an application`,
+        event.payload.candidateId,
+        "hiringCandidate"
+      );
     } catch (err) {
       logError("hiringEventListener: hiring.candidate_applied failed", { error: String(err) });
     }
@@ -42,6 +109,15 @@ export function registerHiringEventListener(): void {
   eventBus.on("hiring.candidate_hired", async (event: HiringCandidateHiredEvent) => {
     try {
       logInfo("hiring.candidate_hired", { orgId: event.orgId, candidateId: event.payload.candidateId, fullName: event.payload.fullName });
+      const adminIds = await getHrUserIds(event.orgId);
+      await insertHiringNotifications(
+        adminIds,
+        "GENERAL",
+        "Candidate Hired",
+        `${event.payload.fullName} has been hired`,
+        event.payload.candidateId,
+        "hiringCandidate"
+      );
     } catch (err) {
       logError("hiringEventListener: hiring.candidate_hired failed", { error: String(err) });
     }
@@ -55,6 +131,43 @@ export function registerHiringEventListener(): void {
         candidateId: event.payload.candidateId,
         interviewType: event.payload.interviewType,
       });
+
+      const recipientIds = new Set<string>();
+
+      const { hiringInterviews } = await import("@shared/schema");
+      const [interview] = await db
+        .select({ interviewerUserIdsJson: hiringInterviews.interviewerUserIdsJson })
+        .from(hiringInterviews)
+        .where(eq(hiringInterviews.id, event.payload.interviewId))
+        .limit(1);
+      if (interview?.interviewerUserIdsJson) {
+        try {
+          const interviewerIds = JSON.parse(interview.interviewerUserIdsJson);
+          if (Array.isArray(interviewerIds)) {
+            for (const id of interviewerIds) {
+              if (typeof id === "string" && id) recipientIds.add(id);
+            }
+          }
+        } catch {}
+      }
+
+      const hrIds = await getHrUserIds(event.orgId);
+      for (const id of hrIds) recipientIds.add(id);
+
+      const scheduleLabel = event.payload.scheduledAt
+        ? ` for ${event.payload.scheduledAt}`
+        : "";
+      const typeLabel = event.payload.interviewType
+        ? ` (${event.payload.interviewType})`
+        : "";
+      await insertHiringNotifications(
+        Array.from(recipientIds),
+        "GENERAL",
+        "Interview Scheduled",
+        `An interview${typeLabel} has been scheduled${scheduleLabel}`,
+        event.payload.interviewId,
+        "hiringInterview"
+      );
     } catch (err) {
       logError("hiringEventListener: hiring.interview_scheduled failed", { error: String(err) });
     }

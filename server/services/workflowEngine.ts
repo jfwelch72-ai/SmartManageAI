@@ -379,6 +379,16 @@ export async function delegateEntityTransition(
   };
 }
 
+const ENTITY_TYPE_NOTIFICATION_MAP: Record<WorkflowEntityType, string> = {
+  CHANGE_ORDER: "CHANGE_ORDER_APPROVED",
+  SOV_PAY_APP: "SOV_ITEM_COMPLETED",
+  TIME_APPROVAL: "GENERAL",
+  PURCHASE_ORDER: "PROCUREMENT_PO_SUBMITTED",
+  PURCHASE_REQUEST: "PROCUREMENT_PR_SUBMITTED",
+  VENDOR_BILL: "PAYABLE_CREATED",
+  TM_TICKET: "TM_TICKET_SUBMITTED",
+};
+
 async function deliverByChannel(
   channel: NotificationChannel,
   recipientIds: string[],
@@ -386,9 +396,13 @@ async function deliverByChannel(
   entityId: string,
   entityType: WorkflowEntityType
 ) {
+  const notificationType = ENTITY_TYPE_NOTIFICATION_MAP[entityType] || "GENERAL";
+  const entityLabel = entityType.replace(/_/g, " ");
+  const title = `Workflow Update: ${entityLabel}`;
+
   await notifyUsers(recipientIds, {
-    type: "GENERAL",
-    title: `Workflow Update (${channel})`,
+    type: notificationType,
+    title,
     message,
     relatedEntityId: entityId,
     relatedEntityType: entityType,

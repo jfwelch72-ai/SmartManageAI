@@ -176,13 +176,23 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
-  if (type === "PROCUREMENT_PR_SUBMITTED" || type === "PROCUREMENT_PR_APPROVED" || type === "PROCUREMENT_PR_REJECTED" ||
-      type === "PROCUREMENT_PO_SUBMITTED" || type === "PROCUREMENT_PO_APPROVED" || type === "PROCUREMENT_PO_REJECTED") {
+  if (type === "PROCUREMENT_PR_SUBMITTED" || type === "PROCUREMENT_PR_APPROVED" || type === "PROCUREMENT_PR_REJECTED") {
+    const prParam = notification.relatedEntityId ? `?prId=${notification.relatedEntityId}` : "";
     return {
       subject: `Procurement Update — SmartManageAI`,
       body: notification.message,
-      actionUrl: `${baseUrl}/procurement`,
-      actionText: "View Procurement",
+      actionUrl: `${baseUrl}/procurement${prParam}`,
+      actionText: "View Purchase Request",
+    };
+  }
+
+  if (type === "PROCUREMENT_PO_SUBMITTED" || type === "PROCUREMENT_PO_APPROVED" || type === "PROCUREMENT_PO_REJECTED") {
+    const poParam = notification.relatedEntityId ? `?poId=${notification.relatedEntityId}` : "";
+    return {
+      subject: `Procurement Update — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/procurement${poParam}`,
+      actionText: "View Purchase Order",
     };
   }
 
@@ -224,11 +234,91 @@ function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  if (type === "BID_SUBMITTED") {
+    return {
+      subject: `Bid Submitted — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/bids/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Bid",
+    };
+  }
+
+  if (type === "BID_STATUS_CHANGED") {
+    return {
+      subject: `Bid Status Changed — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/bids/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Bid",
+    };
+  }
+
+  if (type === "BID_ASSIGNED") {
+    return {
+      subject: `Bid Assignment — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/bids/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Bid",
+    };
+  }
+
+  if (type === "BID_DUE_DATE_APPROACHING") {
+    return {
+      subject: `Bid Due Date Approaching — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/bids/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Bid",
+    };
+  }
+
+  if (type === "BUDGET_ALERT") {
+    return {
+      subject: `Budget Alert — SmartManageAI`,
+      body: notification.message,
+      actionUrl: notification.relatedEntityId
+        ? `${baseUrl}/projects/${notification.relatedEntityId}`
+        : undefined,
+      actionText: "View Project Budget",
+    };
+  }
+
   if (type === "DEADLINE_WARNING" || type === "REMINDER") {
     return {
       subject: `${notification.title} — SmartManageAI`,
       body: notification.message,
     };
+  }
+
+  if (notification.relatedEntityType && notification.relatedEntityId) {
+    const entityUrlMap: Record<string, (id: string) => string> = {
+      changeOrder: (id) => `${baseUrl}/change-orders/${id}`,
+      CHANGE_ORDER: (id) => `${baseUrl}/change-orders/${id}`,
+      PURCHASE_ORDER: (id) => `${baseUrl}/procurement?poId=${id}`,
+      PURCHASE_REQUEST: (id) => `${baseUrl}/procurement?prId=${id}`,
+      TM_TICKET: (id) => `${baseUrl}/tm-tickets/${id}`,
+      SOV_PAY_APP: (id) => `${baseUrl}/pay-apps/${id}`,
+      VENDOR_BILL: (id) => `${baseUrl}/payables/${id}`,
+      bid: (id) => `${baseUrl}/bids/${id}`,
+      project: (id) => `${baseUrl}/projects/${id}`,
+      inspection: (id) => `${baseUrl}/inspections/${id}`,
+    };
+
+    const urlBuilder = entityUrlMap[notification.relatedEntityType];
+    if (urlBuilder) {
+      return {
+        subject: `${notification.title} — SmartManageAI`,
+        body: notification.message,
+        actionUrl: urlBuilder(notification.relatedEntityId),
+        actionText: `View ${notification.relatedEntityType.replace(/_/g, " ")}`,
+      };
+    }
   }
 
   // Generic fallback

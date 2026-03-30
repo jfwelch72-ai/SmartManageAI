@@ -15,6 +15,10 @@ import type {
   BidDueDateApproachingEvent,
   BudgetAlertTriggeredEvent,
   DocumentRevisionCreatedEvent,
+  ProjectCreatedEvent,
+  ProjectStatusChangedEvent,
+  SafetyIncidentCreatedEvent,
+  InspectionCompletedEvent,
 } from "../eventTypes";
 
 type NotificationType = NonNullable<(typeof notifications.$inferInsert)["type"]>;
@@ -233,6 +237,158 @@ export function registerNotificationListener(): void {
       );
     } catch (err) {
       logError("notificationListener: budget.alert_triggered failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("project.created", async (event: ProjectCreatedEvent) => {
+    try {
+      const { projects } = await import("@shared/schema");
+
+      const adminIds = await getAdminUserIds(event.orgId);
+      const recipientIds = new Set(adminIds);
+
+      const [project] = await db
+        .select({
+          projectManagerId: projects.projectManagerId,
+          estimatorId: projects.estimatorId,
+          superintendentId: projects.superintendentId,
+        })
+        .from(projects)
+        .where(eq(projects.id, event.payload.projectId))
+        .limit(1);
+
+      if (project) {
+        if (project.projectManagerId) recipientIds.add(project.projectManagerId);
+        if (project.estimatorId) recipientIds.add(project.estimatorId);
+        if (project.superintendentId) recipientIds.add(project.superintendentId);
+      }
+
+      await insertNotifications(
+        Array.from(recipientIds),
+        "PROJECT_ASSIGNMENT",
+        "New Project Created",
+        `Project "${event.payload.name}" (${event.payload.projectCode}) has been created with status ${event.payload.projectStatus}`,
+        event.payload.projectId,
+        "project"
+      );
+    } catch (err) {
+      logError("notificationListener: project.created failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("project.status_changed", async (event: ProjectStatusChangedEvent) => {
+    try {
+      const { projects, projectEmployeeRates } = await import("@shared/schema");
+
+      const [project] = await db
+        .select({
+          estimatorId: projects.estimatorId,
+          superintendentId: projects.superintendentId,
+          projectManagerId: projects.projectManagerId,
+        })
+        .from(projects)
+        .where(eq(projects.id, event.payload.projectId))
+        .limit(1);
+
+      const adminIds = await getAdminUserIds(event.orgId);
+      const recipientIds = new Set(adminIds);
+
+      if (project) {
+        if (project.estimatorId) recipientIds.add(project.estimatorId);
+        if (project.superintendentId) recipientIds.add(project.superintendentId);
+        if (project.projectManagerId) recipientIds.add(project.projectManagerId);
+      }
+
+      const teamRows = await db
+        .select({ userId: projectEmployeeRates.userId })
+        .from(projectEmployeeRates)
+        .where(eq(projectEmployeeRates.projectId, event.payload.projectId));
+      for (const row of teamRows) {
+        recipientIds.add(row.userId);
+      }
+
+      await insertNotifications(
+        Array.from(recipientIds),
+        "PROJECT_ASSIGNMENT",
+        "Project Status Changed",
+        `Project ${event.payload.projectCode} status changed from ${event.payload.oldStatus} to ${event.payload.newStatus}`,
+        event.payload.projectId,
+        "project"
+      );
+    } catch (err) {
+      logError("notificationListener: project.status_changed failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("safety.incident_created", async (event: SafetyIncidentCreatedEvent) => {
+    try {
+      const adminIds = await getAdminUserIds(event.orgId);
+      const safetyRoles = ["SAFETY_MANAGER", "SUPERINTENDENT"] as const;
+      const safetyRows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(
+          and(
+            eq(users.organizationId, event.orgId),
+            eq(users.isActive, true),
+            inArray(users.role, [...safetyRoles] as unknown as string[])
+          )
+        );
+      const recipientIds = new Set([...adminIds, ...safetyRows.map(r => r.id)]);
+      await insertNotifications(
+        Array.from(recipientIds),
+        "GENERAL",
+        "Safety Incident Reported",
+        `A safety incident (severity: ${event.payload.severity}) has been reported and requires attention`,
+        event.payload.incidentId,
+        "safetyIncident"
+      );
+    } catch (err) {
+      logError("notificationListener: safety.incident_created failed", { error: String(err) });
+    }
+  });
+
+  eventBus.on("inspection.completed", async (event: InspectionCompletedEvent) => {
+    try {
+      const { projects, projectEmployeeRates } = await import("@shared/schema");
+
+      const [project] = await db
+        .select({
+          estimatorId: projects.estimatorId,
+          superintendentId: projects.superintendentId,
+          projectManagerId: projects.projectManagerId,
+        })
+        .from(projects)
+        .where(eq(projects.id, event.payload.projectId))
+        .limit(1);
+
+      const adminIds = await getAdminUserIds(event.orgId);
+      const recipientIds = new Set(adminIds);
+
+      if (project) {
+        if (project.estimatorId) recipientIds.add(project.estimatorId);
+        if (project.superintendentId) recipientIds.add(project.superintendentId);
+        if (project.projectManagerId) recipientIds.add(project.projectManagerId);
+      }
+
+      const teamRows = await db
+        .select({ userId: projectEmployeeRates.userId })
+        .from(projectEmployeeRates)
+        .where(eq(projectEmployeeRates.projectId, event.payload.projectId));
+      for (const row of teamRows) {
+        recipientIds.add(row.userId);
+      }
+
+      await insertNotifications(
+        Array.from(recipientIds),
+        "GENERAL",
+        "Inspection Completed",
+        `Inspection completed with status: ${event.payload.status}`,
+        event.payload.inspectionId,
+        "inspection"
+      );
+    } catch (err) {
+      logError("notificationListener: inspection.completed failed", { error: String(err) });
     }
   });
 

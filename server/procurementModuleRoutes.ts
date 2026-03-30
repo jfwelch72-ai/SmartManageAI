@@ -651,13 +651,13 @@ router.post("/api/procurement-module/requests/:id/submit", requireAuth, requireR
       .set({ status: "PENDING_APPROVAL", updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
 
-    notifyApprovers(orgId, req.user!.id, {
+    await notifyApprovers(orgId, req.user!.id, {
       type: "PROCUREMENT_PR_SUBMITTED",
       title: "Purchase Request Submitted",
       message: `Purchase request ${existing.prNumber} "${existing.title}" requires your approval.`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
-    }, ROLES).catch(() => {});
+    }, ROLES).catch((err: unknown) => logError("Procurement PR submit notification failed", { error: String(err) }));
 
     res.json(updated);
   } catch (error) {
@@ -680,13 +680,13 @@ router.post("/api/procurement-module/requests/:id/approve", requireAuth, require
       .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
 
-    notifySubmitter(existing.requestedById, {
+    await notifySubmitter(existing.requestedById, {
       type: "PROCUREMENT_PR_APPROVED",
       title: "Purchase Request Approved",
       message: `Your purchase request ${existing.prNumber} "${existing.title}" has been approved.`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
-    }).catch(() => {});
+    }).catch((err: unknown) => logError("Procurement PR approve notification failed", { error: String(err) }));
 
     res.json(updated);
   } catch (error) {
@@ -712,13 +712,13 @@ router.post("/api/procurement-module/requests/:id/reject", requireAuth, requireR
       .set({ status: "REJECTED", rejectionNotes, updatedAt: new Date() })
       .where(eq(purchaseRequests.id, req.params.id)).returning();
 
-    notifySubmitter(existing.requestedById, {
+    await notifySubmitter(existing.requestedById, {
       type: "PROCUREMENT_PR_REJECTED",
       title: "Purchase Request Rejected",
       message: `Your purchase request ${existing.prNumber} "${existing.title}" has been rejected.${rejectionNotes ? ` Reason: ${rejectionNotes}` : ""}`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_REQUEST",
-    }).catch(() => {});
+    }).catch((err: unknown) => logError("Procurement PR reject notification failed", { error: String(err) }));
 
     res.json(updated);
   } catch (error) {
@@ -1120,13 +1120,13 @@ router.post("/api/procurement-module/orders/:id/submit", requireAuth, requireRol
       .set({ status: "PENDING_APPROVAL", updatedAt: new Date() })
       .where(eq(purchaseOrders.id, req.params.id)).returning();
 
-    notifyApprovers(orgId, req.user!.id, {
+    await notifyApprovers(orgId, req.user!.id, {
       type: "PROCUREMENT_PO_SUBMITTED",
       title: "Purchase Order Submitted",
       message: `Purchase order ${existing.poNumber} requires your approval.`,
       relatedEntityId: existing.id,
       relatedEntityType: "PURCHASE_ORDER",
-    }, ROLES).catch(() => {});
+    }, ROLES).catch((err: unknown) => logError("Procurement PO submit notification failed", { error: String(err) }));
 
     res.json(updated);
   } catch (error) {
@@ -1152,13 +1152,13 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
     const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
       .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
     if (prLink) {
-      notifySubmitter(prLink.requestedById, {
+      await notifySubmitter(prLink.requestedById, {
         type: "PROCUREMENT_PO_APPROVED",
         title: "Purchase Order Approved",
         message: `Purchase order ${existing.poNumber} has been approved.`,
         relatedEntityId: existing.id,
         relatedEntityType: "PURCHASE_ORDER",
-      }).catch(() => {});
+      }).catch((err: unknown) => logError("Procurement PO approve notification failed", { error: String(err) }));
     }
 
     if (existing.projectId) {
@@ -1192,13 +1192,13 @@ router.post("/api/procurement-module/orders/:id/reject", requireAuth, requireRol
     const [prLink] = existing.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
       .from(purchaseRequests).where(eq(purchaseRequests.id, existing.prId)).limit(1) : [null];
     if (prLink) {
-      notifySubmitter(prLink.requestedById, {
+      await notifySubmitter(prLink.requestedById, {
         type: "PROCUREMENT_PO_REJECTED",
         title: "Purchase Order Rejected",
         message: `Purchase order ${existing.poNumber} has been rejected.${rejectionNotes ? ` Reason: ${rejectionNotes}` : ""}`,
         relatedEntityId: existing.id,
         relatedEntityType: "PURCHASE_ORDER",
-      }).catch(() => {});
+      }).catch((err: unknown) => logError("Procurement PO reject notification failed", { error: String(err) }));
     }
 
     res.json(updated);
@@ -1271,13 +1271,13 @@ router.post("/api/procurement-module/orders/bulk-approve", requireAuth, requireR
       const [prLink] = po.prId ? await db.select({ requestedById: purchaseRequests.requestedById })
         .from(purchaseRequests).where(eq(purchaseRequests.id, po.prId)).limit(1) : [null];
       if (prLink) {
-        notifySubmitter(prLink.requestedById, {
+        await notifySubmitter(prLink.requestedById, {
           type: "PROCUREMENT_PO_APPROVED",
           title: "Purchase Order Approved",
           message: `Purchase order ${po.poNumber} has been approved.`,
           relatedEntityId: po.id,
           relatedEntityType: "PURCHASE_ORDER",
-        }).catch(() => {});
+        }).catch((err: unknown) => logError("Procurement PO bulk approve notification failed", { error: String(err) }));
       }
 
       if (po.projectId) {

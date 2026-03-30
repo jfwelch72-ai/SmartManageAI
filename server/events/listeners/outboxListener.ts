@@ -14,6 +14,10 @@ function getEntityId(event: DomainEvent): string {
     case "bid.submitted":
     case "bid.converted_to_project":
       return event.payload.bidId;
+    case "bid.status_changed":
+    case "bid.assigned":
+    case "bid.due_date_approaching":
+      return event.payload.bidId;
     case "change_order.approved":
     case "change_order.rejected":
       return event.payload.changeOrderId;
@@ -28,6 +32,41 @@ function getEntityId(event: DomainEvent): string {
     case "hiring.candidate_stage_changed":
     case "hiring.candidate_hired":
       return event.payload.candidateId;
+    case "hiring.interview_scheduled":
+      return event.payload.interviewId;
+    case "hiring.integration_connected":
+      return event.payload.integrationId;
+    case "budget.alert_triggered":
+      return event.payload.projectId;
+    case "crm.opportunity_created":
+    case "crm.opportunity_stage_changed":
+      return event.payload.opportunityId;
+    case "crm.activity_created":
+      return event.payload.opportunityId;
+    case "document.revision_created":
+      return event.payload.documentId;
+    case "safety.incident_created":
+      return event.payload.incidentId;
+    case "cost_ledger.posted":
+      return event.payload.projectId;
+    case "inspection.completed":
+      return event.payload.inspectionId;
+    case "po.receipt_recorded":
+      return event.payload.receiptId;
+    case "tm_ticket.approved":
+      return event.payload.ticketId;
+    case "subcontractor.payment_made":
+      return event.payload.paymentId;
+    case "equipment.actual_logged":
+      return event.payload.planId;
+    case "receipt.created":
+      return event.payload.receiptId;
+    case "risk.status_changed":
+      return event.payload.riskId;
+    default: {
+      const _exhaustive: never = event;
+      return ((_exhaustive as DomainEvent).payload as Record<string, string>)?.id ?? "unknown";
+    }
   }
 }
 
