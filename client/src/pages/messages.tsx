@@ -7,7 +7,11 @@ import { useMessagingEvents, type CallEventHandler } from "@/hooks/use-messaging
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
-import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loader2, FileQuestion, ArrowRightLeft, CheckSquare, Video, Users } from "lucide-react";
+import { getInitials } from "@/components/messaging/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -778,6 +782,50 @@ export function TeamMessagesContent() {
                       {getConvSubtitle(selectedConversation)}
                     </p>
                   </div>
+                  {selectedConversation.participants && selectedConversation.participants.length > 0 && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label="View conversation members"
+                          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent rounded-full px-2 py-1 transition-colors shrink-0"
+                          data-testid="button-member-count"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>{selectedConversation.participants.length} {selectedConversation.participants.length === 1 ? "member" : "members"}</span>
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-64 p-0" data-testid="popover-member-list">
+                        <div className="px-3 py-2 border-b">
+                          <h4 className="text-sm font-medium">Members ({selectedConversation.participants.length})</h4>
+                        </div>
+                        <ScrollArea className={cn("max-h-[280px]", selectedConversation.participants.length > 5 && "h-[280px]")}>
+                          <div className="p-1">
+                            {selectedConversation.participants.map((p) => (
+                              <div
+                                key={p.id}
+                                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm"
+                                data-testid={`member-item-${p.userId}`}
+                              >
+                                <Avatar className="h-6 w-6 shrink-0">
+                                  <AvatarFallback className="text-[10px]">
+                                    {getInitials(p.user.firstName, p.user.lastName)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium truncate leading-tight">{p.user.firstName} {p.user.lastName}</p>
+                                  <p className="text-[11px] text-muted-foreground truncate leading-tight">{p.user.role}</p>
+                                </div>
+                                {p.isAdmin && (
+                                  <span className="text-[10px] text-primary font-medium shrink-0">Admin</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </PopoverContent>
+                    </Popover>
+                  )}
                   {selectedConversation.topic && (
                     <div className="ml-auto hidden sm:flex items-center gap-1 text-xs text-muted-foreground max-w-[40%] truncate">
                       <span className="font-medium">Topic:</span>
