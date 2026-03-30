@@ -20,18 +20,15 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **AI Integration**: AI for generation, analysis, scheduling, and automation across modules, governed by an AI Governance System.
 *   **Project Lifecycle Management**: Comprehensive workflows including Bids, Projects, Estimates, Procurement, Change Orders, Time & Material Tracking, and Unified SOW Tracking.
 *   **Estimating Engine**: Interactive drawing tools, multi-page PDF rendering, material calculation, hierarchical line item builder, 6-step bid workflow, full takeoff workspace, 3-Layer Modifier Selector, vendor pricebook integration, Bid Leveling, Historical Cost Database, and Assembly Integration.
-*   **Custom Cost Code Management**: Organization-level cost code management with CSI division grouping.
 *   **CRM System**: Manages organizational entities, vendor pricing, rental equipment, insurance/compliance tracking, and a 7-stage Sales Pipeline.
-*   **Workforce Management**: Native time-clock (GPS/geofence with OFF/WARN/BLOCK enforcement), shift management with cost code tracking, labor hour tracking, Manager Approval Workflow, Overtime Request, configurable overtime rules engine (daily/weekly/double-time thresholds per org or project), KPI dashboards, crew scheduling, employee deductions, pay stub generation, Certified Payroll Reports (WH-347), and cost ledger postings on pay run finalization.
+*   **Workforce Management**: Native time-clock (GPS/geofence with OFF/WARN/BLOCK enforcement), shift management with cost code tracking, labor hour tracking, Manager Approval Workflow, Overtime Request, configurable overtime rules engine, KPI dashboards, crew scheduling, employee deductions, pay stub generation, Certified Payroll Reports, and cost ledger postings.
 *   **Compliance & Audit**: Audit logging, document management (versioning, expiration), Approval Workflows Framework, and Addenda Tracking.
-*   **Safety Training Management**: Full in-house safety training lifecycle.
-*   **Budget vs Actual Cost Engine**: Per-project cost code budget with real-time cost ledger, variance alerts, construction-grade forecasting (ETC, FFC, Projected Variance), and configurable alert thresholds.
+*   **Budget vs Actual Cost Engine**: Per-project cost code budget with real-time cost ledger, variance alerts, construction-grade forecasting, and configurable alert thresholds.
 *   **CFO Cost Forecasting Dashboard**: Portfolio-level FFC vs Budget summary and consolidated budget alerts.
 *   **Live Project Profitability Tracking**: Automated real-time cost monitoring via background cron job with in-app notifications.
 *   **Subcontract Management**: Full subcontract lifecycle with SOV scope alignment, AIA G702/G703-style pay applications, retention tracking, performance scorecards, and document attachments.
-*   **Procurement Module**: Full procure-to-pay lifecycle (Purchase Requests, POs, Delivery Receipts, Vendor Invoices) with automated 3-Way Match and RBAC approvals.
-*   **Production Rate Tracking**: Analytics for crew productivity, labor, material costs, and profitability per UOM.
-*   **Communication & Collaboration**: Unified Messaging System (Slack-style channels, file attachments, voice messages, task @mentions), Client Portal Chat, and Subcontractor Portal System. Vendor Portal includes messaging (conversations with enrolled contractors) and documents (read-only view of contractor project documents).
+*   **Procurement Module**: Full procure-to-pay lifecycle with automated 3-Way Match and RBAC approvals.
+*   **Communication & Collaboration**: Unified Messaging System, Client Portal Chat, and Subcontractor Portal System.
 *   **Live Takeoff Collaboration**: Real-time multi-user collaboration on takeoff workspaces via WebSockets.
 *   **Website Builder System**: White-label website management with AI Website Wizard, page builder, publishing controls, and SEO support.
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, feature flags, and a 4-tier subscription model.
@@ -41,56 +38,34 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Internal Domain Event Bus**: Typed, in-process EventBus for decoupling business actions.
 *   **Notification Delivery Framework**: Multi-channel notification service (email, web push, SMS, Teams, Slack) with per-user preferences.
 *   **Background Jobs Framework**: node-cron based job runner with an outbox dispatcher.
-*   **Libraries System**: Reusable library management for custom items, assemblies, and saved takeoffs.
 *   **Mobile & Offline Sync Backend**: API endpoints for status, sync trigger, device management, conflict resolution, and PWA support.
 *   **Dashboard Customization**: WYSIWYG editor with configurable widgets and tiered default layouts.
-*   **Platform Monitoring & Observability**: Super Admin monitoring dashboard with API usage tracking (per-org audited actions + live in-memory request/error counters), AI usage analytics (calls, tokens, costs per org), object storage usage per org, platform integration health checks, and cross-organization audit log viewer with filters for action, entity type, org, and date range. Located at `/admin/monitoring`.
+*   **Platform Monitoring & Observability**: Super Admin monitoring dashboard with API usage tracking, AI usage analytics, object storage usage, platform integration health checks, and cross-organization audit log viewer.
 *   **Feature Permissions System**: Granular per-user feature access control.
-*   **WCAG Compliance**: Theme picker colors meet WCAG AA contrast ratio.
-*   **Contractor Onboarding Library**: Hard-coded reference data for trades, scopes, materials, formulas, and grammar.
 *   **Social Media Management System**: Content management with scheduling, AI generation, multi-platform support, and approval workflow.
 *   **BIM Quantity Extraction**: Client-side IFC file parsing using web-ifc for building element quantity extraction.
-*   **Reports System**: Various report types across Takeoff and Estimate categories with export options.
-*   **Contract Management Lifecycle**: Full contract lifecycle (Award → Draft → Review → Redlines → Approval → Execution → Versioning) with E-Signature Integration and AI-Powered Risk Analysis.
+*   **Contract Management Lifecycle**: Full contract lifecycle with E-Signature Integration and AI-Powered Risk Analysis.
 *   **Clause Library & Template Builder**: Organization-scoped reusable contract clause management and template assembly.
 *   **CPM Schedule Management Engine**: Full Critical Path Method (CPM) scheduling with forward/backward pass, float calculation, critical path identification, baseline locking, and resource loading.
-*   **Change Order Workflow Enhancement**: Revision history and multi-level approval chain. AI auto-suggest change orders from detected delays/inspections (creates `ai_co_drafts` records with "AI Suggested" badge).
+*   **Change Order Workflow Enhancement**: Revision history and multi-level approval chain. AI auto-suggest change orders from detected delays/inspections.
 *   **Cost Overrun Prediction Engine**: Burn-rate trend analysis, confidence-scored predictions, weeks-until-overrun, and early warnings on CFO dashboard.
 *   **Subcontractor Recommendation Engine**: Ranks subcontractors by composite score from performance history, vendor ratings, and contract track record with trade-specialty filtering.
-*   **Approval Workflow Notifications**: In-app notifications across 6 approval workflows.
-*   **Submittal Items & Attachments**: Management of submittal items and attachments with status tracking.
-*   **Vendor & Sub RFQ Flow**: Sending and tracking RFQ emails directly from bid steps.
 *   **Hiring Module (ATS)**: Applicant Tracking System with job posting, candidate pipeline, interview scheduling, AI candidate scoring, and customizable stages.
 *   **Talent Pool & Connected Hiring-Marketplace**: Self-service talent profiles with AI-powered skill match.
 *   **Task Detail Modal**: Comprehensive task detail view with subtasks, comments, activity log, and inline actions.
 *   **Punch List Module**: Tracking deficiency items during project closeout.
 *   **Warranty / Post-Construction Module**: Tracking defects, warranty claims, callbacks, and recalls with task and cost management.
 *   **Asset & Property Management**: Post-completion lifecycle with Asset Handover, Warranty Tracking, and Maintenance Logs.
-*   **Risk Management Module**: Full risk register per project with category/probability/impact scoring (1-5 scale), risk matrix heat map visualization, lifecycle tracking (Identified → Assessed → Mitigating → Resolved/Accepted/Occurred), cost/schedule impact linking, auto change order generation on occurrence, and AI-powered risk suggestions via OpenAI.
-*   **Company Overhead & Fixed Costs Manager**: Administration module for tracking fixed overhead costs.
+*   **Risk Management Module**: Full risk register per project with category/probability/impact scoring, risk matrix heat map visualization, lifecycle tracking, cost/schedule impact linking, auto change order generation on occurrence, and AI-powered risk suggestions.
 *   **BIM Viewer**: IFC file upload and 3D viewer with orbit/pan/zoom, element tree, properties, measurement tools, and split-view.
 *   **Contractor Marketplace Directory**: Searchable public directory of organizations.
-*   **Custom Line Styles & Measurement Grouping**: Custom line styles and grouped measurements with color coding and aggregated totals.
 *   **Leave Management Module**: Employee self-service and manager/HR views for leave management.
-*   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers. Supports Change Orders, Pay Apps, Time Approvals, POs, and more. Admins define stages with approval gates and notification rules in Company Settings > Operations > Workflow Builder. A WorkflowEngine service auto-starts workflow instances when entities transition, with non-blocking integration into change order routes, sovRoutes, and timeEntryRoutes.
-
-**Route File Organization** (large route files split into focused modules):
-*   **AI Core Routes** (was `aiCoreRoutes.ts`): Split into `aiOrchestrationRoutes.ts` (settings, PM runs/tasks, assistant chat, AI analyze), `aiCfoAnalyticsRoutes.ts` (CFO analytics, governance, vendor pricing, CO generation), `aiTakeoffFeatureRoutes.ts` (AI auto-takeoff), `aiSchedulingRoutes.ts` (schedule generation, jobsite analysis), `aiOnboardingRoutes.ts` (onboarding, walkthrough).
-*   **Takeoff Routes** (was `takeoffRoutes.ts`): Split into `takeoffSheetRoutes.ts` (bid/project sheets, BIM), `takeoffIssueRoutes.ts` (issues, comments), `takeoffMeasurementRoutes.ts` (measurements, groups, calibration), `takeoffCategoryRoutes.ts` (categories, markups, links, conditions, subcontractor). Shared helpers in `takeoffHelpers.ts`.
-*   **Project Routes** (was `projectRoutes.ts`): Split into `projectCrudRoutes.ts` (core CRUD, labor rates, financials), `projectContentRoutes.ts` (notes, media, cost codes), `projectFinancialRoutes.ts` (time entries, TM sheets, estimates, procurement).
-*   **Change Order Routes** (was `changeOrderRoutes.ts`): Split into `changeOrderCrudRoutes.ts` (state transitions, revisions), `changeOrderApprovalRoutes.ts` (approval chain, linking, files), `changeOrderExportRoutes.ts` (PDF, bulk operations, comments). Shared helpers in `changeOrderHelpers.ts`.
-*   **Super Admin Operations & Compliance Tools**: Platform-wide announcements (CRUD with targeting/expiry, dismissible banners on dashboard), read-only org data browser (projects, bids, contracts, equipment, financials tabs on org detail page), global workflow templates library (managed in Support Tools), org data export (JSON download), org data deletion (transactional with name confirmation), and "View as Organization" read-only dashboard mode (org stats, projects, bids, users). Routes in `server/platformRoutes.ts`, schema in `shared/schema/features.ts` (platformAnnouncements, globalWorkflowTemplates, announcementDismissals tables). Frontend pages: `PlatformAnnouncements.tsx`, `AnnouncementBanner.tsx` component, enhanced `PlatformOrganizationDetail.tsx`, `PlatformSupportTools.tsx`, and `view-as-organization.tsx`.
+*   **No-Code Workflow Builder**: Visual pipeline editor for custom approval chains, status pipelines, and notification triggers.
 *   **AIA Progress Billing Engine**: Full AIA G702/G703 progress billing system based on SOV module.
-*   **Revenue Recognition & WIP Reporting**: Cost-to-cost method revenue recognition engine with per-project WIP analysis, standalone WIP Schedule Report page, monthly snapshots, historical comparison, and CSV export. Accessible from CFO dashboard and project financials tab.
-*   **T&M Workflow Enhancements**: Client digital sign-off (name + signature pad capture) on T&M tickets, automatic billing lock (read-only mode when INVOICED/BILLED), and configurable auto-invoice creation (per-project `autoInvoice` setting that auto-creates/appends DRAFT invoices when tickets are approved for billing with notifications to billing-role users).
+*   **Revenue Recognition & WIP Reporting**: Cost-to-cost method revenue recognition engine with per-project WIP analysis, standalone WIP Schedule Report page, monthly snapshots, historical comparison, and CSV export.
 
 **API Documentation**:
-*   **Swagger UI** served at `/api-docs` (public, no authentication required). The OpenAPI 3.0 spec is also available at `/api-docs.json`.
-*   Uses `swagger-jsdoc` to auto-generate the OpenAPI 3.0 spec from `@openapi` JSDoc annotations in route files.
-*   Component schemas are generated from Drizzle-Zod insert schemas via `server/swaggerSchemas.ts` (`zodSchemaToOpenApi()` function), plus hand-crafted response schemas for runtime models.
-*   108 documented paths across 18 domain tags: Admin, Authentication, Bids & Estimates, CRM, Change Orders, Documents, Equipment, Financials, Messaging, Notifications, Operations, Payroll, Procurement, Projects, Reports, Safety, Time & Attendance, Workforce.
-*   Auth uses httpOnly JWT cookie (`auth_token`); public endpoints override with `security: []`.
-*   Configuration in `server/swagger.ts`, mounted in `server/routes.ts` before auth middleware.
+*   **Swagger UI** served at `/api-docs` with OpenAPI 3.0 spec.
 
 ## External Dependencies
 *   **PostgreSQL (Neon)**
