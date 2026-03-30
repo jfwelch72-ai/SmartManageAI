@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { calculateDistance, GEOFENCE_RADIUS } from "@shared/utils/geofence";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Tag,
+  Loader2,
+  RefreshCw,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import TimeLogTab from "./time-log-tab";
@@ -59,10 +61,12 @@ export default function TimeClockPage() {
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [gpsError, setGpsError] = useState<string>("");
+  const [gpsAcquiring, setGpsAcquiring] = useState<boolean>(true);
   const [coordinates, setCoordinates] = useState<{
     latitude: number;
     longitude: number;
   } | null>(null);
+  const watchIdRef = useRef<number | null>(null);
 
   const [otDialogOpen, setOtDialogOpen] = useState(false);
   const [otShift, setOtShift] = useState<any>(null);
@@ -102,24 +106,63 @@ export default function TimeClockPage() {
   const isClockedIn = !!currentShift?.shift;
   const shouldShowClockControls = user?.role !== "ADMIN";
 
-  useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCoordinates({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-          setGpsError("");
-        },
-        (error) => {
-          setGpsError(`GPS unavailable: ${error.message}`);
-        },
-      );
-    } else {
-      setGpsError("GPS not supported by browser");
+  const selectedProjectEnforcement = useMemo(() => {
+    if (!selectedProjectId) return "OFF";
+    const proj = projects.find((p) => p.id === selectedProjectId);
+    return proj?.geofenceEnforcement || "OFF";
+  }, [selectedProjectId, projects]);
+
+  const gpsRequiredForClockIn = selectedProjectEnforcement === "WARN" || selectedProjectEnforcement === "BLOCK";
+  const clockInDisabledByGps = selectedProjectEnforcement === "BLOCK"
+    ? !coordinates
+    : gpsRequiredForClockIn && gpsAcquiring && !coordinates;
+
+  const startGpsWatch = useCallback(() => {
+    if (watchIdRef.current !== null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
     }
+
+    if (!("geolocation" in navigator)) {
+      setGpsError("GPS not supported by browser");
+      setGpsAcquiring(false);
+      return;
+    }
+
+    setGpsAcquiring(true);
+    setGpsError("");
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (position) => {
+        setCoordinates({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        setGpsError("");
+        setGpsAcquiring(false);
+      },
+      (error) => {
+        setGpsError(`GPS unavailable: ${error.message}`);
+        setCoordinates(null);
+        setGpsAcquiring(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000,
+      },
+    );
   }, []);
+
+  useEffect(() => {
+    startGpsWatch();
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, [startGpsWatch]);
 
   const handleClockIn = async () => {
     if (!selectedProjectId) {
@@ -449,10 +492,27 @@ export default function TimeClockPage() {
                           );
                         })()}
 
+                        {gpsAcquiring && !coordinates && (
+                          <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400" data-testid="text-gps-acquiring-clockout">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Acquiring GPS for clock-out...</span>
+                          </div>
+                        )}
+
                         {gpsError && (
                           <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
                             <AlertCircle className="w-4 h-4" />
-                            <span>{gpsError}</span>
+                            <span data-testid="text-gps-error-clockout">{gpsError}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={startGpsWatch}
+                              data-testid="button-retry-gps-clockout"
+                            >
+                              <RefreshCw className="w-3 h-3 mr-1" />
+                              Retry
+                            </Button>
                           </div>
                         )}
 
@@ -591,6 +651,13 @@ export default function TimeClockPage() {
                           );
                         })()}
 
+                        {gpsAcquiring && !coordinates && (
+                          <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400" data-testid="text-gps-acquiring">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Acquiring GPS...</span>
+                          </div>
+                        )}
+
                         {coordinates && (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <MapPin className="w-4 h-4" />
@@ -604,7 +671,17 @@ export default function TimeClockPage() {
                         {gpsError && (
                           <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
                             <AlertCircle className="w-4 h-4" />
-                            <span>{gpsError}</span>
+                            <span data-testid="text-gps-error">{gpsError}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs"
+                              onClick={startGpsWatch}
+                              data-testid="button-retry-gps"
+                            >
+                              <RefreshCw className="w-3 h-3 mr-1" />
+                              Retry
+                            </Button>
                           </div>
                         )}
 
@@ -612,12 +689,19 @@ export default function TimeClockPage() {
                           size="lg"
                           className="w-full"
                           onClick={handleClockIn}
-                          disabled={!selectedProjectId || clockIn.isPending}
+                          disabled={!selectedProjectId || clockIn.isPending || clockInDisabledByGps}
                           data-testid="button-clock-in"
                         >
                           <LogIn className="w-5 h-5 mr-2" />
                           {clockIn.isPending ? "Clocking In..." : "Clock In"}
                         </Button>
+                        {clockInDisabledByGps && (
+                          <p className="text-xs text-muted-foreground text-center" data-testid="text-gps-required-message">
+                            {gpsAcquiring
+                              ? "GPS position is required for this project's geo-fence. Please wait for GPS to be acquired."
+                              : "GPS position is required to clock in on this project. Please retry GPS or enable location services."}
+                          </p>
+                        )}
                       </div>
                     )}
                   </CardContent>
