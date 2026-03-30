@@ -117,6 +117,38 @@ export default function TimeClockPage() {
     ? !coordinates
     : gpsRequiredForClockIn && gpsAcquiring && !coordinates;
 
+  const activeProjectEnforcement = useMemo(() => {
+    if (!currentShift?.project) return "OFF";
+    return (currentShift.project as Record<string, unknown>)?.geofenceEnforcement as string || "OFF";
+  }, [currentShift]);
+
+  const clockOutBlockedByGeofence = useMemo(() => {
+    if (activeProjectEnforcement !== "BLOCK") return false;
+    const proj = currentShift?.project as Record<string, unknown> | null;
+    if (!proj) return false;
+    const siteLat = proj.siteLatitude as number | null;
+    const siteLng = proj.siteLongitude as number | null;
+    if (siteLat == null || siteLng == null) return false;
+    if (!coordinates) return true;
+    const distance = calculateDistance(coordinates.latitude, coordinates.longitude, siteLat, siteLng);
+    const radius = (proj.geofenceRadius as number) || GEOFENCE_RADIUS;
+    return distance > radius;
+  }, [activeProjectEnforcement, currentShift, coordinates]);
+
+  const clockOutGeofenceMessage = useMemo(() => {
+    if (activeProjectEnforcement !== "BLOCK") return null;
+    const proj = currentShift?.project as Record<string, unknown> | null;
+    if (!proj) return null;
+    const siteLat = proj.siteLatitude as number | null;
+    const siteLng = proj.siteLongitude as number | null;
+    if (siteLat == null || siteLng == null) return null;
+    if (!coordinates) return "Clock-out is blocked: GPS is required for this project but is unavailable.";
+    const distance = calculateDistance(coordinates.latitude, coordinates.longitude, siteLat, siteLng);
+    const radius = (proj.geofenceRadius as number) || GEOFENCE_RADIUS;
+    if (distance > radius) return `Clock-out is blocked: You are ${Math.round(distance)}m from the project site (allowed: ${radius}m).`;
+    return null;
+  }, [activeProjectEnforcement, currentShift, coordinates]);
+
   const startGpsWatch = useCallback(() => {
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
@@ -211,7 +243,7 @@ export default function TimeClockPage() {
 
   const handleClockOut = async () => {
     try {
-      await clockOut.mutateAsync({
+      const result = await clockOut.mutateAsync({
         latitude: coordinates?.latitude,
         longitude: coordinates?.longitude,
       });
@@ -219,6 +251,22 @@ export default function TimeClockPage() {
         title: "Clocked Out",
         description: "You have successfully clocked out",
       });
+      const clockOutResult = result as Record<string, unknown>;
+      if (
+        clockOutResult?.geofenceWarning ||
+        clockOutResult?.clockOutGeofenceStatus === "OUT_OF_RANGE" ||
+        clockOutResult?.clockOutGeofenceStatus === "NO_GPS"
+      ) {
+        toast({
+          title: "Geofence Warning",
+          description:
+            (clockOutResult?.geofenceWarning as string) ||
+            (clockOutResult?.clockOutGeofenceStatus === "NO_GPS"
+              ? "GPS was unavailable during clock-out. Your clock-out has been recorded but flagged."
+              : "You appear to be outside the project job site area. Your clock-out has been recorded but flagged."),
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
         title: "Clock Out Failed",
@@ -516,12 +564,19 @@ export default function TimeClockPage() {
                           </div>
                         )}
 
+                        {clockOutGeofenceMessage && (
+                          <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400" data-testid="text-clockout-blocked-message">
+                            <ShieldAlert className="w-4 h-4" />
+                            <span>{clockOutGeofenceMessage}</span>
+                          </div>
+                        )}
+
                         <Button
                           size="lg"
                           variant="destructive"
                           className="w-full"
                           onClick={handleClockOut}
-                          disabled={clockOut.isPending}
+                          disabled={clockOut.isPending || clockOutBlockedByGeofence}
                           data-testid="button-clock-out"
                         >
                           <LogOut className="w-5 h-5 mr-2" />

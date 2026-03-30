@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
@@ -56,8 +56,12 @@ import {
   Shield,
   ShieldAlert,
   ShieldOff,
+  MapPin,
+  Loader2,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { format } from "date-fns";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useLocation, useRoute } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -861,6 +865,9 @@ export default function ProjectDetailPage() {
               setActiveTab={handleSetActiveTab}
             />
             <GeofenceEnforcementCard project={project} projectCode={projectCode} />
+            {hasManagementAccess(user?.role) && (
+              <GeofenceComplianceSection projectId={project.id as string} />
+            )}
           </TabsContent>
 
           <TabsContent value="scope">
@@ -1316,6 +1323,170 @@ function GeofenceEnforcementCard({ project, projectCode }: { project: Record<str
             </div>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function GeofenceComplianceSection({ projectId }: { projectId: string }) {
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split("T")[0];
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().split("T")[0]);
+
+  const queryParams = useMemo(() => {
+    const params = new URLSearchParams();
+    if (startDate) params.set("startDate", new Date(startDate).toISOString());
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      params.set("endDate", end.toISOString());
+    }
+    return params.toString();
+  }, [startDate, endDate]);
+
+  const { data, isLoading } = useQuery<{
+    shifts: Array<{
+      id: string;
+      userId: string;
+      userName: string;
+      clockIn: string;
+      clockOut: string | null;
+      geofenceStatus: string | null;
+      clockOutGeofenceStatus: string | null;
+    }>;
+    summary: {
+      totalShifts: number;
+      clockInViolations: number;
+      clockOutViolations: number;
+    };
+  }>({
+    queryKey: [`/api/time-clock/project/${projectId}/geofence-compliance`, queryParams],
+    queryFn: async () => {
+      const res = await fetch(`/api/time-clock/project/${projectId}/geofence-compliance?${queryParams}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch compliance data");
+      return res.json();
+    },
+  });
+
+  const getStatusBadge = (status: string | null, label: string) => {
+    if (!status || status === "NOT_CONFIGURED") {
+      return <Badge variant="secondary" data-testid={`badge-${label}-not-configured`}>N/A</Badge>;
+    }
+    if (status === "WITHIN_RANGE") {
+      return <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" data-testid={`badge-${label}-within`}>Within Range</Badge>;
+    }
+    if (status === "OUT_OF_RANGE") {
+      return <Badge variant="destructive" data-testid={`badge-${label}-out`}>Out of Range</Badge>;
+    }
+    if (status === "NO_GPS") {
+      return <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" data-testid={`badge-${label}-no-gps`}>No GPS</Badge>;
+    }
+    return <Badge variant="secondary">{status}</Badge>;
+  };
+
+  return (
+    <Card data-testid="card-geofence-compliance">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <MapPin className="w-5 h-5 text-primary" />
+          <CardTitle className="text-base">Geo-fence Compliance</CardTitle>
+        </div>
+        <CardDescription>Recent shift geo-fence statuses for this project</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap items-end gap-4 mb-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Start Date</Label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-40 h-8 text-sm"
+              data-testid="input-compliance-start-date"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">End Date</Label>
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="w-40 h-8 text-sm"
+              data-testid="input-compliance-end-date"
+            />
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin mr-2" />
+            Loading compliance data...
+          </div>
+        ) : data && data.shifts.length > 0 ? (
+          <>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-2xl font-bold" data-testid="text-total-shifts">{data.summary.totalShifts}</p>
+                <p className="text-xs text-muted-foreground">Total Shifts</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-clockin-violations">{data.summary.clockInViolations}</p>
+                <p className="text-xs text-muted-foreground">Clock-In Violations</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50 text-center">
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400" data-testid="text-clockout-violations">{data.summary.clockOutViolations}</p>
+                <p className="text-xs text-muted-foreground">Clock-Out Violations</p>
+              </div>
+            </div>
+
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-2 font-medium">Employee</th>
+                    <th className="text-left p-2 font-medium">Clock In</th>
+                    <th className="text-left p-2 font-medium">Clock In Status</th>
+                    <th className="text-left p-2 font-medium">Clock Out</th>
+                    <th className="text-left p-2 font-medium">Clock Out Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.shifts.map((shift) => {
+                    const hasViolation =
+                      shift.geofenceStatus === "OUT_OF_RANGE" ||
+                      shift.geofenceStatus === "NO_GPS" ||
+                      shift.clockOutGeofenceStatus === "OUT_OF_RANGE" ||
+                      shift.clockOutGeofenceStatus === "NO_GPS";
+                    return (
+                      <tr
+                        key={shift.id}
+                        className={`border-b last:border-b-0 ${hasViolation ? "bg-red-50 dark:bg-red-950/20" : ""}`}
+                        data-testid={`row-compliance-shift-${shift.id}`}
+                      >
+                        <td className="p-2" data-testid={`text-employee-${shift.id}`}>{shift.userName}</td>
+                        <td className="p-2 text-muted-foreground">
+                          {format(new Date(shift.clockIn), "MMM d, h:mm a")}
+                        </td>
+                        <td className="p-2">{getStatusBadge(shift.geofenceStatus, `clockin-${shift.id}`)}</td>
+                        <td className="p-2 text-muted-foreground">
+                          {shift.clockOut ? format(new Date(shift.clockOut), "MMM d, h:mm a") : "Active"}
+                        </td>
+                        <td className="p-2">{getStatusBadge(shift.clockOutGeofenceStatus, `clockout-${shift.id}`)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground" data-testid="text-no-compliance-data">
+            No shifts found for this date range.
+          </div>
+        )}
       </CardContent>
     </Card>
   );

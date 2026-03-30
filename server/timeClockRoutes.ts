@@ -529,21 +529,57 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
     const totalHours = (now.getTime() - clockInTime.getTime()) / (1000 * 60 * 60);
 
     let clockOutGeofenceStatus: string | null = null;
+    let geofenceWarning: string | null = null;
+    let enforcementMode: string = "OFF";
 
     if (activeShift.projectId) {
       const [project] = await db.select().from(projects).where(
         eq(projects.id, activeShift.projectId)
       ).limit(1);
 
-      if (project?.siteLatitude != null && project?.siteLongitude != null) {
-        if (data.latitude != null && data.longitude != null) {
-          const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
-          const radius = project.geofenceRadius || GEOFENCE_RADIUS;
-          clockOutGeofenceStatus = distance <= radius ? "WITHIN_RANGE" : "OUT_OF_RANGE";
-        } else {
-          clockOutGeofenceStatus = "NO_GPS";
+      if (project) {
+        enforcementMode = project.geofenceEnforcement || "OFF";
+
+        if (project.siteLatitude != null && project.siteLongitude != null) {
+          if (data.latitude != null && data.longitude != null) {
+            const distance = calculateDistance(data.latitude, data.longitude, project.siteLatitude, project.siteLongitude);
+            const radius = project.geofenceRadius || GEOFENCE_RADIUS;
+            if (distance <= radius) {
+              clockOutGeofenceStatus = "WITHIN_RANGE";
+            } else {
+              clockOutGeofenceStatus = "OUT_OF_RANGE";
+              geofenceWarning = `You are approximately ${Math.round(distance)}m from the project site (allowed: ${radius}m).`;
+            }
+          } else {
+            clockOutGeofenceStatus = "NO_GPS";
+          }
         }
       }
+    }
+
+    if (enforcementMode === "BLOCK" && (clockOutGeofenceStatus === "OUT_OF_RANGE" || clockOutGeofenceStatus === "NO_GPS")) {
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "TIME_CLOCK_SHIFT",
+        entityId: activeShift.id,
+        action: "CLOCK_OUT_BLOCKED",
+        oldValue: null,
+        newValue: JSON.stringify({
+          projectId: activeShift.projectId,
+          geofenceStatus: clockOutGeofenceStatus,
+          reason: clockOutGeofenceStatus === "NO_GPS" ? "GPS unavailable" : geofenceWarning,
+          location: data.latitude && data.longitude ? [data.latitude, data.longitude] : null,
+        }),
+      }, req);
+
+      res.status(403).json({
+        error: clockOutGeofenceStatus === "NO_GPS"
+          ? "Clock-out blocked: GPS is required for this project but is unavailable."
+          : `Clock-out blocked: ${geofenceWarning}`,
+        geofenceStatus: clockOutGeofenceStatus,
+        blocked: true,
+      });
+      return;
     }
 
     const [updatedShift] = await db
@@ -593,7 +629,7 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       },
     });
 
-    res.json(updatedShift);
+    res.json({ ...updatedShift, geofenceWarning });
   } catch (error) {
     logError("Clock-out error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
@@ -1400,6 +1436,77 @@ router.get("/api/projects/:projectId/labor-hours", requireAuth, requireRole("ADM
     });
   } catch (error) {
     logError("Get project labor hours error:", {}, error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER", "HR_MANAGER", "DISPATCHER"), async (req: AuthRequest, res) => {
+  try {
+    const { projectId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const [project] = await db.select().from(projects).where(
+      and(eq(projects.id, projectId), eq(projects.gcOrganizationId, req.user!.organizationId))
+    ).limit(1);
+
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const conditions = [eq(timeClockShifts.projectId, projectId)];
+
+    if (startDate) {
+      conditions.push(gte(timeClockShifts.clockIn, new Date(startDate as string)));
+    }
+    if (endDate) {
+      conditions.push(lte(timeClockShifts.clockIn, new Date(endDate as string)));
+    }
+
+    const allShiftsData = await db
+      .select({
+        id: timeClockShifts.id,
+        geofenceStatus: timeClockShifts.geofenceStatus,
+        clockOutGeofenceStatus: timeClockShifts.clockOutGeofenceStatus,
+      })
+      .from(timeClockShifts)
+      .where(and(...conditions));
+
+    const totalShifts = allShiftsData.length;
+    const clockInViolations = allShiftsData.filter(s => s.geofenceStatus === "OUT_OF_RANGE" || s.geofenceStatus === "NO_GPS").length;
+    const clockOutViolations = allShiftsData.filter(s => s.clockOutGeofenceStatus === "OUT_OF_RANGE" || s.clockOutGeofenceStatus === "NO_GPS").length;
+
+    const shiftsData = await db
+      .select({
+        shift: timeClockShifts,
+        user: {
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+        },
+      })
+      .from(timeClockShifts)
+      .leftJoin(users, eq(timeClockShifts.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(timeClockShifts.clockIn))
+      .limit(100);
+
+    const shifts = shiftsData.map(({ shift, user }) => ({
+      id: shift.id,
+      userId: shift.userId,
+      userName: user ? `${user.firstName} ${user.lastName}` : "Unknown",
+      clockIn: shift.clockIn,
+      clockOut: shift.clockOut,
+      geofenceStatus: shift.geofenceStatus,
+      clockOutGeofenceStatus: shift.clockOutGeofenceStatus,
+    }));
+
+    res.json({
+      shifts,
+      summary: { totalShifts, clockInViolations, clockOutViolations },
+    });
+  } catch (error) {
+    logError("Get geofence compliance error:", {}, error instanceof Error ? error : new Error(String(error)));
     res.status(500).json({ error: "Internal server error" });
   }
 });
