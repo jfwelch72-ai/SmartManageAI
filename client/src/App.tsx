@@ -497,9 +497,9 @@ function AuthGatedWidget() {
           right: containerRight,
           zIndex: 9998,
           display: 'flex',
-          flexDirection: 'row',
+          flexDirection: 'column-reverse',
           gap: '12px',
-          alignItems: 'center',
+          alignItems: 'flex-end',
           transition: 'right 0.3s ease',
         }}
         data-testid="widget-group-container"
