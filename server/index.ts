@@ -14,6 +14,7 @@ import { initializeEventBus } from "./events";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
 import { backfillMissingFeatureFlags } from "./services/featureFlagService";
+import { ensureVideoCallTables } from "./utils/ensureVideoCallTables";
 
 const app = express();
 
@@ -161,6 +162,7 @@ app.use((req, res, next) => {
   // gets the full all-enabled set. No-op once data is populated. Runs in all
   // environments so both dev and prod orgs are covered on first restart after
   // this fix was deployed.
+  await ensureVideoCallTables();
   await backfillMissingFeatureFlags();
 
   let portRetryCount = 0;
