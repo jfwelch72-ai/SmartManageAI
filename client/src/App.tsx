@@ -26,6 +26,9 @@ import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import { GlobalIncomingCallModal } from "@/components/GlobalIncomingCallModal";
 import { useGlobalCallEvents } from "@/hooks/use-global-call-events";
 import { TourProvider } from "@/components/TourProvider";
+import { GlobalVideoCallProvider, useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
+import { GlobalSSEProvider } from "@/contexts/GlobalSSEContext";
+import { VideoCallOverlay } from "@/components/messaging/VideoCallOverlay";
 import { VendorRoutePermissions } from "@/lib/rbac";
 
 function LoadingSpinner() {
@@ -514,6 +517,25 @@ function AuthGatedWidget() {
   );
 }
 
+function GlobalVideoCallOverlay() {
+  const { user } = useAuth();
+  const { activeCall, activeCallConversation, endGlobalCall, leaveGlobalCall, registerSignalHandler, unregisterSignalHandler } = useGlobalVideoCall();
+
+  if (!activeCall || !activeCallConversation || !user) return null;
+
+  return (
+    <VideoCallOverlay
+      call={activeCall}
+      conversation={activeCallConversation}
+      currentUserId={user.id}
+      onEndCall={endGlobalCall}
+      onLeaveCall={leaveGlobalCall}
+      registerSignalHandler={registerSignalHandler}
+      unregisterSignalHandler={unregisterSignalHandler}
+    />
+  );
+}
+
 function GlobalCallModalWrapper() {
   const { incomingCall, conversationName, acceptCall, declineCall } = useGlobalCallEvents();
   if (!incomingCall) return null;
@@ -531,17 +553,22 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TourProvider>
-          <DashboardCustomizationProvider>
-            <TooltipProvider>
-              <Toaster />
-              <AppContent />
-              <FirstTimeWelcomeModal />
-              <AuthGatedWidget />
-              <GlobalCallModalWrapper />
-            </TooltipProvider>
-          </DashboardCustomizationProvider>
-        </TourProvider>
+        <GlobalSSEProvider>
+          <GlobalVideoCallProvider>
+            <TourProvider>
+              <DashboardCustomizationProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <AppContent />
+                  <FirstTimeWelcomeModal />
+                  <AuthGatedWidget />
+                  <GlobalCallModalWrapper />
+                  <GlobalVideoCallOverlay />
+                </TooltipProvider>
+              </DashboardCustomizationProvider>
+            </TourProvider>
+          </GlobalVideoCallProvider>
+        </GlobalSSEProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

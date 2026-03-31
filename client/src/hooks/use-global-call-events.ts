@@ -1,6 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { useGlobalSSE } from "@/contexts/GlobalSSEContext";
+import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 import type { VideoCallData, Conversation } from "@/components/messaging/types";
 
 interface GlobalCallState {
@@ -14,17 +16,19 @@ export function useGlobalCallEvents(): GlobalCallState {
   const { user } = useAuth();
   const [incomingCall, setIncomingCall] = useState<VideoCallData | null>(null);
   const [conversationName, setConversationName] = useState("");
+  const { startGlobalCall, updateActiveCall, dispatchSignal } = useGlobalVideoCall();
+  const { addListener, removeListener } = useGlobalSSE();
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => {
     if (!user) return;
-
-    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
 
     const handleCallStarted = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
         const call = data.call as VideoCallData;
-        if (call.initiatorId === user.id) return;
+        if (call.initiatorId === userRef.current?.id) return;
         const overlay = document.querySelector('[data-testid="video-call-overlay"]');
         if (overlay) return;
         setIncomingCall(call);
@@ -39,7 +43,7 @@ export function useGlobalCallEvents(): GlobalCallState {
               } else if (conv.name) {
                 setConversationName(conv.name);
               } else if (conv.type === "DIRECT") {
-                const other = conv.participants.find(p => p.userId !== user.id);
+                const other = conv.participants.find(p => p.userId !== userRef.current?.id);
                 if (other) setConversationName(`${other.user.firstName} ${other.user.lastName}`);
                 else setConversationName("Direct Message");
               } else {
@@ -60,60 +64,107 @@ export function useGlobalCallEvents(): GlobalCallState {
           if (prev?.id === data.callId) return null;
           return prev;
         });
+        updateActiveCall(prev => {
+          if (prev?.id === data.callId) return null;
+          return prev;
+        });
       } catch {}
     };
 
-    es.addEventListener("call_started", handleCallStarted);
-    es.addEventListener("call_ended", handleCallEnded);
+    const handleCallJoined = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        updateActiveCall(prev => {
+          if (!prev || prev.id !== data.callId) return prev;
+          const alreadyIn = prev.participants.some((p: { userId: string }) => p.userId === data.userId);
+          if (alreadyIn) return prev;
+          const newParticipant = {
+            id: "",
+            callId: data.callId,
+            userId: data.userId,
+            joinedAt: new Date().toISOString(),
+            leftAt: null,
+            user: { id: data.userId, firstName: data.userName?.split(" ")[0] || "", lastName: data.userName?.split(" ").slice(1).join(" ") || "", role: "" },
+          };
+          return { ...prev, status: "ACTIVE" as const, participants: [...prev.participants, newParticipant] };
+        });
+      } catch {}
+    };
+
+    const handleCallLeft = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        updateActiveCall(prev => {
+          if (!prev || prev.id !== data.callId) return prev;
+          return { ...prev, participants: prev.participants.filter((p: { userId: string }) => p.userId !== data.userId) };
+        });
+      } catch {}
+    };
+
+    const handleWebRTCSignal = (e: MessageEvent) => {
+      try {
+        const data = JSON.parse(e.data);
+        dispatchSignal(data);
+      } catch {}
+    };
+
+    addListener("call_started", handleCallStarted);
+    addListener("call_ended", handleCallEnded);
+    addListener("call_joined", handleCallJoined);
+    addListener("call_left", handleCallLeft);
+    addListener("webrtc_signal", handleWebRTCSignal);
 
     return () => {
-      es.removeEventListener("call_started", handleCallStarted);
-      es.removeEventListener("call_ended", handleCallEnded);
-      es.close();
+      removeListener("call_started", handleCallStarted);
+      removeListener("call_ended", handleCallEnded);
+      removeListener("call_joined", handleCallJoined);
+      removeListener("call_left", handleCallLeft);
+      removeListener("webrtc_signal", handleWebRTCSignal);
     };
-  }, [user]);
+  }, [user, addListener, removeListener, updateActiveCall, dispatchSignal]);
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall) return;
     const callToAccept = incomingCall;
     try {
-      await apiRequest("POST", `/api/calls/${callToAccept.id}/join`);
+      const res = await apiRequest("POST", `/api/calls/${callToAccept.id}/join`);
+      const fullCallData = await res.json();
 
-      ((window as unknown as Record<string, unknown>).__pendingCallAccept) = {
-        conversationId: callToAccept.conversationId,
-        callId: callToAccept.id,
-      };
+      const convsRes = await fetch("/api/conversations", { credentials: "include" });
+      const convs: Conversation[] = convsRes.ok ? await convsRes.json() : [];
+      const conv = convs.find(c => c.id === callToAccept.conversationId);
 
-      window.dispatchEvent(
-        new CustomEvent("open-messaging-widget", {
-          detail: {
-            tab: "team",
-            conversationId: callToAccept.conversationId,
-            callId: callToAccept.id,
-          },
-        })
-      );
-
-      const dispatchSelect = (attempt: number) => {
-        if (attempt > 10) return;
-        window.dispatchEvent(
-          new CustomEvent("select-conversation", {
-            detail: { conversationId: callToAccept.conversationId, callId: callToAccept.id },
-          })
-        );
-        setTimeout(() => {
-          const overlay = document.querySelector('[data-testid="video-call-overlay"]');
-          if (!overlay) dispatchSelect(attempt + 1);
-        }, 200);
-      };
-
-      setTimeout(() => dispatchSelect(0), 100);
+      if (conv) {
+        startGlobalCall(fullCallData, conv);
+      } else {
+        const fallbackConversation: Conversation = {
+          id: callToAccept.conversationId,
+          type: "DIRECT",
+          name: conversationName || "Video Call",
+          description: null,
+          topic: null,
+          channelSlug: null,
+          projectId: null,
+          crewId: null,
+          rfiId: null,
+          changeOrderId: null,
+          taskId: null,
+          isCompanyChannel: false,
+          isArchived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          participants: [],
+          unreadCount: 0,
+          lastMessage: null,
+        };
+        startGlobalCall(fullCallData, fallbackConversation);
+      }
 
       setIncomingCall(null);
     } catch (err) {
       console.error("Failed to accept call:", err);
     }
-  }, [incomingCall]);
+  }, [incomingCall, conversationName, startGlobalCall]);
 
   const declineCall = useCallback(() => {
     setIncomingCall(null);

@@ -14,10 +14,10 @@ import { ChevronLeft, Building2, FolderOpen, HardHat, Hash, MessageSquare, Loade
 import { getInitials } from "@/components/messaging/types";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useGlobalVideoCall } from "@/contexts/GlobalVideoCallContext";
 
 import { Sidebar } from "@/components/messaging/Sidebar";
 import { MessageList } from "@/components/messaging/MessageList";
-import { VideoCallOverlay } from "@/components/messaging/VideoCallOverlay";
 import { IncomingCallBanner } from "@/components/messaging/IncomingCallBanner";
 import { OngoingCallBanner } from "@/components/messaging/OngoingCallBanner";
 import { CallHistory } from "@/components/messaging/CallHistory";
@@ -39,6 +39,7 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   const [, navigate] = useLocation();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [isMobileView, setIsMobileView] = useState(false);
+  const { startGlobalCall, activeCall: globalActiveCall } = useGlobalVideoCall();
 
   useEffect(() => {
     const params = new URLSearchParams(searchString);
@@ -49,35 +50,10 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   }, [searchString]);
 
   useEffect(() => {
-    const win = window as unknown as Record<string, unknown>;
-    const pending = win.__pendingCallAccept as { conversationId: string; callId: string } | undefined;
-    if (pending) {
-      delete win.__pendingCallAccept;
-      setSelectedConversationId(pending.conversationId);
-      fetch(`/api/conversations/${pending.conversationId}/active-call`, { credentials: "include" })
-        .then(res => res.ok ? res.json() : null)
-        .then((callData: VideoCallData | null) => {
-          if (callData) setActiveCall(callData);
-        })
-        .catch(() => {});
-    }
-  }, []);
-
-  useEffect(() => {
     const handleSelectConversation = (e: Event) => {
       const detail = (e as CustomEvent)?.detail;
       if (detail?.conversationId) {
         setSelectedConversationId(detail.conversationId);
-        if (detail.callId) {
-          fetch(`/api/conversations/${detail.conversationId}/active-call`, { credentials: "include" })
-            .then(res => res.ok ? res.json() : null)
-            .then((callData: VideoCallData | null) => {
-              if (callData) {
-                setActiveCall(callData);
-              }
-            })
-            .catch(() => {});
-        }
       }
     };
     window.addEventListener("select-conversation", handleSelectConversation);
@@ -125,6 +101,12 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
 
   useEffect(() => { activeCallRef.current = activeCall; }, [activeCall]);
   useEffect(() => { incomingCallRef.current = incomingCall; }, [incomingCall]);
+
+  useEffect(() => {
+    if (!globalActiveCall && activeCall) {
+      setActiveCall(null);
+    }
+  }, [globalActiveCall, activeCall]);
 
   const [conversationActiveCalls, setConversationActiveCalls] = useState<Record<string, VideoCallData>>({});
 
@@ -674,12 +656,14 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
   };
 
   const handleStartCall = async () => {
-    if (!selectedConversationId || activeCall || startingCall) return;
+    const conv = conversations.find(c => c.id === selectedConversationId);
+    if (!selectedConversationId || !conv || globalActiveCall || startingCall) return;
     setStartingCall(true);
     try {
       const res = await apiRequest("POST", `/api/conversations/${selectedConversationId}/calls`);
       const callData = await res.json();
       setActiveCall(callData);
+      startGlobalCall(callData, conv);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       const statusMatch = errMsg.match(/^(\d+):/);
@@ -702,6 +686,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       const res = await apiRequest("POST", `/api/calls/${incomingCall.id}/join`);
       const fullCallData = await res.json();
       setActiveCall(fullCallData);
+      const conv = conversations.find(c => c.id === incomingCall.conversationId);
+      if (conv) startGlobalCall(fullCallData, conv);
       setIncomingCall(null);
     } catch (err) {
       console.error("Failed to join call:", err);
@@ -720,6 +706,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
       const res = await apiRequest("POST", `/api/calls/${callData.id}/join`);
       const fullCallData = await res.json();
       setActiveCall(fullCallData);
+      const conv = conversations.find(c => c.id === callData.conversationId);
+      if (conv) startGlobalCall(fullCallData, conv);
     } catch (err) {
       console.error("Failed to join call:", err);
     }
@@ -1054,15 +1042,6 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
           </div>
         </Card>
 
-        {activeCall && selectedConversation && (
-          <VideoCallOverlay
-            call={activeCall}
-            conversation={selectedConversation}
-            currentUserId={user?.id ?? ""}
-            onEndCall={handleEndCall}
-            onLeaveCall={handleLeaveCall}
-          />
-        )}
       </div>
     </TooltipProvider>
   );

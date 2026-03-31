@@ -30,6 +30,8 @@ interface VideoCallOverlayProps {
   currentUserId: string;
   onEndCall: () => void;
   onLeaveCall: () => void;
+  registerSignalHandler?: (handler: (fromUserId: string, signal: unknown) => void) => void;
+  unregisterSignalHandler?: () => void;
 }
 
 export function VideoCallOverlay({
@@ -38,6 +40,8 @@ export function VideoCallOverlay({
   currentUserId,
   onEndCall,
   onLeaveCall,
+  registerSignalHandler,
+  unregisterSignalHandler,
 }: VideoCallOverlayProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
@@ -54,7 +58,6 @@ export function VideoCallOverlay({
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
   const localStreamRef = useRef<MediaStream | null>(null);
-  const sseRef = useRef<EventSource | null>(null);
   const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const makingOfferRef = useRef<Record<string, boolean>>({});
 
@@ -243,27 +246,17 @@ export function VideoCallOverlay({
     }
   }, [currentUserId, createPeerConnection, sendSignal, flushPendingCandidates]);
 
+  const handleSignalRef = useRef(handleSignal);
+  useEffect(() => { handleSignalRef.current = handleSignal; }, [handleSignal]);
+
   useEffect(() => {
-    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
-    sseRef.current = es;
-
-    const handleWebRTCSignal = (e: MessageEvent) => {
-      try {
-        const data = JSON.parse(e.data) as { callId: string; fromUserId: string; signal: SignalMessage };
-        if (data.callId === call.id && data.fromUserId !== currentUserId) {
-          handleSignal(data.fromUserId, data.signal);
-        }
-      } catch {}
+    if (!registerSignalHandler || !unregisterSignalHandler) return;
+    const handler = (fromUserId: string, signal: unknown) => {
+      handleSignalRef.current(fromUserId, signal as SignalMessage);
     };
-
-    es.addEventListener("webrtc_signal", handleWebRTCSignal);
-
-    return () => {
-      es.removeEventListener("webrtc_signal", handleWebRTCSignal);
-      es.close();
-      sseRef.current = null;
-    };
-  }, [call.id, currentUserId, handleSignal]);
+    registerSignalHandler(handler);
+    return () => { unregisterSignalHandler(); };
+  }, [registerSignalHandler, unregisterSignalHandler]);
 
   useEffect(() => {
     if (!localStreamRef.current) return;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { queryClient } from "@/lib/queryClient";
+import { useGlobalSSE } from "@/contexts/GlobalSSEContext";
 import type { VideoCallData } from "@/components/messaging/types";
 
 export interface MessageReaction {
@@ -98,18 +99,8 @@ export type CallEventHandler = {
   onWebRTCSignal?: (data: WebRTCSignalEvent) => void;
 };
 
-/** Called when a message in olderMessages needs updating (SSE events for historical messages). */
 export type OlderMessageUpdater = (messageId: string, updater: (m: Message) => Message) => void;
 
-/**
- * Opens a single SSE connection to /api/messaging/events and provides:
- * - `sseLive` — true when the SSE stream is connected
- * - `typingNames` — map of userId → display name for users currently typing in the active conversation
- *
- * Pass `activeConversationId` to scope typing and message updates to the open conversation.
- * Pass `onUpdateOlderMessage` to propagate SSE-driven edits/deletes/reactions to olderMessages state.
- * New messages for any conversation will also invalidate the conversations sidebar query.
- */
 export function useMessagingEvents(
   activeConversationId: string | null,
   onUpdateOlderMessage?: OlderMessageUpdater,
@@ -118,33 +109,25 @@ export function useMessagingEvents(
   sseLive: boolean;
   typingNames: Record<string, string>;
 } {
-  const [sseLive, setSseLive] = useState(false);
+  const { addListener, removeListener, isConnected } = useGlobalSSE();
   const [typingNames, setTypingNames] = useState<Record<string, string>>({});
   const callHandlerRef = useRef<CallEventHandler | undefined>(callEventHandler);
   useEffect(() => { callHandlerRef.current = callEventHandler; }, [callEventHandler]);
 
-  // Keep stable refs so SSE callbacks always read the latest values
   const activeConvIdRef = useRef<string | null>(activeConversationId);
   const updaterRef = useRef<OlderMessageUpdater | undefined>(onUpdateOlderMessage);
   const typingTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Sync refs on each render
   useEffect(() => { activeConvIdRef.current = activeConversationId; }, [activeConversationId]);
   useEffect(() => { updaterRef.current = onUpdateOlderMessage; }, [onUpdateOlderMessage]);
 
-  // Clear typing state on conversation switch
   useEffect(() => { setTypingNames({}); }, [activeConversationId]);
 
   useEffect(() => {
-    const es = new EventSource("/api/messaging/events", { withCredentials: true } as EventSourceInit);
-
-    const handleConnected = () => setSseLive(true);
-
     const handleMessageNew = (e: MessageEvent) => {
       try {
         const { conversationId: convId, message } = JSON.parse(e.data) as MessageNewEvent;
 
-        // Append to active conversation cache — de-duplicate by id
         if (convId === activeConvIdRef.current) {
           queryClient.setQueryData<Message[]>(
             ["/api/conversations", convId, "messages"],
@@ -155,11 +138,8 @@ export function useMessagingEvents(
           );
         }
 
-        // Refresh sidebar conversation list (unread counts, last message preview)
         queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-      } catch {
-        // malformed event — ignore
-      }
+      } catch {}
     };
 
     const handleMessageEdited = (e: MessageEvent) => {
@@ -170,17 +150,13 @@ export function useMessagingEvents(
         const applyEdit = (m: Message) =>
           m.id === message.id ? { ...m, ...message, reactions: message.reactions ?? m.reactions ?? [] } : m;
 
-        // Update latestMessages (TanStack Query cache)
         queryClient.setQueryData<Message[]>(
           ["/api/conversations", convId, "messages"],
           (prev = []) => prev.map(applyEdit)
         );
 
-        // Update olderMessages if provided
         updaterRef.current?.(message.id, (m) => applyEdit(m));
-      } catch {
-        // malformed event — ignore
-      }
+      } catch {}
     };
 
     const handleMessageDeleted = (e: MessageEvent) => {
@@ -188,7 +164,6 @@ export function useMessagingEvents(
         const { conversationId: convId, messageId } = JSON.parse(e.data) as MessageDeletedEvent;
         if (convId !== activeConvIdRef.current) return;
 
-        // Clear content, set deleted, and clear reactions (deleted messages show no reactions)
         const applyDelete = (m: Message) =>
           m.id === messageId ? { ...m, isDeleted: true, content: "", reactions: [] } : m;
 
@@ -198,9 +173,7 @@ export function useMessagingEvents(
         );
 
         updaterRef.current?.(messageId, (m) => applyDelete(m));
-      } catch {
-        // malformed event — ignore
-      }
+      } catch {}
     };
 
     const handleMessageReaction = (e: MessageEvent) => {
@@ -216,9 +189,7 @@ export function useMessagingEvents(
         );
 
         updaterRef.current?.(messageId, (m) => applyReaction(m));
-      } catch {
-        // malformed event — ignore
-      }
+      } catch {}
     };
 
     const handleTyping = (e: MessageEvent) => {
@@ -231,7 +202,6 @@ export function useMessagingEvents(
         const name = `${firstName} ${lastName}`.trim();
         setTypingNames(prev => ({ ...prev, [uid]: name }));
 
-        // Clear any existing 3s timer for this user and reset it
         if (typingTimersRef.current[uid]) clearTimeout(typingTimersRef.current[uid]);
         typingTimersRef.current[uid] = setTimeout(() => {
           setTypingNames(prev => {
@@ -241,16 +211,13 @@ export function useMessagingEvents(
           });
           delete typingTimersRef.current[uid];
         }, 3000);
-      } catch {
-        // malformed event — ignore
-      }
+      } catch {}
     };
 
     const handleCallStarted = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data) as CallStartedEvent;
         callHandlerRef.current?.onCallStarted?.(data);
-        window.dispatchEvent(new CustomEvent("global-call-started", { detail: { call: data.call } }));
       } catch {}
     };
 
@@ -272,7 +239,6 @@ export function useMessagingEvents(
       try {
         const data = JSON.parse(e.data) as CallEndedEvent;
         callHandlerRef.current?.onCallEnded?.(data);
-        window.dispatchEvent(new CustomEvent("global-call-ended", { detail: { callId: data.callId } }));
       } catch {}
     };
 
@@ -283,35 +249,30 @@ export function useMessagingEvents(
       } catch {}
     };
 
-    es.addEventListener("connected", handleConnected);
-    es.addEventListener("message_new", handleMessageNew);
-    es.addEventListener("message_edited", handleMessageEdited);
-    es.addEventListener("message_deleted", handleMessageDeleted);
-    es.addEventListener("message_reaction", handleMessageReaction);
-    es.addEventListener("user_typing", handleTyping);
-    es.addEventListener("call_started", handleCallStarted);
-    es.addEventListener("call_joined", handleCallJoined);
-    es.addEventListener("call_left", handleCallLeft);
-    es.addEventListener("call_ended", handleCallEnded);
-    es.addEventListener("webrtc_signal", handleWebRTCSignal);
-    es.onerror = () => setSseLive(false);
+    addListener("message_new", handleMessageNew);
+    addListener("message_edited", handleMessageEdited);
+    addListener("message_deleted", handleMessageDeleted);
+    addListener("message_reaction", handleMessageReaction);
+    addListener("user_typing", handleTyping);
+    addListener("call_started", handleCallStarted);
+    addListener("call_joined", handleCallJoined);
+    addListener("call_left", handleCallLeft);
+    addListener("call_ended", handleCallEnded);
+    addListener("webrtc_signal", handleWebRTCSignal);
 
     return () => {
-      es.removeEventListener("connected", handleConnected);
-      es.removeEventListener("message_new", handleMessageNew);
-      es.removeEventListener("message_edited", handleMessageEdited);
-      es.removeEventListener("message_deleted", handleMessageDeleted);
-      es.removeEventListener("message_reaction", handleMessageReaction);
-      es.removeEventListener("user_typing", handleTyping);
-      es.removeEventListener("call_started", handleCallStarted);
-      es.removeEventListener("call_joined", handleCallJoined);
-      es.removeEventListener("call_left", handleCallLeft);
-      es.removeEventListener("call_ended", handleCallEnded);
-      es.removeEventListener("webrtc_signal", handleWebRTCSignal);
-      es.close();
-      setSseLive(false);
+      removeListener("message_new", handleMessageNew);
+      removeListener("message_edited", handleMessageEdited);
+      removeListener("message_deleted", handleMessageDeleted);
+      removeListener("message_reaction", handleMessageReaction);
+      removeListener("user_typing", handleTyping);
+      removeListener("call_started", handleCallStarted);
+      removeListener("call_joined", handleCallJoined);
+      removeListener("call_left", handleCallLeft);
+      removeListener("call_ended", handleCallEnded);
+      removeListener("webrtc_signal", handleWebRTCSignal);
     };
-  }, []); // mount once — uses refs for active conversation
+  }, [addListener, removeListener]);
 
-  return { sseLive, typingNames };
+  return { sseLive: isConnected, typingNames };
 }
