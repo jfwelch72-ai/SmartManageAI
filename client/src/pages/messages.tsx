@@ -31,7 +31,7 @@ import {
   type VideoCallData,
 } from "@/components/messaging/types";
 
-export function TeamMessagesContent() {
+export function TeamMessagesContent({ compact = false }: { compact?: boolean }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const searchString = useSearch();
@@ -681,7 +681,7 @@ export function TeamMessagesContent() {
   return (
     <TooltipProvider>
       <div data-testid="team-messages-content">
-        <Card className="h-[calc(100vh-280px)] min-h-[500px]">
+        <Card className={compact ? "h-full border-0 shadow-none" : "h-[calc(100vh-280px)] min-h-[500px]"}>
           <div className="flex h-full">
             {/* ── SIDEBAR ── */}
             {showConversationList && !isMobileView && (
@@ -694,6 +694,7 @@ export function TeamMessagesContent() {
                 onSelectConversation={setSelectedConversationId}
                 availableUsers={availableUsers}
                 activeCallConversationIds={activeCallConversationIds}
+                compact={compact}
               />
             )}
 
@@ -708,6 +709,7 @@ export function TeamMessagesContent() {
                 onSelectConversation={setSelectedConversationId}
                 availableUsers={availableUsers}
                 activeCallConversationIds={activeCallConversationIds}
+                compact={compact}
               />
             )}
 

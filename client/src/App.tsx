@@ -21,6 +21,7 @@ import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
 const AIAssistantWidget = lazy(() => import("@/components/AIAssistantWidget"));
+const MessagingWidget = lazy(() => import("@/components/MessagingWidget"));
 import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import { TourProvider } from "@/components/TourProvider";
 import { VendorRoutePermissions } from "@/lib/rbac";
@@ -62,7 +63,6 @@ const CompanyCommunicationsPage = lazy(() => import("@/pages/company-communicati
 const TasksPage = lazy(() => import("@/pages/tasks"));
 const CRMPage = lazy(() => import("@/pages/crm"));
 const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
-const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const EquipmentPage = lazy(() => import("@/pages/equipment"));
 const EquipmentDetailPage = lazy(() => import("@/pages/equipment-detail"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
@@ -247,8 +247,8 @@ function Router() {
       <Route path="/communications" component={() => <ProtectedRoute component={CompanyCommunicationsPage} />} />
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} />} />
-      <Route path="/messages" component={() => <ProtectedRoute component={UnifiedMessagesPage} />} />
-      <Route path="/portal-chat" component={() => <ProtectedRoute component={UnifiedMessagesPage} />} />
+      <Route path="/messages" component={() => <Redirect to="/dashboard" />} />
+      <Route path="/portal-chat" component={() => <Redirect to="/dashboard" />} />
       
       {/* Admin-only routes */}
       <Route path="/users" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=users" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
@@ -461,6 +461,7 @@ function AuthGatedWidget() {
   return (
     <Suspense fallback={null}>
       <VoiceDictation />
+      <MessagingWidget />
       <AIAssistantWidget />
     </Suspense>
   );

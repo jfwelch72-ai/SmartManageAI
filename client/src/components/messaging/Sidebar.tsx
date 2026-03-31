@@ -75,6 +75,7 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   availableUsers: User[];
   activeCallConversationIds?: Set<string>;
+  compact?: boolean;
 }
 
 export function Sidebar({
@@ -86,6 +87,7 @@ export function Sidebar({
   onSelectConversation,
   availableUsers,
   activeCallConversationIds = new Set(),
+  compact = false,
 }: SidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [newChannelOpen, setNewChannelOpen] = useState(false);
@@ -168,7 +170,7 @@ export function Sidebar({
   const joinableChannels = allChannels.filter(ch => !ch.projectId && !ch.crewId && !conversations.find(c => c.id === ch.id));
 
   return (
-    <div className="border-r flex flex-col bg-muted/20 w-72">
+    <div className={cn("border-r flex flex-col bg-muted/20", compact ? "w-56" : "w-72")}>
       <div className="p-2 border-b space-y-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />

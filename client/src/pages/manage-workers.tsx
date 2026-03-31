@@ -776,12 +776,10 @@ function WorkersTab() {
                       View
                     </Button>
                   </Link>
-                  <Link href="/messages">
-                    <Button variant="outline" size="sm" data-testid={`button-message-${worker.id}`}>
-                      <MessageSquare className="w-4 h-4 mr-1" />
-                      Message
-                    </Button>
-                  </Link>
+                  <Button variant="outline" size="sm" onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))} data-testid={`button-message-${worker.id}`}>
+                    <MessageSquare className="w-4 h-4 mr-1" />
+                    Message
+                  </Button>
                   <Button variant="outline" size="sm" data-testid={`button-assign-${worker.id}`}>
                     <UserPlus className="w-4 h-4 mr-1" />
                     Assign

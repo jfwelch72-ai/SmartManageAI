@@ -94,8 +94,7 @@ export default function TopHeader() {
 
         <div className="flex items-center gap-1 sm:gap-2">
           {hasContractorAccess(userRole) && (
-            <Button variant="ghost" size="icon" className="relative" asChild data-testid="button-messages">
-              <Link href="/messages">
+            <Button variant="ghost" size="icon" className="relative" onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))} data-testid="button-messages">
                 <MessageSquare className="w-5 h-5" />
                 {unreadMessageCount > 0 && (
                   <Badge 
@@ -106,7 +105,6 @@ export default function TopHeader() {
                     {unreadMessageCount}
                   </Badge>
                 )}
-              </Link>
             </Button>
           )}
 

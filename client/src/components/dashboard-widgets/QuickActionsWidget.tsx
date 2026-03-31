@@ -71,7 +71,7 @@ const ALL_ACTIONS: QuickAction[] = [
 const FALLBACK_ACTIONS: QuickAction[] = [
   { id: "fb-projects", label: "View Projects", icon: FileText, href: "/projects", roles: [] },
   { id: "fb-calendar", label: "Calendar", icon: CalendarDays, href: "/calendar", roles: [] },
-  { id: "fb-messages", label: "Messages", icon: MessageSquare, href: "/messages", roles: [] },
+  { id: "fb-messages", label: "Messages", icon: MessageSquare, href: "#open-messages", roles: [] },
 ];
 
 export function QuickActionsWidget() {
@@ -100,7 +100,13 @@ export function QuickActionsWidget() {
           <Card
             key={action.id}
             className="hover-elevate cursor-pointer transition-colors"
-            onClick={() => setLocation(action.href)}
+            onClick={() => {
+              if (action.href === "#open-messages") {
+                window.dispatchEvent(new CustomEvent("open-messaging-widget"));
+              } else {
+                setLocation(action.href);
+              }
+            }}
             data-testid={`quick-action-${action.id}`}
           >
             <CardContent className="flex items-center gap-2 p-3">

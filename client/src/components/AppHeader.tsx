@@ -132,7 +132,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
     { href: "/projects", icon: Briefcase, label: "Projects" },
     { href: "/calendar", icon: Calendar, label: "Calendar" },
     { href: "/communications", icon: MessageSquare, label: "Communications" },
-    { href: "/messages", icon: MessageCircle, label: "Messages", badge: unreadMessageCount },
+    { href: "#open-messages", icon: MessageCircle, label: "Messages", badge: unreadMessageCount },
     { href: "/bids", icon: Gavel, label: "Bids" },
   ];
 
@@ -153,7 +153,13 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
 
   // Mobile navigation link component
   const MobileNavLink = ({ href, icon: Icon, label, badge }: { href: string; icon: any; label: string; badge?: number }) => (
-    <Link href={href} onClick={closeMobileMenu}>
+    <Link href={href === "#open-messages" ? "/" : href} onClick={(e: React.MouseEvent) => {
+      if (href === "#open-messages") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("open-messaging-widget"));
+      }
+      closeMobileMenu();
+    }}>
       <div
         className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
           isActive(href)
@@ -574,8 +580,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
         <div className="flex items-center gap-2">
           {/* Messages Icon - only for contractor users */}
           {hasContractorAccess(userRole) && (
-            <Button variant="ghost" size="icon" className="relative" asChild data-testid="button-messages">
-              <Link href="/messages">
+            <Button variant="ghost" size="icon" className="relative" onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))} data-testid="button-messages">
                 <MessageSquare className="w-5 h-5" />
                 {unreadMessageCount > 0 && (
                   <Badge 
@@ -586,7 +591,6 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     {unreadMessageCount}
                   </Badge>
                 )}
-              </Link>
             </Button>
           )}
 

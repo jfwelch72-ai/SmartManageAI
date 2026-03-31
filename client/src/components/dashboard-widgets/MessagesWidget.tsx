@@ -86,7 +86,7 @@ export function MessagesWidget() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setLocation("/messages")}
+            onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))}
             data-testid="button-view-all-messages"
           >
             View All
@@ -116,7 +116,7 @@ export function MessagesWidget() {
                   key={conv.id}
                   className="flex items-start gap-3 p-2 rounded-md hover-elevate cursor-pointer"
                   onClick={() =>
-                    setLocation(`/messages?conversation=${conv.id}`)
+                    window.dispatchEvent(new CustomEvent("open-messaging-widget", { detail: { tab: "team" } }))
                   }
                   data-testid={`message-preview-${conv.id}`}
                 >

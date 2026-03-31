@@ -505,12 +505,6 @@ export const NavigationConfig = {
       visible: (role?: string) => hasContractorAccess(role),
     },
     {
-      href: "/messages",
-      label: "Messages",
-      testId: "nav-messages",
-      visible: (role?: string) => hasContractorAccess(role),
-    },
-    {
       href: "/email-assistant",
       label: "Email Assistant",
       testId: "nav-email-assistant",

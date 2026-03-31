@@ -130,7 +130,7 @@ export function QuickStatsWidget({ config }: QuickStatsWidgetProps) {
       content: (
         <Card
           className="hover-elevate cursor-pointer"
-          onClick={() => setLocation("/messages")}
+          onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))}
           data-testid="stat-unread-messages"
         >
           <CardContent className="pt-3 pb-3 sm:pt-4 sm:pb-4 px-3 sm:px-6">

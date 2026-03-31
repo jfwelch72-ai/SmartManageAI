@@ -65,6 +65,7 @@ export function AIAssistantWidget() {
   const [showMilestone, setShowMilestone] = useState(false);
   const [milestoneData, setMilestoneData] = useState<{ progress: number; message: string } | null>(null);
   const [navigationHint, setNavigationHint] = useState<string | null>(null);
+  const [messagingWidgetOpen, setMessagingWidgetOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const prevLocation = useRef<string | null>(null);
@@ -108,7 +109,6 @@ export function AIAssistantWidget() {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  // Listen for custom event to open assistant (dispatched from sidebar "Start Tutorial" button)
   useEffect(() => {
     const handleOpenAssistant = () => {
       setIsOpen(true);
@@ -117,6 +117,22 @@ export function AIAssistantWidget() {
     window.addEventListener("open-ai-assistant", handleOpenAssistant);
     return () => window.removeEventListener("open-ai-assistant", handleOpenAssistant);
   }, []);
+
+  useEffect(() => {
+    const handleMessagingState = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setMessagingWidgetOpen(!!detail?.isOpen);
+    };
+    window.addEventListener("messaging-widget-state", handleMessagingState);
+    return () => window.removeEventListener("messaging-widget-state", handleMessagingState);
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("ai-assistant-widget-state", { detail: { isOpen } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("ai-assistant-widget-state", { detail: { isOpen: false } }));
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     localStorage.setItem(MINIMIZED_KEY, String(isMinimized));
@@ -382,8 +398,9 @@ export function AIAssistantWidget() {
           style={{ 
             position: 'fixed', 
             bottom: '24px', 
-            right: '24px', 
-            zIndex: 9999 
+            right: messagingWidgetOpen ? '590px' : '24px', 
+            zIndex: 9998,
+            transition: 'right 0.3s ease'
           }}
           data-testid="button-ai-assistant-open"
         >
@@ -404,9 +421,10 @@ export function AIAssistantWidget() {
           style={{ 
             position: 'fixed', 
             bottom: '24px', 
-            right: '24px', 
+            right: messagingWidgetOpen ? '590px' : '24px', 
             zIndex: 9999,
-            maxWidth: 'calc(100vw - 48px)'
+            maxWidth: messagingWidgetOpen ? 'calc(100vw - 620px)' : 'calc(100vw - 48px)',
+            transition: 'right 0.3s ease'
           }}
           data-testid="ai-assistant-panel"
         >
