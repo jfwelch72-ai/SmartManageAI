@@ -34,7 +34,6 @@ import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
 import { EquipmentRateSelector } from "@/components/EquipmentRateSelector";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { BidSubcontractorQuote } from "@shared/schema";
 import type { LineItemFormValues, CatalogPriceItem, WorkCategory, SubcontractorAssignment } from "@/lib/estimate-utils";
 
