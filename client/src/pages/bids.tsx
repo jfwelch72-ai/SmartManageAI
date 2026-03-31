@@ -32,7 +32,6 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardList,
-  Zap,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -780,11 +779,11 @@ export default function BidsPage() {
                     className="cursor-pointer py-3"
                     data-testid="menu-item-manual-bid"
                   >
-                    <Zap className="w-4 h-4 mr-3 text-primary" />
+                    <FileEdit className="w-4 h-4 mr-3 text-primary" />
                     <div>
-                      <div className="font-medium">Quick Bid Entry</div>
+                      <div className="font-medium">Manual Bid Entry</div>
                       <div className="text-xs text-muted-foreground">
-                        AI helps fill details from your description
+                        Enter bid details directly without documents
                       </div>
                     </div>
                   </DropdownMenuItem>
@@ -1216,12 +1215,12 @@ export default function BidsPage() {
         >
           <DialogHeader>
             <DialogTitle>
-              {manualBidStep === 1 && "Quick Bid Entry"}
+              {manualBidStep === 1 && "Manual Bid Entry"}
               {manualBidStep === 2 && "Review Scope Items"}
               {manualBidStep === 3 && "Bid Details"}
             </DialogTitle>
             <DialogDescription>
-              {manualBidStep === 1 && "Describe your project and let AI help fill in the details, or skip to enter manually."}
+              {manualBidStep === 1 && "Enter bid details directly without documents. Optionally use AI to help fill in details from a description."}
               {manualBidStep === 2 && "Review AI-suggested scope items. Toggle items on/off, edit quantities, or add your own."}
               {manualBidStep === 3 && "Review and finalize the bid details before creating."}
             </DialogDescription>
@@ -1332,7 +1331,15 @@ export default function BidsPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-12">Include</TableHead>
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={scopeItems.length > 0 && scopeItems.every(i => i.selected)}
+                            onCheckedChange={(checked) => {
+                              setScopeItems(prev => prev.map(item => ({ ...item, selected: !!checked })));
+                            }}
+                            data-testid="checkbox-select-all"
+                          />
+                        </TableHead>
                         <TableHead>Description</TableHead>
                         <TableHead className="w-20">Qty</TableHead>
                         <TableHead className="w-16">Unit</TableHead>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -233,12 +233,7 @@ export default function BidWizardPage() {
       setCurrentStep(3);
     },
     onError: (error: any) => {
-      toast({ 
-        title: "Analysis failed", 
-        description: error.message || "Failed to analyze documents. You can still proceed manually.",
-        variant: "destructive"
-      });
-      setCurrentStep(3);
+      setAnalysisError(error.message || "Failed to analyze documents. You can still proceed manually.");
     },
   });
 
@@ -383,22 +378,47 @@ export default function BidWizardPage() {
 
   const goToStep = (step: number) => {
     if (step < currentStep) {
+      if (step === 1) {
+        hasAutoTriggered.current = false;
+        setAnalysisError(null);
+      }
       setCurrentStep(step);
     } else if (step === currentStep + 1) {
       if (currentStep === 1 && uploadedDocs.length === 0) {
         toast({ title: "Upload required", description: "Please upload at least one document", variant: "destructive" });
         return;
       }
-      if (currentStep === 2) {
-        analyzeMutation.mutate();
-        return;
-      }
       setCurrentStep(step);
     }
   };
 
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const hasAutoTriggered = useRef(false);
+
+  useEffect(() => {
+    if (currentStep === 2 && !analyzeMutation.isPending && !analysisResult && !analysisError && !hasAutoTriggered.current) {
+      hasAutoTriggered.current = true;
+      analyzeMutation.mutate();
+    }
+  }, [currentStep]);
+
   const handleSkipAnalysis = () => {
     setCurrentStep(3);
+  };
+
+  const updateScopeItem = (itemId: string, field: string, value: string) => {
+    setScopeItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      if (field === 'quantity') {
+        const parsed = parseFloat(value);
+        return { ...item, quantity: Number.isFinite(parsed) && parsed > 0 ? parsed : 1 };
+      }
+      return { ...item, [field]: value };
+    }));
+  };
+
+  const toggleAllScopeItems = (checked: boolean) => {
+    setScopeItems(prev => prev.map(item => ({ ...item, selected: checked })));
   };
 
   const handleSubmit = form.handleSubmit((data) => {
@@ -573,7 +593,43 @@ export default function BidWizardPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="flex flex-col items-center justify-center py-12">
-                {analyzeMutation.isPending ? (
+                {analysisError ? (
+                  <>
+                    <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
+                    <h3 className="text-lg font-medium">AI Analysis Failed</h3>
+                    <Alert variant="destructive" className="max-w-md mt-4">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>
+                        {analysisError}
+                      </AlertDescription>
+                    </Alert>
+                    <p className="text-muted-foreground text-center max-w-md mt-4">
+                      You can still create your bid by entering scope items and details manually. 
+                      Click below to proceed to manual entry.
+                    </p>
+                    <div className="flex gap-3 mt-6">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setAnalysisError(null);
+                          hasAutoTriggered.current = false;
+                          analyzeMutation.mutate();
+                        }}
+                        data-testid="button-retry-analysis"
+                      >
+                        <Sparkles className="h-4 w-4 mr-2" />
+                        Retry Analysis
+                      </Button>
+                      <Button
+                        onClick={() => setCurrentStep(3)}
+                        data-testid="button-proceed-manual"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Proceed to Manual Entry
+                      </Button>
+                    </div>
+                  </>
+                ) : analyzeMutation.isPending ? (
                   <>
                     <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
                     <h3 className="text-lg font-medium">Analyzing Documents...</h3>
@@ -592,19 +648,11 @@ export default function BidWizardPage() {
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-12 w-12 text-primary mb-4" />
-                    <h3 className="text-lg font-medium">Ready to Analyze</h3>
+                    <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                    <h3 className="text-lg font-medium">Starting Analysis...</h3>
                     <p className="text-muted-foreground text-center max-w-md mt-2">
-                      Click the button below to start AI analysis of your {uploadedDocs.length} document(s).
+                      Preparing to analyze your {uploadedDocs.length} document(s)...
                     </p>
-                    <Button 
-                      className="mt-6" 
-                      onClick={() => analyzeMutation.mutate()}
-                      data-testid="button-start-analysis"
-                    >
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      Start AI Analysis
-                    </Button>
                   </>
                 )}
               </div>
@@ -664,7 +712,13 @@ export default function BidWizardPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-12">Include</TableHead>
+                          <TableHead className="w-12">
+                            <Checkbox
+                              checked={scopeItems.length > 0 && scopeItems.every(i => i.selected)}
+                              onCheckedChange={(checked) => toggleAllScopeItems(!!checked)}
+                              data-testid="checkbox-select-all"
+                            />
+                          </TableHead>
                           <TableHead>Description</TableHead>
                           <TableHead className="w-24">Quantity</TableHead>
                           <TableHead className="w-20">Unit</TableHead>
@@ -681,9 +735,31 @@ export default function BidWizardPage() {
                                 data-testid={`checkbox-${item.id}`}
                               />
                             </TableCell>
-                            <TableCell className="font-medium">{item.description}</TableCell>
-                            <TableCell>{item.quantity}</TableCell>
-                            <TableCell>{item.unit}</TableCell>
+                            <TableCell>
+                              <Input
+                                className="h-7 text-sm font-medium"
+                                value={item.description}
+                                onChange={(e) => updateScopeItem(item.id, 'description', e.target.value)}
+                                data-testid={`input-desc-${item.id}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                type="number"
+                                className="h-7 w-20 text-sm"
+                                value={item.quantity}
+                                onChange={(e) => updateScopeItem(item.id, 'quantity', e.target.value)}
+                                data-testid={`input-qty-${item.id}`}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Input
+                                className="h-7 w-16 text-sm"
+                                value={item.unit}
+                                onChange={(e) => updateScopeItem(item.id, 'unit', e.target.value)}
+                                data-testid={`input-unit-${item.id}`}
+                              />
+                            </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-xs">{item.category}</Badge>
                             </TableCell>
@@ -988,13 +1064,45 @@ export default function BidWizardPage() {
                     )}
                   />
 
-                  <Alert className="bg-muted">
-                    <CheckCircle2 className="h-4 w-4" />
-                    <AlertDescription>
-                      <strong>{scopeItems.filter(i => i.selected).length + customItems.length}</strong> scope items 
-                      will be added to your estimate when you create this bid.
-                    </AlertDescription>
-                  </Alert>
+                  <div className="border rounded-md p-4 bg-muted/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-medium flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4" />
+                        Scope Summary
+                      </h4>
+                      <Badge variant="outline" data-testid="badge-scope-total">
+                        {scopeItems.filter(i => i.selected).length + customItems.length} items
+                      </Badge>
+                    </div>
+                    {(() => {
+                      const selectedItems = [...scopeItems.filter(i => i.selected), ...customItems];
+                      const byCategory: Record<string, number> = {};
+                      selectedItems.forEach(item => {
+                        const cat = item.category || "GENERAL";
+                        byCategory[cat] = (byCategory[cat] || 0) + 1;
+                      });
+                      const categories = Object.entries(byCategory).sort((a, b) => b[1] - a[1]);
+                      return categories.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map(([cat, count]) => (
+                            <Badge key={cat} variant="secondary" className="text-xs" data-testid={`badge-category-${cat}`}>
+                              {cat}: {count}
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No scope items selected.</p>
+                      );
+                    })()}
+                    {analysisResult?.estimatedValue && (
+                      <div className="flex items-center gap-2 pt-1 border-t">
+                        <span className="text-sm text-muted-foreground">Estimated Project Value:</span>
+                        <span className="text-sm font-semibold" data-testid="text-estimated-value">
+                          ${analysisResult.estimatedValue.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
                   <div className="flex justify-between pt-4">
                     <Button 
