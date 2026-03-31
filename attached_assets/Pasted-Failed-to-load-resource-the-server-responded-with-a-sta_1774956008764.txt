@@ -1,0 +1,200 @@
+Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+api/conversations/45519e71-674f-4b31-8d7d-b1ec24bb649c/active-call:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+api/conversations/45519e71-674f-4b31-8d7d-b1ec24bb649c/calls:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+4react_jsx-dev-runtime.js?v=dbf9c55a:64 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at MessageBubble (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageBubble.tsx:34:3)
+    at div
+    at div
+    at div
+    at MessageList (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageList.tsx:24:3)
+    at div
+    at div
+    at div
+    at _c (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/card.tsx:20:11)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at TeamMessagesContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/messages.tsx:41:20)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Presence (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-7GLZXUXQ.js?v=dbf9c55a:24:11)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:187:13
+    at _c5 (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/tabs.tsx:72:12)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:65:7
+    at div
+    at div
+    at UnifiedMessagesPage (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/unified-messages.tsx:29:22)
+    at ProtectedRoute (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:291:14)
+    at component
+    at Route (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:265:16)
+    at Switch (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:321:17)
+    at Router (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:390:31)
+    at Suspense
+    at main
+    at main
+    at SidebarInset (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:417:25)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at SidebarProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at AuthenticatedLayout (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1591:32)
+    at AppContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1665:22)
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at DashboardCustomizationProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-dashboard-customization.tsx:28:50)
+    at TourProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/TourProvider.tsx:497:32)
+    at AuthProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-auth.tsx:22:32)
+    at QueryClientProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=dbf9c55a:2805:3)
+    at App
+printWarning @ react_jsx-dev-runtime.js?v=dbf9c55a:64Understand this error
+api/conversations/45519e71-674f-4b31-8d7d-b1ec24bb649c/calls:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+4react_jsx-dev-runtime.js?v=dbf9c55a:64 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at MessageBubble (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageBubble.tsx:34:3)
+    at div
+    at div
+    at div
+    at MessageList (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageList.tsx:24:3)
+    at div
+    at div
+    at div
+    at _c (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/card.tsx:20:11)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at TeamMessagesContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/messages.tsx:41:20)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Presence (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-7GLZXUXQ.js?v=dbf9c55a:24:11)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:187:13
+    at _c5 (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/tabs.tsx:72:12)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:65:7
+    at div
+    at div
+    at UnifiedMessagesPage (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/unified-messages.tsx:29:22)
+    at ProtectedRoute (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:291:14)
+    at component
+    at Route (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:265:16)
+    at Switch (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:321:17)
+    at Router (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:390:31)
+    at Suspense
+    at main
+    at main
+    at SidebarInset (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:417:25)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at SidebarProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at AuthenticatedLayout (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1591:32)
+    at AppContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1665:22)
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at DashboardCustomizationProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-dashboard-customization.tsx:28:50)
+    at TourProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/TourProvider.tsx:497:32)
+    at AuthProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-auth.tsx:22:32)
+    at QueryClientProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=dbf9c55a:2805:3)
+    at App
+printWarning @ react_jsx-dev-runtime.js?v=dbf9c55a:64Understand this error
+api/conversations/45519e71-674f-4b31-8d7d-b1ec24bb649c/calls:1  Failed to load resource: the server responded with a status of 500 (Internal Server Error)Understand this error
+4react_jsx-dev-runtime.js?v=dbf9c55a:64 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at MessageBubble (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageBubble.tsx:34:3)
+    at div
+    at div
+    at div
+    at MessageList (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageList.tsx:24:3)
+    at div
+    at div
+    at div
+    at _c (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/card.tsx:20:11)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at TeamMessagesContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/messages.tsx:41:20)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Presence (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-7GLZXUXQ.js?v=dbf9c55a:24:11)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:187:13
+    at _c5 (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/tabs.tsx:72:12)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:65:7
+    at div
+    at div
+    at UnifiedMessagesPage (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/unified-messages.tsx:29:22)
+    at ProtectedRoute (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:291:14)
+    at component
+    at Route (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:265:16)
+    at Switch (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:321:17)
+    at Router (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:390:31)
+    at Suspense
+    at main
+    at main
+    at SidebarInset (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:417:25)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at SidebarProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at AuthenticatedLayout (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1591:32)
+    at AppContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1665:22)
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at DashboardCustomizationProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-dashboard-customization.tsx:28:50)
+    at TourProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/TourProvider.tsx:497:32)
+    at AuthProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-auth.tsx:22:32)
+    at QueryClientProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=dbf9c55a:2805:3)
+    at App
+printWarning @ react_jsx-dev-runtime.js?v=dbf9c55a:64Understand this error
+2MessageList.tsx:159 Warning: Invalid prop `data-replit-metadata` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.
+    at MessageBubble (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageBubble.tsx:34:3)
+    at div
+    at div
+    at div
+    at MessageList (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/messaging/MessageList.tsx:24:3)
+    at div
+    at div
+    at div
+    at _c (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/card.tsx:20:11)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at TeamMessagesContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/messages.tsx:41:20)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Presence (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-7GLZXUXQ.js?v=dbf9c55a:24:11)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:187:13
+    at _c5 (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/tabs.tsx:72:12)
+    at div
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-4WUUHRA6.js?v=dbf9c55a:138:13
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tabs.js?v=dbf9c55a:65:7
+    at div
+    at div
+    at UnifiedMessagesPage (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/pages/unified-messages.tsx:29:22)
+    at ProtectedRoute (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:291:14)
+    at component
+    at Route (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:265:16)
+    at Switch (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=dbf9c55a:321:17)
+    at Router (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:390:31)
+    at Suspense
+    at main
+    at main
+    at SidebarInset (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:417:25)
+    at div
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at SidebarProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/ui/sidebar.tsx:59:3)
+    at AuthenticatedLayout (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1591:32)
+    at AppContent (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/App.tsx?v=0gFQdy0wAI8gKm8wCQaoT:1665:22)
+    at Provider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-OXZDJRWN.js?v=dbf9c55a:38:15)
+    at TooltipProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@radix-ui_react-tooltip.js?v=dbf9c55a:956:5)
+    at DashboardCustomizationProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-dashboard-customization.tsx:28:50)
+    at TourProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/components/TourProvider.tsx:497:32)
+    at AuthProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/src/hooks/use-auth.tsx:22:32)
+    at QueryClientProvider (https://3da1507c-eca1-4934-9b75-a5f818f56446-00-36vyiavfxmygk.janeway.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=dbf9c55a:2805:3)
+    at App
