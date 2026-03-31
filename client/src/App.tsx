@@ -456,13 +456,58 @@ function AppContent() {
 function AuthGatedWidget() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const [messagingOpen, setMessagingOpen] = React.useState(false);
+  const [aiOpen, setAiOpen] = React.useState(false);
   const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/');
+
+  React.useEffect(() => {
+    const handleMessaging = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setMessagingOpen(!!detail?.isOpen);
+    };
+    const handleAi = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      setAiOpen(!!detail?.isOpen);
+    };
+    window.addEventListener("messaging-widget-state", handleMessaging);
+    window.addEventListener("ai-assistant-widget-state", handleAi);
+    return () => {
+      window.removeEventListener("messaging-widget-state", handleMessaging);
+      window.removeEventListener("ai-assistant-widget-state", handleAi);
+    };
+  }, []);
+
   if (!user || isStandaloneRoute) return null;
+
+  let containerRight = '24px';
+  if (messagingOpen && aiOpen) {
+    containerRight = '990px';
+  } else if (messagingOpen) {
+    containerRight = '590px';
+  } else if (aiOpen) {
+    containerRight = '420px';
+  }
+
   return (
     <Suspense fallback={null}>
-      <VoiceDictation />
-      <MessagingWidget />
-      <AIAssistantWidget />
+      <div
+        style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: containerRight,
+          zIndex: 9998,
+          display: 'flex',
+          flexDirection: 'row',
+          gap: '12px',
+          alignItems: 'center',
+          transition: 'right 0.3s ease',
+        }}
+        data-testid="widget-group-container"
+      >
+        <VoiceDictation />
+        <MessagingWidget />
+        <AIAssistantWidget />
+      </div>
     </Suspense>
   );
 }

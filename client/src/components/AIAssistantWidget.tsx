@@ -390,18 +390,11 @@ export function AIAssistantWidget() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className={`flex items-center justify-center w-12 h-12 rounded-full shadow-lg hover-elevate active-elevate-2 transition-all ${
+          className={`relative flex items-center justify-center w-12 h-12 rounded-full shadow-lg hover-elevate active-elevate-2 transition-all ${
             hasNotStarted || isInWalkthrough 
               ? "bg-gradient-to-r from-primary to-purple-500 animate-pulse" 
               : "bg-primary"
           } text-primary-foreground`}
-          style={{ 
-            position: 'fixed', 
-            bottom: '24px', 
-            right: messagingWidgetOpen ? '590px' : '24px', 
-            zIndex: 9998,
-            transition: 'right 0.3s ease'
-          }}
           data-testid="button-ai-assistant-open"
         >
           {hasNotStarted || isInWalkthrough ? (

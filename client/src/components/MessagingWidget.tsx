@@ -51,23 +51,12 @@ export function MessagingWidget() {
     localStorage.setItem(MINIMIZED_KEY, String(isMinimized));
   }, [isMinimized]);
 
-  const [aiWidgetOpen, setAiWidgetOpen] = useState(false);
-
   useEffect(() => {
     window.dispatchEvent(new CustomEvent("messaging-widget-state", { detail: { isOpen } }));
     return () => {
       window.dispatchEvent(new CustomEvent("messaging-widget-state", { detail: { isOpen: false } }));
     };
   }, [isOpen]);
-
-  useEffect(() => {
-    const handleAiState = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail;
-      setAiWidgetOpen(!!detail?.isOpen);
-    };
-    window.addEventListener("ai-assistant-widget-state", handleAiState);
-    return () => window.removeEventListener("ai-assistant-widget-state", handleAiState);
-  }, []);
 
   if (!user) return null;
 
@@ -76,14 +65,7 @@ export function MessagingWidget() {
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg hover-elevate active-elevate-2 transition-all bg-primary text-primary-foreground"
-          style={{
-            position: 'fixed',
-            bottom: '24px',
-            right: aiWidgetOpen ? '420px' : '80px',
-            zIndex: 9999,
-            transition: 'right 0.3s ease',
-          }}
+          className="relative flex items-center justify-center w-12 h-12 rounded-full shadow-lg hover-elevate active-elevate-2 transition-all bg-primary text-primary-foreground"
           data-testid="button-messaging-widget-open"
         >
           <MessageCircle className="h-5 w-5" />

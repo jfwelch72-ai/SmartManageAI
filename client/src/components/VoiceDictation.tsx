@@ -278,8 +278,7 @@ export default function VoiceDictation() {
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="flex items-center justify-center w-12 h-12 rounded-full shadow-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all hover:scale-105"
-        style={{ position: 'fixed', bottom: '80px', right: '24px', zIndex: 9999 }}
+        className="relative flex items-center justify-center w-12 h-12 rounded-full shadow-lg bg-primary hover:bg-primary/90 text-primary-foreground transition-all hover:scale-105"
         data-testid="button-floating-mic"
       >
         <Mic className="h-5 w-5" />
