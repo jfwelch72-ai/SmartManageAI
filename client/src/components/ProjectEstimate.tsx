@@ -159,13 +159,21 @@ export default function ProjectEstimate() {
 
   // Import takeoff mutation
   const importTakeoffMutation = useMutation({
-    mutationFn: (data: { estimateId: string, categoryIds: string[] }) => 
-      apiRequest("POST", `/api/projects/${projectId}/estimate/import-takeoff`, data),
-    onSuccess: () => {
+    mutationFn: async (data: { estimateId: string, categoryIds: string[] }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/estimate/import-takeoff`, data);
+      return res.json() as Promise<{ count: number; message?: string }>;
+    },
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "/estimate"] });
       setImportTakeoffOpen(false);
       setSelectedCategories([]);
-      toast({ title: "Takeoff quantities imported successfully" });
+      if (data.count > 0) {
+        toast({ title: "Takeoff quantities imported successfully", description: `${data.count} line item(s) added to your estimate` });
+      } else if (data.message) {
+        toast({ title: "No items imported", description: data.message, variant: "destructive" });
+      } else {
+        toast({ title: "No items imported", description: "No measurements found to import. Add measurements to your takeoff sheets first." });
+      }
     },
     onError: () => {
       toast({ title: "Failed to import takeoff", variant: "destructive" });

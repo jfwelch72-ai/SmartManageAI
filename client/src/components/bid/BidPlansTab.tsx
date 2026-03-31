@@ -558,7 +558,13 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/bids", bidId, "estimate"] });
-      toast({ title: "Import complete", description: `${data.count} line item(s) added to your estimate` });
+      if (data.count > 0) {
+        toast({ title: "Import complete", description: `${data.count} line item(s) added to your estimate` });
+      } else if (data.message) {
+        toast({ title: "No items imported", description: data.message, variant: "destructive" });
+      } else {
+        toast({ title: "No items imported", description: "No measurements found to import. Add measurements to your takeoff sheets first." });
+      }
     },
     onError: (error: any) => {
       toast({ title: "Import failed", description: error.message, variant: "destructive" });

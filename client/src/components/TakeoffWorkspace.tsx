@@ -2713,11 +2713,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               const imgW = pdfImage?.width || 2000;
               const existingAiCount = measurements.filter(m => m.source === "AI" && m.type === "COUNT").length;
 
+              const isBidContext = context?.type === "bid";
+              const ctxBidId = isBidContext ? context.bidId : undefined;
+
+              const categoryCache: Record<string, string> = {};
+              let existingCategories: { id: string; name: string }[] = [];
+              if (ctxBidId) {
+                try {
+                  const catRes = await apiRequest("GET", `/api/bids/${ctxBidId}/takeoff/categories`);
+                  existingCategories = await catRes.json();
+                } catch {}
+              }
+
+              const getOrCreateCategory = async (itemType: string): Promise<string | undefined> => {
+                if (!ctxBidId) return undefined;
+                const categoryName = itemType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+                if (categoryCache[categoryName]) return categoryCache[categoryName];
+                const existing = existingCategories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
+                if (existing) {
+                  categoryCache[categoryName] = existing.id;
+                  return existing.id;
+                }
+                try {
+                  const res = await apiRequest("POST", `/api/bids/${ctxBidId}/takeoff/categories`, { name: categoryName });
+                  const created = await res.json();
+                  if (created?.id) {
+                    categoryCache[categoryName] = created.id;
+                    existingCategories.push({ id: created.id, name: categoryName });
+                    return created.id;
+                  }
+                } catch {}
+                return undefined;
+              };
+
               const newMeasurementIds: string[] = [];
               for (let idx = 0; idx < items.length; idx++) {
                 const item = items[idx];
                 const pos = computeAiPosition(existingAiCount + idx, imgW);
                 try {
+                  const categoryId = item.itemType ? await getOrCreateCategory(item.itemType) : undefined;
                   const res = await apiRequest("POST", "/api/takeoff/measurements", {
                     sheetId: selectedSheet,
                     type: "COUNT",
@@ -2725,6 +2759,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     label: item.description,
                     count: item.quantity,
                     source: "AI",
+                    categoryId: categoryId || undefined,
                     costCodeId: item.suggestedSowItem?.code || undefined,
                     metadata: JSON.stringify({
                       source: "ai_takeoff",
@@ -2744,6 +2779,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               }
               if (succeeded > 0) {
                 await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+                if (ctxBidId) {
+                  await queryClient.invalidateQueries({ queryKey: ["/api/bids", ctxBidId, "takeoff", "categories"] });
+                }
                 if (newMeasurementIds.length > 0) {
                   const flashSequence = async () => {
                     for (const mId of newMeasurementIds) {

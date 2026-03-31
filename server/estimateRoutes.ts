@@ -519,35 +519,68 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           })
         : [];
 
-      const existingImportedCategoryIds = new Set(
-        (await db.select({ catId: estimateLineItems.sourceTakeoffCategoryId })
-          .from(estimateLineItems)
-          .where(and(
-            eq(estimateLineItems.estimateId, estimateId),
-            eq(estimateLineItems.source, "TAKEOFF"),
-          ))
-        ).map(r => r.catId).filter(Boolean)
-      );
+      const existingTakeoffLineItems = await db.select({ id: estimateLineItems.id, metadata: estimateLineItems.metadata, sourceTakeoffCategoryId: estimateLineItems.sourceTakeoffCategoryId })
+        .from(estimateLineItems)
+        .where(and(
+          eq(estimateLineItems.estimateId, estimateId),
+          eq(estimateLineItems.source, "TAKEOFF"),
+        ));
 
-      const filteredCategories = categories.filter(c => !existingImportedCategoryIds.has(c.id));
+      const alreadyImportedMeasurementIds = new Set<string>();
+      for (const li of existingTakeoffLineItems) {
+        try {
+          const meta = typeof li.metadata === 'string' ? JSON.parse(li.metadata) : (li.metadata || {});
+          if (Array.isArray(meta.sourceMeasurementIds) && meta.sourceMeasurementIds.length > 0) {
+            for (const mid of meta.sourceMeasurementIds) alreadyImportedMeasurementIds.add(mid);
+          }
+        } catch {}
+      }
 
-      const lineItemsToCreate = [];
+      const lineItemsToCreate: Array<{
+        estimateId: string;
+        category: "GENERAL";
+        description: string;
+        quantity: string;
+        unit: string;
+        source: "TAKEOFF";
+        sourceTakeoffCategoryId: string;
+        computedQuantity: string;
+        materialCost: string;
+        laborHours: string;
+        laborCost: string;
+        equipmentCost: string;
+        consumablesCost: string;
+        subcontractCost: string;
+        overheadAllocation: string;
+        profitAllocation: string;
+        totalCost: string;
+        metadata?: string;
+      }> = [];
 
-      for (const category of filteredCategories) {
-        // Get measurements for this category
-        const measurements = await db.query.takeoffMeasurements.findMany({
+      let totalMeasurementsFound = 0;
+
+      for (const category of categories) {
+        const allMeasurements = await db.query.takeoffMeasurements.findMany({
           where: eq(takeoffMeasurements.categoryId, category.id),
         });
-        // Calculate totals for this category
+
+        const measurements = allMeasurements.filter(m => !alreadyImportedMeasurementIds.has(m.id));
+        totalMeasurementsFound += allMeasurements.length;
+
         let linearTotal = 0;
         let areaTotal = 0;
         let volumeTotal = 0;
         let countTotal = 0;
+        const linearMeasurementIds: string[] = [];
+        const areaMeasurementIds: string[] = [];
+        const volumeMeasurementIds: string[] = [];
+        const countMeasurementIds: string[] = [];
 
         for (const measurement of measurements) {
           if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
             if (measurement.computedLengthFt) {
               linearTotal += Number(measurement.computedLengthFt);
+              linearMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
                 const { computeDistanceInFeet } = await import("@shared/utils/geometry");
@@ -556,6 +589,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
                   const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
                   linearTotal += length;
+                  linearMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
               } catch { logWarn("Non-critical operation failed"); }
@@ -563,6 +597,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
             if (measurement.computedAreaFt2) {
               areaTotal += Number(measurement.computedAreaFt2);
+              areaMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
                 const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
@@ -571,6 +606,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
                   const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                   areaTotal += area;
+                  areaMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
               } catch { logWarn("Non-critical operation failed"); }
@@ -578,6 +614,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           } else if (measurement.type === "VOLUME") {
             if (measurement.computedVolumeCy) {
               volumeTotal += Number(measurement.computedVolumeCy);
+              volumeMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
                 const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
@@ -587,6 +624,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                   const volume = computeVolumeInCY(area, measurement.depthFeet);
                   volumeTotal += volume;
+                  volumeMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
               } catch { logWarn("Non-critical operation failed"); }
@@ -599,126 +637,74 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             const unit = (meta.unit || "EA").toUpperCase();
             if (unit === "CY") {
               volumeTotal += qty;
+              volumeMeasurementIds.push(measurement.id);
             } else if (unit === "SF") {
               areaTotal += qty;
+              areaMeasurementIds.push(measurement.id);
             } else if (unit === "LF") {
               linearTotal += qty;
+              linearMeasurementIds.push(measurement.id);
             } else {
               countTotal += qty;
+              countMeasurementIds.push(measurement.id);
             }
           }
         }
 
-        // Create line items based on non-zero totals
-        if (linearTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId,
-            category: "GENERAL" as const,
-            description: `${category.name} - Linear`,
-            quantity: linearTotal.toString(),
-            unit: "LF",
-            source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id,
-            computedQuantity: linearTotal.toString(),
-            materialCost: "0",
-            laborHours: "0",
-            laborCost: "0",
-            equipmentCost: "0",
-            consumablesCost: "0",
-            subcontractCost: "0",
-            overheadAllocation: "0",
-            profitAllocation: "0",
-            totalCost: "0",
-          });
-        }
+        const buildCatLineItem = (description: string, qty: number, unit: string, measurementIds: string[]) => ({
+          estimateId,
+          category: "GENERAL" as const,
+          description,
+          quantity: qty.toString(),
+          unit,
+          source: "TAKEOFF" as const,
+          sourceTakeoffCategoryId: category.id,
+          computedQuantity: qty.toString(),
+          materialCost: "0",
+          laborHours: "0",
+          laborCost: "0",
+          equipmentCost: "0",
+          consumablesCost: "0",
+          subcontractCost: "0",
+          overheadAllocation: "0",
+          profitAllocation: "0",
+          totalCost: "0",
+          metadata: JSON.stringify({ sourceMeasurementIds: measurementIds }),
+        });
 
-        if (areaTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId,
-            category: "GENERAL" as const,
-            description: `${category.name} - Area`,
-            quantity: areaTotal.toString(),
-            unit: "SF",
-            source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id,
-            computedQuantity: areaTotal.toString(),
-            materialCost: "0",
-            laborHours: "0",
-            laborCost: "0",
-            equipmentCost: "0",
-            consumablesCost: "0",
-            subcontractCost: "0",
-            overheadAllocation: "0",
-            profitAllocation: "0",
-            totalCost: "0",
-          });
-        }
-
-        if (volumeTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId,
-            category: "GENERAL" as const,
-            description: `${category.name} - Volume`,
-            quantity: volumeTotal.toString(),
-            unit: "CY",
-            source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id,
-            computedQuantity: volumeTotal.toString(),
-            materialCost: "0",
-            laborHours: "0",
-            laborCost: "0",
-            equipmentCost: "0",
-            consumablesCost: "0",
-            subcontractCost: "0",
-            overheadAllocation: "0",
-            profitAllocation: "0",
-            totalCost: "0",
-          });
-        }
-
-        if (countTotal > 0) {
-          lineItemsToCreate.push({
-            estimateId,
-            category: "GENERAL" as const,
-            description: `${category.name} - Count`,
-            quantity: countTotal.toString(),
-            unit: "EA",
-            source: "TAKEOFF" as const,
-            sourceTakeoffCategoryId: category.id,
-            computedQuantity: countTotal.toString(),
-            materialCost: "0",
-            laborHours: "0",
-            laborCost: "0",
-            equipmentCost: "0",
-            consumablesCost: "0",
-            subcontractCost: "0",
-            overheadAllocation: "0",
-            profitAllocation: "0",
-            totalCost: "0",
-          });
-        }
+        if (linearTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Linear`, linearTotal, "LF", linearMeasurementIds));
+        if (areaTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Area`, areaTotal, "SF", areaMeasurementIds));
+        if (volumeTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Volume`, volumeTotal, "CY", volumeMeasurementIds));
+        if (countTotal > 0) lineItemsToCreate.push(buildCatLineItem(`${category.name} - Count`, countTotal, "EA", countMeasurementIds));
       }
 
-      // Also import uncategorized measurements from this project's sheets
       const projectSheets = await db.query.takeoffSheets.findMany({
         where: eq(takeoffSheets.projectId, projectId),
       });
       if (projectSheets.length > 0) {
         const sheetIds = projectSheets.map(s => s.id);
-        const uncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
+        const allUncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
           where: and(
             inArray(takeoffMeasurements.sheetId, sheetIds),
             isNull(takeoffMeasurements.categoryId)
           ),
         });
 
+        const uncategorizedMeasurements = allUncategorizedMeasurements.filter(m => !alreadyImportedMeasurementIds.has(m.id));
+        totalMeasurementsFound += allUncategorizedMeasurements.length;
+
         if (uncategorizedMeasurements.length > 0) {
           let uncatLinear = 0, uncatArea = 0, uncatVolume = 0, uncatCount = 0;
+          const uncatLinearIds: string[] = [];
+          const uncatAreaIds: string[] = [];
+          const uncatVolumeIds: string[] = [];
+          const uncatCountIds: string[] = [];
 
           for (const measurement of uncategorizedMeasurements) {
             if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
               if (measurement.computedLengthFt) {
                 uncatLinear += Number(measurement.computedLengthFt);
+                uncatLinearIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
                   const { computeDistanceInFeet } = await import("@shared/utils/geometry");
@@ -727,6 +713,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
                     const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
                     uncatLinear += length;
+                    uncatLinearIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
                 } catch { logWarn("Non-critical operation failed"); }
@@ -734,6 +721,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
               if (measurement.computedAreaFt2) {
                 uncatArea += Number(measurement.computedAreaFt2);
+                uncatAreaIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
                   const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
@@ -742,6 +730,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
                     const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                     uncatArea += area;
+                    uncatAreaIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
                 } catch { logWarn("Non-critical operation failed"); }
@@ -749,6 +738,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             } else if (measurement.type === "VOLUME") {
               if (measurement.computedVolumeCy) {
                 uncatVolume += Number(measurement.computedVolumeCy);
+                uncatVolumeIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
                   const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
@@ -758,6 +748,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                     const volume = computeVolumeInCY(area, measurement.depthFeet);
                     uncatVolume += volume;
+                    uncatVolumeIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
                 } catch { logWarn("Non-critical operation failed"); }
@@ -770,17 +761,21 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               const unit = (meta.unit || "EA").toUpperCase();
               if (unit === "CY") {
                 uncatVolume += qty;
+                uncatVolumeIds.push(measurement.id);
               } else if (unit === "SF") {
                 uncatArea += qty;
+                uncatAreaIds.push(measurement.id);
               } else if (unit === "LF") {
                 uncatLinear += qty;
+                uncatLinearIds.push(measurement.id);
               } else {
                 uncatCount += qty;
+                uncatCountIds.push(measurement.id);
               }
             }
           }
 
-          const buildUncatLineItem = (description: string, qty: number, unit: string) => ({
+          const buildUncatLineItem = (description: string, qty: number, unit: string, measurementIds: string[]) => ({
             estimateId, category: "GENERAL" as const, description,
             quantity: qty.toString(), unit, source: "TAKEOFF" as const,
             sourceTakeoffCategoryId: null as unknown as string,
@@ -788,12 +783,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             materialCost: "0", laborHours: "0", laborCost: "0",
             equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
             overheadAllocation: "0", profitAllocation: "0", totalCost: "0",
+            metadata: JSON.stringify({ sourceMeasurementIds: measurementIds }),
           });
 
-          if (uncatLinear > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Linear", uncatLinear, "LF"));
-          if (uncatArea > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Area", uncatArea, "SF"));
-          if (uncatVolume > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Volume", uncatVolume, "CY"));
-          if (uncatCount > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Count", uncatCount, "EA"));
+          if (uncatLinear > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Linear", uncatLinear, "LF", uncatLinearIds));
+          if (uncatArea > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Area", uncatArea, "SF", uncatAreaIds));
+          if (uncatVolume > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Volume", uncatVolume, "CY", uncatVolumeIds));
+          if (uncatCount > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Count", uncatCount, "EA", uncatCountIds));
         }
       }
 
@@ -813,7 +809,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
         res.json({ lineItems: newLineItems, count: newLineItems.length });
       } else {
-        res.json({ lineItems: [], count: 0 });
+        let message: string | undefined;
+        if (totalMeasurementsFound > 0 && alreadyImportedMeasurementIds.size > 0) {
+          message = "All measurements have already been imported. Add new measurements to import additional items.";
+        } else if (totalMeasurementsFound > 0) {
+          message = "Measurements were found but could not be converted to line items. Ensure sheets have scale calibration set.";
+        }
+        res.json({ lineItems: [], count: 0, message });
       }
     } catch (error) {
       logError("Error importing takeoff:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -855,17 +857,24 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           })
         : [];
 
-      const existingImportedCategoryIds = new Set(
-        (await db.select({ catId: estimateLineItems.sourceTakeoffCategoryId })
-          .from(estimateLineItems)
-          .where(and(
-            eq(estimateLineItems.estimateId, estimateId),
-            eq(estimateLineItems.source, "TAKEOFF"),
-          ))
-        ).map(r => r.catId).filter(Boolean)
-      );
+      const existingTakeoffLineItems = await db.select({ id: estimateLineItems.id, metadata: estimateLineItems.metadata, sourceTakeoffCategoryId: estimateLineItems.sourceTakeoffCategoryId })
+        .from(estimateLineItems)
+        .where(and(
+          eq(estimateLineItems.estimateId, estimateId),
+          eq(estimateLineItems.source, "TAKEOFF"),
+        ));
 
-      const filteredCategories = categories.filter(c => !existingImportedCategoryIds.has(c.id));
+      const alreadyImportedMeasurementIds = new Set<string>();
+      for (const li of existingTakeoffLineItems) {
+        try {
+          const meta = typeof li.metadata === 'string' ? JSON.parse(li.metadata) : (li.metadata || {});
+          if (Array.isArray(meta.sourceMeasurementIds) && meta.sourceMeasurementIds.length > 0) {
+            for (const mid of meta.sourceMeasurementIds) alreadyImportedMeasurementIds.add(mid);
+          }
+        } catch {}
+      }
+
+      const filteredCategories = categories;
 
       if (checkDuplicates) {
         const existingManualItems = await db
@@ -983,22 +992,33 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         totalCost: string;
         jobClassificationId?: string;
         laborRateUsed?: string;
+        metadata?: string;
       }> = [];
 
+      let totalMeasurementsFound = 0;
+
       for (const category of filteredCategories) {
-        const measurements = await db.query.takeoffMeasurements.findMany({
+        const allMeasurements = await db.query.takeoffMeasurements.findMany({
           where: eq(takeoffMeasurements.categoryId, category.id),
         });
+
+        const measurements = allMeasurements.filter(m => !alreadyImportedMeasurementIds.has(m.id));
+        totalMeasurementsFound += allMeasurements.length;
 
         let linearTotal = 0;
         let areaTotal = 0;
         let volumeTotal = 0;
         let countTotal = 0;
+        const linearMeasurementIds: string[] = [];
+        const areaMeasurementIds: string[] = [];
+        const volumeMeasurementIds: string[] = [];
+        const countMeasurementIds: string[] = [];
 
         for (const measurement of measurements) {
           if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
             if (measurement.computedLengthFt) {
               linearTotal += Number(measurement.computedLengthFt);
+              linearMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
                 const { computeDistanceInFeet } = await import("@shared/utils/geometry");
@@ -1007,6 +1027,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
                   const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
                   linearTotal += length;
+                  linearMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
               } catch { logWarn("Non-critical operation failed"); }
@@ -1014,6 +1035,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           } else if ((measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA")) {
             if (measurement.computedAreaFt2) {
               areaTotal += Number(measurement.computedAreaFt2);
+              areaMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
                 const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
@@ -1022,6 +1044,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                 if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
                   const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                   areaTotal += area;
+                  areaMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
               } catch { logWarn("Non-critical operation failed"); }
@@ -1029,6 +1052,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           } else if (measurement.type === "VOLUME") {
             if (measurement.computedVolumeCy) {
               volumeTotal += Number(measurement.computedVolumeCy);
+              volumeMeasurementIds.push(measurement.id);
             } else if (measurement.points) {
               try {
                 const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
@@ -1038,6 +1062,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                   const volume = computeVolumeInCY(area, measurement.depthFeet);
                   volumeTotal += volume;
+                  volumeMeasurementIds.push(measurement.id);
                   await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                 }
               } catch { logWarn("Non-critical operation failed"); }
@@ -1050,23 +1075,28 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             const unit = (meta.unit || "EA").toUpperCase();
             if (unit === "CY") {
               volumeTotal += qty;
+              volumeMeasurementIds.push(measurement.id);
             } else if (unit === "SF") {
               areaTotal += qty;
+              areaMeasurementIds.push(measurement.id);
             } else if (unit === "LF") {
               linearTotal += qty;
+              linearMeasurementIds.push(measurement.id);
             } else {
               countTotal += qty;
+              countMeasurementIds.push(measurement.id);
             }
           }
         }
 
-        const buildLineItem = async (description: string, qty: number, unit: string) => {
+        const buildLineItem = async (description: string, qty: number, unit: string, measurementIds: string[]) => {
           const base = {
             estimateId, category: "GENERAL" as const, description,
             quantity: qty.toString(), unit, source: "TAKEOFF" as const,
             sourceTakeoffCategoryId: category.id, computedQuantity: qty.toString(),
             materialCost: "0", equipmentCost: "0", consumablesCost: "0",
             subcontractCost: "0", overheadAllocation: "0", profitAllocation: "0",
+            metadata: JSON.stringify({ sourceMeasurementIds: measurementIds }),
           };
 
           if (classificationRate !== null && classificationRate > 0 && orgId) {
@@ -1080,7 +1110,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               logWarn("Non-critical operation failed");
             }
             const laborCost = parseFloat((laborHours * classificationRate).toFixed(2));
-            const totalCost = laborCost; // material/equip are all 0 at import time
+            const totalCost = laborCost;
             return {
               ...base,
               laborHours: laborHours.toFixed(2),
@@ -1100,48 +1130,46 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         };
 
         if (linearTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Linear`, linearTotal, "LF"));
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Linear`, linearTotal, "LF", linearMeasurementIds));
         }
         if (areaTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Area`, areaTotal, "SF"));
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Area`, areaTotal, "SF", areaMeasurementIds));
         }
         if (volumeTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Volume`, volumeTotal, "CY"));
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Volume`, volumeTotal, "CY", volumeMeasurementIds));
         }
         if (countTotal > 0) {
-          lineItemsToCreate.push(await buildLineItem(`${category.name} - Count`, countTotal, "EA"));
+          lineItemsToCreate.push(await buildLineItem(`${category.name} - Count`, countTotal, "EA", countMeasurementIds));
         }
       }
-
-      const hasExistingUncategorizedImport = (await db.select({ id: estimateLineItems.id })
-        .from(estimateLineItems)
-        .where(and(
-          eq(estimateLineItems.estimateId, estimateId),
-          eq(estimateLineItems.source, "TAKEOFF"),
-          isNull(estimateLineItems.sourceTakeoffCategoryId)
-        ))
-        .limit(1)
-      ).length > 0;
 
       const bidSheets = await db.query.takeoffSheets.findMany({
         where: eq(takeoffSheets.bidId, bidId),
       });
-      if (bidSheets.length > 0 && !hasExistingUncategorizedImport) {
+      if (bidSheets.length > 0) {
         const sheetIds = bidSheets.map(s => s.id);
-        const uncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
+        const allUncategorizedMeasurements = await db.query.takeoffMeasurements.findMany({
           where: and(
             inArray(takeoffMeasurements.sheetId, sheetIds),
             isNull(takeoffMeasurements.categoryId)
           ),
         });
 
+        const uncategorizedMeasurements = allUncategorizedMeasurements.filter(m => !alreadyImportedMeasurementIds.has(m.id));
+        totalMeasurementsFound += allUncategorizedMeasurements.length;
+
         if (uncategorizedMeasurements.length > 0) {
           let uncatLinear = 0, uncatArea = 0, uncatVolume = 0, uncatCount = 0;
+          const uncatLinearIds: string[] = [];
+          const uncatAreaIds: string[] = [];
+          const uncatVolumeIds: string[] = [];
+          const uncatCountIds: string[] = [];
 
           for (const measurement of uncategorizedMeasurements) {
             if (measurement.type === "LINEAR" || measurement.type === "LINEAR_WITH_DROP" || measurement.type === "PITCHED_LINEAR" || measurement.type === "SEGMENT") {
               if (measurement.computedLengthFt) {
                 uncatLinear += Number(measurement.computedLengthFt);
+                uncatLinearIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
                   const { computeDistanceInFeet } = await import("@shared/utils/geometry");
@@ -1150,6 +1178,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 2) {
                     const length = computeDistanceInFeet(points, sheet.scalePxPerFoot);
                     uncatLinear += length;
+                    uncatLinearIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedLengthFt: length }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
                 } catch { logWarn("Non-critical operation failed"); }
@@ -1157,6 +1186,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             } else if (measurement.type === "AREA" || measurement.type === "PITCHED_AREA" || measurement.type === "SURFACE_AREA") {
               if (measurement.computedAreaFt2) {
                 uncatArea += Number(measurement.computedAreaFt2);
+                uncatAreaIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
                   const { computePolygonAreaInFt2 } = await import("@shared/utils/geometry");
@@ -1165,6 +1195,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                   if (sheet?.scalePxPerFoot && Array.isArray(points) && points.length >= 3) {
                     const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                     uncatArea += area;
+                    uncatAreaIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
                 } catch { logWarn("Non-critical operation failed"); }
@@ -1172,6 +1203,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             } else if (measurement.type === "VOLUME") {
               if (measurement.computedVolumeCy) {
                 uncatVolume += Number(measurement.computedVolumeCy);
+                uncatVolumeIds.push(measurement.id);
               } else if (measurement.points) {
                 try {
                   const { computePolygonAreaInFt2, computeVolumeInCY } = await import("@shared/utils/geometry");
@@ -1181,6 +1213,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
                     const area = computePolygonAreaInFt2(points, sheet.scalePxPerFoot);
                     const volume = computeVolumeInCY(area, measurement.depthFeet);
                     uncatVolume += volume;
+                    uncatVolumeIds.push(measurement.id);
                     await db.update(takeoffMeasurements).set({ computedAreaFt2: area, computedVolumeCy: volume }).where(eq(takeoffMeasurements.id, measurement.id));
                   }
                 } catch { logWarn("Non-critical operation failed"); }
@@ -1193,17 +1226,21 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
               const unit = (meta.unit || "EA").toUpperCase();
               if (unit === "CY") {
                 uncatVolume += qty;
+                uncatVolumeIds.push(measurement.id);
               } else if (unit === "SF") {
                 uncatArea += qty;
+                uncatAreaIds.push(measurement.id);
               } else if (unit === "LF") {
                 uncatLinear += qty;
+                uncatLinearIds.push(measurement.id);
               } else {
                 uncatCount += qty;
+                uncatCountIds.push(measurement.id);
               }
             }
           }
 
-          const buildUncatLineItem = (description: string, qty: number, unit: string) => ({
+          const buildUncatLineItem = (description: string, qty: number, unit: string, measurementIds: string[]) => ({
             estimateId, category: "GENERAL" as const, description,
             quantity: qty.toString(), unit, source: "TAKEOFF" as const,
             sourceTakeoffCategoryId: null as unknown as string,
@@ -1211,12 +1248,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
             materialCost: "0", laborHours: "0", laborCost: "0",
             equipmentCost: "0", consumablesCost: "0", subcontractCost: "0",
             overheadAllocation: "0", profitAllocation: "0", totalCost: "0",
+            metadata: JSON.stringify({ sourceMeasurementIds: measurementIds }),
           });
 
-          if (uncatLinear > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Linear", uncatLinear, "LF"));
-          if (uncatArea > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Area", uncatArea, "SF"));
-          if (uncatVolume > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Volume", uncatVolume, "CY"));
-          if (uncatCount > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Count", uncatCount, "EA"));
+          if (uncatLinear > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Linear", uncatLinear, "LF", uncatLinearIds));
+          if (uncatArea > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Area", uncatArea, "SF", uncatAreaIds));
+          if (uncatVolume > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Volume", uncatVolume, "CY", uncatVolumeIds));
+          if (uncatCount > 0) lineItemsToCreate.push(buildUncatLineItem("Uncategorized - Count", uncatCount, "EA", uncatCountIds));
         }
       }
 
@@ -1237,7 +1275,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
         res.json({ lineItems: newLineItems, count: newLineItems.length, laborRateAppliedCount, classificationName });
       } else {
-        res.json({ lineItems: [], count: 0, laborRateAppliedCount: 0, classificationName: null });
+        let message: string | undefined;
+        if (totalMeasurementsFound > 0 && alreadyImportedMeasurementIds.size > 0) {
+          message = "All measurements have already been imported. Add new measurements to import additional items.";
+        } else if (totalMeasurementsFound > 0) {
+          message = "Measurements were found but could not be converted to line items. Ensure sheets have scale calibration set.";
+        }
+        res.json({ lineItems: [], count: 0, laborRateAppliedCount: 0, classificationName: null, message });
       }
     } catch (error) {
       logError("Error importing bid takeoff:", {}, error instanceof Error ? error : new Error(String(error)));
